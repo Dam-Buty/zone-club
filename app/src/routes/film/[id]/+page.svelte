@@ -80,7 +80,7 @@
             <div class="actions">
                 {#if !data.user}
                     <a href="/login" class="btn btn-primary">Connectez-vous pour louer</a>
-                {:else if data.rentalStatus.rented_by_current_user}
+                {:else if data.rentalStatus.rented_by_current_user && data.rentalStatus.rental}
                     <a href="/film/{data.film.tmdb_id}/watch" class="btn btn-primary">Regarder</a>
                     <p class="rental-info">Expire dans {Math.floor(data.rentalStatus.rental.time_remaining / 60)}h {data.rentalStatus.rental.time_remaining % 60}min</p>
                 {:else if data.rentalStatus.is_rented}
