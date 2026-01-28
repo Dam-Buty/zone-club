@@ -1,16 +1,4 @@
 services:
-  traefik:
-    image: traefik:v3.0
-    container_name: zone-traefik
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - ./traefik:/etc/traefik
-    networks:
-      - zone-network
-
   sveltekit:
     build: ./app
     container_name: zone-app
@@ -29,12 +17,10 @@ services:
       - media_public:/media/public:rw
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.app.rule=Host(`${SUBDOMAIN}.${DOMAIN}`)"
-      - "traefik.http.routers.app.entrypoints=websecure"
-      - "traefik.http.routers.app.tls.certresolver=letsencrypt"
-      - "traefik.http.services.app.loadbalancer.server.port=3000"
-    networks:
-      - zone-network
+      - "traefik.http.routers.zone-app.rule=Host(`${SUBDOMAIN}.${DOMAIN}`)"
+      - "traefik.http.routers.zone-app.entrypoints=websecure"
+      - "traefik.http.routers.zone-app.tls.certresolver=letsencrypt"
+      - "traefik.http.services.zone-app.loadbalancer.server.port=3000"
     depends_on:
       - radarr
 
@@ -47,12 +33,10 @@ services:
       - ./lighttpd.conf:/etc/lighttpd/lighttpd.conf:ro
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.storage.rule=Host(`${STORAGE_SUBDOMAIN}.${DOMAIN}`)"
-      - "traefik.http.routers.storage.entrypoints=websecure"
-      - "traefik.http.routers.storage.tls.certresolver=letsencrypt"
-      - "traefik.http.services.storage.loadbalancer.server.port=80"
-    networks:
-      - zone-network
+      - "traefik.http.routers.zone-storage.rule=Host(`${STORAGE_SUBDOMAIN}.${DOMAIN}`)"
+      - "traefik.http.routers.zone-storage.entrypoints=websecure"
+      - "traefik.http.routers.zone-storage.tls.certresolver=letsencrypt"
+      - "traefik.http.services.zone-storage.loadbalancer.server.port=80"
 
   radarr:
     image: linuxserver/radarr:latest
@@ -65,14 +49,8 @@ services:
       - radarr_config:/config
       - media_films:/movies
       - ${TRANSMISSION_DOWNLOADS}:/downloads
-    networks:
-      - zone-network
     extra_hosts:
       - "host.docker.internal:host-gateway"
-
-networks:
-  zone-network:
-    driver: bridge
 
 volumes:
   db_data:
