@@ -37,6 +37,15 @@ export interface TmdbImages {
     }[];
 }
 
+export interface TmdbSearchResult {
+    id: number;
+    title: string;
+    original_title: string;
+    release_date: string;
+    poster_path: string | null;
+    overview: string;
+}
+
 async function tmdbFetch<T>(endpoint: string, params: Record<string, string> = {}): Promise<T> {
     const url = new URL(`${TMDB_BASE_URL}${endpoint}`);
     url.searchParams.set('api_key', TMDB_API_KEY || '');
@@ -53,6 +62,11 @@ async function tmdbFetch<T>(endpoint: string, params: Record<string, string> = {
     }
 
     return response.json();
+}
+
+export async function searchMovies(query: string): Promise<TmdbSearchResult[]> {
+    const data = await tmdbFetch<{ results: TmdbSearchResult[] }>('/search/movie', { query });
+    return data.results;
 }
 
 export async function getMovie(tmdbId: number): Promise<TmdbMovie> {

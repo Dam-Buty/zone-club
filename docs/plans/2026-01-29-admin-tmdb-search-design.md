@@ -1,3 +1,176 @@
+# Admin TMDB Search + Film Deletion Implementation Plan
+
+> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+
+**Goal:** Replace the manual TMDB ID input with a title search autocomplete, and add film deletion from the database.
+
+**Architecture:** Add `searchMovies()` to the existing TMDB client, expose it via a new GET endpoint, wire it into the admin Svelte page with debounced input. Add `deleteFilm()` to films.ts and a DELETE endpoint. The schema already has ON DELETE CASCADE on foreign keys so no schema changes needed.
+
+**Tech Stack:** SvelteKit, TypeScript, TMDB API, better-sqlite3
+
+---
+
+### Task 1: Add `searchMovies` to TMDB client
+
+**Files:**
+- Modify: `app/src/lib/server/tmdb.ts:58` (insert before `getMovie`)
+
+**Step 1: Add the search function**
+
+Add after line 38 (after `TmdbImages` interface), before `getMovie`:
+
+```typescript
+export interface TmdbSearchResult {
+    id: number;
+    title: string;
+    original_title: string;
+    release_date: string;
+    poster_path: string | null;
+    overview: string;
+}
+
+export async function searchMovies(query: string): Promise<TmdbSearchResult[]> {
+    const data = await tmdbFetch<{ results: TmdbSearchResult[] }>('/search/movie', { query });
+    return data.results;
+}
+```
+
+**Step 2: Verify no type errors**
+
+Run: `cd app && npx svelte-check --threshold error 2>&1 | tail -5`
+Expected: no errors related to tmdb.ts
+
+**Step 3: Commit**
+
+```bash
+git add app/src/lib/server/tmdb.ts
+git commit -m "feat: add searchMovies to TMDB client"
+```
+
+---
+
+### Task 2: Add TMDB search API endpoint
+
+**Files:**
+- Create: `app/src/routes/api/admin/tmdb/search/+server.ts`
+
+**Step 1: Create the endpoint**
+
+```typescript
+import { json } from '@sveltejs/kit';
+import type { RequestHandler } from './$types';
+import { searchMovies } from '$lib/server/tmdb';
+
+export const GET: RequestHandler = async ({ url, locals }) => {
+    if (!locals.user?.is_admin) {
+        return json({ error: 'Non autorisé' }, { status: 403 });
+    }
+
+    const query = url.searchParams.get('q') || '';
+    if (query.length < 2) {
+        return json({ results: [] });
+    }
+
+    const results = await searchMovies(query);
+    return json({
+        results: results.slice(0, 10).map(r => ({
+            id: r.id,
+            title: r.title,
+            release_date: r.release_date
+        }))
+    });
+};
+```
+
+**Step 2: Verify no type errors**
+
+Run: `cd app && npx svelte-check --threshold error 2>&1 | tail -5`
+Expected: no errors
+
+**Step 3: Commit**
+
+```bash
+git add app/src/routes/api/admin/tmdb/search/+server.ts
+git commit -m "feat: add TMDB search API endpoint for admin"
+```
+
+---
+
+### Task 3: Add `deleteFilm` to films module
+
+**Files:**
+- Modify: `app/src/lib/server/films.ts:161` (after `setFilmAvailability`)
+
+**Step 1: Add deleteFilm function**
+
+Add after `setFilmAvailability` (line 161):
+
+```typescript
+export function deleteFilm(filmId: number): void {
+    db.prepare('DELETE FROM films WHERE id = ?').run(filmId);
+}
+```
+
+The schema has `ON DELETE CASCADE` on `film_genres`, `rentals`, and `reviews` foreign keys, so related rows are cleaned up automatically.
+
+**Step 2: Verify no type errors**
+
+Run: `cd app && npx svelte-check --threshold error 2>&1 | tail -5`
+
+**Step 3: Commit**
+
+```bash
+git add app/src/lib/server/films.ts
+git commit -m "feat: add deleteFilm function"
+```
+
+---
+
+### Task 4: Add DELETE endpoint for films
+
+**Files:**
+- Modify: `app/src/routes/api/admin/films/[filmId]/availability/+server.ts` — NO, this is the availability endpoint
+- Create: `app/src/routes/api/admin/films/[filmId]/+server.ts`
+
+**Step 1: Create the endpoint**
+
+```typescript
+import { json } from '@sveltejs/kit';
+import type { RequestHandler } from './$types';
+import { deleteFilm } from '$lib/server/films';
+
+export const DELETE: RequestHandler = async ({ params, locals }) => {
+    if (!locals.user?.is_admin) {
+        return json({ error: 'Non autorisé' }, { status: 403 });
+    }
+
+    const filmId = parseInt(params.filmId);
+    deleteFilm(filmId);
+    return json({ success: true });
+};
+```
+
+**Step 2: Verify no type errors**
+
+Run: `cd app && npx svelte-check --threshold error 2>&1 | tail -5`
+
+**Step 3: Commit**
+
+```bash
+git add app/src/routes/api/admin/films/[filmId]/+server.ts
+git commit -m "feat: add DELETE endpoint for films"
+```
+
+---
+
+### Task 5: Update admin page with search and delete UI
+
+**Files:**
+- Modify: `app/src/routes/admin/films/+page.svelte` (full rewrite of script + template)
+
+**Step 1: Replace the full page content**
+
+```svelte
 <script lang="ts">
     import { invalidateAll } from '$app/navigation';
 
@@ -218,3 +391,15 @@
     .btn-danger { background: #dc3545; color: white; border: none; border-radius: var(--border-radius); cursor: pointer; }
     .btn-danger:hover { background: #c82333; }
 </style>
+```
+
+**Step 2: Verify no type errors**
+
+Run: `cd app && npx svelte-check --threshold error 2>&1 | tail -5`
+
+**Step 3: Commit**
+
+```bash
+git add app/src/routes/admin/films/+page.svelte
+git commit -m "feat: admin search by title + delete films"
+```

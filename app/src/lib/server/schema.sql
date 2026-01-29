@@ -26,7 +26,8 @@ CREATE TABLE IF NOT EXISTS films (
     file_path_vf TEXT,
     file_path_vo TEXT,
     subtitle_path TEXT,
-    radarr_id INTEGER,
+    radarr_vo_id INTEGER,
+    radarr_vf_id INTEGER,
     is_available BOOLEAN DEFAULT FALSE,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );

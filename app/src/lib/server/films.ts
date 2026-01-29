@@ -18,7 +18,8 @@ export interface Film {
     file_path_vf: string | null;
     file_path_vo: string | null;
     subtitle_path: string | null;
-    radarr_id: number | null;
+    radarr_vo_id: number | null;
+    radarr_vf_id: number | null;
     is_available: boolean;
     created_at: string;
 }
@@ -97,10 +98,10 @@ export async function addFilmFromTmdb(tmdbId: number): Promise<Film> {
         db.prepare('INSERT INTO film_genres (film_id, genre_id) VALUES (?, ?)').run(filmId, genreRow.id);
     }
 
-    // Try to add to Radarr
+    // Try to add to both Radarr instances
     try {
-        const radarrMovie = await addToRadarr(tmdbId, tmdbData.title);
-        db.prepare('UPDATE films SET radarr_id = ? WHERE id = ?').run(radarrMovie.id, filmId);
+        const { vo, vf } = await addToRadarr(tmdbId, tmdbData.title);
+        db.prepare('UPDATE films SET radarr_vo_id = ?, radarr_vf_id = ? WHERE id = ?').run(vo.id, vf.id, filmId);
     } catch (error) {
         console.error('Failed to add to Radarr:', error);
         // Continue anyway, can be added later
@@ -157,6 +158,10 @@ export function getGenresWithFilmCount(): (Genre & { film_count: number })[] {
 
 export function setFilmAvailability(filmId: number, available: boolean): void {
     db.prepare('UPDATE films SET is_available = ? WHERE id = ?').run(available ? 1 : 0, filmId);
+}
+
+export function deleteFilm(filmId: number): void {
+    db.prepare('DELETE FROM films WHERE id = ?').run(filmId);
 }
 
 export function updateFilmPaths(filmId: number, paths: {
