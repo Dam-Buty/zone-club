@@ -1,0 +1,68 @@
+.bubble {
+  position: relative;
+  background: var(--color-card-bg);
+  border: 2px solid var(--color-neon-cyan);
+  border-radius: 12px;
+  padding: 1rem 1.5rem;
+  max-width: 350px;
+  box-shadow: var(--glow-cyan);
+  animation: popIn 200ms ease;
+}
+
+@keyframes popIn {
+  from {
+    transform: scale(0.8);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.text {
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: white;
+  margin: 0;
+}
+
+.close {
+  position: absolute;
+  top: 0.25rem;
+  right: 0.5rem;
+  background: none;
+  border: none;
+  color: var(--color-neon-cyan);
+  cursor: pointer;
+  font-size: 0.875rem;
+  opacity: 0.7;
+  transition: opacity 150ms ease;
+}
+
+.close:hover {
+  opacity: 1;
+}
+
+.tail {
+  position: absolute;
+  bottom: -10px;
+  left: 30px;
+  width: 0;
+  height: 0;
+  border-left: 10px solid transparent;
+  border-right: 10px solid transparent;
+  border-top: 10px solid var(--color-neon-cyan);
+}
+
+.tail::before {
+  content: '';
+  position: absolute;
+  top: -12px;
+  left: -8px;
+  width: 0;
+  height: 0;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-top: 8px solid var(--color-card-bg);
+}

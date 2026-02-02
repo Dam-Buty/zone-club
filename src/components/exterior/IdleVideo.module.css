@@ -1,0 +1,30 @@
+.videoContainer {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.1s ease-out;
+  background: black;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden; /* Crop what exceeds */
+}
+
+.videoContainer.visible {
+  opacity: 1;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.video {
+  /* Aspect ratio 5632:3072 = 1.833:1 (same as storefront) */
+  aspect-ratio: 5632 / 3072;
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  transform: scale(1.03); /* 3% zoom, edges cropped by overflow:hidden */
+}

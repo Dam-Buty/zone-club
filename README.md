@@ -1,104 +1,206 @@
-# Zone Club
+# Zone Club - Vidéoclub 3D Immersif
 
-Vidéoclub en ligne inspiré des vidéoclubs d'époque. Les utilisateurs parcourent des rayons (genres), louent des films avec un système de crédits, et écrivent des critiques pour en gagner.
+![Zone Club](https://img.shields.io/badge/Zone%20Club-Vidéoclub%203D-ff2d95)
+![React](https://img.shields.io/badge/React-18-61DAFB)
+![Three.js](https://img.shields.io/badge/Three.js-R3F-black)
+![SvelteKit](https://img.shields.io/badge/SvelteKit-Backend-FF3E00)
+![Docker](https://img.shields.io/badge/Docker-Ready-2496ED)
 
-## Stack
+Frontend 3D immersif pour Zone Club, un vidéoclub en ligne inspiré des vidéoclubs d'époque. Parcourez les rayons en vue FPS, louez des cassettes VHS et vivez l'expérience rétro des années 90.
 
-- **Frontend/Backend** : SvelteKit (Svelte 5, TypeScript)
-- **Base de données** : SQLite (better-sqlite3)
-- **Streaming** : lighttpd (fichiers vidéo via symlinks temporaires)
-- **Téléchargement** : Radarr + Transmission (existant sur l'hôte)
-- **Ingress** : Traefik (externe, déjà installé sur la machine)
+## 🎬 Fonctionnalités
 
-## Architecture
+### Expérience 3D
+- **Navigation FPS** dans le vidéoclub (ZQSD/WASD + souris)
+- **Rayons par genre** avec cassettes VHS interactives
+- **Îlot central** "NOUVEAUTÉS" avec les meilleurs films TMDB
+- **Gérant 3D** (Quentin) avec animations et dialogues
+- **Terminal TV rétro** pour gérer son compte
 
-```
-Traefik (externe)
-├── ${SUBDOMAIN}.${DOMAIN}         → SvelteKit (port 3000)
-└── ${STORAGE_SUBDOMAIN}.${DOMAIN} → lighttpd (port 80)
-
-SvelteKit ←→ SQLite (local)
-         ←→ Radarr API → Transmission → fichiers MP4
-         ←→ Symlinks → lighttpd → streaming vidéo
-```
-
-## Fonctionnalités
-
-- **Rayons** : navigation par genre de films
-- **Location** : 1 crédit = 1 film pour 24h, un seul locataire à la fois
+### Vidéoclub
+- **Location** : 1 crédit = 1 film pour 24h
 - **Crédits** : 5 à l'inscription, +1 par critique publiée
-- **Critiques** : 500 caractères minimum, 3 notes sur 5 (réalisation, scénario, jeu d'acteur)
-- **Streaming** : switch VF/VO dans le player, sous-titres français
-- **Auth** : pseudo + mot de passe, passphrase de récupération culinaire française (ex: `tartiflette-savoyarde-gratinée`)
-- **Admin** : ajout de films par ID TMDB, gestion de la disponibilité
+- **Critiques** : 3 notes sur 5 (réalisation, scénario, jeu d'acteur)
+- **Player VHS** : switch VF/VO, sous-titres, effet tracking
 
-## Prérequis
+### Administration
+- Panel admin secret (taper "admin" dans le terminal)
+- Ajout de films via ID TMDB
+- Gestion de la disponibilité
+- Statistiques du vidéoclub
 
-- Docker + Docker Compose
-- Traefik configuré avec le Docker socket
-- Transmission installé sur l'hôte
-- Clé API TMDB ([themoviedb.org](https://www.themoviedb.org/settings/api))
+## 🛠 Stack Technique
 
-## Installation
+| Composant | Technologies |
+|-----------|--------------|
+| **Frontend 3D** | React 18, Three.js (React Three Fiber), TypeScript |
+| **État** | Zustand avec persistance localStorage |
+| **Backend** | SvelteKit, SQLite (better-sqlite3) |
+| **Streaming** | lighttpd (symlinks temporaires) |
+| **Téléchargement** | Radarr + Transmission |
+| **Ingress** | Traefik (SSL automatique) |
+| **Conteneurisation** | Docker Compose |
+
+## 📁 Structure du Projet
+
+```
+zone-club/
+├── src/                          # Frontend React 3D
+│   ├── components/
+│   │   ├── interior/             # Composants 3D du magasin
+│   │   │   ├── Aisle.tsx         # Scène principale
+│   │   │   ├── Cassette.tsx      # Cassette VHS interactive
+│   │   │   ├── IslandShelf.tsx   # Îlot central
+│   │   │   ├── WallShelf.tsx     # Étagères murales
+│   │   │   ├── Manager3D.tsx     # Gérant Quentin
+│   │   │   └── Controls.tsx      # Contrôles FPS + collisions
+│   │   ├── terminal/             # Terminal TV
+│   │   ├── player/               # Player vidéo VHS
+│   │   └── videoclub/            # Modals et UI
+│   ├── api/                      # Client API backend
+│   ├── services/                 # Services (TMDB)
+│   ├── store/                    # Zustand store
+│   └── types/                    # Types TypeScript
+│
+├── backend-zone-club/            # Backend SvelteKit
+│   ├── app/
+│   │   ├── src/
+│   │   │   ├── lib/server/       # Modules backend
+│   │   │   └── routes/           # Routes API + SSR
+│   │   └── Dockerfile
+│   └── docker-compose.yml        # (ancien, utilisez celui à la racine)
+│
+├── docker-compose.yml            # Configuration Docker complète
+├── Dockerfile                    # Build frontend
+├── nginx.conf                    # Config nginx pour SPA
+├── DEPLOYMENT.md                 # Guide de déploiement détaillé
+├── CLAUDE.md                     # Documentation technique frontend
+└── .env.example                  # Variables d'environnement
+```
+
+## 🚀 Démarrage Rapide
+
+### Développement Local
 
 ```bash
-# 1. Cloner et configurer
+# 1. Cloner le projet
+git clone <url> zone-club
+cd zone-club
+
+# 2. Configurer l'environnement
 cp .env.example .env
-# Remplir les valeurs dans .env
+# Éditer .env avec votre clé TMDB
+
+# 3. Frontend (terminal 1)
+npm install
+npm run dev
+# → http://localhost:5173
+
+# 4. Backend (terminal 2)
+cd backend-zone-club/app
+npm install
+npm run dev
+# → http://localhost:5173 (SvelteKit)
+```
+
+### Production (Docker)
+
+```bash
+# 1. Configurer
+cp .env.example .env
+nano .env  # Remplir toutes les variables
 
 # 2. Lancer
 docker compose up -d
 
-# 3. Configurer Radarr
-# Accéder à Radarr via son port (7878) et configurer :
-# - Root folder : /movies
-# - Download client : Transmission sur host.docker.internal
-# - Quality profile selon préférence
-# - Récupérer la clé API dans Settings > General
-
-# 4. Créer un admin
-# Se connecter au container et ouvrir la DB :
-docker exec -it zone-app sh
-node -e "
-const Database = require('better-sqlite3');
-const db = new Database('/data/zone.db');
-db.prepare('UPDATE users SET is_admin = 1 WHERE username = ?').run('ton_pseudo');
-"
+# 3. Vérifier
+docker compose ps
+docker compose logs -f
 ```
 
-## Variables d'environnement
+Voir [DEPLOYMENT.md](DEPLOYMENT.md) pour le guide complet.
+
+## 🐳 Architecture Docker
+
+```
+Traefik (externe)
+├── videoclub.example.com    → nginx (frontend 3D)
+├── zone-api.example.com     → SvelteKit API
+└── zone-storage.example.com → lighttpd (streaming)
+
+Interne:
+└── zone-radarr (port 7878)  → Gestion catalogue
+```
+
+## ⚙️ Variables d'Environnement
 
 | Variable | Description | Exemple |
 |----------|-------------|---------|
 | `DOMAIN` | Domaine principal | `example.com` |
-| `SUBDOMAIN` | Sous-domaine de l'app | `zone` |
-| `STORAGE_SUBDOMAIN` | Sous-domaine du streaming | `zone-storage` |
-| `RADARR_API_KEY` | Clé API Radarr | |
-| `TMDB_API_KEY` | Clé API TMDB | |
-| `HMAC_SECRET` | Secret pour signer les sessions | |
-| `TRANSMISSION_DOWNLOADS` | Chemin des téléchargements Transmission | `/var/lib/transmission/downloads` |
+| `FRONTEND_SUBDOMAIN` | Sous-domaine frontend 3D | `videoclub` |
+| `SUBDOMAIN` | Sous-domaine API | `zone-api` |
+| `STORAGE_SUBDOMAIN` | Sous-domaine streaming | `zone-storage` |
+| `TMDB_API_KEY` | Clé API TMDB | [themoviedb.org](https://www.themoviedb.org/settings/api) |
+| `RADARR_API_KEY` | Clé API Radarr | Settings > General |
+| `HMAC_SECRET` | Secret sessions | `openssl rand -hex 32` |
+| `TRANSMISSION_DOWNLOADS` | Chemin downloads | `/var/lib/transmission/downloads` |
 
-## Flux d'ajout d'un film
+## 🎮 Contrôles
 
-1. L'admin saisit un ID TMDB dans `/admin/films`
-2. L'app récupère les métadonnées TMDB (titre FR, synopsis, casting, jaquette FR)
-3. Le film est ajouté dans Radarr qui lance le téléchargement
-4. Une fois les fichiers prêts, l'admin active le film (bouton "Activer")
-5. Le film apparaît dans les rayons pour les utilisateurs
+| Touche | Action |
+|--------|--------|
+| `Z/W` | Avancer |
+| `S` | Reculer |
+| `Q/A` | Gauche |
+| `D` | Droite |
+| `Souris` | Regarder |
+| `Clic` | Interagir |
+| `Échap` | Quitter l'interaction |
 
-## Flux de location
+## 📖 Documentation
 
-1. L'utilisateur clique "Louer" sur une fiche film (coûte 1 crédit)
-2. Des symlinks sont créés vers les fichiers VO/VF/sous-titres dans un dossier UUID
-3. lighttpd sert ces fichiers pendant 24h
-4. Un cron nettoie les symlinks expirés et marque les locations comme inactives
+- [DEPLOYMENT.md](DEPLOYMENT.md) - Guide de déploiement complet
+- [CLAUDE.md](CLAUDE.md) - Documentation technique frontend
+- [backend-zone-club/CLAUDE.md](backend-zone-club/CLAUDE.md) - Documentation backend
 
-## Développement
+## 🔧 Commandes Utiles
 
 ```bash
-cd app
-npm install
-npm run dev
+# Rebuild frontend
+docker compose build --no-cache frontend && docker compose up -d frontend
+
+# Rebuild backend
+docker compose build --no-cache sveltekit && docker compose up -d sveltekit
+
+# Logs en temps réel
+docker compose logs -f
+
+# Accéder au container backend
+docker exec -it zone-app sh
+
+# Backup base de données
+docker cp zone-app:/data/zone.db ./backup.db
+
+# Promouvoir un utilisateur admin
+docker exec -it zone-app node -e "
+const Database = require('better-sqlite3');
+const db = new Database('/data/zone.db');
+db.prepare('UPDATE users SET is_admin = 1 WHERE username = ?').run('pseudo');
+"
 ```
 
-La base SQLite sera créée automatiquement au premier lancement.
+## 🤝 Contribution
+
+1. Fork le projet
+2. Créer une branche (`git checkout -b feature/amazing-feature`)
+3. Commit (`git commit -m 'Add amazing feature'`)
+4. Push (`git push origin feature/amazing-feature`)
+5. Ouvrir une Pull Request
+
+## 📝 Licence
+
+Ce projet est sous licence MIT.
+
+---
+
+Développé avec ❤️ pour les nostalgiques des vidéoclubs

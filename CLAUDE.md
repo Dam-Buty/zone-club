@@ -1,81 +1,180 @@
-# CLAUDE.md
+# CLAUDE.md - Zone Club Frontend 3D
 
 ## Projet
 
-Zone Club - vidéoclub en ligne avec SvelteKit + SQLite + Docker.
+Frontend 3D immersif pour Zone Club, un vidéoclub en ligne. Expérience FPS dans un vidéoclub rétro des années 90.
+
+## Stack Technique
+
+- **Framework** : React 18 + TypeScript
+- **3D** : Three.js via React Three Fiber (@react-three/fiber)
+- **État** : Zustand avec persistance localStorage
+- **Build** : Vite
+- **Styles** : CSS Modules
 
 ## Commandes
 
 ```bash
-# Dev
-cd app && npm run dev
+# Développement
+npm run dev
 
-# Type check
-cd app && npm run check
+# Build production
+npm run build
 
-# Build
-cd app && npm run build
+# Preview du build
+npm run preview
 
 # Docker
 docker compose up -d
-docker compose build --no-cache sveltekit
+docker compose build --no-cache frontend
 ```
 
-## Architecture du code
+## Architecture du Code
 
-### Backend (`app/src/lib/server/`)
+### Composants 3D (`src/components/interior/`)
 
-Tout le backend est dans des modules TypeScript serveur-only :
+| Fichier | Description |
+|---------|-------------|
+| `Aisle.tsx` | Scène principale du magasin (murs, sol, éclairage) |
+| `WallShelf.tsx` | Étagères murales avec cassettes |
+| `IslandShelf.tsx` | Îlot central double face (NOUVEAUTÉS) |
+| `Cassette.tsx` | Cassette VHS interactive avec hover smooth |
+| `Manager3D.tsx` | Gérant 3D (Quentin) avec animations |
+| `Controls.tsx` | Contrôles FPS + raycasting + collisions |
+| `InteractiveTVDisplay.tsx` | Écran TV ouvrant le terminal |
+| `GenreSectionPanel.tsx` | Panneaux de genre suspendus |
 
-- `db.ts` - Singleton SQLite, exécute `schema.sql` au démarrage
-- `schema.sql` - DDL complet (users, films, genres, film_genres, rentals, reviews)
-- `auth.ts` - Register, login, recover. Bcrypt pour les hashes
-- `session.ts` - Tokens signés avec cookie-signature, expiration 7 jours
-- `passphrase.ts` - Générateur `plat-origine-qualificatif` depuis les JSON dans `dictionaries/`
-- `tmdb.ts` - Client TMDB, fetch metadata + jaquette FR en priorité
-- `radarr.ts` - Client Radarr v3 API, ajout de films + déclenchement recherche
-- `films.ts` - CRUD films, genres, slugify, intégration TMDB+Radarr
-- `rentals.ts` - Location 24h, vérification crédits, création symlinks, cleanup expirations
-- `symlinks.ts` - Création/suppression de dossiers UUID avec symlinks vers les fichiers
-- `reviews.ts` - Critiques avec 3 axes de notation, validation 500 chars, +1 crédit
+### Terminal TV (`src/components/terminal/`)
 
-### Routes (`app/src/routes/`)
+| Fichier | Description |
+|---------|-------------|
+| `TVTerminal.tsx` | Interface terminal rétro (compte, locations, admin) |
+| `TVTerminal.module.css` | Styles scanlines, effet CRT |
 
-- `/` - Accueil (genres + derniers films)
-- `/login`, `/register`, `/recover` - Auth
-- `/rayons` - Liste des genres
-- `/rayons/[slug]` - Films d'un genre avec statut location
-- `/film/[id]` - Fiche film (id = tmdb_id)
-- `/film/[id]/watch` - Player vidéo (auth + location active requise)
-- `/film/[id]/review` - Formulaire critique (auth + a loué le film + pas déjà critiqué)
-- `/compte` - Profil (crédits, locations actives, historique)
-- `/admin/films` - Gestion catalogue (admin only)
+### Player Vidéo (`src/components/player/`)
 
-### API
+| Fichier | Description |
+|---------|-------------|
+| `VHSPlayer.tsx` | Player vidéo avec switch VF/VO/sous-titres |
+| `VHSControls.tsx` | Contrôles style magnétoscope |
 
-- `POST /api/auth/register` - `{ username, password }` → `{ user, recoveryPhrase }`
-- `POST /api/auth/login` - `{ username, password }` → `{ user }`
-- `POST /api/auth/logout` - Supprime le cookie
-- `POST /api/auth/recover` - `{ username, recoveryPhrase, newPassword }` → `{ user, newRecoveryPhrase }`
-- `POST /api/rentals/[filmId]` - Louer un film (auth requise)
-- `POST /api/reviews/[filmId]` - Publier critique (auth requise)
-- `POST /api/admin/films` - `{ tmdb_id }` → Ajouter film depuis TMDB (admin)
-- `PATCH /api/admin/films/[filmId]/availability` - `{ available }` (admin)
+### Services (`src/services/`)
+
+| Fichier | Description |
+|---------|-------------|
+| `tmdb.ts` | Client API TMDB (films, recherche, top rated) |
+
+### API (`src/api/`)
+
+| Fichier | Description |
+|---------|-------------|
+| `index.ts` | Client API backend (auth, rentals, reviews, admin) |
+
+### Store (`src/store/`)
+
+| Fichier | Description |
+|---------|-------------|
+| `index.ts` | Zustand store (auth, rentals, UI state, player) |
 
 ## Conventions
 
-- **Langue** : Tous les messages d'erreur et l'UI sont en français
-- **Svelte 5** : Utiliser `$props()`, `$state()`, `{@render children()}`, `onclick={handler}` (pas `export let`, `on:click`)
-- **SQLite** : `better-sqlite3` (synchrone), les appels sont directs (pas d'ORM)
-- **JSON dans SQLite** : `genres`, `directors`, `actors` sont des colonnes TEXT stockant du JSON, parsées dans `parseFilm()`
-- **Auth** : Cookies httpOnly signés, pas de JWT. Le hook `hooks.server.ts` peuple `locals.user`
-- **IDs films** : En interne c'est `film.id` (autoincrement), dans les URLs c'est `film.tmdb_id`
-- **Streaming** : Les URLs vidéo pointent vers `${STORAGE_SUBDOMAIN}.${DOMAIN}/{uuid}/film_vf.mp4`
-- **Symlinks** : Créés à la location dans `/media/public/symlinks/{uuid}/`, nettoyés par `cleanupExpiredRentals()`
+### TypeScript
+- Strict mode activé
+- Types explicites pour les props de composants
+- Interfaces pour les données API
 
-## Points d'attention
+### React Three Fiber
+- `useFrame` pour les animations par frame
+- `useRef` pour accéder aux objets Three.js
+- `useMemo` pour les géométries/textures (éviter recréation)
 
-- La fonction `cleanupExpiredRentals()` dans `rentals.ts` doit être appelée périodiquement (cron ou setInterval). Ce n'est pas encore câblé automatiquement.
-- Le fichier `db.ts` lit `schema.sql` avec `readFileSync` relatif à `__dirname`. En production (build), le fichier SQL doit être copié dans le bundle ou le schema doit être inline.
-- Radarr télécharge les films mais ne gère pas automatiquement la distinction VO/VF. Les chemins `file_path_vf` et `file_path_vo` doivent être renseignés manuellement par l'admin pour l'instant.
-- Les containers doivent être sur un réseau Docker accessible par le Traefik externe. Si Traefik utilise un réseau dédié, ajouter `networks: external: true` dans le compose.
+### Cassettes - Hystérésis de Sélection
+```typescript
+// Problème résolu : flickering aux bords des cassettes
+// Solution : double hystérésis (Controls + Cassette)
+
+// Dans Controls.tsx :
+const DESELECT_DELAY = 0.4 // 400ms avant désélection
+const MIN_HITS_TO_CHANGE = 3 // Hits consécutifs pour changer
+
+// Dans Cassette.tsx :
+const HYSTERESIS_SELECT = 0.05 // 50ms pour sélectionner
+const HYSTERESIS_DESELECT = 0.25 // 250ms pour désélectionner
+```
+
+### Collisions
+```typescript
+// Zones de collision définies dans Controls.tsx
+// Format : { minX, maxX, minZ, maxZ, name }
+const COLLISION_ZONES = [
+  { minX: -0.8 - 0.756, maxX: -0.8 + 0.756, minZ: -1.134, maxZ: 1.134, name: 'ilot' },
+  // ...
+]
+```
+
+## Points d'Attention
+
+### Performance
+- Les textures sont chargées une fois via `useMemo`
+- Les cassettes utilisent `lerp` pour les animations smooth
+- Le raycasting est limité au centre de l'écran (crosshair)
+
+### API Backend
+- URL configurée via `VITE_API_URL`
+- Cookies httpOnly pour l'auth (credentials: 'include')
+- Les IDs films dans les URLs sont des `tmdb_id`, pas des `id` internes
+
+### TMDB
+- Clé API via `VITE_TMDB_API_KEY`
+- Posters : `https://image.tmdb.org/t/p/w200{poster_path}`
+- Fallback couleur si pas de poster
+
+### Terminal Admin
+- Accès : taper "admin" au clavier quand le terminal est ouvert
+- Réservé aux utilisateurs avec `is_admin: true`
+
+## Leçons Apprises (02/02/2026)
+
+### Hystérésis pour éviter le flickering
+**Problème** : Aux bords des cassettes, le raycast alternait rapidement entre hit/miss, causant un flickering visuel désagréable (2-20 Hz).
+
+**Solution** : Double hystérésis
+1. **Côté Controls** : Délai de 400ms avant désélection + compteur de hits consécutifs
+2. **Côté Cassette** : État stable interne avec délais asymétriques (50ms select, 250ms deselect)
+
+### Îlot Central - Direction du Hover
+**Problème** : Les cassettes de l'îlot sont rotées de 90°, donc l'animation Z les poussait dans le mauvais sens.
+
+**Solution** : Prop `hoverOffsetZ` configurable (-0.08 pour l'îlot au lieu de +0.08).
+
+### Films NOUVEAUTÉS
+- Chargés depuis TMDB API (top rated des 10 dernières années)
+- Fallback sur le catalogue local si l'API échoue
+- 30 films affichés (15 par côté de l'îlot)
+
+## Docker
+
+### Architecture
+```
+Traefik (externe)
+├── ${FRONTEND_SUBDOMAIN}.${DOMAIN} → nginx (frontend)
+├── ${SUBDOMAIN}.${DOMAIN}          → SvelteKit API
+└── ${STORAGE_SUBDOMAIN}.${DOMAIN}  → lighttpd (vidéos)
+```
+
+### Build
+```dockerfile
+# Multi-stage : Node (build) → nginx (serve)
+FROM node:20-alpine AS builder
+# ... build avec VITE_API_URL et VITE_TMDB_API_KEY
+
+FROM nginx:alpine
+# ... copie dist + nginx.conf
+```
+
+### Variables d'environnement Docker
+| Variable | Usage |
+|----------|-------|
+| `VITE_API_URL` | URL du backend SvelteKit |
+| `VITE_TMDB_API_KEY` | Clé API TMDB |
+| `FRONTEND_SUBDOMAIN` | Sous-domaine Traefik |

@@ -1,0 +1,59 @@
+services:
+  sveltekit:
+    build: ./app
+    container_name: zone-app
+    environment:
+      - DATABASE_PATH=/data/zone.db
+      - DOMAIN=${DOMAIN}
+      - SUBDOMAIN=${SUBDOMAIN}
+      - STORAGE_SUBDOMAIN=${STORAGE_SUBDOMAIN}
+      - RADARR_URL=http://radarr:7878
+      - RADARR_API_KEY=${RADARR_API_KEY}
+      - TMDB_API_KEY=${TMDB_API_KEY}
+      - HMAC_SECRET=${HMAC_SECRET}
+    volumes:
+      - db_data:/data
+      - media_films:/media/films:ro
+      - media_public:/media/public:rw
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.zone-app.rule=Host(`${SUBDOMAIN}.${DOMAIN}`)"
+      - "traefik.http.routers.zone-app.entrypoints=websecure"
+      - "traefik.http.routers.zone-app.tls.certresolver=letsencrypt"
+      - "traefik.http.services.zone-app.loadbalancer.server.port=3000"
+    depends_on:
+      - radarr
+
+  lighttpd:
+    image: sebp/lighttpd
+    container_name: zone-storage
+    volumes:
+      - media_films:/media/films:ro
+      - media_public:/media/public:ro
+      - ./lighttpd.conf:/etc/lighttpd/lighttpd.conf:ro
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.zone-storage.rule=Host(`${STORAGE_SUBDOMAIN}.${DOMAIN}`)"
+      - "traefik.http.routers.zone-storage.entrypoints=websecure"
+      - "traefik.http.routers.zone-storage.tls.certresolver=letsencrypt"
+      - "traefik.http.services.zone-storage.loadbalancer.server.port=80"
+
+  radarr:
+    image: linuxserver/radarr:latest
+    container_name: zone-radarr
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Paris
+    volumes:
+      - radarr_config:/config
+      - media_films:/movies
+      - ${TRANSMISSION_DOWNLOADS}:/downloads
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  db_data:
+  media_films:
+  media_public:
+  radarr_config:

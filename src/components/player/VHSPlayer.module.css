@@ -1,0 +1,80 @@
+.player {
+  position: fixed;
+  inset: 0;
+  background: black;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.5rem;
+  background: linear-gradient(rgba(0, 0, 0, 0.8), transparent);
+  z-index: 10;
+}
+
+.filmTitle {
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  color: var(--color-neon-cyan);
+  text-shadow: var(--glow-cyan);
+  letter-spacing: 0.05em;
+  max-width: 70%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trackIndicator {
+  font-family: var(--font-display);
+  font-size: 0.8rem;
+  color: var(--color-neon-pink);
+  text-shadow: var(--glow-pink);
+  letter-spacing: 0.1em;
+  padding: 0.25rem 0.75rem;
+  border: 1px solid var(--color-neon-pink);
+  border-radius: 4px;
+  background: rgba(255, 45, 149, 0.1);
+}
+
+.video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.rentalTimer {
+  position: absolute;
+  top: 1.5rem;
+  right: 1.5rem;
+  z-index: 10;
+}
+
+.endMessage {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-family: var(--font-display);
+  font-size: 4rem;
+  color: var(--color-neon-cyan);
+  text-shadow: var(--glow-cyan);
+  text-align: center;
+  letter-spacing: 0.2em;
+  animation: flicker 0.5s infinite;
+  z-index: 20;
+}
+
+@keyframes flicker {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.8; }
+  75% { opacity: 0.9; }
+}
