@@ -164,7 +164,12 @@ export const GENRE_CONFIG = {
   horreur: {
     id: 27,
     color: '#00ff00', // Vert slime/zombie
-    altIds: [53], // Thriller aussi
+    altIds: [],
+  },
+  thriller: {
+    id: 53,
+    color: '#ff6600', // Orange suspense
+    altIds: [9648], // Mystery
   },
   action: {
     id: 28,

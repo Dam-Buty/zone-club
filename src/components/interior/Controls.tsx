@@ -98,6 +98,10 @@ export function Controls({ onCassetteClick }: ControlsProps) {
   const DESELECT_DELAY = 0.4 // 400ms avant désélection
   const MIN_HITS_TO_CHANGE = 3 // Minimum de hits consécutifs pour changer de cassette
 
+  // Throttle raycast - ne faire le raycast que tous les N frames pour optimiser CPU
+  const frameCountRef = useRef(0)
+  const RAYCAST_INTERVAL = 2 // Raycast tous les 2 frames (30 fois/sec au lieu de 60)
+
   // Configurer la caméra (entrée en bas-gauche, face au magasin)
   useEffect(() => {
     camera.position.set(-3.5, 1.6, 3)
@@ -263,8 +267,13 @@ export function Controls({ onCassetteClick }: ControlsProps) {
 
   // Boucle de mouvement et de ciblage
   useFrame((_, delta) => {
-    // Raycasting pour le ciblage - seulement quand locké
-    if (controlsRef.current?.isLocked) {
+    // Incrémenter le compteur de frames
+    frameCountRef.current++
+
+    // Raycasting pour le ciblage - seulement quand locké ET tous les N frames
+    const shouldRaycast = frameCountRef.current % RAYCAST_INTERVAL === 0
+
+    if (controlsRef.current?.isLocked && shouldRaycast) {
       // Raycast depuis le centre de l'écran (crosshair)
       raycasterRef.current.setFromCamera(new THREE.Vector2(0, 0), camera)
       const intersects = raycasterRef.current.intersectObjects(scene.children, true)
@@ -351,8 +360,10 @@ export function Controls({ onCassetteClick }: ControlsProps) {
       } else {
         document.body.style.cursor = 'crosshair'
       }
-    } else {
-      // Pas locké - reset le ciblage
+    }
+
+    // Reset le ciblage seulement quand pas locké (pas quand on skip un frame de raycast)
+    if (!controlsRef.current?.isLocked) {
       targetedInteractiveRef.current = null
       lastCassetteKeyRef.current = null
       lastFilmIdRef.current = null

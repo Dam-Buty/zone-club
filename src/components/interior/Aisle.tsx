@@ -1,5 +1,35 @@
-import { useMemo, useEffect, useState } from 'react'
+import { useMemo, useEffect, useState, Suspense } from 'react'
 import * as THREE from 'three'
+import { useGLTF, useTexture } from '@react-three/drei'
+
+// Composant pour chargement async des modèles 3D
+function AsyncModel({ url, position, scale = 1, rotation = [0, 0, 0] }: {
+  url: string
+  position: [number, number, number]
+  scale?: number | [number, number, number]
+  rotation?: [number, number, number]
+}) {
+  const { scene } = useGLTF(url)
+  const clonedScene = useMemo(() => {
+    const cloned = scene.clone(true)
+    cloned.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        child.castShadow = true
+        child.receiveShadow = true
+      }
+    })
+    return cloned
+  }, [scene])
+
+  return (
+    <primitive
+      object={clonedScene}
+      position={position}
+      scale={scale}
+      rotation={rotation}
+    />
+  )
+}
 import { WallShelf } from './WallShelf'
 import { IslandShelf } from './IslandShelf'
 import { GenreSectionPanel, GENRE_CONFIG, filterFilmsByGenre } from './GenreSectionPanel'
@@ -131,14 +161,18 @@ export function Aisle({ films }: AisleProps) {
   // Films à afficher: TMDB si disponibles, sinon fallback sur catalogue local
   const nouveautesFilms = tmdbNouveautes.length > 0 ? tmdbNouveautes : localTopRated
 
+  // ===== TEXTURES =====
+  const fireExtinguisherPanelTexture = useTexture('/panneau-extincteur.png')
+
   // ===== FILTRER LES FILMS PAR GENRE =====
   const filmsByGenre = useMemo(() => {
     const horreur = filterFilmsByGenre(films, 'horreur')
+    const thriller = filterFilmsByGenre(films, 'thriller')
     const action = filterFilmsByGenre(films, 'action')
     const comedie = filterFilmsByGenre(films, 'comedie')
     const drame = filterFilmsByGenre(films, 'drame')
 
-    return { horreur, action, comedie, drame }
+    return { horreur, thriller, action, comedie, drame }
   }, [films])
 
   // Extraire les poster_path pour les affiches murales
@@ -201,22 +235,45 @@ export function Aisle({ films }: AisleProps) {
       {/* ===== SECTION HORREUR - MUR GAUCHE ===== */}
       {/* ========================================= */}
       <group>
-        {/* Panneau HORREUR suspendu - reculé de 5% */}
+        {/* Panneau HORREUR suspendu - décalé vers la droite */}
         <GenreSectionPanel
           genre="HORREUR"
-          position={[-ROOM_WIDTH / 2 + 1.14, 2.07, -1]}
+          position={[-ROOM_WIDTH / 2 + 1.14, 2.07, -0.93]}
           rotation={[0, Math.PI / 2, 0]}
           color={GENRE_CONFIG.horreur.color}
           width={1.8}
           hanging={true}
         />
 
-        {/* Étagères Horreur - mur gauche partie nord */}
+        {/* Étagères Horreur - mur gauche */}
         <WallShelf
-          position={[-ROOM_WIDTH / 2 + 0.4, 0, -1]}
+          position={[-ROOM_WIDTH / 2 + 0.4, 0, -1.54]}
           rotation={[0, Math.PI / 2, 0]}
           length={3.5}
           films={filmsByGenre.horreur.slice(0, 25)}
+        />
+      </group>
+
+      {/* ========================================== */}
+      {/* ===== SECTION THRILLER - MUR GAUCHE ===== */}
+      {/* ========================================== */}
+      <group>
+        {/* Panneau THRILLER suspendu - décalé vers la facade */}
+        <GenreSectionPanel
+          genre="THRILLER"
+          position={[-ROOM_WIDTH / 2 + 1.14, 2.07, 1.58]}
+          rotation={[0, Math.PI / 2, 0]}
+          color={GENRE_CONFIG.thriller.color}
+          width={1.5}
+          hanging={true}
+        />
+
+        {/* Étagères Thriller - mur gauche */}
+        <WallShelf
+          position={[-ROOM_WIDTH / 2 + 0.4, 0, 1.29]}
+          rotation={[0, Math.PI / 2, 0]}
+          length={2.5}
+          films={filmsByGenre.thriller.slice(0, 18)}
         />
       </group>
 
@@ -241,6 +298,23 @@ export function Aisle({ films }: AisleProps) {
           length={4}
           films={filmsByGenre.action.slice(0, 30)}
         />
+      </group>
+
+      {/* ===== EXTINCTEUR - ENTRE ACTION ET DRAME ===== */}
+      <group position={[-0.26, 0, -ROOM_DEPTH / 2 + 0.1]}>
+        {/* Panneau extincteur */}
+        <mesh position={[0, 1.7, 0]}>
+          <planeGeometry args={[0.3, 0.3]} />
+          <meshStandardMaterial map={fireExtinguisherPanelTexture} />
+        </mesh>
+        {/* Extincteur 3D - lazy loading */}
+        <Suspense fallback={null}>
+          <AsyncModel
+            url="/models/fire_extinguisher.glb"
+            position={[0, 1.0, 0.15]}
+            scale={0.0015}
+          />
+        </Suspense>
       </group>
 
       {/* ======================================= */}
@@ -403,7 +477,7 @@ export function Aisle({ films }: AisleProps) {
       </group>
 
       {/* ===== PORTE D'ENTRÉE (indication) ===== */}
-      <group position={[-ROOM_WIDTH / 2 + 1, 0, ROOM_DEPTH / 2 - 0.08]}>
+      <group position={[-ROOM_WIDTH / 2 + 1.86, 0, ROOM_DEPTH / 2 - 0.08]}>
         <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, -0.4]}>
           <planeGeometry args={[1.5, 0.8]} />
           <meshStandardMaterial color="#2a4a2a" roughness={0.5} />
@@ -433,7 +507,7 @@ export function Aisle({ films }: AisleProps) {
       />
 
       {/* ===== DÉTAILS DU SOL ===== */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[-ROOM_WIDTH / 2 + 1.2, 0.005, ROOM_DEPTH / 2 - 0.8]}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[-ROOM_WIDTH / 2 + 2.23, 0.005, ROOM_DEPTH / 2 - 0.8]}>
         <planeGeometry args={[2, 1.2]} />
         <meshStandardMaterial color="#4a2a1a" roughness={0.9} />
       </mesh>
@@ -450,21 +524,34 @@ export function Aisle({ films }: AisleProps) {
         </mesh>
       </group>
 
-      {/* ===== PLANTE DÉCORATIVE ===== */}
-      <group position={[-ROOM_WIDTH / 2 + 0.5, 0, -ROOM_DEPTH / 2 + 0.5]}>
-        <mesh position={[0, 0.15, 0]}>
-          <cylinderGeometry args={[0.12, 0.1, 0.3, 12]} />
-          <meshStandardMaterial color="#8B4513" roughness={0.8} />
-        </mesh>
-        <mesh position={[0, 0.31, 0]}>
-          <cylinderGeometry args={[0.11, 0.11, 0.02, 12]} />
-          <meshStandardMaterial color="#3a2a1a" roughness={0.9} />
-        </mesh>
-        <mesh position={[0, 0.5, 0]}>
-          <sphereGeometry args={[0.2, 8, 6]} />
-          <meshStandardMaterial color="#2a5a2a" roughness={0.8} />
-        </mesh>
-      </group>
+      {/* ===== PULP FICTION - À l'entrée, avant la section Thriller ===== */}
+      <Suspense fallback={null}>
+        <AsyncModel
+          url="/models/pulp_fiction.glb"
+          position={[-ROOM_WIDTH / 2 + 0.45, 0, 3.33]}
+          scale={0.05}
+          rotation={[0, Math.PI, 0]}
+        />
+      </Suspense>
+
+      {/* ===== SPOT LIGHT au-dessus de Pulp Fiction ===== */}
+      <Suspense fallback={null}>
+        <AsyncModel
+          url="/models/spot_light.glb"
+          position={[-ROOM_WIDTH / 2 + 0.15, 1.575, 3.33]}
+          scale={0.3}
+          rotation={[0, 0, -Math.PI / 12]}
+        />
+      </Suspense>
+
+      {/* Lumière chaude projetée sur Pulp Fiction depuis la lampe */}
+      <pointLight
+        position={[-ROOM_WIDTH / 2 + 0.15, 1.55, 3.33]}
+        color="#ffaa66"
+        intensity={6.4}
+        distance={2.5}
+        decay={2.5}
+      />
     </group>
   )
 }

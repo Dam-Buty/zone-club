@@ -1,6 +1,9 @@
 // LTC textures sont initialisées dans InteriorScene.tsx avant le Canvas
 
-// Composant pour un tube néon au plafond
+// Mode d'éclairage: 'full' = 21 lumières, 'optimized' = 7 lumières
+const LIGHTING_MODE: 'full' | 'optimized' = 'optimized'
+
+// Composant pour un tube néon au plafond (mesh décoratif uniquement)
 function NeonTube({ position, length = 1.2, color = '#ffffff' }: {
   position: [number, number, number]
   length?: number
@@ -27,7 +30,94 @@ function NeonTube({ position, length = 1.2, color = '#ffffff' }: {
   )
 }
 
-export function Lighting() {
+// Version OPTIMISÉE: 7 lumières au lieu de 21
+function OptimizedLighting() {
+  return (
+    <>
+      {/* 1. Lumière ambiante - réduite pour ambiance sombre */}
+      <ambientLight intensity={0.25} color="#fff8f0" />
+
+      {/* 2. Hemisphere light - éclairage naturel subtil */}
+      <hemisphereLight
+        color="#fff8f0"
+        groundColor="#4a4a5a"
+        intensity={0.2}
+      />
+
+      {/* 3. UNE SEULE RectAreaLight plafond (remplace 9) - intensité réduite */}
+      <rectAreaLight
+        width={10}
+        height={8}
+        intensity={1.2}
+        color="#fff5e6"
+        position={[0, 2.65, 0]}
+        rotation={[-Math.PI / 2, 0, 0]}
+      />
+
+      {/* 4. PointLight manager (accent) */}
+      <pointLight
+        position={[3.5, 2.4, 2.8]}
+        intensity={1}
+        color="#fff5e6"
+        distance={4}
+        decay={2}
+      />
+
+      {/* 5. PointLight îlot central */}
+      <pointLight
+        position={[-0.8, 2.4, 0]}
+        intensity={0.8}
+        color="#fff5e6"
+        distance={3}
+        decay={2}
+      />
+
+      {/* 6. RectAreaLight vitrine - lumière urbaine nocturne */}
+      <rectAreaLight
+        width={4.5}
+        height={1.2}
+        intensity={1.5}
+        color="#5c6bc0"
+        position={[1.0, 0.8, 4.3]}
+        rotation={[0, 0, 0]}
+      />
+
+      {/* 7. RectAreaLight porte - néon rose */}
+      <rectAreaLight
+        width={1.9}
+        height={0.5}
+        intensity={3}
+        color="#ff2d95"
+        position={[-3.2, 2.1, 4.3]}
+        rotation={[0, 0, 0]}
+      />
+
+      {/* 8. RectAreaLight porte vitre principale */}
+      <rectAreaLight
+        width={1.8}
+        height={1.4}
+        intensity={1.5}
+        color="#6a4c93"
+        position={[-3.2, 1.1, 4.3]}
+        rotation={[0, 0, 0]}
+      />
+
+      {/* Tubes néon décoratifs - toutes les rangées pour le visuel */}
+      <NeonTube position={[-3, 2.7, -3]} length={1.4} color="#fff5e6" />
+      <NeonTube position={[0, 2.7, -3]} length={1.4} color="#fff5e6" />
+      <NeonTube position={[3, 2.7, -3]} length={1.4} color="#fff5e6" />
+      <NeonTube position={[-3, 2.7, 0]} length={1.4} color="#fff5e6" />
+      <NeonTube position={[0, 2.7, 0]} length={1.4} color="#fff5e6" />
+      <NeonTube position={[3, 2.7, 0]} length={1.4} color="#fff5e6" />
+      <NeonTube position={[-3, 2.7, 3]} length={1.4} color="#fff5e6" />
+      <NeonTube position={[0, 2.7, 3]} length={1.4} color="#fff5e6" />
+      <NeonTube position={[3, 2.7, 3]} length={1.4} color="#fff5e6" />
+    </>
+  )
+}
+
+// Version COMPLÈTE: 21 lumières (original)
+function FullLighting() {
   return (
     <>
       {/* Lumière ambiante - augmentée pour plus de luminosité */}
@@ -104,6 +194,61 @@ export function Lighting() {
         groundColor="#4a4a5a"
         intensity={0.4}
       />
+
+      {/* ===== LUMIÈRE URBAINE NOCTURNE (vitrine) ===== */}
+
+      {/* === GRANDE VITRINE (côté GAUCHE vu de l'intérieur) === */}
+      <rectAreaLight
+        width={4.5}
+        height={1.2}
+        intensity={2}
+        color="#5c6bc0"
+        position={[1.0, 0.8, 4.3]}
+        rotation={[0, 0, 0]}
+      />
+
+      {/* === PORTE VITRÉE (côté DROIT vu de l'intérieur) === */}
+      <rectAreaLight
+        width={1.9}
+        height={0.5}
+        intensity={5}
+        color="#ff2d95"
+        position={[-3.2, 2.1, 4.3]}
+        rotation={[0, 0, 0]}
+      />
+
+      <rectAreaLight
+        width={1.8}
+        height={1.4}
+        intensity={2.5}
+        color="#6a4c93"
+        position={[-3.2, 1.1, 4.3]}
+        rotation={[0, 0, 0]}
+      />
+
+      <rectAreaLight
+        width={1.8}
+        height={0.4}
+        intensity={1.5}
+        color="#4a6fa5"
+        position={[-3.2, 0.25, 4.3]}
+        rotation={[0, 0, 0]}
+      />
+
+      {/* === ENSEIGNE VIDEOCLUB (au-dessus) === */}
+      <rectAreaLight
+        width={5}
+        height={0.4}
+        intensity={1.5}
+        color="#9d4edd"
+        position={[0.8, 2.7, 4.3]}
+        rotation={[0, 0, 0]}
+      />
     </>
   )
+}
+
+export function Lighting() {
+  // Toggle entre les deux modes ici
+  return LIGHTING_MODE === 'optimized' ? <OptimizedLighting /> : <FullLighting />
 }

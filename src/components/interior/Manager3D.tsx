@@ -1,8 +1,26 @@
-import { useRef, useMemo } from 'react'
+import { useRef, useMemo, Suspense } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 import { useStore } from '../../store'
+
+// Composant lazy pour le corps du manager
+function ManagerBody({ scale }: { scale: number }) {
+  const { scene: bodyModel } = useGLTF('/models/quentin_body.glb')
+
+  const bodyScene = useMemo(() => {
+    const cloned = bodyModel.clone(true)
+    cloned.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        child.castShadow = true
+        child.receiveShadow = true
+      }
+    })
+    return cloned
+  }, [bodyModel])
+
+  return <primitive object={bodyScene} position={[0, 0, 0]} scale={scale} />
+}
 
 interface Manager3DProps {
   position: [number, number, number]
@@ -13,8 +31,8 @@ interface Manager3DProps {
 // Proportions réalistes pour un personnage de 1m90
 const BODY = {
   // Tête - positionnée pour s'aligner avec le cou
-  headY: 1.52,
-  headScale: 0.11,
+  headY: 1.75,
+  headScale: 0.069,  // Réduit de 30% supplémentaires
 
   // Cou
   neckRadius: 0.055,
@@ -52,14 +70,14 @@ const BODY = {
   footHeight: 0.06,
 }
 
-// Précharger le modèle GLB
+// Précharger uniquement la tête (le corps se charge en lazy loading)
 useGLTF.preload('/models/quentin_head.glb')
 
-// Positions de base des yeux
-const LEFT_EYE_BASE = { x: -0.095, y: 0.346, z: 0.237 }
-const RIGHT_EYE_BASE = { x: 0.095, y: 0.346, z: 0.237 }
-const PUPIL_OFFSET = 0.005 // Distance pupille devant iris
-const EYE_MOVE_RANGE = 0.012 // Amplitude max du mouvement des yeux
+// Positions de base des yeux (ajustées pour headScale 0.069)
+const LEFT_EYE_BASE = { x: -0.059, y: 0.217, z: 0.149 }
+const RIGHT_EYE_BASE = { x: 0.059, y: 0.217, z: 0.149 }
+const PUPIL_OFFSET = 0.003 // Distance pupille devant iris (réduit proportionnellement)
+const EYE_MOVE_RANGE = 0.008 // Amplitude max du mouvement des yeux (réduit)
 
 export function Manager3D({ position, rotation = [0, 0, 0], onInteract }: Manager3DProps) {
   const groupRef = useRef<THREE.Group>(null)
@@ -77,10 +95,10 @@ export function Manager3D({ position, rotation = [0, 0, 0], onInteract }: Manage
   const skinColor = '#e0b090'
   const hairColor = '#1a1a1a'
 
-  // Charger le modèle GLB de la tête
+  // Charger le modèle de la tête (chargement direct pour le manager)
   const { scene: headModel } = useGLTF('/models/quentin_head.glb')
 
-  // Cloner le modèle et appliquer les couleurs
+  // Cloner le modèle de la tête et appliquer les couleurs
   const headScene = useMemo(() => {
     const cloned = headModel.clone(true)
 
@@ -183,29 +201,29 @@ export function Manager3D({ position, rotation = [0, 0, 0], onInteract }: Manage
     <group ref={groupRef} position={position} rotation={rotation}>
 
       {/* ===== TÊTE (modèle GLB) ===== */}
-      <group ref={headRef} position={[0, BODY.headY, 0]}>
+      <group ref={headRef} position={[0, BODY.headY, 0.084]}>
         <primitive object={headScene} scale={BODY.headScale} />
 
         {/* === OEIL GAUCHE === */}
         <group ref={leftIrisRef} position={[LEFT_EYE_BASE.x, LEFT_EYE_BASE.y, LEFT_EYE_BASE.z]}>
           {/* Iris marron */}
-          <mesh position={[0, 0, 0.011]}>
-            <circleGeometry args={[0.016, 32]} />
+          <mesh position={[0, 0, 0.007]}>
+            <circleGeometry args={[0.010, 32]} />
             <meshStandardMaterial color="#6b4423" roughness={0.3} side={THREE.DoubleSide} />
           </mesh>
           {/* Anneau limbique (contour sombre) */}
-          <mesh position={[0, 0, 0.011]}>
-            <ringGeometry args={[0.013, 0.016, 32]} />
+          <mesh position={[0, 0, 0.007]}>
+            <ringGeometry args={[0.008, 0.010, 32]} />
             <meshStandardMaterial color="#2a1810" roughness={0.4} side={THREE.DoubleSide} />
           </mesh>
           {/* Pupille */}
-          <mesh position={[0, 0, 0.012]}>
-            <circleGeometry args={[0.006, 24]} />
+          <mesh position={[0, 0, 0.0075]}>
+            <circleGeometry args={[0.004, 24]} />
             <meshStandardMaterial color="#000000" roughness={0.1} side={THREE.DoubleSide} />
           </mesh>
           {/* Reflet spéculaire */}
-          <mesh position={[0.003, 0.004, 0.013]}>
-            <circleGeometry args={[0.002, 16]} />
+          <mesh position={[0.002, 0.0025, 0.008]}>
+            <circleGeometry args={[0.0013, 16]} />
             <meshStandardMaterial color="#ffffff" emissive="#ffffff" emissiveIntensity={1} roughness={0} side={THREE.DoubleSide} />
           </mesh>
         </group>
@@ -213,135 +231,32 @@ export function Manager3D({ position, rotation = [0, 0, 0], onInteract }: Manage
         {/* === OEIL DROIT === */}
         <group ref={rightIrisRef} position={[RIGHT_EYE_BASE.x, RIGHT_EYE_BASE.y, RIGHT_EYE_BASE.z]}>
           {/* Iris marron */}
-          <mesh position={[0, 0, 0.011]}>
-            <circleGeometry args={[0.016, 32]} />
+          <mesh position={[0, 0, 0.007]}>
+            <circleGeometry args={[0.010, 32]} />
             <meshStandardMaterial color="#6b4423" roughness={0.3} side={THREE.DoubleSide} />
           </mesh>
           {/* Anneau limbique (contour sombre) */}
-          <mesh position={[0, 0, 0.011]}>
-            <ringGeometry args={[0.013, 0.016, 32]} />
+          <mesh position={[0, 0, 0.007]}>
+            <ringGeometry args={[0.008, 0.010, 32]} />
             <meshStandardMaterial color="#2a1810" roughness={0.4} side={THREE.DoubleSide} />
           </mesh>
           {/* Pupille */}
-          <mesh position={[0, 0, 0.012]}>
-            <circleGeometry args={[0.006, 24]} />
+          <mesh position={[0, 0, 0.0075]}>
+            <circleGeometry args={[0.004, 24]} />
             <meshStandardMaterial color="#000000" roughness={0.1} side={THREE.DoubleSide} />
           </mesh>
           {/* Reflet spéculaire */}
-          <mesh position={[0.003, 0.004, 0.013]}>
-            <circleGeometry args={[0.002, 16]} />
+          <mesh position={[0.002, 0.0025, 0.008]}>
+            <circleGeometry args={[0.0013, 16]} />
             <meshStandardMaterial color="#ffffff" emissive="#ffffff" emissiveIntensity={1} roughness={0} side={THREE.DoubleSide} />
           </mesh>
         </group>
       </group>
 
-      {/* ===== COU ===== */}
-      <mesh position={[0, BODY.neckY, 0]}>
-        <cylinderGeometry args={[BODY.neckRadius, BODY.neckRadius * 1.1, BODY.neckHeight, 12]} />
-        <meshStandardMaterial color={skinColor} roughness={0.8} />
-      </mesh>
-
-      {/* ===== TORSE (blouson cuir) ===== */}
-      <mesh position={[0, BODY.torsoY, 0]} castShadow>
-        <boxGeometry args={[BODY.torsoWidth, BODY.torsoHeight, BODY.torsoDepth]} />
-        <meshStandardMaterial color="#1a1a1a" roughness={0.45} />
-      </mesh>
-
-      {/* Épaules arrondies */}
-      <mesh position={[-BODY.shoulderWidth / 2, BODY.shoulderY, 0]} castShadow>
-        <sphereGeometry args={[0.07, 12, 8]} />
-        <meshStandardMaterial color="#1a1a1a" roughness={0.45} />
-      </mesh>
-      <mesh position={[BODY.shoulderWidth / 2, BODY.shoulderY, 0]} castShadow>
-        <sphereGeometry args={[0.07, 12, 8]} />
-        <meshStandardMaterial color="#1a1a1a" roughness={0.45} />
-      </mesh>
-
-      {/* ===== BRAS GAUCHE ===== */}
-      <group position={[-BODY.shoulderWidth / 2 - 0.02, BODY.shoulderY - 0.05, 0]}>
-        <mesh position={[0, -BODY.upperArmLength / 2, 0]} castShadow>
-          <capsuleGeometry args={[BODY.armRadius, BODY.upperArmLength, 4, 8]} />
-          <meshStandardMaterial color="#1a1a1a" roughness={0.45} />
-        </mesh>
-        <mesh position={[0, -BODY.upperArmLength, 0]}>
-          <sphereGeometry args={[BODY.armRadius * 1.1, 8, 6]} />
-          <meshStandardMaterial color="#1a1a1a" roughness={0.45} />
-        </mesh>
-        <mesh position={[0.02, -BODY.upperArmLength - BODY.lowerArmLength / 2, 0.05]} rotation={[0.3, 0, 0]} castShadow>
-          <capsuleGeometry args={[BODY.armRadius * 0.9, BODY.lowerArmLength, 4, 8]} />
-          <meshStandardMaterial color={skinColor} roughness={0.8} />
-        </mesh>
-        <mesh position={[0.04, -BODY.upperArmLength - BODY.lowerArmLength, 0.12]} castShadow>
-          <boxGeometry args={[0.06, 0.1, 0.03]} />
-          <meshStandardMaterial color={skinColor} roughness={0.8} />
-        </mesh>
-      </group>
-
-      {/* ===== BRAS DROIT ===== */}
-      <group position={[BODY.shoulderWidth / 2 + 0.02, BODY.shoulderY - 0.05, 0]}>
-        <mesh position={[0, -BODY.upperArmLength / 2, 0]} castShadow>
-          <capsuleGeometry args={[BODY.armRadius, BODY.upperArmLength, 4, 8]} />
-          <meshStandardMaterial color="#1a1a1a" roughness={0.45} />
-        </mesh>
-        <mesh position={[0, -BODY.upperArmLength, 0]}>
-          <sphereGeometry args={[BODY.armRadius * 1.1, 8, 6]} />
-          <meshStandardMaterial color="#1a1a1a" roughness={0.45} />
-        </mesh>
-        <mesh position={[-0.02, -BODY.upperArmLength - BODY.lowerArmLength / 2, 0.05]} rotation={[0.3, 0, 0]} castShadow>
-          <capsuleGeometry args={[BODY.armRadius * 0.9, BODY.lowerArmLength, 4, 8]} />
-          <meshStandardMaterial color={skinColor} roughness={0.8} />
-        </mesh>
-        <mesh position={[-0.04, -BODY.upperArmLength - BODY.lowerArmLength, 0.12]} castShadow>
-          <boxGeometry args={[0.06, 0.1, 0.03]} />
-          <meshStandardMaterial color={skinColor} roughness={0.8} />
-        </mesh>
-      </group>
-
-      {/* ===== BASSIN/HANCHES ===== */}
-      <mesh position={[0, BODY.hipY, 0]} castShadow>
-        <boxGeometry args={[BODY.hipWidth, BODY.hipHeight, BODY.torsoDepth * 0.9]} />
-        <meshStandardMaterial color="#2a2a2a" roughness={0.8} />
-      </mesh>
-
-      {/* ===== JAMBE GAUCHE ===== */}
-      <group position={[-0.1, BODY.hipY - BODY.hipHeight / 2, 0]}>
-        <mesh position={[0, -BODY.upperLegLength / 2, 0]} castShadow>
-          <capsuleGeometry args={[BODY.legRadius, BODY.upperLegLength, 4, 8]} />
-          <meshStandardMaterial color="#2a2a2a" roughness={0.8} />
-        </mesh>
-        <mesh position={[0, -BODY.upperLegLength, 0]}>
-          <sphereGeometry args={[BODY.legRadius * 1.05, 8, 6]} />
-          <meshStandardMaterial color="#2a2a2a" roughness={0.8} />
-        </mesh>
-        <mesh position={[0, -BODY.upperLegLength - BODY.lowerLegLength / 2, 0]} castShadow>
-          <capsuleGeometry args={[BODY.legRadius * 0.85, BODY.lowerLegLength, 4, 8]} />
-          <meshStandardMaterial color="#2a2a2a" roughness={0.8} />
-        </mesh>
-        <mesh position={[0, -BODY.upperLegLength - BODY.lowerLegLength - BODY.footHeight / 2, BODY.footLength / 4]} castShadow>
-          <boxGeometry args={[BODY.footWidth, BODY.footHeight, BODY.footLength]} />
-          <meshStandardMaterial color="#1a1a1a" roughness={0.6} />
-        </mesh>
-      </group>
-
-      {/* ===== JAMBE DROITE ===== */}
-      <group position={[0.1, BODY.hipY - BODY.hipHeight / 2, 0]}>
-        <mesh position={[0, -BODY.upperLegLength / 2, 0]} castShadow>
-          <capsuleGeometry args={[BODY.legRadius, BODY.upperLegLength, 4, 8]} />
-          <meshStandardMaterial color="#2a2a2a" roughness={0.8} />
-        </mesh>
-        <mesh position={[0, -BODY.upperLegLength, 0]}>
-          <sphereGeometry args={[BODY.legRadius * 1.05, 8, 6]} />
-          <meshStandardMaterial color="#2a2a2a" roughness={0.8} />
-        </mesh>
-        <mesh position={[0, -BODY.upperLegLength - BODY.lowerLegLength / 2, 0]} castShadow>
-          <capsuleGeometry args={[BODY.legRadius * 0.85, BODY.lowerLegLength, 4, 8]} />
-          <meshStandardMaterial color="#2a2a2a" roughness={0.8} />
-        </mesh>
-        <mesh position={[0, -BODY.upperLegLength - BODY.lowerLegLength - BODY.footHeight / 2, BODY.footLength / 4]} castShadow>
-          <boxGeometry args={[BODY.footWidth, BODY.footHeight, BODY.footLength]} />
-          <meshStandardMaterial color="#1a1a1a" roughness={0.6} />
-        </mesh>
-      </group>
+      {/* ===== CORPS (modèle GLB - lazy loading) ===== */}
+      <Suspense fallback={null}>
+        <ManagerBody scale={1.5} />
+      </Suspense>
 
       {/* Zone de clic invisible */}
       <mesh position={[0, 1.0, 0]} userData={{ isManager: true }}>

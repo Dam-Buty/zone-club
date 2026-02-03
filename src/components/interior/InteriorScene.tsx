@@ -1,11 +1,13 @@
 import * as THREE from 'three/webgpu'
 import { RectAreaLightNode } from 'three/webgpu'
 import { Canvas, extend, type ThreeToJSXElements } from '@react-three/fiber'
-import { Suspense, useEffect, useMemo, useCallback, Component, type ReactNode } from 'react'
+import { Suspense, useEffect, useMemo, useCallback, Component, type ReactNode, lazy } from 'react'
 import { useStore } from '../../store'
-import { Aisle } from './Aisle'
 import { Lighting } from './Lighting'
 import { Controls } from './Controls'
+
+// Lazy loading du composant Aisle (contient tous les modèles 3D)
+const Aisle = lazy(() => import('./Aisle').then(module => ({ default: module.Aisle })))
 import { RectAreaLightTexturesLib } from 'three/addons/lights/RectAreaLightTexturesLib.js'
 import { TVTerminal } from '../terminal/TVTerminal'
 

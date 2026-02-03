@@ -1,4 +1,4 @@
-import { useRef, useMemo } from 'react'
+import { useRef, useMemo, memo, useEffect } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import type { Film } from '../../types'
@@ -23,6 +23,19 @@ export const CASSETTE_DIMENSIONS = {
   depth: CASSETTE_DEPTH,
 }
 
+// OPTIMISATION: Géométrie partagée par toutes les cassettes (créée une seule fois)
+const SHARED_CASSETTE_GEOMETRY = new THREE.BoxGeometry(CASSETTE_WIDTH, CASSETTE_HEIGHT, CASSETTE_DEPTH)
+
+// OPTIMISATION: Frustum et matrice réutilisables pour le culling (évite les allocations)
+const frustum = new THREE.Frustum()
+const projScreenMatrix = new THREE.Matrix4()
+const tempWorldPos = new THREE.Vector3()
+
+// OPTIMISATION: Compteur de frames global pour throttle des animations
+let globalFrameCount = 0
+let lastFrustumFrame = -1
+const ANIMATION_THROTTLE = 2 // Animer tous les 2 frames
+
 // Couleurs aléatoires pour les cassettes sans poster
 const CASSETTE_COLORS = [
   '#1a1a2e', '#16213e', '#0f3460', '#533483',
@@ -34,7 +47,7 @@ const EMISSIVE_NONE = new THREE.Color('#000000')
 const EMISSIVE_TARGETED = new THREE.Color('#ff2d95')
 const EMISSIVE_RENTED = new THREE.Color('#00ff00')
 
-export function Cassette({ position, film, cassetteKey, hoverOffsetZ = 0.08 }: CassetteProps) {
+export const Cassette = memo(function Cassette({ position, film, cassetteKey, hoverOffsetZ = 0.08 }: CassetteProps) {
   const targetedCassetteKey = useStore((state) => state.targetedCassetteKey)
   const getRental = useStore((state) => state.getRental)
   const isTargetedRaw = targetedCassetteKey === cassetteKey
@@ -72,9 +85,45 @@ export function Cassette({ position, film, cassetteKey, hoverOffsetZ = 0.08 }: C
     return tex
   }, [posterUrl])
 
+  // OPTIMISATION: Libérer la texture et le matériau quand le composant est démonté
+  useEffect(() => {
+    return () => {
+      if (texture) {
+        texture.dispose()
+      }
+      if (materialRef.current) {
+        materialRef.current.dispose()
+      }
+    }
+  }, [texture])
+
   // Animation hover avec hystérésis et lissage
-  useFrame((_, delta) => {
+  useFrame(({ camera }, delta) => {
     if (!meshRef.current || !materialRef.current) return
+
+    // OPTIMISATION: Incrémenter le compteur global (une seule cassette le fait par frame)
+    const currentFrame = Math.floor(performance.now() / 16.67) // ~60fps
+    if (currentFrame !== globalFrameCount) {
+      globalFrameCount = currentFrame
+    }
+
+    // OPTIMISATION: Skip l'animation tous les N frames
+    if (globalFrameCount % ANIMATION_THROTTLE !== 0) {
+      return
+    }
+
+    // OPTIMISATION: Mettre à jour le frustum une seule fois par frame
+    if (lastFrustumFrame !== globalFrameCount) {
+      projScreenMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
+      frustum.setFromProjectionMatrix(projScreenMatrix)
+      lastFrustumFrame = globalFrameCount
+    }
+
+    // Vérifier si la position de la cassette est dans le frustum
+    meshRef.current.getWorldPosition(tempWorldPos)
+    if (!frustum.containsPoint(tempWorldPos)) {
+      return // Cassette hors champ - skip l'animation
+    }
 
     // Hystérésis asymétrique : rapide pour sélectionner, lent pour désélectionner
     if (isTargetedRaw !== stableTargetedRef.current) {
@@ -127,9 +176,9 @@ export function Cassette({ position, film, cassetteKey, hoverOffsetZ = 0.08 }: C
       ref={meshRef}
       position={position}
       userData={{ filmId: film.id, cassetteKey }}
-      castShadow
+      castShadow={false}
+      geometry={SHARED_CASSETTE_GEOMETRY}
     >
-      <boxGeometry args={[CASSETTE_WIDTH, CASSETTE_HEIGHT, CASSETTE_DEPTH]} />
       <meshStandardMaterial
         ref={materialRef}
         map={texture}
@@ -140,4 +189,15 @@ export function Cassette({ position, film, cassetteKey, hoverOffsetZ = 0.08 }: C
       />
     </mesh>
   )
-}
+}, (prevProps, nextProps) => {
+  // Ne re-render que si ces props changent vraiment
+  return (
+    prevProps.cassetteKey === nextProps.cassetteKey &&
+    prevProps.film.id === nextProps.film.id &&
+    prevProps.film.poster_path === nextProps.film.poster_path &&
+    prevProps.position[0] === nextProps.position[0] &&
+    prevProps.position[1] === nextProps.position[1] &&
+    prevProps.position[2] === nextProps.position[2] &&
+    prevProps.hoverOffsetZ === nextProps.hoverOffsetZ
+  )
+})
