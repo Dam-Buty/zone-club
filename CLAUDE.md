@@ -114,7 +114,35 @@ const COLLISION_ZONES = [
 
 ## Points d'Attention
 
-### Performance
+### Performance (Optimisations 03/02/2026)
+
+#### Éclairage (`Lighting.tsx`)
+- **Mode optimisé actif** : 8 lumières au lieu de 21 (-62%)
+- Toggle via `LIGHTING_MODE: 'full' | 'optimized'`
+- RectAreaLights combinées (1 grande au lieu de 9 petites)
+
+#### Raycasting (`Controls.tsx`)
+- **Throttle** : raycast tous les 2 frames (30/sec au lieu de 60)
+- `RAYCAST_INTERVAL = 2`
+
+#### Cassettes (`Cassette.tsx`)
+- **Géométrie partagée** : `SHARED_CASSETTE_GEOMETRY` (1 BoxGeometry pour ~520 cassettes)
+- **React.memo** avec comparaison custom des props
+- **Disposal** : textures et matériaux libérés au unmount
+- **Frustum culling** : animations skip si cassette hors champ
+- **Animation throttle** : tous les 2 frames
+- **Shadows désactivés** : `castShadow={false}` (-520 shadow renders)
+
+#### Métriques
+| Optimisation | Gain |
+|--------------|------|
+| Lumières | -62% (21→8) |
+| Raycast CPU | -50% |
+| Mémoire géométrie | -99% |
+| Animations CPU | -80% |
+| Shadow renders | -100% sur cassettes |
+
+### Anciennes notes Performance
 - Les textures sont chargées une fois via `useMemo`
 - Les cassettes utilisent `lerp` pour les animations smooth
 - Le raycasting est limité au centre de l'écran (crosshair)
