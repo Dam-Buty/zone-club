@@ -71,17 +71,18 @@ export const Cassette = memo(function Cassette({ position, film, cassetteKey, ho
     return CASSETTE_COLORS[film.id % CASSETTE_COLORS.length]
   }, [film.id])
 
-  // URL du poster TMDB
+  // URL du poster TMDB — w200 suffisant pour cassettes ~10cm (économise ~200MB GPU VRAM sur 520 textures)
   const posterUrl = film.poster_path
     ? `https://image.tmdb.org/t/p/w200${film.poster_path}`
     : null
 
-  // Charger la texture si disponible
+  // Charger la texture avec filtrage anisotropique (net aux angles obliques)
   const texture = useMemo(() => {
     if (!posterUrl) return null
     const loader = new THREE.TextureLoader()
     const tex = loader.load(posterUrl)
     tex.colorSpace = THREE.SRGBColorSpace
+    tex.anisotropy = 4
     return tex
   }, [posterUrl])
 
@@ -177,13 +178,16 @@ export const Cassette = memo(function Cassette({ position, film, cassetteKey, ho
       position={position}
       userData={{ filmId: film.id, cassetteKey }}
       castShadow={false}
+      receiveShadow
       geometry={SHARED_CASSETTE_GEOMETRY}
     >
       <meshStandardMaterial
         ref={materialRef}
         map={texture}
         color={texture ? '#ffffff' : fallbackColor}
-        roughness={0.4}
+        roughness={0.5}
+        metalness={0.08}
+        envMapIntensity={0.3}
         emissive="#000000"
         emissiveIntensity={0}
       />

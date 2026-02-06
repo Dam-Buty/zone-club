@@ -5,6 +5,8 @@ import { Suspense, useEffect, useMemo, useCallback, Component, type ReactNode, l
 import { useStore } from '../../store'
 import { Lighting } from './Lighting'
 import { Controls } from './Controls'
+import { PostProcessingEffects } from './PostProcessingEffects'
+import { Environment } from '@react-three/drei'
 
 // Lazy loading du composant Aisle (contient tous les modèles 3D)
 const Aisle = lazy(() => import('./Aisle').then(module => ({ default: module.Aisle })))
@@ -85,9 +87,16 @@ function SceneContent({
 
   return (
     <>
+      {/* Environment map HDRI pour réflexions sur surfaces brillantes (sol, métal, vitres) */}
+      <Environment
+        files="/textures/env/indoor_night.hdr"
+        background={false}
+        environmentIntensity={0.15}
+      />
       <Lighting />
       <Aisle films={films} />
       <Controls onCassetteClick={onCassetteClick} />
+      <PostProcessingEffects />
     </>
   )
 }
@@ -129,7 +138,10 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
           console.log('[Canvas] Initializing WebGPU renderer...')
           const renderer = new THREE.WebGPURenderer(props as THREE.WebGPURendererParameters)
           await renderer.init()
-          console.log('[Canvas] WebGPU renderer initialized')
+          renderer.shadowMap.enabled = true
+          renderer.toneMapping = THREE.ACESFilmicToneMapping
+          renderer.toneMappingExposure = 1.0
+          console.log('[Canvas] WebGPU renderer initialized with shadows + ACES tone mapping')
           return renderer
         }}
         onCreated={(state) => {

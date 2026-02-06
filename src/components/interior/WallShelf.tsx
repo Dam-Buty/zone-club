@@ -1,3 +1,6 @@
+import { useMemo } from 'react'
+import * as THREE from 'three'
+import { useTexture } from '@react-three/drei'
 import { Cassette, CASSETTE_DIMENSIONS } from './Cassette'
 import type { Film } from '../../types'
 
@@ -23,12 +26,35 @@ export function WallShelf({
   const cassettesPerRow = Math.floor((length - 0.1) / CASSETTE_SPACING)
   const totalCapacity = cassettesPerRow * ROWS
 
+  // Textures bois PBR
+  const woodTextures = useTexture({
+    map: '/textures/wood/color.jpg',
+    normalMap: '/textures/wood/normal.jpg',
+    roughnessMap: '/textures/wood/roughness.jpg',
+  })
+
+  useMemo(() => {
+    Object.entries(woodTextures).forEach(([key, tex]) => {
+      const t = tex as THREE.Texture
+      t.wrapS = THREE.RepeatWrapping
+      t.wrapT = THREE.RepeatWrapping
+      t.repeat.set(2, 1.5)
+      t.colorSpace = key === 'map' ? THREE.SRGBColorSpace : THREE.LinearSRGBColorSpace
+    })
+  }, [woodTextures])
+
   return (
     <group position={position} rotation={rotation}>
       {/* Structure principale de l'étagère (panneau arrière) */}
       <mesh position={[0, SHELF_HEIGHT / 2 + 0.1, 0]} castShadow receiveShadow>
         <boxGeometry args={[length, SHELF_HEIGHT, SHELF_DEPTH]} />
-        <meshStandardMaterial color="#5a4a3a" roughness={0.7} />
+        <meshStandardMaterial
+          map={woodTextures.map as THREE.Texture}
+          normalMap={woodTextures.normalMap as THREE.Texture}
+          roughnessMap={woodTextures.roughnessMap as THREE.Texture}
+          color="#5a4a3a"
+          normalScale={[0.7, 0.7] as unknown as THREE.Vector2}
+        />
       </mesh>
 
       {/* Planches horizontales */}
@@ -36,10 +62,16 @@ export function WallShelf({
         <mesh
           key={`plank-${i}`}
           position={[0, 0.12 + i * ROW_HEIGHT, SHELF_DEPTH / 2 - 0.02]}
-          castShadow
+          receiveShadow
         >
           <boxGeometry args={[length - 0.05, 0.025, SHELF_DEPTH - 0.05]} />
-          <meshStandardMaterial color="#4a3a2a" roughness={0.6} />
+          <meshStandardMaterial
+            map={woodTextures.map as THREE.Texture}
+            normalMap={woodTextures.normalMap as THREE.Texture}
+            roughnessMap={woodTextures.roughnessMap as THREE.Texture}
+            color="#4a3a2a"
+            normalScale={[0.7, 0.7] as unknown as THREE.Vector2}
+          />
         </mesh>
       ))}
 
@@ -51,9 +83,16 @@ export function WallShelf({
           <mesh
             key={`divider-${i}`}
             position={[x, SHELF_HEIGHT / 2 + 0.1, SHELF_DEPTH / 2 - 0.02]}
+            receiveShadow
           >
             <boxGeometry args={[0.02, SHELF_HEIGHT - 0.1, 0.02]} />
-            <meshStandardMaterial color="#3a2a1a" roughness={0.6} />
+            <meshStandardMaterial
+              map={woodTextures.map as THREE.Texture}
+              normalMap={woodTextures.normalMap as THREE.Texture}
+              roughnessMap={woodTextures.roughnessMap as THREE.Texture}
+              color="#3a2a1a"
+              normalScale={[0.7, 0.7] as unknown as THREE.Vector2}
+            />
           </mesh>
         )
       })}

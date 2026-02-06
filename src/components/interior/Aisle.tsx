@@ -9,12 +9,12 @@ function AsyncModel({ url, position, scale = 1, rotation = [0, 0, 0] }: {
   scale?: number | [number, number, number]
   rotation?: [number, number, number]
 }) {
-  const { scene } = useGLTF(url)
+  const { scene } = useGLTF(url, true)
   const clonedScene = useMemo(() => {
     const cloned = scene.clone(true)
     cloned.traverse((child) => {
       if (child instanceof THREE.Mesh) {
-        child.castShadow = true
+        child.castShadow = false
         child.receiveShadow = true
       }
     })
@@ -49,6 +49,42 @@ interface AisleProps {
 const ROOM_WIDTH = 11  // x axis
 const ROOM_DEPTH = 8.5 // z axis
 const ROOM_HEIGHT = 2.8
+
+// Hook pour charger un set de textures PBR avec tiling
+function usePBRTextures(
+  basePath: string,
+  repeatX: number,
+  repeatY: number,
+  hasAO = false
+) {
+  const paths: Record<string, string> = {
+    map: `${basePath}/color.jpg`,
+    normalMap: `${basePath}/normal.jpg`,
+    roughnessMap: `${basePath}/roughness.jpg`,
+  }
+  if (hasAO) {
+    paths.aoMap = `${basePath}/ao.jpg`
+  }
+
+  const textures = useTexture(paths)
+
+  useMemo(() => {
+    Object.values(textures).forEach((tex) => {
+      const t = tex as THREE.Texture
+      t.wrapS = THREE.RepeatWrapping
+      t.wrapT = THREE.RepeatWrapping
+      t.repeat.set(repeatX, repeatY)
+      // Color map needs sRGB, others are linear data
+      if (t === (textures as Record<string, THREE.Texture>).map) {
+        t.colorSpace = THREE.SRGBColorSpace
+      } else {
+        t.colorSpace = THREE.LinearSRGBColorSpace
+      }
+    })
+  }, [textures, repeatX, repeatY])
+
+  return textures as Record<string, THREE.Texture>
+}
 
 // Créer la texture pour l'écriteau PRIVÉE
 function createPrivateSignTexture(): THREE.CanvasTexture {
@@ -164,6 +200,13 @@ export function Aisle({ films }: AisleProps) {
   // ===== TEXTURES =====
   const fireExtinguisherPanelTexture = useTexture('/panneau-extincteur.png')
 
+  // Textures PBR - Sol (carrelage sombre, tiling 6x5 pour la taille de la pièce)
+  const floorTextures = usePBRTextures('/textures/floor', 6, 5)
+  // Textures PBR - Murs (plâtre peint, tiling adapté par mur)
+  const wallTextures = usePBRTextures('/textures/wall', 4, 2, true)
+  // Textures PBR - Bois (pour comptoir)
+  const woodTextures = usePBRTextures('/textures/wood', 2, 1)
+
   // ===== FILTRER LES FILMS PAR GENRE =====
   const filmsByGenre = useMemo(() => {
     const horreur = filterFilmsByGenre(films, 'horreur')
@@ -196,7 +239,15 @@ export function Aisle({ films }: AisleProps) {
       {/* ===== SOL ===== */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>
         <planeGeometry args={[ROOM_WIDTH, ROOM_DEPTH]} />
-        <meshStandardMaterial color="#3a3a4a" roughness={0.2} metalness={0.1} />
+        <meshStandardMaterial
+          map={floorTextures.map}
+          normalMap={floorTextures.normalMap}
+          roughnessMap={floorTextures.roughnessMap}
+          color="#3a3a4a"
+          roughness={0.6}
+          metalness={0.05}
+          normalScale={[0.8, 0.8] as unknown as THREE.Vector2}
+        />
       </mesh>
 
       {/* ===== PLAFOND ===== */}
@@ -214,21 +265,42 @@ export function Aisle({ films }: AisleProps) {
       </mesh>
 
       {/* Mur du fond (nord) */}
-      <mesh position={[0, ROOM_HEIGHT / 2, -ROOM_DEPTH / 2]}>
+      <mesh position={[0, ROOM_HEIGHT / 2, -ROOM_DEPTH / 2]} receiveShadow>
         <planeGeometry args={[ROOM_WIDTH, ROOM_HEIGHT]} />
-        <meshStandardMaterial color="#1e1e28" roughness={0.7} />
+        <meshStandardMaterial
+          map={wallTextures.map}
+          normalMap={wallTextures.normalMap}
+          roughnessMap={wallTextures.roughnessMap}
+          aoMap={wallTextures.aoMap}
+          color="#1e1e28"
+          normalScale={[0.6, 0.6] as unknown as THREE.Vector2}
+        />
       </mesh>
 
       {/* Mur gauche (ouest) */}
-      <mesh position={[-ROOM_WIDTH / 2, ROOM_HEIGHT / 2, 0]} rotation={[0, Math.PI / 2, 0]}>
+      <mesh position={[-ROOM_WIDTH / 2, ROOM_HEIGHT / 2, 0]} rotation={[0, Math.PI / 2, 0]} receiveShadow>
         <planeGeometry args={[ROOM_DEPTH, ROOM_HEIGHT]} />
-        <meshStandardMaterial color="#1e1e28" roughness={0.7} />
+        <meshStandardMaterial
+          map={wallTextures.map}
+          normalMap={wallTextures.normalMap}
+          roughnessMap={wallTextures.roughnessMap}
+          aoMap={wallTextures.aoMap}
+          color="#1e1e28"
+          normalScale={[0.6, 0.6] as unknown as THREE.Vector2}
+        />
       </mesh>
 
       {/* Mur droit (est) */}
-      <mesh position={[ROOM_WIDTH / 2, ROOM_HEIGHT / 2, 0]} rotation={[0, -Math.PI / 2, 0]}>
+      <mesh position={[ROOM_WIDTH / 2, ROOM_HEIGHT / 2, 0]} rotation={[0, -Math.PI / 2, 0]} receiveShadow>
         <planeGeometry args={[ROOM_DEPTH, ROOM_HEIGHT]} />
-        <meshStandardMaterial color="#1e1e28" roughness={0.7} />
+        <meshStandardMaterial
+          map={wallTextures.map}
+          normalMap={wallTextures.normalMap}
+          roughnessMap={wallTextures.roughnessMap}
+          aoMap={wallTextures.aoMap}
+          color="#1e1e28"
+          normalScale={[0.6, 0.6] as unknown as THREE.Vector2}
+        />
       </mesh>
 
       {/* ========================================= */}
@@ -395,13 +467,26 @@ export function Aisle({ films }: AisleProps) {
       {/* ===== COMPTOIR MANAGER ===== */}
       <group position={[ROOM_WIDTH / 2 - 2.3, 0, ROOM_DEPTH / 2 - 1.5]}>
         {/* Comptoir simple */}
-        <mesh position={[0, 0.5, 0]}>
+        <mesh position={[0, 0.5, 0]} castShadow receiveShadow>
           <boxGeometry args={[3, 1, 0.6]} />
-          <meshStandardMaterial color="#4a3a2a" roughness={0.6} />
+          <meshStandardMaterial
+            map={woodTextures.map}
+            normalMap={woodTextures.normalMap}
+            roughnessMap={woodTextures.roughnessMap}
+            color="#4a3a2a"
+            normalScale={[0.7, 0.7] as unknown as THREE.Vector2}
+          />
         </mesh>
-        <mesh position={[0, 1.05, 0]}>
+        <mesh position={[0, 1.05, 0]} castShadow receiveShadow>
           <boxGeometry args={[3, 0.05, 0.7]} />
-          <meshStandardMaterial color="#2a2018" roughness={0.4} />
+          <meshStandardMaterial
+            map={woodTextures.map}
+            normalMap={woodTextures.normalMap}
+            roughnessMap={woodTextures.roughnessMap}
+            color="#2a2018"
+            roughness={0.4}
+            normalScale={[0.7, 0.7] as unknown as THREE.Vector2}
+          />
         </mesh>
 
         {/* Caisse enregistreuse */}
@@ -511,15 +596,11 @@ export function Aisle({ films }: AisleProps) {
         <planeGeometry args={[2, 1.2]} />
         <meshStandardMaterial color="#4a2a1a" roughness={0.9} />
       </mesh>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.003, 0]}>
-        <planeGeometry args={[0.1, ROOM_DEPTH - 2]} />
-        <meshStandardMaterial color="#2a2a3a" roughness={0.7} />
-      </mesh>
 
       {/* ===== CORBEILLE À PAPIER ===== */}
       <group position={[ROOM_WIDTH / 2 - 1, 0, ROOM_DEPTH / 2 - 0.8]}>
         <mesh position={[0, 0.2, 0]}>
-          <cylinderGeometry args={[0.15, 0.12, 0.4, 12]} />
+          <cylinderGeometry args={[0.15, 0.12, 0.4, 6]} />
           <meshStandardMaterial color="#2a2a2a" roughness={0.7} />
         </mesh>
       </group>

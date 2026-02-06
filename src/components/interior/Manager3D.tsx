@@ -6,14 +6,14 @@ import { useStore } from '../../store'
 
 // Composant lazy pour le corps du manager
 function ManagerBody({ scale }: { scale: number }) {
-  const { scene: bodyModel } = useGLTF('/models/quentin_body.glb')
+  const { scene: bodyModel } = useGLTF('/models/quentin_body.glb', true)
 
   const bodyScene = useMemo(() => {
     const cloned = bodyModel.clone(true)
     cloned.traverse((child) => {
       if (child instanceof THREE.Mesh) {
-        child.castShadow = true
-        child.receiveShadow = true
+        child.castShadow = false
+        child.receiveShadow = false
       }
     })
     return cloned
@@ -71,7 +71,7 @@ const BODY = {
 }
 
 // Précharger uniquement la tête (le corps se charge en lazy loading)
-useGLTF.preload('/models/quentin_head.glb')
+useGLTF.preload('/models/quentin_head.glb', true)
 
 // Positions de base des yeux (ajustées pour headScale 0.069)
 const LEFT_EYE_BASE = { x: -0.059, y: 0.217, z: 0.149 }
@@ -96,7 +96,7 @@ export function Manager3D({ position, rotation = [0, 0, 0], onInteract }: Manage
   const hairColor = '#1a1a1a'
 
   // Charger le modèle de la tête (chargement direct pour le manager)
-  const { scene: headModel } = useGLTF('/models/quentin_head.glb')
+  const { scene: headModel } = useGLTF('/models/quentin_head.glb', true)
 
   // Cloner le modèle de la tête et appliquer les couleurs
   const headScene = useMemo(() => {
@@ -136,8 +136,8 @@ export function Manager3D({ position, rotation = [0, 0, 0], onInteract }: Manage
           roughness: roughness,
           metalness: 0.0,
         })
-        child.castShadow = true
-        child.receiveShadow = true
+        child.castShadow = false
+        child.receiveShadow = false
       }
     })
 
@@ -208,22 +208,22 @@ export function Manager3D({ position, rotation = [0, 0, 0], onInteract }: Manage
         <group ref={leftIrisRef} position={[LEFT_EYE_BASE.x, LEFT_EYE_BASE.y, LEFT_EYE_BASE.z]}>
           {/* Iris marron */}
           <mesh position={[0, 0, 0.007]}>
-            <circleGeometry args={[0.010, 32]} />
+            <circleGeometry args={[0.010, 8]} />
             <meshStandardMaterial color="#6b4423" roughness={0.3} side={THREE.DoubleSide} />
           </mesh>
           {/* Anneau limbique (contour sombre) */}
           <mesh position={[0, 0, 0.007]}>
-            <ringGeometry args={[0.008, 0.010, 32]} />
+            <ringGeometry args={[0.008, 0.010, 8]} />
             <meshStandardMaterial color="#2a1810" roughness={0.4} side={THREE.DoubleSide} />
           </mesh>
           {/* Pupille */}
           <mesh position={[0, 0, 0.0075]}>
-            <circleGeometry args={[0.004, 24]} />
+            <circleGeometry args={[0.004, 8]} />
             <meshStandardMaterial color="#000000" roughness={0.1} side={THREE.DoubleSide} />
           </mesh>
           {/* Reflet spéculaire */}
           <mesh position={[0.002, 0.0025, 0.008]}>
-            <circleGeometry args={[0.0013, 16]} />
+            <circleGeometry args={[0.0013, 6]} />
             <meshStandardMaterial color="#ffffff" emissive="#ffffff" emissiveIntensity={1} roughness={0} side={THREE.DoubleSide} />
           </mesh>
         </group>
@@ -232,22 +232,22 @@ export function Manager3D({ position, rotation = [0, 0, 0], onInteract }: Manage
         <group ref={rightIrisRef} position={[RIGHT_EYE_BASE.x, RIGHT_EYE_BASE.y, RIGHT_EYE_BASE.z]}>
           {/* Iris marron */}
           <mesh position={[0, 0, 0.007]}>
-            <circleGeometry args={[0.010, 32]} />
+            <circleGeometry args={[0.010, 8]} />
             <meshStandardMaterial color="#6b4423" roughness={0.3} side={THREE.DoubleSide} />
           </mesh>
           {/* Anneau limbique (contour sombre) */}
           <mesh position={[0, 0, 0.007]}>
-            <ringGeometry args={[0.008, 0.010, 32]} />
+            <ringGeometry args={[0.008, 0.010, 8]} />
             <meshStandardMaterial color="#2a1810" roughness={0.4} side={THREE.DoubleSide} />
           </mesh>
           {/* Pupille */}
           <mesh position={[0, 0, 0.0075]}>
-            <circleGeometry args={[0.004, 24]} />
+            <circleGeometry args={[0.004, 8]} />
             <meshStandardMaterial color="#000000" roughness={0.1} side={THREE.DoubleSide} />
           </mesh>
           {/* Reflet spéculaire */}
           <mesh position={[0.002, 0.0025, 0.008]}>
-            <circleGeometry args={[0.0013, 16]} />
+            <circleGeometry args={[0.0013, 6]} />
             <meshStandardMaterial color="#ffffff" emissive="#ffffff" emissiveIntensity={1} roughness={0} side={THREE.DoubleSide} />
           </mesh>
         </group>

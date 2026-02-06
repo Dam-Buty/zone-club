@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import * as THREE from 'three'
+import { useTexture } from '@react-three/drei'
 import { Cassette, CASSETTE_DIMENSIONS } from './Cassette'
 import type { Film } from '../../types'
 
@@ -53,11 +54,34 @@ export function IslandShelf({
 
   const totalCapacityPerSide = CASSETTES_PER_ROW * ROWS
 
+  // Textures bois PBR
+  const woodTextures = useTexture({
+    map: '/textures/wood/color.jpg',
+    normalMap: '/textures/wood/normal.jpg',
+    roughnessMap: '/textures/wood/roughness.jpg',
+  })
+
+  useMemo(() => {
+    Object.entries(woodTextures).forEach(([key, tex]) => {
+      const t = tex as THREE.Texture
+      t.wrapS = THREE.RepeatWrapping
+      t.wrapT = THREE.RepeatWrapping
+      t.repeat.set(1.5, 1)
+      t.colorSpace = key === 'map' ? THREE.SRGBColorSpace : THREE.LinearSRGBColorSpace
+    })
+  }, [woodTextures])
+
   return (
     <group position={position} rotation={rotation}>
       {/* Structure trapézoïdale centrale */}
       <mesh geometry={trapezoidGeometry} castShadow receiveShadow>
-        <meshStandardMaterial color="#4a3a2a" roughness={0.7} />
+        <meshStandardMaterial
+          map={woodTextures.map as THREE.Texture}
+          normalMap={woodTextures.normalMap as THREE.Texture}
+          roughnessMap={woodTextures.roughnessMap as THREE.Texture}
+          color="#4a3a2a"
+          normalScale={[0.7, 0.7] as unknown as THREE.Vector2}
+        />
       </mesh>
 
       {/* Planches horizontales côté gauche (-x) */}
@@ -69,9 +93,16 @@ export function IslandShelf({
             key={`plank-left-${i}`}
             position={[-widthAtHeight / 2 - 0.02, y, 0]}
             rotation={[0, 0, -CASSETTE_TILT]}
+            receiveShadow
           >
             <boxGeometry args={[0.14, 0.018, ISLAND_LENGTH - 0.1]} />
-            <meshStandardMaterial color="#3a2a1a" roughness={0.6} />
+            <meshStandardMaterial
+              map={woodTextures.map as THREE.Texture}
+              normalMap={woodTextures.normalMap as THREE.Texture}
+              roughnessMap={woodTextures.roughnessMap as THREE.Texture}
+              color="#3a2a1a"
+              normalScale={[0.7, 0.7] as unknown as THREE.Vector2}
+            />
           </mesh>
         )
       })}
@@ -85,9 +116,16 @@ export function IslandShelf({
             key={`plank-right-${i}`}
             position={[widthAtHeight / 2 + 0.02, y, 0]}
             rotation={[0, 0, CASSETTE_TILT]}
+            receiveShadow
           >
             <boxGeometry args={[0.14, 0.018, ISLAND_LENGTH - 0.1]} />
-            <meshStandardMaterial color="#3a2a1a" roughness={0.6} />
+            <meshStandardMaterial
+              map={woodTextures.map as THREE.Texture}
+              normalMap={woodTextures.normalMap as THREE.Texture}
+              roughnessMap={woodTextures.roughnessMap as THREE.Texture}
+              color="#3a2a1a"
+              normalScale={[0.7, 0.7] as unknown as THREE.Vector2}
+            />
           </mesh>
         )
       })}
@@ -153,9 +191,15 @@ export function IslandShelf({
       })}
 
       {/* Panneau supérieur */}
-      <mesh position={[0, ISLAND_HEIGHT + 0.02, 0]}>
+      <mesh position={[0, ISLAND_HEIGHT + 0.02, 0]} castShadow receiveShadow>
         <boxGeometry args={[TOP_WIDTH + 0.04, 0.03, ISLAND_LENGTH]} />
-        <meshStandardMaterial color="#3a2a1a" roughness={0.6} />
+        <meshStandardMaterial
+          map={woodTextures.map as THREE.Texture}
+          normalMap={woodTextures.normalMap as THREE.Texture}
+          roughnessMap={woodTextures.roughnessMap as THREE.Texture}
+          color="#3a2a1a"
+          normalScale={[0.7, 0.7] as unknown as THREE.Vector2}
+        />
       </mesh>
     </group>
   )

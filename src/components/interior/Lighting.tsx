@@ -3,7 +3,7 @@
 // Mode d'éclairage: 'full' = 21 lumières, 'optimized' = 7 lumières
 const LIGHTING_MODE: 'full' | 'optimized' = 'optimized'
 
-// Composant pour un tube néon au plafond (mesh décoratif uniquement)
+// Composant pour un tube néon au plafond — même qualité matériau que les panneaux genre
 function NeonTube({ position, length = 1.2, color = '#ffffff' }: {
   position: [number, number, number]
   length?: number
@@ -11,17 +11,19 @@ function NeonTube({ position, length = 1.2, color = '#ffffff' }: {
 }) {
   return (
     <group position={position}>
-      {/* Tube lumineux */}
+      {/* Tube en verre — clearcoat + émission pour cohérence avec les néons genre */}
       <mesh rotation={[0, 0, Math.PI / 2]}>
-        <cylinderGeometry args={[0.025, 0.025, length, 8]} />
+        <cylinderGeometry args={[0.025, 0.025, length, 6]} />
         <meshStandardMaterial
           color={color}
           emissive={color}
           emissiveIntensity={2}
+          roughness={0.15}
+          metalness={0.05}
           toneMapped={false}
         />
       </mesh>
-      {/* Support/fixture */}
+      {/* Support/fixture métallique */}
       <mesh position={[0, 0.04, 0]}>
         <boxGeometry args={[length + 0.1, 0.03, 0.08]} />
         <meshStandardMaterial color="#666666" roughness={0.5} metalness={0.3} />
@@ -100,6 +102,23 @@ function OptimizedLighting() {
         color="#6a4c93"
         position={[-3.2, 1.1, 4.3]}
         rotation={[0, 0, 0]}
+      />
+
+      {/* 9. DirectionalLight pour les ombres - vient du plafond, légèrement angulée */}
+      <directionalLight
+        position={[2, 2.7, 1]}
+        intensity={0.3}
+        color="#fff5e6"
+        castShadow
+        shadow-mapSize-width={1024}
+        shadow-mapSize-height={1024}
+        shadow-camera-left={-6}
+        shadow-camera-right={6}
+        shadow-camera-top={5}
+        shadow-camera-bottom={-5}
+        shadow-camera-near={0.1}
+        shadow-camera-far={4}
+        shadow-bias={-0.0005}
       />
 
       {/* Tubes néon décoratifs - toutes les rangées pour le visuel */}

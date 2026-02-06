@@ -1,6 +1,7 @@
 import { useRef, useState, useMemo, useCallback } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
+import { useTexture } from '@react-three/drei'
 import { useStore } from '../../store'
 import { Couch } from './Couch'
 
@@ -91,6 +92,23 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
 
   const timeRef = useRef(0)
 
+  // Textures bois PBR pour le meuble TV
+  const woodTextures = useTexture({
+    map: '/textures/wood/color.jpg',
+    normalMap: '/textures/wood/normal.jpg',
+    roughnessMap: '/textures/wood/roughness.jpg',
+  })
+
+  useMemo(() => {
+    Object.entries(woodTextures).forEach(([key, tex]) => {
+      const t = tex as THREE.Texture
+      t.wrapS = THREE.RepeatWrapping
+      t.wrapT = THREE.RepeatWrapping
+      t.repeat.set(1, 1)
+      t.colorSpace = key === 'map' ? THREE.SRGBColorSpace : THREE.LinearSRGBColorSpace
+    })
+  }, [woodTextures])
+
   // Obtenir les films loués avec leurs infos
   const rentedFilms = useMemo(() => {
     const allFilms = Object.values(films).flat()
@@ -105,13 +123,12 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
 
   // Créer/mettre à jour la texture idle
   const idleTexture = useMemo(() => {
-    const text = 'CLIQUER POUR\nOUVRIR TERMINAL'
+    const text = 'CLICK POUR\nOUVRIR LE MENU'
     return createTextTexture(text, {
-      fontSize: 20,
+      fontSize: 48,
       color: '#00ffff',
-      glowColor: '#00ffff',
-      width: 256,
-      height: 128,
+      width: 512,
+      height: 256,
     })
   }, [])
 
@@ -245,39 +262,60 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
 
   return (
     <group position={position} rotation={rotation}>
-      {/* Meuble/support */}
-      <mesh position={[0, 0.4, 0]}>
+      {/* Meuble/support - bois PBR */}
+      <mesh position={[0, 0.4, 0]} receiveShadow>
         <boxGeometry args={[0.6, 0.8, 0.4]} />
-        <meshStandardMaterial color="#2a2018" roughness={0.7} />
+        <meshStandardMaterial
+          map={woodTextures.map as THREE.Texture}
+          normalMap={woodTextures.normalMap as THREE.Texture}
+          roughnessMap={woodTextures.roughnessMap as THREE.Texture}
+          color="#2a2018"
+          normalScale={[0.7, 0.7] as unknown as THREE.Vector2}
+        />
       </mesh>
 
-      {/* Plateau supérieur */}
-      <mesh position={[0, 0.82, 0]}>
+      {/* Plateau supérieur - bois vernis */}
+      <mesh position={[0, 0.82, 0]} receiveShadow>
         <boxGeometry args={[0.65, 0.04, 0.45]} />
-        <meshStandardMaterial color="#1a1a12" roughness={0.5} />
+        <meshStandardMaterial
+          map={woodTextures.map as THREE.Texture}
+          normalMap={woodTextures.normalMap as THREE.Texture}
+          roughnessMap={woodTextures.roughnessMap as THREE.Texture}
+          color="#1a1a12"
+          roughness={0.35}
+          normalScale={[0.7, 0.7] as unknown as THREE.Vector2}
+        />
       </mesh>
 
       {/* TV CRT */}
       <group position={[0, 1.1, 0]}>
-        {/* Corps du moniteur */}
+        {/* Corps du moniteur - plastique beige années 90 */}
         <mesh position={[0, 0, -0.15]}>
           <boxGeometry args={[0.5, 0.45, 0.35]} />
-          <meshStandardMaterial color="#c4b8a8" roughness={0.7} />
+          <meshStandardMaterial
+            color="#c4b8a8"
+            roughness={0.4}
+            metalness={0.0}
+          />
         </mesh>
 
-        {/* Partie avant */}
+        {/* Partie avant - cadre plastique noir brillant */}
         <mesh position={[0, 0, 0.02]}>
           <boxGeometry args={[0.48, 0.43, 0.05]} />
-          <meshStandardMaterial color="#2a2a2a" roughness={0.5} />
+          <meshStandardMaterial
+            color="#1a1a1a"
+            roughness={0.2}
+            metalness={0.0}
+          />
         </mesh>
 
-        {/* Écran CRT - détectable par raycast */}
+        {/* Écran CRT - surface légèrement convexe (phosphore) */}
         <mesh
           ref={screenRef}
-          position={[0, 0.02, 0.05]}
+          position={[0, 0.02, 0.045]}
           userData={{ isTVScreen: true }}
         >
-          <planeGeometry args={[0.36, 0.28]} />
+          <sphereGeometry args={[0.6, 16, 16, Math.PI - 0.31, 0.62, Math.PI / 2 - 0.24, 0.48]} />
           <meshStandardMaterial
             color={screenColor}
             emissive={screenColor}
@@ -287,53 +325,64 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
           />
         </mesh>
 
-        {/* Contenu de l'écran selon le mode - avec CanvasTexture */}
+        {/* Contenu de l'écran selon le mode */}
         {tvMode === 'idle' && (
-          <mesh position={[0, 0.02, 0.06]}>
+          <mesh position={[0, 0.02, 0.06]} userData={{ isTVScreen: true }}>
             <planeGeometry args={[0.32, 0.16]} />
             <meshBasicMaterial map={idleTexture} transparent toneMapped={false} />
           </mesh>
         )}
 
         {tvMode === 'menu' && (
-          <mesh position={[0, 0.02, 0.06]}>
+          <mesh position={[0, 0.02, 0.06]} userData={{ isTVScreen: true }}>
             <planeGeometry args={[0.32, 0.22]} />
             <meshBasicMaterial map={menuTexture} transparent toneMapped={false} />
           </mesh>
         )}
 
         {tvMode === 'playing' && (
-          <mesh position={[0, -0.1, 0.06]}>
+          <mesh position={[0, -0.1, 0.06]} userData={{ isTVScreen: true }}>
             <planeGeometry args={[0.2, 0.04]} />
             <meshBasicMaterial map={playingTexture} transparent toneMapped={false} />
           </mesh>
         )}
 
-        {/* Reflet sur l'écran */}
-        <mesh position={[0, 0.02, 0.051]}>
-          <planeGeometry args={[0.36, 0.28]} />
+        {/* Vitre CRT — isTVScreen pour le raycast FPS (pas de onClick R3F
+            qui interfèrerait avec le listener DOM de Controls.tsx) */}
+        <mesh
+          position={[0, 0.02, 0.052]}
+          userData={{ isTVScreen: true }}
+        >
+          <sphereGeometry args={[0.6, 16, 16, Math.PI - 0.31, 0.62, Math.PI / 2 - 0.24, 0.48]} />
           <meshStandardMaterial
-            color="#ffffff"
+            color="#aabbbb"
             transparent
-            opacity={isHovered ? 0.15 : 0.08}
-            roughness={0.1}
+            opacity={isHovered ? 0.15 : 0.1}
+            roughness={0.2}
+            metalness={0.1}
+            envMapIntensity={0.3}
           />
         </mesh>
 
         {/* Panneau de contrôle */}
         <mesh position={[0, -0.17, 0.03]}>
           <boxGeometry args={[0.44, 0.06, 0.02]} />
-          <meshStandardMaterial color="#3a3a3a" roughness={0.6} />
+          <meshStandardMaterial
+            color="#2a2a2a"
+            roughness={0.45}
+            metalness={0.0}
+          />
         </mesh>
 
         {/* Boutons */}
         {[-0.12, -0.04, 0.04, 0.12].map((x, i) => (
           <mesh key={`btn-${i}`} position={[x, -0.17, 0.045]}>
-            <cylinderGeometry args={[0.015, 0.015, 0.02, 8]} />
+            <cylinderGeometry args={[0.015, 0.015, 0.02, 6]} />
             <meshStandardMaterial
               color={i === 0 ? '#00aa00' : '#444444'}
               emissive={i === 0 ? '#00aa00' : '#000000'}
               emissiveIntensity={i === 0 && tvMode === 'playing' ? 0.8 : 0.3}
+              roughness={0.3}
             />
           </mesh>
         ))}
@@ -351,7 +400,11 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
       {/* Magnétoscope */}
       <mesh position={[0, 0.92, 0.1]}>
         <boxGeometry args={[0.4, 0.08, 0.3]} />
-        <meshStandardMaterial color="#1a1a1a" roughness={0.4} metalness={0.1} />
+        <meshStandardMaterial
+          color="#111111"
+          roughness={0.2}
+          metalness={0.0}
+        />
       </mesh>
 
       {/* LED du magnétoscope */}
