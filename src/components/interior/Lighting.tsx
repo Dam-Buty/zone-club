@@ -1,33 +1,35 @@
+import * as THREE from 'three'
+
 // LTC textures sont initialisées dans InteriorScene.tsx avant le Canvas
 
 // Mode d'éclairage: 'full' = 21 lumières, 'optimized' = 7 lumières
 const LIGHTING_MODE: 'full' | 'optimized' = 'optimized'
 
-// Composant pour un tube néon au plafond — même qualité matériau que les panneaux genre
-function NeonTube({ position, length = 1.2, color = '#ffffff' }: {
-  position: [number, number, number]
-  length?: number
-  color?: string
-}) {
+// OPTIMISATION: Géométries et matériaux partagés pour les 9 NeonTubes identiques (length=1.4)
+// Économise 16 matériaux + 16 géométries → 2 matériaux + 2 géométries
+const NEON_TUBE_LENGTH = 1.4
+const SHARED_NEON_TUBE_GEOM = new THREE.CylinderGeometry(0.025, 0.025, NEON_TUBE_LENGTH, 6)
+const SHARED_NEON_FIXTURE_GEOM = new THREE.BoxGeometry(NEON_TUBE_LENGTH + 0.1, 0.03, 0.08)
+const SHARED_NEON_TUBE_MAT = new THREE.MeshStandardMaterial({
+  color: '#fff5e6',
+  emissive: new THREE.Color('#fff5e6'),
+  emissiveIntensity: 2,
+  roughness: 0.15,
+  metalness: 0.05,
+  toneMapped: false,
+})
+const SHARED_NEON_FIXTURE_MAT = new THREE.MeshStandardMaterial({
+  color: '#666666',
+  roughness: 0.5,
+  metalness: 0.3,
+})
+
+// Composant pour un tube néon au plafond — géométrie et matériaux partagés
+function NeonTube({ position }: { position: [number, number, number] }) {
   return (
     <group position={position}>
-      {/* Tube en verre — clearcoat + émission pour cohérence avec les néons genre */}
-      <mesh rotation={[0, 0, Math.PI / 2]}>
-        <cylinderGeometry args={[0.025, 0.025, length, 6]} />
-        <meshStandardMaterial
-          color={color}
-          emissive={color}
-          emissiveIntensity={2}
-          roughness={0.15}
-          metalness={0.05}
-          toneMapped={false}
-        />
-      </mesh>
-      {/* Support/fixture métallique */}
-      <mesh position={[0, 0.04, 0]}>
-        <boxGeometry args={[length + 0.1, 0.03, 0.08]} />
-        <meshStandardMaterial color="#666666" roughness={0.5} metalness={0.3} />
-      </mesh>
+      <mesh rotation={[0, 0, Math.PI / 2]} geometry={SHARED_NEON_TUBE_GEOM} material={SHARED_NEON_TUBE_MAT} />
+      <mesh position={[0, 0.04, 0]} geometry={SHARED_NEON_FIXTURE_GEOM} material={SHARED_NEON_FIXTURE_MAT} />
     </group>
   )
 }
@@ -110,27 +112,27 @@ function OptimizedLighting() {
         intensity={0.3}
         color="#fff5e6"
         castShadow
-        shadow-mapSize-width={1024}
-        shadow-mapSize-height={1024}
+        shadow-mapSize-width={2048}
+        shadow-mapSize-height={2048}
         shadow-camera-left={-6}
         shadow-camera-right={6}
         shadow-camera-top={5}
         shadow-camera-bottom={-5}
         shadow-camera-near={0.1}
-        shadow-camera-far={4}
-        shadow-bias={-0.0005}
+        shadow-camera-far={8}
+        shadow-bias={-0.0003}
       />
 
       {/* Tubes néon décoratifs - toutes les rangées pour le visuel */}
-      <NeonTube position={[-3, 2.7, -3]} length={1.4} color="#fff5e6" />
-      <NeonTube position={[0, 2.7, -3]} length={1.4} color="#fff5e6" />
-      <NeonTube position={[3, 2.7, -3]} length={1.4} color="#fff5e6" />
-      <NeonTube position={[-3, 2.7, 0]} length={1.4} color="#fff5e6" />
-      <NeonTube position={[0, 2.7, 0]} length={1.4} color="#fff5e6" />
-      <NeonTube position={[3, 2.7, 0]} length={1.4} color="#fff5e6" />
-      <NeonTube position={[-3, 2.7, 3]} length={1.4} color="#fff5e6" />
-      <NeonTube position={[0, 2.7, 3]} length={1.4} color="#fff5e6" />
-      <NeonTube position={[3, 2.7, 3]} length={1.4} color="#fff5e6" />
+      <NeonTube position={[-3, 2.7, -3]} />
+      <NeonTube position={[0, 2.7, -3]} />
+      <NeonTube position={[3, 2.7, -3]} />
+      <NeonTube position={[-3, 2.7, 0]} />
+      <NeonTube position={[0, 2.7, 0]} />
+      <NeonTube position={[3, 2.7, 0]} />
+      <NeonTube position={[-3, 2.7, 3]} />
+      <NeonTube position={[0, 2.7, 3]} />
+      <NeonTube position={[3, 2.7, 3]} />
     </>
   )
 }
@@ -145,19 +147,19 @@ function FullLighting() {
       {/* ===== TUBES NÉON AU PLAFOND ===== */}
 
       {/* Rangée 1 (z = -3) */}
-      <NeonTube position={[-3, 2.7, -3]} length={1.4} color="#fff5e6" />
-      <NeonTube position={[0, 2.7, -3]} length={1.4} color="#fff5e6" />
-      <NeonTube position={[3, 2.7, -3]} length={1.4} color="#fff5e6" />
+      <NeonTube position={[-3, 2.7, -3]} />
+      <NeonTube position={[0, 2.7, -3]} />
+      <NeonTube position={[3, 2.7, -3]} />
 
       {/* Rangée 2 (z = 0) */}
-      <NeonTube position={[-3, 2.7, 0]} length={1.4} color="#fff5e6" />
-      <NeonTube position={[0, 2.7, 0]} length={1.4} color="#fff5e6" />
-      <NeonTube position={[3, 2.7, 0]} length={1.4} color="#fff5e6" />
+      <NeonTube position={[-3, 2.7, 0]} />
+      <NeonTube position={[0, 2.7, 0]} />
+      <NeonTube position={[3, 2.7, 0]} />
 
       {/* Rangée 3 (z = 3) - près de l'entrée */}
-      <NeonTube position={[-3, 2.7, 3]} length={1.4} color="#fff5e6" />
-      <NeonTube position={[0, 2.7, 3]} length={1.4} color="#fff5e6" />
-      <NeonTube position={[3, 2.7, 3]} length={1.4} color="#fff5e6" />
+      <NeonTube position={[-3, 2.7, 3]} />
+      <NeonTube position={[0, 2.7, 3]} />
+      <NeonTube position={[3, 2.7, 3]} />
 
       {/* ===== RECTAREA LIGHTS pour l'éclairage réel ===== */}
 

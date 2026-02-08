@@ -44,8 +44,15 @@ function createGlowTexture(
   return texture
 }
 
-// Géométrie cylindre partagée pour les tubes du cadre néon
+// OPTIMISATION: Géométries et matériaux partagés (identiques pour les 5 panneaux)
 const BORDER_TUBE_GEOM = new THREE.CylinderGeometry(0.006, 0.006, 1, 5)
+const CHAIN_GEOM = new THREE.CylinderGeometry(0.008, 0.008, 1, 4) // scale Y par panneau
+const CORNER_GEOM = new THREE.CylinderGeometry(0.02, 0.02, 0.01, 5)
+CORNER_GEOM.rotateX(Math.PI / 2)
+const SHARED_CHAIN_MAT = new THREE.MeshStandardMaterial({ color: '#666666', metalness: 0.8, roughness: 0.3 })
+const SHARED_BAR_MAT = new THREE.MeshStandardMaterial({ color: '#333333', metalness: 0.7, roughness: 0.4 })
+const SHARED_CORNER_MAT = new THREE.MeshStandardMaterial({ color: '#888888', metalness: 0.9, roughness: 0.2 })
+const SHARED_FRAME_MAT = new THREE.MeshStandardMaterial({ color: '#0a0a0a', roughness: 0.9, metalness: 0.0 })
 
 // Composant interne : texte 3D néon (nécessite Suspense pour le chargement de la police)
 function NeonText3D({
@@ -165,20 +172,13 @@ export function GenreSectionPanel({
   return (
     <group position={position} rotation={rotation}>
       <group ref={groupRef}>
-        {/* Chaînes de suspension */}
+        {/* Chaînes de suspension — géométrie/matériau partagés */}
         {hanging && (
           <>
-            <mesh position={[-width * 0.35, height * 0.7, 0]}>
-              <cylinderGeometry args={[0.008, 0.008, height * 0.5, 4]} />
-              <meshStandardMaterial color="#666666" metalness={0.8} roughness={0.3} />
-            </mesh>
-            <mesh position={[width * 0.35, height * 0.7, 0]}>
-              <cylinderGeometry args={[0.008, 0.008, height * 0.5, 4]} />
-              <meshStandardMaterial color="#666666" metalness={0.8} roughness={0.3} />
-            </mesh>
-            <mesh position={[0, height * 0.95, 0]}>
+            <mesh position={[-width * 0.35, height * 0.7, 0]} geometry={CHAIN_GEOM} material={SHARED_CHAIN_MAT} scale={[1, height * 0.5, 1]} />
+            <mesh position={[width * 0.35, height * 0.7, 0]} geometry={CHAIN_GEOM} material={SHARED_CHAIN_MAT} scale={[1, height * 0.5, 1]} />
+            <mesh position={[0, height * 0.95, 0]} material={SHARED_BAR_MAT}>
               <boxGeometry args={[width * 0.8, 0.02, 0.02]} />
-              <meshStandardMaterial color="#333333" metalness={0.7} roughness={0.4} />
             </mesh>
           </>
         )}
@@ -196,10 +196,9 @@ export function GenreSectionPanel({
           />
         </mesh>
 
-        {/* Cadre du panneau - plastique noir mat */}
-        <mesh position={[0, 0, -depth / 2]}>
+        {/* Cadre du panneau - plastique noir mat (matériau partagé) */}
+        <mesh position={[0, 0, -depth / 2]} material={SHARED_FRAME_MAT}>
           <boxGeometry args={[width + 0.04, height + 0.04, depth]} />
-          <meshStandardMaterial color="#0a0a0a" roughness={0.9} metalness={0.0} />
         </mesh>
 
         {/* Texte néon 3D — tubes avec bevel arrondi */}
@@ -246,15 +245,14 @@ export function GenreSectionPanel({
           scale={[1, borderH, 1]}
         />
 
-        {/* Fixations métalliques aux coins */}
+        {/* Fixations métalliques aux coins (géométrie + matériau partagés) */}
         {[[-1, -1], [-1, 1], [1, -1], [1, 1]].map(([x, y], i) => (
           <mesh
             key={`corner-${i}`}
             position={[x * width * 0.48, y * height * 0.45, depth / 2 + 0.005]}
-          >
-            <cylinderGeometry args={[0.02, 0.02, 0.01, 5]} rotation={[Math.PI / 2, 0, 0]} />
-            <meshStandardMaterial color="#888888" metalness={0.9} roughness={0.2} />
-          </mesh>
+            geometry={CORNER_GEOM}
+            material={SHARED_CORNER_MAT}
+          />
         ))}
       </group>
     </group>

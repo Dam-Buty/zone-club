@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useEffect } from 'react'
 import * as THREE from 'three'
 import { useTexture } from '@react-three/drei'
 import { Cassette, CASSETTE_DIMENSIONS } from './Cassette'
@@ -21,6 +21,9 @@ const ISLAND_LENGTH = 2.4
 const BASE_WIDTH = 0.55
 const TOP_WIDTH = 0.35
 const CASSETTE_TILT = 0.15
+
+// OPTIMISATION: Géométrie partagée pour les 8 planches (4 gauche + 4 droite), identiques
+const SHARED_ISLAND_PLANK_GEOM = new THREE.BoxGeometry(0.14, 0.018, ISLAND_LENGTH - 0.1)
 
 export function IslandShelf({
   position,
@@ -71,20 +74,36 @@ export function IslandShelf({
     })
   }, [woodTextures])
 
+  // OPTIMISATION: 2 matériaux partagés (au lieu de ~10 inline)
+  const structureMaterial = useMemo(() => new THREE.MeshStandardMaterial({
+    map: woodTextures.map as THREE.Texture,
+    normalMap: woodTextures.normalMap as THREE.Texture,
+    roughnessMap: woodTextures.roughnessMap as THREE.Texture,
+    color: '#4a3a2a',
+    normalScale: new THREE.Vector2(0.7, 0.7),
+  }), [woodTextures])
+
+  const plankMaterial = useMemo(() => new THREE.MeshStandardMaterial({
+    map: woodTextures.map as THREE.Texture,
+    normalMap: woodTextures.normalMap as THREE.Texture,
+    roughnessMap: woodTextures.roughnessMap as THREE.Texture,
+    color: '#3a2a1a',
+    normalScale: new THREE.Vector2(0.7, 0.7),
+  }), [woodTextures])
+
+  useEffect(() => {
+    return () => {
+      structureMaterial.dispose()
+      plankMaterial.dispose()
+    }
+  }, [structureMaterial, plankMaterial])
+
   return (
     <group position={position} rotation={rotation}>
-      {/* Structure trapézoïdale centrale */}
-      <mesh geometry={trapezoidGeometry} castShadow receiveShadow>
-        <meshStandardMaterial
-          map={woodTextures.map as THREE.Texture}
-          normalMap={woodTextures.normalMap as THREE.Texture}
-          roughnessMap={woodTextures.roughnessMap as THREE.Texture}
-          color="#4a3a2a"
-          normalScale={[0.7, 0.7] as unknown as THREE.Vector2}
-        />
-      </mesh>
+      {/* Structure trapézoïdale centrale (matériau partagé) */}
+      <mesh geometry={trapezoidGeometry} castShadow receiveShadow material={structureMaterial} />
 
-      {/* Planches horizontales côté gauche (-x) */}
+      {/* Planches horizontales côté gauche (-x) — géométrie + matériau partagés */}
       {Array.from({ length: ROWS }).map((_, i) => {
         const y = 0.2 + i * ROW_HEIGHT
         const widthAtHeight = BASE_WIDTH - (BASE_WIDTH - TOP_WIDTH) * (y / ISLAND_HEIGHT)
@@ -94,20 +113,13 @@ export function IslandShelf({
             position={[-widthAtHeight / 2 - 0.02, y, 0]}
             rotation={[0, 0, -CASSETTE_TILT]}
             receiveShadow
-          >
-            <boxGeometry args={[0.14, 0.018, ISLAND_LENGTH - 0.1]} />
-            <meshStandardMaterial
-              map={woodTextures.map as THREE.Texture}
-              normalMap={woodTextures.normalMap as THREE.Texture}
-              roughnessMap={woodTextures.roughnessMap as THREE.Texture}
-              color="#3a2a1a"
-              normalScale={[0.7, 0.7] as unknown as THREE.Vector2}
-            />
-          </mesh>
+            geometry={SHARED_ISLAND_PLANK_GEOM}
+            material={plankMaterial}
+          />
         )
       })}
 
-      {/* Planches horizontales côté droit (+x) */}
+      {/* Planches horizontales côté droit (+x) — géométrie + matériau partagés */}
       {Array.from({ length: ROWS }).map((_, i) => {
         const y = 0.2 + i * ROW_HEIGHT
         const widthAtHeight = BASE_WIDTH - (BASE_WIDTH - TOP_WIDTH) * (y / ISLAND_HEIGHT)
@@ -117,16 +129,9 @@ export function IslandShelf({
             position={[widthAtHeight / 2 + 0.02, y, 0]}
             rotation={[0, 0, CASSETTE_TILT]}
             receiveShadow
-          >
-            <boxGeometry args={[0.14, 0.018, ISLAND_LENGTH - 0.1]} />
-            <meshStandardMaterial
-              map={woodTextures.map as THREE.Texture}
-              normalMap={woodTextures.normalMap as THREE.Texture}
-              roughnessMap={woodTextures.roughnessMap as THREE.Texture}
-              color="#3a2a1a"
-              normalScale={[0.7, 0.7] as unknown as THREE.Vector2}
-            />
-          </mesh>
+            geometry={SHARED_ISLAND_PLANK_GEOM}
+            material={plankMaterial}
+          />
         )
       })}
 
@@ -190,16 +195,9 @@ export function IslandShelf({
         )
       })}
 
-      {/* Panneau supérieur */}
-      <mesh position={[0, ISLAND_HEIGHT + 0.02, 0]} castShadow receiveShadow>
+      {/* Panneau supérieur (matériau partagé avec planches) */}
+      <mesh position={[0, ISLAND_HEIGHT + 0.02, 0]} castShadow receiveShadow material={plankMaterial}>
         <boxGeometry args={[TOP_WIDTH + 0.04, 0.03, ISLAND_LENGTH]} />
-        <meshStandardMaterial
-          map={woodTextures.map as THREE.Texture}
-          normalMap={woodTextures.normalMap as THREE.Texture}
-          roughnessMap={woodTextures.roughnessMap as THREE.Texture}
-          color="#3a2a1a"
-          normalScale={[0.7, 0.7] as unknown as THREE.Vector2}
-        />
       </mesh>
     </group>
   )

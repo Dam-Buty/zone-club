@@ -4,6 +4,7 @@ import * as THREE from 'three'
 import { useTexture } from '@react-three/drei'
 import { useStore } from '../../store'
 import { Couch } from './Couch'
+import { RAYCAST_LAYER_INTERACTIVE } from './Controls'
 
 interface InteractiveTVDisplayProps {
   position: [number, number, number]
@@ -91,6 +92,11 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
   const { rentals, films, openTerminal, requestPointerUnlock } = useStore()
 
   const timeRef = useRef(0)
+
+  // OPTIMISATION: Callback pour activer le layer de raycast sur les meshes TV
+  const enableRaycastLayer = useCallback((node: THREE.Mesh | null) => {
+    if (node) node.layers.enable(RAYCAST_LAYER_INTERACTIVE)
+  }, [])
 
   // Textures bois PBR pour le meuble TV
   const woodTextures = useTexture({
@@ -311,7 +317,10 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
 
         {/* Écran CRT - surface légèrement convexe (phosphore) */}
         <mesh
-          ref={screenRef}
+          ref={useCallback((node: THREE.Mesh | null) => {
+            if (node) node.layers.enable(RAYCAST_LAYER_INTERACTIVE)
+            ;(screenRef as React.MutableRefObject<THREE.Mesh | null>).current = node
+          }, [])}
           position={[0, 0.02, 0.045]}
           userData={{ isTVScreen: true }}
         >
@@ -327,31 +336,31 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
 
         {/* Contenu de l'écran selon le mode */}
         {tvMode === 'idle' && (
-          <mesh position={[0, 0.02, 0.06]} userData={{ isTVScreen: true }}>
+          <mesh position={[0, 0.02, 0.06]} userData={{ isTVScreen: true }} ref={enableRaycastLayer}>
             <planeGeometry args={[0.32, 0.16]} />
             <meshBasicMaterial map={idleTexture} transparent toneMapped={false} />
           </mesh>
         )}
 
         {tvMode === 'menu' && (
-          <mesh position={[0, 0.02, 0.06]} userData={{ isTVScreen: true }}>
+          <mesh position={[0, 0.02, 0.06]} userData={{ isTVScreen: true }} ref={enableRaycastLayer}>
             <planeGeometry args={[0.32, 0.22]} />
             <meshBasicMaterial map={menuTexture} transparent toneMapped={false} />
           </mesh>
         )}
 
         {tvMode === 'playing' && (
-          <mesh position={[0, -0.1, 0.06]} userData={{ isTVScreen: true }}>
+          <mesh position={[0, -0.1, 0.06]} userData={{ isTVScreen: true }} ref={enableRaycastLayer}>
             <planeGeometry args={[0.2, 0.04]} />
             <meshBasicMaterial map={playingTexture} transparent toneMapped={false} />
           </mesh>
         )}
 
-        {/* Vitre CRT — isTVScreen pour le raycast FPS (pas de onClick R3F
-            qui interfèrerait avec le listener DOM de Controls.tsx) */}
+        {/* Vitre CRT — isTVScreen pour le raycast FPS (layer 2 pour raycast optimisé) */}
         <mesh
           position={[0, 0.02, 0.052]}
           userData={{ isTVScreen: true }}
+          ref={enableRaycastLayer}
         >
           <sphereGeometry args={[0.6, 16, 16, Math.PI - 0.31, 0.62, Math.PI / 2 - 0.24, 0.48]} />
           <meshStandardMaterial

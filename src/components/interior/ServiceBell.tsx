@@ -1,7 +1,8 @@
-import { useRef, useState, useMemo } from 'react'
+import { useRef, useState, useMemo, useEffect, useCallback } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { useStore } from '../../store'
+import { RAYCAST_LAYER_INTERACTIVE } from './Controls'
 
 interface ServiceBellProps {
   position: [number, number, number]
@@ -74,6 +75,11 @@ export function ServiceBell({ position, rotation = [0, 0, 0] }: ServiceBellProps
 
   const timeRef = useRef(0)
 
+  // OPTIMISATION: Callback pour activer le layer de raycast sur les meshes interactifs
+  const enableRaycastLayer = useCallback((node: THREE.Mesh | null) => {
+    if (node) node.layers.enable(RAYCAST_LAYER_INTERACTIVE)
+  }, [])
+
   // Créer les textures de texte
   const sonnezTexture = useMemo(() => createTextTexture('SONNEZ LE', {
     fontSize: 28,
@@ -90,6 +96,14 @@ export function ServiceBell({ position, rotation = [0, 0, 0] }: ServiceBellProps
     width: 200,
     height: 50,
   }), [])
+
+  // Dispose canvas textures on unmount (memory leak fix)
+  useEffect(() => {
+    return () => {
+      sonnezTexture.dispose()
+      managerTexture.dispose()
+    }
+  }, [sonnezTexture, managerTexture])
 
   // Animation
   useFrame((_, delta) => {
@@ -151,6 +165,7 @@ export function ServiceBell({ position, rotation = [0, 0, 0] }: ServiceBellProps
         <mesh
           position={[0, 0.05, 0]}
           userData={{ isServiceBell: true }}
+          ref={enableRaycastLayer}
         >
           <sphereGeometry args={[0.04, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.6]} />
           <meshStandardMaterial
@@ -163,7 +178,7 @@ export function ServiceBell({ position, rotation = [0, 0, 0] }: ServiceBellProps
         </mesh>
 
         {/* Bouton sur le dessus */}
-        <mesh position={[0, 0.085, 0]} userData={{ isServiceBell: true }}>
+        <mesh position={[0, 0.085, 0]} userData={{ isServiceBell: true }} ref={enableRaycastLayer}>
           <cylinderGeometry args={[0.015, 0.015, 0.02, 8]} />
           <meshStandardMaterial
             color="#333333"

@@ -234,6 +234,11 @@ export function Aisle({ films }: AisleProps) {
     return tex
   }, [])
 
+  // Dispose storefront texture on unmount (memory leak fix)
+  useEffect(() => {
+    return () => { storefrontTexture.dispose() }
+  }, [storefrontTexture])
+
   return (
     <group>
       {/* ===== SOL ===== */}

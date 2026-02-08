@@ -1,8 +1,9 @@
-import { useRef, useMemo, Suspense } from 'react'
+import { useRef, useMemo, useCallback, Suspense } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 import { useStore } from '../../store'
+import { RAYCAST_LAYER_INTERACTIVE } from './Controls'
 
 // Composant lazy pour le corps du manager
 function ManagerBody({ scale }: { scale: number }) {
@@ -79,6 +80,10 @@ const RIGHT_EYE_BASE = { x: 0.059, y: 0.217, z: 0.149 }
 const PUPIL_OFFSET = 0.003 // Distance pupille devant iris (réduit proportionnellement)
 const EYE_MOVE_RANGE = 0.008 // Amplitude max du mouvement des yeux (réduit)
 
+// Vecteurs réutilisables pour useFrame (évite allocations par frame)
+const _headWorldPos = new THREE.Vector3()
+const _lookDir = new THREE.Vector3()
+
 export function Manager3D({ position, rotation = [0, 0, 0], onInteract }: Manager3DProps) {
   const groupRef = useRef<THREE.Group>(null)
   const headRef = useRef<THREE.Group>(null)
@@ -131,6 +136,12 @@ export function Manager3D({ position, rotation = [0, 0, 0], onInteract }: Manage
           roughness = 0.9
         }
 
+        // Disposer le material GLTF original avant remplacement (memory leak fix)
+        if (child.material) {
+          const mat = child.material as THREE.Material
+          mat.dispose()
+        }
+
         child.material = new THREE.MeshStandardMaterial({
           color: color,
           roughness: roughness,
@@ -161,17 +172,14 @@ export function Manager3D({ position, rotation = [0, 0, 0], onInteract }: Manage
 
       // Faire suivre le regard vers la caméra
       const camera = state.camera
-      const headWorldPos = new THREE.Vector3()
-      headRef.current.getWorldPosition(headWorldPos)
+      headRef.current.getWorldPosition(_headWorldPos)
 
       // Direction vers la caméra
-      const lookDir = new THREE.Vector3()
-        .subVectors(camera.position, headWorldPos)
-        .normalize()
+      _lookDir.subVectors(camera.position, _headWorldPos).normalize()
 
       // Convertir en offset local pour les yeux (limité) - inverser X pour suivre le regard
-      const eyeOffsetX = THREE.MathUtils.clamp(-lookDir.x * 0.05, -EYE_MOVE_RANGE, EYE_MOVE_RANGE)
-      const eyeOffsetY = THREE.MathUtils.clamp(lookDir.y * 0.03, -EYE_MOVE_RANGE * 0.5, EYE_MOVE_RANGE * 0.5)
+      const eyeOffsetX = THREE.MathUtils.clamp(-_lookDir.x * 0.05, -EYE_MOVE_RANGE, EYE_MOVE_RANGE)
+      const eyeOffsetY = THREE.MathUtils.clamp(_lookDir.y * 0.03, -EYE_MOVE_RANGE * 0.5, EYE_MOVE_RANGE * 0.5)
 
       // Appliquer aux groupes d'yeux
       if (leftIrisRef.current) {
@@ -258,8 +266,14 @@ export function Manager3D({ position, rotation = [0, 0, 0], onInteract }: Manage
         <ManagerBody scale={1.5} />
       </Suspense>
 
-      {/* Zone de clic invisible */}
-      <mesh position={[0, 1.0, 0]} userData={{ isManager: true }}>
+      {/* Zone de clic invisible (layer 2 pour raycast optimisé) */}
+      <mesh
+        position={[0, 1.0, 0]}
+        userData={{ isManager: true }}
+        ref={useCallback((node: THREE.Mesh | null) => {
+          if (node) node.layers.enable(RAYCAST_LAYER_INTERACTIVE)
+        }, [])}
+      >
         <boxGeometry args={[0.5, 1.8, 0.3]} />
         <meshBasicMaterial transparent opacity={0} />
       </mesh>

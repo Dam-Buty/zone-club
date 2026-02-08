@@ -327,8 +327,242 @@ Pour une scène avec ~500 objets animés :
 
 ---
 
+## 9. meshPhysicalMaterial vs meshStandardMaterial
+
+### Problème
+
+`meshPhysicalMaterial` calcule clearcoat, IOR, reflectivity, sheen, etc. même quand ces propriétés ne sont pas utilisées. Coût GPU ~2x supérieur à `meshStandardMaterial`.
+
+### Règle
+
+| Objet | Material |
+|-------|----------|
+| Surface vitrée principale, eau, bijoux | Physical |
+| Tout le reste (plastique, bois, métal, néon, tissu) | **Standard** |
+
+```typescript
+// MAUVAIS: Physical sur un bouton en plastique
+<meshPhysicalMaterial color="#444" roughness={0.3} />
+
+// BON: Standard suffit largement
+<meshStandardMaterial color="#444" roughness={0.3} />
+```
+
+---
+
+## 10. Compression des Assets
+
+### Images
+
+```bash
+# Resize + compression JPEG (macOS)
+sips -Z 2048 image.jpeg && sips -s formatOptions 70 image.jpeg
+
+# Normal maps (quality 75 suffit, pas de perte visible)
+sips -s formatOptions 75 normal.jpg
+```
+
+### GLB (Draco)
+
+```bash
+# Installation
+npm install -g @gltf-transform/cli
+
+# Compression Draco (gains typiques: 80-97%)
+gltf-transform optimize input.glb output.glb --compress draco
+```
+
+**IMPORTANT** dans le code R3F :
+```typescript
+// Le 2e paramètre `true` active le décodeur Draco via CDN drei
+const { scene } = useGLTF('/models/model.glb', true)
+useGLTF.preload('/models/model.glb', true)
+```
+
+### Fonts (typeface.json)
+
+Stripper aux seuls caractères nécessaires. Script pattern :
+
+```javascript
+const font = JSON.parse(fs.readFileSync(inputPath, 'utf8'))
+const neededChars = new Set('ABCDEFG'.split(''))
+const stripped = { ...font, glyphs: {} }
+for (const [char, glyph] of Object.entries(font.glyphs)) {
+  if (neededChars.has(char)) stripped.glyphs[char] = glyph
+}
+// 753 glyphs → 17 = 1367KB → 29KB (-97.9%)
+```
+
+### Textures TMDB (ou CDN distant)
+
+| Taille objet 3D | Résolution suffisante | Anisotropy |
+|-----------------|----------------------|------------|
+| > 1m (affiche plein écran) | w500 | 8-16 |
+| 10-50cm (cassette, livre) | **w200** | 4 |
+| < 10cm (miniature) | w92 | 2 |
+
+---
+
+## 11. Bloom et Luminance Perceptuelle
+
+### Problème
+
+Le bloom post-processing utilise un seuil de **luminance perceptuelle** pour décider quels pixels glowent :
+
+```
+L = 0.2126 × R + 0.7152 × G + 0.0722 × B
+```
+
+Les couleurs à basse luminance (violet, rouge, magenta) ne déclenchent jamais le bloom même avec `emissiveIntensity` élevé, tandis que le jaune/vert bloome fortement.
+
+### Solution : Compensation d'intensité par luminance inverse
+
+```typescript
+const neonIntensity = useMemo(() => {
+  const c = new THREE.Color(color)
+  const luminance = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b
+  // Target: luminance × intensity ≈ 1.3 (au-dessus du threshold 0.9)
+  return THREE.MathUtils.clamp(1.3 / luminance, 1.3, 4.5)
+}, [color])
+```
+
+| Couleur | Luminance | Intensity compensée | L × I |
+|---------|-----------|-------------------|-------|
+| Jaune `#ffff00` | 0.93 | 1.40 | 1.30 |
+| Vert `#00ff00` | 0.72 | 1.81 | 1.30 |
+| Orange `#ff6600` | 0.50 | 2.60 | 1.30 |
+| Rouge `#ff4444` | 0.42 | 3.07 | 1.30 |
+| Violet `#8844ff` | 0.38 | 3.45 | 1.30 |
+| Magenta `#ff00ff` | 0.28 | 4.50 | 1.28 |
+
+### Bloom Strength (WebGPU TSL)
+
+Le bloom TSL de Three.js WebGPU est plus agressif que le UnrealBloomPass classique. Valeurs recommandées :
+
+| Effet | Strength | Radius | Threshold |
+|-------|----------|--------|-----------|
+| Très subtil | 0.10-0.15 | 0.3 | 0.9 |
+| **Néon réaliste** | **0.15-0.25** | **0.4** | **0.9** |
+| Stylisé (cyberpunk) | 0.3-0.5 | 0.5 | 0.7 |
+| Exagéré | > 0.5 | > 0.6 | < 0.7 |
+
+---
+
+## 12. Text3D et Polices Complexes
+
+### Problème
+
+Les polices manuscrites (Caveat, Dancing Script, etc.) ont des chemins de glyphes très complexes avec de nombreuses courbes. Le bevel de Three.js Text3D tesselle ces courbes et crée des triangles dégénérés → trous et artefacts visuels.
+
+### Règle
+
+| Type de police | Bevel | Effet néon |
+|---------------|-------|------------|
+| Géométrique (Helvetiker, Roboto) | OK (`bevelEnabled={true}`) | Bevel arrondi |
+| **Manuscrite (Caveat, etc.)** | **INTERDIT** (`bevelEnabled={false}`) | **Emissive + bloom** |
+
+```typescript
+// Police manuscrite — JAMAIS de bevel
+<Text3D font={CAVEAT_URL} height={0.025} bevelEnabled={false} curveSegments={10}>
+  {text}
+  <meshStandardMaterial emissive={color} emissiveIntensity={3} toneMapped={false} />
+</Text3D>
+```
+
+### Segments recommandés
+
+| Type de police | curveSegments | bevelSegments |
+|---------------|---------------|---------------|
+| Géométrique | 6-8 | 3-5 |
+| Manuscrite | 8-12 | N/A (bevel off) |
+
+---
+
+## 13. Réduction de Segments par Type d'Objet
+
+### Règle : adapter les segments à la taille visible
+
+| Taille objet | cylinderGeometry | circleGeometry | sphereGeometry |
+|-------------|-----------------|----------------|----------------|
+| > 50cm | 12-16 | 16-24 | 16-32 |
+| 10-50cm | 6-8 | 8-12 | 8-16 |
+| < 10cm (boutons, yeux, tubes) | **4-6** | **6-8** | **6-8** |
+
+**Exemple concret :** Les yeux du manager (1cm de diamètre) n'ont pas besoin de 32 segments — 8 suffit, invisible à l'œil nu.
+
+---
+
+## 14. Raycast et Meshes Overlay (Bug Pattern)
+
+### Problème
+
+En mode FPS avec raycast depuis le centre écran, les meshes plats (texte, UI) placés DEVANT une surface interactive bloquent le raycast. Le hit retourne le mesh overlay, pas la surface derrière.
+
+### Solution
+
+Tous les meshes devant une surface interactive doivent porter le même `userData` flag :
+
+```typescript
+// Surface interactive
+<mesh userData={{ isTVScreen: true }}>
+  <sphereGeometry ... />
+</mesh>
+
+// TOUS les overlays devant DOIVENT aussi avoir le flag
+<mesh position={[0, 0, 0.06]} userData={{ isTVScreen: true }}>
+  <planeGeometry ... />
+  <meshBasicMaterial map={textTexture} transparent />
+</mesh>
+```
+
+### Règle
+
+Le raycast touche le mesh le **plus proche** de la caméra. Si un overlay sans `userData` est devant, la surface interactive n'est jamais détectée. Vérifier TOUTE la stack Z de meshes devant chaque surface interactive.
+
+---
+
+## Checklist d'Optimisation (mise à jour)
+
+- [ ] Géométrie partagée pour objets similaires
+- [ ] Animation throttling (toutes les 2-3 frames)
+- [ ] Frustum culling pour animations
+- [ ] Variables réutilisables HORS des composants (Vector3, Matrix4...)
+- [ ] React.memo avec comparaison custom
+- [ ] Disposal textures/matériaux au unmount
+- [ ] Mode éclairage optimisé
+- [ ] Shadows désactivés sur petits objets et GLB haute-poly
+- [ ] Raycast throttling
+- [ ] **meshStandardMaterial partout sauf surfaces vitrées**
+- [ ] **Segments adaptés à la taille visible de l'objet**
+- [ ] **Assets compressés (Draco GLB, images 2048px, fonts strippées)**
+- [ ] **Textures CDN à résolution adaptée (w200 pour petits objets)**
+- [ ] **Bloom : compensation luminance pour couleurs variées**
+- [ ] **Pas de bevel sur polices manuscrites**
+
+---
+
+## Métriques de Référence
+
+Pour une scène avec ~500 objets animés + 10 lumières :
+
+| Sans optimisation | Avec optimisation | Gain |
+|-------------------|-------------------|------|
+| 500 géométries | 1 géométrie | -99% mémoire |
+| 30000 callbacks/sec | 7500 callbacks/sec | -75% |
+| 500 animations | ~100 (visibles) | -80% |
+| 20+ lumières | 8 lumières | -60% |
+| 500 shadow renders | 0 | -100% |
+| meshPhysicalMaterial | meshStandardMaterial | -50% GPU shader |
+| Assets 85MB | Assets 5MB | -94% disque |
+| 350MB VRAM textures | 150MB VRAM | -57% GPU mém |
+| Bloom strength 0.4 | 0.19 | netteté +++ |
+
+---
+
 ## Références
 
 - [React Three Fiber Performance Tips](https://docs.pmnd.rs/react-three-fiber/advanced/scaling-performance)
 - [Three.js Optimization Guide](https://threejs.org/manual/#en/optimize-lots-of-objects)
 - Three.js Frustum class documentation
+- [gltf-transform CLI](https://gltf-transform.dev/cli) (Draco, quantization)
+- Three.js TSL BloomNode (WebGPU post-processing)

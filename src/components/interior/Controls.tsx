@@ -66,6 +66,17 @@ function checkCollision(x: number, z: number, margin: number): boolean {
 }
 
 
+// Vecteur statique centre écran (évite allocation chaque frame de raycast)
+const SCREEN_CENTER = new THREE.Vector2(0, 0)
+
+// OPTIMISATION: Layers Three.js pour le raycaster
+// Au lieu de tester ~867 meshes, on ne teste que les layers interactifs (~526 objets)
+// Layer 0 = default (rendu uniquement, pas de raycast)
+// Layer 1 = cassettes VHS (raycast ciblage)
+// Layer 2 = objets interactifs (manager, bell, TV)
+export const RAYCAST_LAYER_CASSETTE = 1
+export const RAYCAST_LAYER_INTERACTIVE = 2
+
 // Type pour les objets interactifs détectés par raycast
 type InteractiveTarget = 'manager' | 'bell' | 'tv' | null
 
@@ -79,7 +90,13 @@ export function Controls({ onCassetteClick }: ControlsProps) {
   const pointerLockRequested = useStore((state) => state.pointerLockRequested)
   const clearPointerLockRequest = useStore((state) => state.clearPointerLockRequest)
   const controlsRef = useRef<PointerLockControlsImpl | null>(null)
-  const raycasterRef = useRef(new THREE.Raycaster())
+  // OPTIMISATION: Raycaster avec layers — ne teste que cassettes (1) et interactifs (2)
+  const raycasterRef = useRef<THREE.Raycaster>(null!)
+  if (!raycasterRef.current) {
+    raycasterRef.current = new THREE.Raycaster()
+    raycasterRef.current.layers.set(RAYCAST_LAYER_CASSETTE)
+    raycasterRef.current.layers.enable(RAYCAST_LAYER_INTERACTIVE)
+  }
   const moveForward = useRef(false)
   const moveBackward = useRef(false)
   const moveLeft = useRef(false)
@@ -274,8 +291,9 @@ export function Controls({ onCassetteClick }: ControlsProps) {
     const shouldRaycast = frameCountRef.current % RAYCAST_INTERVAL === 0
 
     if (controlsRef.current?.isLocked && shouldRaycast) {
-      // Raycast depuis le centre de l'écran (crosshair)
-      raycasterRef.current.setFromCamera(new THREE.Vector2(0, 0), camera)
+      // Raycast depuis le centre de l'écran (crosshair) — distance max 6m
+      raycasterRef.current.setFromCamera(SCREEN_CENTER, camera)
+      raycasterRef.current.far = 6
       const intersects = raycasterRef.current.intersectObjects(scene.children, true)
 
       let foundFilmId: number | null = null

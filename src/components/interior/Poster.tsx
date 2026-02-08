@@ -1,5 +1,6 @@
 import { useMemo, useEffect } from 'react'
 import * as THREE from 'three'
+import { TextureCache } from '../../utils/TextureCache'
 
 interface PosterProps {
   position: [number, number, number]
@@ -13,6 +14,10 @@ interface PosterProps {
 
 const FALLBACK_COLORS = ['#2a1a3a', '#1a2a3a', '#3a2a1a', '#1a3a2a', '#3a1a2a', '#1a3a3a']
 
+// OPTIMISATION: Matériaux partagés (identiques pour tous les posters)
+const SHARED_FRAME_MAT = new THREE.MeshStandardMaterial({ color: '#1a1a1a', roughness: 0.4, metalness: 0.2 })
+const SHARED_GLASS_MAT = new THREE.MeshStandardMaterial({ color: '#ffffff', transparent: true, opacity: 0.05, roughness: 0.1 })
+
 export function Poster({
   position,
   rotation = [0, 0, 0],
@@ -22,28 +27,45 @@ export function Poster({
   frameColor = '#1a1a1a',
   index = 0,
 }: PosterProps) {
+  const posterUrl = posterPath
+    ? `https://image.tmdb.org/t/p/w500${posterPath}`
+    : null
+
+  // Utiliser le TextureCache global (déduplique les posters identiques)
   const texture = useMemo(() => {
-    if (!posterPath) return null
-    const loader = new THREE.TextureLoader()
-    const tex = loader.load(`https://image.tmdb.org/t/p/w500${posterPath}`)
-    tex.colorSpace = THREE.SRGBColorSpace
-    return tex
-  }, [posterPath])
+    if (!posterUrl) return null
+    return TextureCache.acquire(posterUrl)
+  }, [posterUrl])
 
   useEffect(() => {
     return () => {
-      texture?.dispose()
+      if (posterUrl) {
+        TextureCache.release(posterUrl)
+      }
     }
-  }, [texture])
+  }, [posterUrl])
+
+  // Matériau cadre : partagé si couleur par défaut, sinon créé par poster
+  const frameMaterial = useMemo(() => {
+    if (frameColor === '#1a1a1a') return SHARED_FRAME_MAT
+    return new THREE.MeshStandardMaterial({ color: frameColor, roughness: 0.4, metalness: 0.2 })
+  }, [frameColor])
+
+  useEffect(() => {
+    return () => {
+      if (frameColor !== '#1a1a1a') {
+        frameMaterial.dispose()
+      }
+    }
+  }, [frameMaterial, frameColor])
 
   const fallbackColor = FALLBACK_COLORS[index % FALLBACK_COLORS.length]
 
   return (
     <group position={position} rotation={rotation}>
-      {/* Cadre */}
-      <mesh position={[0, 0, -0.015]}>
+      {/* Cadre (matériau partagé si couleur par défaut) */}
+      <mesh position={[0, 0, -0.015]} material={frameMaterial}>
         <boxGeometry args={[width + 0.04, height + 0.04, 0.02]} />
-        <meshStandardMaterial color={frameColor} roughness={0.4} metalness={0.2} />
       </mesh>
 
       {/* Affiche */}
@@ -56,15 +78,9 @@ export function Poster({
         />
       </mesh>
 
-      {/* Effet de verre/protection */}
-      <mesh position={[0, 0, 0.002]}>
+      {/* Effet de verre/protection (matériau partagé) */}
+      <mesh position={[0, 0, 0.002]} material={SHARED_GLASS_MAT}>
         <planeGeometry args={[width, height]} />
-        <meshStandardMaterial
-          color="#ffffff"
-          transparent
-          opacity={0.05}
-          roughness={0.1}
-        />
       </mesh>
     </group>
   )

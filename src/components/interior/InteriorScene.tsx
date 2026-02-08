@@ -6,6 +6,7 @@ import { useStore } from '../../store'
 import { Lighting } from './Lighting'
 import { Controls } from './Controls'
 import { PostProcessingEffects } from './PostProcessingEffects'
+import { CassetteAnimationLoop } from './CassetteAnimationLoop'
 import { Environment } from '@react-three/drei'
 
 // Lazy loading du composant Aisle (contient tous les modèles 3D)
@@ -91,11 +92,12 @@ function SceneContent({
       <Environment
         files="/textures/env/indoor_night.hdr"
         background={false}
-        environmentIntensity={0.15}
+        environmentIntensity={0.35}
       />
       <Lighting />
       <Aisle films={films} />
       <Controls onCassetteClick={onCassetteClick} />
+      <CassetteAnimationLoop />
       <PostProcessingEffects />
     </>
   )
@@ -139,6 +141,7 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
           const renderer = new THREE.WebGPURenderer(props as THREE.WebGPURendererParameters)
           await renderer.init()
           renderer.shadowMap.enabled = true
+          renderer.shadowMap.type = THREE.PCFSoftShadowMap
           renderer.toneMapping = THREE.ACESFilmicToneMapping
           renderer.toneMappingExposure = 1.0
           console.log('[Canvas] WebGPU renderer initialized with shadows + ACES tone mapping')

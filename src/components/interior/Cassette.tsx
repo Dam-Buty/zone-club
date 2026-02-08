@@ -1,8 +1,9 @@
-import { useRef, useMemo, memo, useEffect } from 'react'
-import { useFrame } from '@react-three/fiber'
+import { useRef, useMemo, memo, useEffect, useCallback } from 'react'
 import * as THREE from 'three'
 import type { Film } from '../../types'
-import { useStore } from '../../store'
+import { TextureCache } from '../../utils/TextureCache'
+import { registerCassette, unregisterCassette } from '../../utils/CassetteAnimationSystem'
+import { RAYCAST_LAYER_CASSETTE } from './Controls'
 
 interface CassetteProps {
   position: [number, number, number]
@@ -26,155 +27,78 @@ export const CASSETTE_DIMENSIONS = {
 // OPTIMISATION: Géométrie partagée par toutes les cassettes (créée une seule fois)
 const SHARED_CASSETTE_GEOMETRY = new THREE.BoxGeometry(CASSETTE_WIDTH, CASSETTE_HEIGHT, CASSETTE_DEPTH)
 
-// OPTIMISATION: Frustum et matrice réutilisables pour le culling (évite les allocations)
-const frustum = new THREE.Frustum()
-const projScreenMatrix = new THREE.Matrix4()
-const tempWorldPos = new THREE.Vector3()
-
-// OPTIMISATION: Compteur de frames global pour throttle des animations
-let globalFrameCount = 0
-let lastFrustumFrame = -1
-const ANIMATION_THROTTLE = 2 // Animer tous les 2 frames
-
 // Couleurs aléatoires pour les cassettes sans poster
 const CASSETTE_COLORS = [
   '#1a1a2e', '#16213e', '#0f3460', '#533483',
   '#2c3e50', '#34495e', '#1e3d59', '#3d5a80'
 ]
 
-// Couleurs émissives en format THREE.Color pour interpolation
-const EMISSIVE_NONE = new THREE.Color('#000000')
-const EMISSIVE_TARGETED = new THREE.Color('#ff2d95')
-const EMISSIVE_RENTED = new THREE.Color('#00ff00')
-
 export const Cassette = memo(function Cassette({ position, film, cassetteKey, hoverOffsetZ = 0.08 }: CassetteProps) {
-  const targetedCassetteKey = useStore((state) => state.targetedCassetteKey)
-  const getRental = useStore((state) => state.getRental)
-  const isTargetedRaw = targetedCassetteKey === cassetteKey
-  const isRented = !!getRental(film.id)
+  // Plus de useStore ici — le CassetteAnimationSystem lit le store une seule fois par frame
   const meshRef = useRef<THREE.Mesh>(null)
   const materialRef = useRef<THREE.MeshStandardMaterial>(null)
-  const baseZ = position[2]
 
-  // Hystérésis interne pour éviter le flickering aux bords
-  const stableTargetedRef = useRef(false) // État stable après hystérésis
-  const targetedTimerRef = useRef(0) // Timer pour confirmer le changement d'état
-  const HYSTERESIS_SELECT = 0.05 // 50ms pour sélectionner (réactif)
-  const HYSTERESIS_DESELECT = 0.25 // 250ms pour désélectionner (sticky)
-
-  // État visuel lissé
-  const smoothTargetedRef = useRef(0) // 0 = non ciblé, 1 = ciblé
-  const currentEmissiveRef = useRef(new THREE.Color('#000000'))
+  // Callback ref : active le layer raycast + stocke le mesh ref
+  const meshRefCallback = useCallback((node: THREE.Mesh | null) => {
+    if (node) {
+      node.layers.enable(RAYCAST_LAYER_CASSETTE)
+      ;(meshRef as React.MutableRefObject<THREE.Mesh | null>).current = node
+    }
+  }, [])
 
   // Couleur de fallback basée sur l'ID du film
   const fallbackColor = useMemo(() => {
     return CASSETTE_COLORS[film.id % CASSETTE_COLORS.length]
   }, [film.id])
 
-  // URL du poster TMDB — w200 suffisant pour cassettes ~10cm (économise ~200MB GPU VRAM sur 520 textures)
+  // URL du poster TMDB — w200 suffisant pour cassettes ~10cm
   const posterUrl = film.poster_path
     ? `https://image.tmdb.org/t/p/w200${film.poster_path}`
     : null
 
-  // Charger la texture avec filtrage anisotropique (net aux angles obliques)
+  // Charger la texture via cache global (déduplique les posters identiques entre cassettes)
   const texture = useMemo(() => {
     if (!posterUrl) return null
-    const loader = new THREE.TextureLoader()
-    const tex = loader.load(posterUrl)
-    tex.colorSpace = THREE.SRGBColorSpace
-    tex.anisotropy = 4
-    return tex
+    return TextureCache.acquire(posterUrl)
   }, [posterUrl])
 
-  // OPTIMISATION: Libérer la texture et le matériau quand le composant est démonté
+  // OPTIMISATION: Enregistrer/désenregistrer auprès du système d'animation centralisé.
+  // Un seul useFrame pour ~521 cassettes au lieu de 521 callbacks individuels.
   useEffect(() => {
+    // Attendre que mesh et material soient montés (via refs)
+    // On utilise un petit délai pour s'assurer que les refs R3F sont assignés
+    const timer = requestAnimationFrame(() => {
+      if (meshRef.current && materialRef.current) {
+        registerCassette(cassetteKey, {
+          mesh: meshRef.current,
+          material: materialRef.current,
+          baseZ: position[2],
+          hoverOffsetZ,
+          cassetteKey,
+          filmId: film.id,
+          stableTargeted: false,
+          targetedTimer: 0,
+          smoothTargeted: 0,
+          currentEmissive: new THREE.Color('#000000'),
+        })
+      }
+    })
+
     return () => {
-      if (texture) {
-        texture.dispose()
+      cancelAnimationFrame(timer)
+      unregisterCassette(cassetteKey)
+      if (posterUrl) {
+        TextureCache.release(posterUrl)
       }
       if (materialRef.current) {
         materialRef.current.dispose()
       }
     }
-  }, [texture])
-
-  // Animation hover avec hystérésis et lissage
-  useFrame(({ camera }, delta) => {
-    if (!meshRef.current || !materialRef.current) return
-
-    // OPTIMISATION: Incrémenter le compteur global (une seule cassette le fait par frame)
-    const currentFrame = Math.floor(performance.now() / 16.67) // ~60fps
-    if (currentFrame !== globalFrameCount) {
-      globalFrameCount = currentFrame
-    }
-
-    // OPTIMISATION: Skip l'animation tous les N frames
-    if (globalFrameCount % ANIMATION_THROTTLE !== 0) {
-      return
-    }
-
-    // OPTIMISATION: Mettre à jour le frustum une seule fois par frame
-    if (lastFrustumFrame !== globalFrameCount) {
-      projScreenMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
-      frustum.setFromProjectionMatrix(projScreenMatrix)
-      lastFrustumFrame = globalFrameCount
-    }
-
-    // Vérifier si la position de la cassette est dans le frustum
-    meshRef.current.getWorldPosition(tempWorldPos)
-    if (!frustum.containsPoint(tempWorldPos)) {
-      return // Cassette hors champ - skip l'animation
-    }
-
-    // Hystérésis asymétrique : rapide pour sélectionner, lent pour désélectionner
-    if (isTargetedRaw !== stableTargetedRef.current) {
-      targetedTimerRef.current += delta
-      // Délai différent selon qu'on sélectionne ou désélectionne
-      const delay = isTargetedRaw ? HYSTERESIS_SELECT : HYSTERESIS_DESELECT
-      if (targetedTimerRef.current >= delay) {
-        stableTargetedRef.current = isTargetedRaw
-        targetedTimerRef.current = 0
-      }
-    } else {
-      // État brut = état stable, reset le timer
-      targetedTimerRef.current = 0
-    }
-
-    const isTargeted = stableTargetedRef.current
-
-    // Lissage de la position
-    const targetZ = isTargeted ? baseZ + hoverOffsetZ : baseZ
-    meshRef.current.position.z = THREE.MathUtils.lerp(
-      meshRef.current.position.z,
-      targetZ,
-      delta * 12
-    )
-
-    // Lissage de l'état ciblé (transition douce)
-    const targetValue = isTargeted ? 1 : 0
-    smoothTargetedRef.current = THREE.MathUtils.lerp(
-      smoothTargetedRef.current,
-      targetValue,
-      delta * 8 // Vitesse de transition
-    )
-
-    // Interpoler la couleur émissive
-    const targetColor = isRented ? EMISSIVE_RENTED : (smoothTargetedRef.current > 0.1 ? EMISSIVE_TARGETED : EMISSIVE_NONE)
-    currentEmissiveRef.current.lerp(targetColor, delta * 10)
-    materialRef.current.emissive.copy(currentEmissiveRef.current)
-
-    // Interpoler l'intensité émissive
-    const targetIntensity = isRented ? 0.3 : smoothTargetedRef.current * 0.4
-    materialRef.current.emissiveIntensity = THREE.MathUtils.lerp(
-      materialRef.current.emissiveIntensity,
-      targetIntensity,
-      delta * 10
-    )
-  })
+  }, [cassetteKey, film.id, position[2], hoverOffsetZ, posterUrl])
 
   return (
     <mesh
-      ref={meshRef}
+      ref={meshRefCallback}
       position={position}
       userData={{ filmId: film.id, cassetteKey }}
       castShadow={false}
