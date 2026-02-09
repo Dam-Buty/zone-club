@@ -1,4 +1,4 @@
-import { useRef, useMemo, useCallback, Suspense } from 'react'
+import { useRef, useMemo, useCallback, Suspense, memo } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
@@ -91,8 +91,6 @@ export function Manager3D({ position, rotation = [0, 0, 0], onInteract }: Manage
   // Refs pour les groupes d'yeux (iris + pupille + reflet)
   const leftIrisRef = useRef<THREE.Group>(null)
   const rightIrisRef = useRef<THREE.Group>(null)
-
-  const { managerVisible, showManager, addChatMessage } = useStore()
 
   const timeRef = useRef(0)
 
@@ -193,17 +191,18 @@ export function Manager3D({ position, rotation = [0, 0, 0], onInteract }: Manage
     }
   })
 
-  // Handler pour l'interaction
-  const handleClick = () => {
+  // Handler pour l'interaction — use getState() to avoid subscribing to store changes
+  const handleClick = useCallback(() => {
     if (onInteract) {
       onInteract()
     } else {
-      showManager()
-      if (!managerVisible) {
-        addChatMessage('manager', "Ouais ? Qu'est-ce que je peux faire pour toi ?")
+      const state = useStore.getState()
+      state.showManager()
+      if (!state.managerVisible) {
+        state.addChatMessage('manager', "Ouais ? Qu'est-ce que je peux faire pour toi ?")
       }
     }
-  }
+  }, [onInteract])
 
   return (
     <group ref={groupRef} position={position} rotation={rotation}>

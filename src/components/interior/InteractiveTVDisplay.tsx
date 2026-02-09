@@ -89,7 +89,11 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
   const menuTextureRef = useRef<THREE.CanvasTexture | null>(null)
   const indicatorTextureRef = useRef<THREE.CanvasTexture | null>(null)
 
-  const { rentals, films, openTerminal, requestPointerUnlock } = useStore()
+  // Individual selectors to avoid re-rendering on unrelated store changes
+  const rentals = useStore(state => state.rentals)
+  const films = useStore(state => state.films)
+  const openTerminal = useStore(state => state.openTerminal)
+  const requestPointerUnlock = useStore(state => state.requestPointerUnlock)
 
   const timeRef = useRef(0)
 
@@ -111,6 +115,7 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
       t.wrapS = THREE.RepeatWrapping
       t.wrapT = THREE.RepeatWrapping
       t.repeat.set(1, 1)
+      t.anisotropy = 16
       t.colorSpace = key === 'map' ? THREE.SRGBColorSpace : THREE.LinearSRGBColorSpace
     })
   }, [woodTextures])

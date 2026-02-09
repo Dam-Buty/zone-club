@@ -10,20 +10,20 @@ const HESITATION_WINDOW_MS = 60000;      // Fenêtre pour détecter l'hésitatio
 const HESITATION_COUNT = 3;               // Nombre de changements pour trigger
 
 export function useManagerTriggers() {
-  const {
-    selectedFilmId,
-    currentAisle,
-    showManager,
-    addChatMessage,
-    managerVisible,
-    targetedFilmId,
-  } = useStore();
+  // Individual selectors — only re-render when these specific values change
+  const selectedFilmId = useStore(state => state.selectedFilmId);
+  const currentAisle = useStore(state => state.currentAisle);
+  const managerVisible = useStore(state => state.managerVisible);
+  // Actions are stable references, won't trigger re-renders
+  const showManager = useStore(state => state.showManager);
+  const addChatMessage = useStore(state => state.addChatMessage);
+  // NOTE: targetedFilmId is NOT subscribed via selector — it changes at 30Hz during hover
+  // and would cause App.tsx to re-render ~30 times/sec. Instead, we use useStore.subscribe()
+  // in a useEffect below (imperative, no React re-renders).
 
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const modalTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastHoveredFilmRef = useRef<number | null>(null);
-  const lastTargetedFilmRef = useRef<number | null>(null);
-  const targetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recentHoversRef = useRef<number[]>([]);
   const aisleVisitsRef = useRef<Record<string, number>>({});
 
@@ -116,24 +116,31 @@ export function useManagerTriggers() {
   }, [selectedFilmId, managerVisible, showManager, addChatMessage]);
 
   // Track cassette targeting (30s hover via crosshair)
+  // Uses imperative store subscription to avoid re-rendering App at 30Hz
   useEffect(() => {
-    // Clear existing timer
-    if (targetTimerRef.current) {
-      clearTimeout(targetTimerRef.current);
-      targetTimerRef.current = null;
-    }
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let lastTargeted: number | null = null;
 
-    if (targetedFilmId === null) {
-      lastTargetedFilmRef.current = null;
-      return;
-    }
+    const unsubscribe = useStore.subscribe((state) => {
+      const targetedFilmId = state.targetedFilmId;
 
-    // Start 30s hover timer when targeting a cassette
-    if (lastTargetedFilmRef.current !== targetedFilmId) {
-      lastTargetedFilmRef.current = targetedFilmId;
+      // No change — skip
+      if (targetedFilmId === lastTargeted) return;
 
-      targetTimerRef.current = setTimeout(() => {
-        if (!managerVisible) {
+      // Clear existing timer on any change
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+
+      lastTargeted = targetedFilmId;
+
+      if (targetedFilmId === null) return;
+
+      // Start 30s hover timer when targeting a new cassette
+      timer = setTimeout(() => {
+        const currentState = useStore.getState();
+        if (!currentState.managerVisible) {
           const films = managerResponses.films as Record<
             string,
             { anecdotes: string[]; suggestion?: { filmId: number; reason: string } }
@@ -147,22 +154,21 @@ export function useManagerTriggers() {
             "Je vois que t'es intrigué. Viens, on en discute.",
           ];
 
-          showManager();
+          currentState.showManager();
           if (filmData && filmData.anecdotes.length > 0) {
-            addChatMessage('manager', filmData.anecdotes[Math.floor(Math.random() * filmData.anecdotes.length)]);
+            currentState.addChatMessage('manager', filmData.anecdotes[Math.floor(Math.random() * filmData.anecdotes.length)]);
           } else {
-            addChatMessage('manager', messages[Math.floor(Math.random() * messages.length)]);
+            currentState.addChatMessage('manager', messages[Math.floor(Math.random() * messages.length)]);
           }
         }
       }, CASSETTE_HOVER_TRIGGER_MS);
-    }
+    });
 
     return () => {
-      if (targetTimerRef.current) {
-        clearTimeout(targetTimerRef.current);
-      }
+      unsubscribe();
+      if (timer) clearTimeout(timer);
     };
-  }, [targetedFilmId, managerVisible, showManager, addChatMessage]);
+  }, []);
 
   // Post-rental trigger function (to be called after rental)
   const triggerPostRental = (_filmId: number, isPositive: boolean) => {

@@ -1,3 +1,4 @@
+import { useRef, useEffect } from 'react'
 import * as THREE from 'three'
 
 // LTC textures sont initialisées dans InteriorScene.tsx avant le Canvas
@@ -5,8 +6,7 @@ import * as THREE from 'three'
 // Mode d'éclairage: 'full' = 21 lumières, 'optimized' = 7 lumières
 const LIGHTING_MODE: 'full' | 'optimized' = 'optimized'
 
-// OPTIMISATION: Géométries et matériaux partagés pour les 9 NeonTubes identiques (length=1.4)
-// Économise 16 matériaux + 16 géométries → 2 matériaux + 2 géométries
+// OPTIMISATION: Géométries et matériaux partagés pour les 9 NeonTubes
 const NEON_TUBE_LENGTH = 1.4
 const SHARED_NEON_TUBE_GEOM = new THREE.CylinderGeometry(0.025, 0.025, NEON_TUBE_LENGTH, 6)
 const SHARED_NEON_FIXTURE_GEOM = new THREE.BoxGeometry(NEON_TUBE_LENGTH + 0.1, 0.03, 0.08)
@@ -24,13 +24,56 @@ const SHARED_NEON_FIXTURE_MAT = new THREE.MeshStandardMaterial({
   metalness: 0.3,
 })
 
-// Composant pour un tube néon au plafond — géométrie et matériaux partagés
-function NeonTube({ position }: { position: [number, number, number] }) {
+// Positions des 9 néons (grille 3×3 au plafond)
+const NEON_POSITIONS: [number, number, number][] = [
+  [-3, 2.7, -3], [0, 2.7, -3], [3, 2.7, -3],
+  [-3, 2.7, 0],  [0, 2.7, 0],  [3, 2.7, 0],
+  [-3, 2.7, 3],  [0, 2.7, 3],  [3, 2.7, 3],
+]
+
+// Matrices pré-calculées pour les tubes (rotation 90° sur Z) et fixtures (offset Y +0.04)
+const _tempMatrix = new THREE.Matrix4()
+const _tubeRotation = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, Math.PI / 2))
+
+// OPTIMISATION: 9 NeonTubes → 2 InstancedMesh (tube + fixture) = 18→2 draw calls
+function NeonTubesInstanced() {
+  const tubeRef = useRef<THREE.InstancedMesh>(null!)
+  const fixtureRef = useRef<THREE.InstancedMesh>(null!)
+
+  useEffect(() => {
+    const tube = tubeRef.current
+    const fixture = fixtureRef.current
+    if (!tube || !fixture) return
+
+    for (let i = 0; i < NEON_POSITIONS.length; i++) {
+      const [x, y, z] = NEON_POSITIONS[i]
+
+      // Tube: position + rotation 90° sur Z
+      _tempMatrix.compose(
+        new THREE.Vector3(x, y, z),
+        _tubeRotation,
+        new THREE.Vector3(1, 1, 1)
+      )
+      tube.setMatrixAt(i, _tempMatrix)
+
+      // Fixture: position + offset Y (pas de rotation)
+      _tempMatrix.compose(
+        new THREE.Vector3(x, y + 0.04, z),
+        new THREE.Quaternion(),
+        new THREE.Vector3(1, 1, 1)
+      )
+      fixture.setMatrixAt(i, _tempMatrix)
+    }
+
+    tube.instanceMatrix.needsUpdate = true
+    fixture.instanceMatrix.needsUpdate = true
+  }, [])
+
   return (
-    <group position={position}>
-      <mesh rotation={[0, 0, Math.PI / 2]} geometry={SHARED_NEON_TUBE_GEOM} material={SHARED_NEON_TUBE_MAT} />
-      <mesh position={[0, 0.04, 0]} geometry={SHARED_NEON_FIXTURE_GEOM} material={SHARED_NEON_FIXTURE_MAT} />
-    </group>
+    <>
+      <instancedMesh ref={tubeRef} args={[SHARED_NEON_TUBE_GEOM, SHARED_NEON_TUBE_MAT, NEON_POSITIONS.length]} />
+      <instancedMesh ref={fixtureRef} args={[SHARED_NEON_FIXTURE_GEOM, SHARED_NEON_FIXTURE_MAT, NEON_POSITIONS.length]} />
+    </>
   )
 }
 
@@ -86,23 +129,23 @@ function OptimizedLighting() {
         rotation={[0, 0, 0]}
       />
 
-      {/* 7. RectAreaLight porte - néon rose */}
+      {/* 7. RectAreaLight porte - néon rose (aligned with transom) */}
       <rectAreaLight
-        width={1.9}
-        height={0.5}
+        width={1.2}
+        height={0.4}
         intensity={3}
         color="#ff2d95"
-        position={[-3.2, 2.1, 4.3]}
+        position={[-3.7, 2.55, 4.3]}
         rotation={[0, 0, 0]}
       />
 
-      {/* 8. RectAreaLight porte vitre principale */}
+      {/* 8. RectAreaLight porte vitre principale (full door height) */}
       <rectAreaLight
-        width={1.8}
-        height={1.4}
+        width={1.0}
+        height={2.0}
         intensity={1.5}
         color="#6a4c93"
-        position={[-3.2, 1.1, 4.3]}
+        position={[-3.7, 1.15, 4.3]}
         rotation={[0, 0, 0]}
       />
 
@@ -112,8 +155,8 @@ function OptimizedLighting() {
         intensity={0.3}
         color="#fff5e6"
         castShadow
-        shadow-mapSize-width={2048}
-        shadow-mapSize-height={2048}
+        shadow-mapSize-width={1024}
+        shadow-mapSize-height={1024}
         shadow-camera-left={-6}
         shadow-camera-right={6}
         shadow-camera-top={5}
@@ -123,16 +166,8 @@ function OptimizedLighting() {
         shadow-bias={-0.0003}
       />
 
-      {/* Tubes néon décoratifs - toutes les rangées pour le visuel */}
-      <NeonTube position={[-3, 2.7, -3]} />
-      <NeonTube position={[0, 2.7, -3]} />
-      <NeonTube position={[3, 2.7, -3]} />
-      <NeonTube position={[-3, 2.7, 0]} />
-      <NeonTube position={[0, 2.7, 0]} />
-      <NeonTube position={[3, 2.7, 0]} />
-      <NeonTube position={[-3, 2.7, 3]} />
-      <NeonTube position={[0, 2.7, 3]} />
-      <NeonTube position={[3, 2.7, 3]} />
+      {/* Tubes néon décoratifs - 9 tubes via 2 InstancedMesh (18→2 draw calls) */}
+      <NeonTubesInstanced />
     </>
   )
 }
@@ -144,22 +179,8 @@ function FullLighting() {
       {/* Lumière ambiante - augmentée pour plus de luminosité */}
       <ambientLight intensity={0.5} color="#fff8f0" />
 
-      {/* ===== TUBES NÉON AU PLAFOND ===== */}
-
-      {/* Rangée 1 (z = -3) */}
-      <NeonTube position={[-3, 2.7, -3]} />
-      <NeonTube position={[0, 2.7, -3]} />
-      <NeonTube position={[3, 2.7, -3]} />
-
-      {/* Rangée 2 (z = 0) */}
-      <NeonTube position={[-3, 2.7, 0]} />
-      <NeonTube position={[0, 2.7, 0]} />
-      <NeonTube position={[3, 2.7, 0]} />
-
-      {/* Rangée 3 (z = 3) - près de l'entrée */}
-      <NeonTube position={[-3, 2.7, 3]} />
-      <NeonTube position={[0, 2.7, 3]} />
-      <NeonTube position={[3, 2.7, 3]} />
+      {/* ===== TUBES NÉON AU PLAFOND (InstancedMesh) ===== */}
+      <NeonTubesInstanced />
 
       {/* ===== RECTAREA LIGHTS pour l'éclairage réel ===== */}
 
@@ -230,29 +251,29 @@ function FullLighting() {
 
       {/* === PORTE VITRÉE (côté DROIT vu de l'intérieur) === */}
       <rectAreaLight
-        width={1.9}
-        height={0.5}
+        width={1.2}
+        height={0.4}
         intensity={5}
         color="#ff2d95"
-        position={[-3.2, 2.1, 4.3]}
+        position={[-3.7, 2.55, 4.3]}
         rotation={[0, 0, 0]}
       />
 
       <rectAreaLight
-        width={1.8}
-        height={1.4}
+        width={1.0}
+        height={2.0}
         intensity={2.5}
         color="#6a4c93"
-        position={[-3.2, 1.1, 4.3]}
+        position={[-3.7, 1.15, 4.3]}
         rotation={[0, 0, 0]}
       />
 
       <rectAreaLight
-        width={1.8}
+        width={1.0}
         height={0.4}
         intensity={1.5}
         color="#4a6fa5"
-        position={[-3.2, 0.25, 4.3]}
+        position={[-3.7, 0.25, 4.3]}
         rotation={[0, 0, 0]}
       />
 

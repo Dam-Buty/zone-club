@@ -71,8 +71,6 @@ export function ServiceBell({ position, rotation = [0, 0, 0] }: ServiceBellProps
   const [isPressed, setIsPressed] = useState(false)
   const [isHovered, setIsHovered] = useState(false)
 
-  const { showManager, addChatMessage, managerVisible } = useStore()
-
   const timeRef = useRef(0)
 
   // OPTIMISATION: Callback pour activer le layer de raycast sur les meshes interactifs
@@ -138,9 +136,10 @@ export function ServiceBell({ position, rotation = [0, 0, 0] }: ServiceBellProps
       setIsPressed(false)
     }, 200)
 
-    // Appeler le manager
-    showManager()
-    if (!managerVisible) {
+    // Appeler le manager — use getState() to avoid subscribing to store changes
+    const state = useStore.getState()
+    state.showManager()
+    if (!state.managerVisible) {
       const greetings = [
         "Ouais ? Qu'est-ce que je peux faire pour toi ?",
         "*ding ding* ... Ah, un client ! Qu'est-ce qui te ferait plaisir ?",
@@ -148,7 +147,7 @@ export function ServiceBell({ position, rotation = [0, 0, 0] }: ServiceBellProps
         "Bienvenue ! T'as l'air de quelqu'un qui sait ce qu'il veut.",
       ]
       const greeting = greetings[Math.floor(Math.random() * greetings.length)]
-      addChatMessage('manager', greeting)
+      state.addChatMessage('manager', greeting)
     }
   }
 

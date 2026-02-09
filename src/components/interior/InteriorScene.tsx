@@ -1,12 +1,11 @@
 import * as THREE from 'three/webgpu'
 import { RectAreaLightNode } from 'three/webgpu'
 import { Canvas, extend, type ThreeToJSXElements } from '@react-three/fiber'
-import { Suspense, useEffect, useMemo, useCallback, Component, type ReactNode, lazy } from 'react'
+import { Suspense, useEffect, useMemo, useCallback, memo, Component, type ReactNode, lazy } from 'react'
 import { useStore } from '../../store'
 import { Lighting } from './Lighting'
 import { Controls } from './Controls'
 import { PostProcessingEffects } from './PostProcessingEffects'
-import { CassetteAnimationLoop } from './CassetteAnimationLoop'
 import { Environment } from '@react-three/drei'
 
 // Lazy loading du composant Aisle (contient tous les modèles 3D)
@@ -74,8 +73,9 @@ function LoadingFallback() {
   )
 }
 
-// Composant de debug qui log quand le contenu est rendu
-function SceneContent({
+// Memoized 3D scene content — only re-renders when films or onCassetteClick change
+// Prevents cascading re-renders from UI state changes (pointer lock, terminal, modal)
+const SceneContent = memo(function SceneContent({
   films,
   onCassetteClick
 }: {
@@ -97,68 +97,27 @@ function SceneContent({
       <Lighting />
       <Aisle films={films} />
       <Controls onCassetteClick={onCassetteClick} />
-      <CassetteAnimationLoop />
       <PostProcessingEffects />
     </>
   )
-}
+})
 
-export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
-  const { currentAisle, films, isPointerLocked, managerVisible, isTerminalOpen, closeTerminal, requestPointerLock, selectedFilmId } = useStore()
+// UI Overlays — separate component to isolate UI state re-renders from the 3D Canvas
+function UIOverlays() {
+  const isPointerLocked = useStore(state => state.isPointerLocked)
+  const managerVisible = useStore(state => state.managerVisible)
+  const isTerminalOpen = useStore(state => state.isTerminalOpen)
+  const selectedFilmId = useStore(state => state.selectedFilmId)
+  const closeTerminal = useStore(state => state.closeTerminal)
+  const requestPointerLock = useStore(state => state.requestPointerLock)
 
-  // Handler pour fermer le terminal
   const handleCloseTerminal = useCallback(() => {
     closeTerminal()
     requestPointerLock()
   }, [closeTerminal, requestPointerLock])
 
-  // Combiner TOUS les films de tous les rayons (sans doublons)
-  const allFilms = useMemo(() => {
-    const seen = new Set<number>()
-    const combined: import('../../types').Film[] = []
-
-    Object.values(films).forEach(aisleFilms => {
-      aisleFilms.forEach(film => {
-        if (!seen.has(film.id)) {
-          seen.add(film.id)
-          combined.push(film)
-        }
-      })
-    })
-
-    return combined
-  }, [films])
-
-  useEffect(() => {
-    console.log('[InteriorScene] Total unique films loaded:', allFilms.length)
-  }, [allFilms.length])
-
   return (
-    <div style={{ position: 'fixed', inset: 0 }}>
-      <Canvas
-        gl={async (props) => {
-          console.log('[Canvas] Initializing WebGPU renderer...')
-          const renderer = new THREE.WebGPURenderer(props as THREE.WebGPURendererParameters)
-          await renderer.init()
-          renderer.shadowMap.enabled = true
-          renderer.shadowMap.type = THREE.PCFSoftShadowMap
-          renderer.toneMapping = THREE.ACESFilmicToneMapping
-          renderer.toneMappingExposure = 1.0
-          console.log('[Canvas] WebGPU renderer initialized with shadows + ACES tone mapping')
-          return renderer
-        }}
-        onCreated={(state) => {
-          console.log('[Canvas] onCreated - scene ready')
-          console.log('[Canvas] Renderer type:', state.gl.constructor.name)
-        }}
-      >
-        <SceneErrorBoundary>
-          <Suspense fallback={<LoadingFallback />}>
-            <SceneContent films={allFilms} onCassetteClick={onCassetteClick} />
-          </Suspense>
-        </SceneErrorBoundary>
-      </Canvas>
-
+    <>
       {/* Message "Cliquez pour prendre le contrôle" quand non locké et aucun overlay ouvert */}
       {!isPointerLocked && !isTerminalOpen && !selectedFilmId && (
         <div
@@ -277,6 +236,71 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
 
       {/* Terminal TV - rendu en dehors du Canvas R3F */}
       <TVTerminal isOpen={isTerminalOpen} onClose={handleCloseTerminal} />
+    </>
+  )
+}
+
+export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
+  // Only subscribe to films — UI state is handled by UIOverlays separately
+  const films = useStore(state => state.films)
+
+  // Combiner TOUS les films de tous les rayons (sans doublons)
+  const allFilms = useMemo(() => {
+    const seen = new Set<number>()
+    const combined: import('../../types').Film[] = []
+
+    Object.values(films).forEach(aisleFilms => {
+      aisleFilms.forEach(film => {
+        if (!seen.has(film.id)) {
+          seen.add(film.id)
+          combined.push(film)
+        }
+      })
+    })
+
+    return combined
+  }, [films])
+
+  useEffect(() => {
+    console.log('[InteriorScene] Total unique films loaded:', allFilms.length)
+  }, [allFilms.length])
+
+  return (
+    <div style={{ position: 'fixed', inset: 0 }}>
+      <Canvas
+        gl={async (props) => {
+          console.log('[Canvas] Initializing WebGPU renderer...')
+          // Request elevated maxTextureArrayLayers for DataArrayTexture (520 cassette poster layers)
+          // WebGPU default is 256, M1 Metal supports up to 2048
+          const adapter = await navigator.gpu.requestAdapter()
+          const maxLayers = adapter ? adapter.limits.maxTextureArrayLayers : 2048
+          const renderer = new THREE.WebGPURenderer({
+            ...props as THREE.WebGPURendererParameters,
+            requiredLimits: {
+              maxTextureArrayLayers: maxLayers,
+            },
+          })
+          await renderer.init()
+          renderer.shadowMap.enabled = true
+          renderer.shadowMap.type = THREE.PCFSoftShadowMap
+          renderer.toneMapping = THREE.ACESFilmicToneMapping
+          renderer.toneMappingExposure = 1.0
+          console.log('[Canvas] WebGPU renderer initialized with shadows + ACES tone mapping')
+          return renderer
+        }}
+        onCreated={(state) => {
+          console.log('[Canvas] onCreated - scene ready')
+          console.log('[Canvas] Renderer type:', state.gl.constructor.name)
+        }}
+      >
+        <SceneErrorBoundary>
+          <Suspense fallback={<LoadingFallback />}>
+            <SceneContent films={allFilms} onCassetteClick={onCassetteClick} />
+          </Suspense>
+        </SceneErrorBoundary>
+      </Canvas>
+
+      <UIOverlays />
     </div>
   )
 }

@@ -1,5 +1,6 @@
-import { useMemo, useEffect, useState, Suspense } from 'react'
+import { useMemo, useEffect, Suspense } from 'react'
 import * as THREE from 'three'
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { useGLTF, useTexture } from '@react-three/drei'
 
 // Composant pour chargement async des modèles 3D
@@ -32,14 +33,17 @@ function AsyncModel({ url, position, scale = 1, rotation = [0, 0, 0] }: {
 }
 import { WallShelf } from './WallShelf'
 import { IslandShelf } from './IslandShelf'
+import { CassetteInstances } from './CassetteInstances'
+import { CASSETTE_DIMENSIONS } from './Cassette'
 import { GenreSectionPanel, GENRE_CONFIG, filterFilmsByGenre } from './GenreSectionPanel'
 import { GameRack } from './GameBox'
 import { PosterWall } from './Poster'
+import { Storefront } from './Storefront'
 import { InteractiveTVDisplay } from './InteractiveTVDisplay'
 import { Manager3D } from './Manager3D'
 import { ServiceBell } from './ServiceBell'
-import { tmdb, type TMDBSearchResult } from '../../services/tmdb'
 import type { Film } from '../../types'
+import type { CassetteInstanceData } from '../../utils/CassetteTextureArray'
 
 interface AisleProps {
   films: Film[]
@@ -74,6 +78,9 @@ function usePBRTextures(
       t.wrapS = THREE.RepeatWrapping
       t.wrapT = THREE.RepeatWrapping
       t.repeat.set(repeatX, repeatY)
+      // Anisotropic filtering: sharpen textures viewed at oblique angles (floors, walls)
+      // Minimal GPU cost for significant quality improvement on tiled surfaces
+      t.anisotropy = 16
       // Color map needs sRGB, others are linear data
       if (t === (textures as Record<string, THREE.Texture>).map) {
         t.colorSpace = THREE.SRGBColorSpace
@@ -131,35 +138,235 @@ function PrivateSign({ position }: { position: [number, number, number] }) {
   )
 }
 
-// Convertir un résultat TMDB en Film pour l'affichage
-function tmdbResultToFilm(result: TMDBSearchResult): Film {
-  return {
-    id: result.id,
-    tmdb_id: result.id,
-    title: result.title,
-    overview: result.overview,
-    poster_path: result.poster_path,
-    backdrop_path: result.backdrop_path,
-    release_date: result.release_date,
-    vote_average: result.vote_average,
-    genres: [], // Non disponible dans les résultats de recherche TMDB
-    runtime: null,
+// OPTIMISATION: 3 murs (nord + gauche + droit) fusionnés en 1 seul mesh (3→1 draw call)
+const MERGED_WALLS_MAT = new THREE.MeshStandardMaterial({ color: '#1e1e28' })
+
+function MergedWalls({ wallTextures, roomWidth, roomDepth, roomHeight }: {
+  wallTextures: Record<string, THREE.Texture>
+  roomWidth: number
+  roomDepth: number
+  roomHeight: number
+}) {
+  const geometry = useMemo(() => {
+    // Mur du fond (nord): face +Z, position [0, H/2, -D/2]
+    const wallBack = new THREE.PlaneGeometry(roomWidth, roomHeight)
+    wallBack.translate(0, roomHeight / 2, -roomDepth / 2)
+
+    // Mur gauche (ouest): face +X, position [-W/2, H/2, 0], rotation Y=PI/2
+    const wallLeft = new THREE.PlaneGeometry(roomDepth, roomHeight)
+    wallLeft.rotateY(Math.PI / 2)
+    wallLeft.translate(-roomWidth / 2, roomHeight / 2, 0)
+
+    // Mur droit (est): face -X, position [W/2, H/2, 0], rotation Y=-PI/2
+    const wallRight = new THREE.PlaneGeometry(roomDepth, roomHeight)
+    wallRight.rotateY(-Math.PI / 2)
+    wallRight.translate(roomWidth / 2, roomHeight / 2, 0)
+
+    return mergeGeometries([wallBack, wallLeft, wallRight])!
+  }, [roomWidth, roomDepth, roomHeight])
+
+  const material = useMemo(() => {
+    MERGED_WALLS_MAT.map = wallTextures.map
+    MERGED_WALLS_MAT.normalMap = wallTextures.normalMap
+    MERGED_WALLS_MAT.roughnessMap = wallTextures.roughnessMap
+    MERGED_WALLS_MAT.aoMap = wallTextures.aoMap ?? null
+    MERGED_WALLS_MAT.normalScale = new THREE.Vector2(0.6, 0.6)
+    MERGED_WALLS_MAT.needsUpdate = true
+    return MERGED_WALLS_MAT
+  }, [wallTextures])
+
+  useEffect(() => {
+    return () => { geometry.dispose() }
+  }, [geometry])
+
+  return <mesh geometry={geometry} material={material} receiveShadow />
+}
+
+// OPTIMISATION: 2 marches d'escalier fusionnées en 1 mesh (2→1 draw call)
+const STAIRS_MAT = new THREE.MeshStandardMaterial({ color: '#3a3a3a', roughness: 0.8 })
+
+function MergedStairs({ position }: { position: [number, number, number] }) {
+  const geometry = useMemo(() => {
+    const step1 = new THREE.BoxGeometry(1, 0.16, 1)
+    step1.translate(0, 0.08, 0)
+    const step2 = new THREE.BoxGeometry(0.7, 0.16, 1)
+    step2.translate(0.15, 0.24, 0)
+    return mergeGeometries([step1, step2])!
+  }, [])
+
+  useEffect(() => {
+    return () => { geometry.dispose() }
+  }, [geometry])
+
+  return <mesh position={position} geometry={geometry} material={STAIRS_MAT} />
+}
+
+// ===== CASSETTE POSITION PRE-COMPUTATION =====
+// Pure functions that compute cassette instance data synchronously in useMemo,
+// eliminating the 2-frame delay from the previous shelf callback cascade
+// (mount → useEffect → callback → wait-for-all-6 → setState → re-render).
+
+// WallShelf constants (must match WallShelf.tsx)
+const WALL_ROWS = 5
+const WALL_ROW_HEIGHT = CASSETTE_DIMENSIONS.height + 0.12
+const WALL_SHELF_DEPTH = 0.38
+const WALL_CASSETTE_SPACING = CASSETTE_DIMENSIONS.width + 0.02
+
+// IslandShelf constants (must match IslandShelf.tsx)
+const ISLAND_ROWS = 4
+const ISLAND_CASSETTES_PER_ROW = 12
+const ISLAND_ROW_HEIGHT = CASSETTE_DIMENSIONS.height + 0.08
+const ISLAND_HEIGHT_CONST = 1.6
+const ISLAND_BASE_WIDTH = 0.55
+const ISLAND_TOP_WIDTH = 0.35
+const ISLAND_CASSETTE_TILT = 0.15
+const ISLAND_CASSETTE_SPACING = CASSETTE_DIMENSIONS.width + 0.02
+
+const CASSETTE_COLORS = [
+  '#1a1a2e', '#16213e', '#0f3460', '#533483',
+  '#2c3e50', '#34495e', '#1e3d59', '#3d5a80'
+]
+
+function computeWallShelfCassettes(
+  position: [number, number, number],
+  rotation: [number, number, number],
+  length: number,
+  films: Film[]
+): CassetteInstanceData[] {
+  if (films.length === 0) return []
+
+  const cassettesPerRow = Math.floor((length - 0.1) / WALL_CASSETTE_SPACING)
+  const totalCapacity = cassettesPerRow * WALL_ROWS
+  const data: CassetteInstanceData[] = []
+
+  const parentQuat = new THREE.Quaternion().setFromEuler(
+    new THREE.Euler(rotation[0], rotation[1], rotation[2])
+  )
+  const parentPos = new THREE.Vector3(position[0], position[1], position[2])
+
+  for (let index = 0; index < totalCapacity; index++) {
+    const row = Math.floor(index / cassettesPerRow)
+    const col = index % cassettesPerRow
+    if (row >= WALL_ROWS) continue
+
+    const filmIndex = index % Math.max(films.length, 1)
+    const film = films[filmIndex]
+    if (!film) continue
+
+    const localX = (col - cassettesPerRow / 2 + 0.5) * WALL_CASSETTE_SPACING
+    const localY = 0.25 + row * WALL_ROW_HEIGHT
+    const localZ = WALL_SHELF_DEPTH / 2 + 0.02
+
+    const worldPos = new THREE.Vector3(localX, localY, localZ)
+    worldPos.applyQuaternion(parentQuat)
+    worldPos.add(parentPos)
+
+    const cassetteKey = `wall-${position[0].toFixed(1)}-${position[2].toFixed(1)}-${row}-${col}`
+    const posterUrl = film.poster_path
+      ? `https://image.tmdb.org/t/p/w200${film.poster_path}`
+      : null
+
+    data.push({
+      cassetteKey,
+      filmId: film.id,
+      worldPosition: worldPos,
+      worldQuaternion: parentQuat.clone(),
+      hoverOffsetZ: 0.08,
+      posterUrl,
+      fallbackColor: CASSETTE_COLORS[film.id % CASSETTE_COLORS.length],
+    })
   }
+
+  return data
+}
+
+function computeIslandShelfCassettes(
+  position: [number, number, number],
+  rotation: [number, number, number],
+  filmsLeft: Film[],
+  filmsRight: Film[]
+): CassetteInstanceData[] {
+  if (filmsLeft.length === 0 && filmsRight.length === 0) return []
+
+  const totalCapacityPerSide = ISLAND_CASSETTES_PER_ROW * ISLAND_ROWS
+  const data: CassetteInstanceData[] = []
+
+  const parentQuat = new THREE.Quaternion().setFromEuler(
+    new THREE.Euler(rotation[0], rotation[1], rotation[2])
+  )
+  const parentPos = new THREE.Vector3(position[0], position[1], position[2])
+
+  const addCassettes = (films: Film[], side: 'left' | 'right') => {
+    for (let index = 0; index < totalCapacityPerSide; index++) {
+      const row = Math.floor(index / ISLAND_CASSETTES_PER_ROW)
+      const col = index % ISLAND_CASSETTES_PER_ROW
+      if (row >= ISLAND_ROWS) continue
+
+      const filmIndex = index % Math.max(films.length, 1)
+      const film = films[filmIndex]
+      if (!film) continue
+
+      const y = 0.34 + row * ISLAND_ROW_HEIGHT
+      const widthAtHeight = ISLAND_BASE_WIDTH - (ISLAND_BASE_WIDTH - ISLAND_TOP_WIDTH) * (y / ISLAND_HEIGHT_CONST)
+
+      let localX: number
+      let groupRotY: number
+      let groupRotZ: number
+      if (side === 'left') {
+        localX = -widthAtHeight / 2 - 0.06
+        groupRotY = Math.PI / 2
+        groupRotZ = -ISLAND_CASSETTE_TILT
+      } else {
+        localX = widthAtHeight / 2 + 0.06
+        groupRotY = -Math.PI / 2
+        groupRotZ = ISLAND_CASSETTE_TILT
+      }
+      const localZ = (col - ISLAND_CASSETTES_PER_ROW / 2 + 0.5) * ISLAND_CASSETTE_SPACING
+
+      const groupQuat = new THREE.Quaternion().setFromEuler(
+        new THREE.Euler(0, groupRotY, groupRotZ)
+      )
+      const worldQuat = parentQuat.clone().multiply(groupQuat)
+
+      const worldPos = new THREE.Vector3(localX, y, localZ)
+      worldPos.applyQuaternion(parentQuat)
+      worldPos.add(parentPos)
+
+      const cassetteKey = `island-${side}-${row}-${col}`
+      const posterUrl = film.poster_path
+        ? `https://image.tmdb.org/t/p/w200${film.poster_path}`
+        : null
+
+      data.push({
+        cassetteKey,
+        filmId: film.id,
+        worldPosition: worldPos,
+        worldQuaternion: worldQuat,
+        hoverOffsetZ: -0.08,
+        posterUrl,
+        fallbackColor: CASSETTE_COLORS[film.id % CASSETTE_COLORS.length],
+      })
+    }
+  }
+
+  addCassettes(filmsLeft, 'left')
+  addCassettes(filmsRight, 'right')
+
+  return data
 }
 
 export function Aisle({ films }: AisleProps) {
-  // ===== FILMS TMDB TOP RATED POUR NOUVEAUTÉS =====
-  const [tmdbNouveautes, setTmdbNouveautes] = useState<Film[]>([])
-  const [tmdbLoading, setTmdbLoading] = useState(true)
-
-  // Fallback: films locaux triés par note (si TMDB échoue)
-  const localTopRated = useMemo(() => {
+  // ===== FILMS POUR NOUVEAUTÉS (ÎLOT CENTRAL) =====
+  // Uses films from the store's "nouveautes" aisle (already fetched in App.tsx alongside other aisles).
+  // No separate TMDB fetch — avoids a second allCassetteData recomputation that caused
+  // the visual glitch (cassettes appear → go black → reload).
+  const nouveautesFilms = useMemo(() => {
     const currentYear = new Date().getFullYear()
     const tenYearsAgo = currentYear - 10
 
     return [...films]
       .filter(f => {
-        if (!f.release_date) return true // garder les films sans date
+        if (!f.release_date) return true
         const releaseYear = new Date(f.release_date).getFullYear()
         return releaseYear >= tenYearsAgo
       })
@@ -167,35 +374,8 @@ export function Aisle({ films }: AisleProps) {
       .slice(0, 30)
   }, [films])
 
-  // Charger les meilleurs films TMDB des 10 dernières années
-  useEffect(() => {
-    let cancelled = false
-
-    async function loadTopRatedFilms() {
-      try {
-        // Récupérer 2 pages (40 films) pour remplir les 30 places de l'îlot
-        const results = await tmdb.getTopRatedRecent(2)
-        if (!cancelled && results.length > 0) {
-          // Convertir en format Film et prendre les 30 premiers
-          const filmsFromTmdb = results.slice(0, 30).map(tmdbResultToFilm)
-          setTmdbNouveautes(filmsFromTmdb)
-        }
-        if (!cancelled) setTmdbLoading(false)
-      } catch (error) {
-        console.error('Erreur chargement films TMDB:', error)
-        if (!cancelled) setTmdbLoading(false)
-      }
-    }
-
-    loadTopRatedFilms()
-
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  // Films à afficher: TMDB si disponibles, sinon fallback sur catalogue local
-  const nouveautesFilms = tmdbNouveautes.length > 0 ? tmdbNouveautes : localTopRated
+  // Poster image preloading is handled at module level in App.tsx
+  // (starts as soon as TMDB API data arrives, before the user enters the store).
 
   // ===== TEXTURES =====
   const fireExtinguisherPanelTexture = useTexture('/panneau-extincteur.png')
@@ -208,6 +388,7 @@ export function Aisle({ films }: AisleProps) {
   const woodTextures = usePBRTextures('/textures/wood', 2, 1)
 
   // ===== FILTRER LES FILMS PAR GENRE =====
+  // Memoize each genre slice individually to avoid new array refs on every render
   const filmsByGenre = useMemo(() => {
     const horreur = filterFilmsByGenre(films, 'horreur')
     const thriller = filterFilmsByGenre(films, 'thriller')
@@ -218,6 +399,15 @@ export function Aisle({ films }: AisleProps) {
     return { horreur, thriller, action, comedie, drame }
   }, [films])
 
+  // Memoize sliced film arrays to prevent new refs each render (avoids infinite useEffect loops)
+  const horreurSlice = useMemo(() => filmsByGenre.horreur.slice(0, 25), [filmsByGenre.horreur])
+  const thrillerSlice = useMemo(() => filmsByGenre.thriller.slice(0, 18), [filmsByGenre.thriller])
+  const actionSlice = useMemo(() => filmsByGenre.action.slice(0, 30), [filmsByGenre.action])
+  const drameSlice = useMemo(() => filmsByGenre.drame.slice(0, 22), [filmsByGenre.drame])
+  const comedieSlice = useMemo(() => filmsByGenre.comedie.slice(0, 28), [filmsByGenre.comedie])
+  const nouveautesLeft = useMemo(() => nouveautesFilms.slice(0, 15), [nouveautesFilms])
+  const nouveautesRight = useMemo(() => nouveautesFilms.slice(15, 30), [nouveautesFilms])
+
   // Extraire les poster_path pour les affiches murales
   const posterPaths = useMemo(() => {
     return films
@@ -226,18 +416,54 @@ export function Aisle({ films }: AisleProps) {
       .map(f => f.poster_path)
   }, [films])
 
-  // Texture de la devanture (vue depuis l'intérieur)
-  const storefrontTexture = useMemo(() => {
-    const loader = new THREE.TextureLoader()
-    const tex = loader.load('/outside.jpeg')
-    tex.colorSpace = THREE.SRGBColorSpace
-    return tex
-  }, [])
+  // Storefront vitrine posters — handpicked iconic films (right-to-left from inside = left-to-right local)
+  // Top row (6): Shining, Scream, Parasite, Back to the Future, Die Hard, Terminator 2
+  // Bottom row (3): Demolition Man, Apocalypto, A Clockwork Orange
+  const vitrinePosterPaths = useMemo(() => [
+    '/uAR0AWqhQL1hQa69UDEbb2rE5Wx.jpg', // The Shining
+    '/lr9ZIrmuwVmZhpZuTCW8D9g0ZJe.jpg', // Scream
+    '/7IiTTgloJzvGI1TAYymCfbfl3vT.jpg', // Parasite
+    '/vN5B5WgYscRGcQpVhHl6p9DDTP0.jpg', // Back to the Future
+    '/7Bjd8kfmDSOzpmhySpEhkUyK2oH.jpg', // Die Hard
+    '/jFTVD4XoWQTcg7wdyJKa8PEds5q.jpg', // Terminator 2
+    '/6TbMfJueFlfwdn8pURQdcugjUFC.jpg', // Demolition Man
+    '/cRY25Q32kDNPFDkFkxAs6bgCq3L.jpg', // Apocalypto
+    '/4sHeTAp65WrSSuc05nRBKddhBxO.jpg', // A Clockwork Orange
+  ], [])
 
-  // Dispose storefront texture on unmount (memory leak fix)
-  useEffect(() => {
-    return () => { storefrontTexture.dispose() }
-  }, [storefrontTexture])
+  // ===== CASSETTE INSTANCE DATA — PRE-COMPUTED IN USEMEMO =====
+  // All cassette positions are computed synchronously here, eliminating the
+  // previous 2-frame delay from the shelf callback cascade (mount → useEffect → callback → setState).
+  const allCassetteData = useMemo(() => {
+    const all: CassetteInstanceData[] = []
+
+    // WallShelf: Horreur
+    all.push(...computeWallShelfCassettes(
+      [-ROOM_WIDTH / 2 + 0.4, 0, -1.54], [0, Math.PI / 2, 0], 3.5, horreurSlice
+    ))
+    // WallShelf: Thriller
+    all.push(...computeWallShelfCassettes(
+      [-ROOM_WIDTH / 2 + 0.4, 0, 1.29], [0, Math.PI / 2, 0], 2.5, thrillerSlice
+    ))
+    // WallShelf: Action
+    all.push(...computeWallShelfCassettes(
+      [-2.5, 0, -ROOM_DEPTH / 2 + 0.4], [0, 0, 0], 4, actionSlice
+    ))
+    // WallShelf: Drame
+    all.push(...computeWallShelfCassettes(
+      [1.5, 0, -ROOM_DEPTH / 2 + 0.4], [0, 0, 0], 3, drameSlice
+    ))
+    // WallShelf: Comédie
+    all.push(...computeWallShelfCassettes(
+      [ROOM_WIDTH / 2 - 0.4, 0, -1.5], [0, -Math.PI / 2, 0], 4, comedieSlice
+    ))
+    // IslandShelf: Nouveautés
+    all.push(...computeIslandShelfCassettes(
+      [-0.8, 0, 0], [0, 0, 0], nouveautesLeft, nouveautesRight
+    ))
+
+    return all
+  }, [horreurSlice, thrillerSlice, actionSlice, drameSlice, comedieSlice, nouveautesLeft, nouveautesRight])
 
   return (
     <group>
@@ -263,50 +489,21 @@ export function Aisle({ films }: AisleProps) {
 
       {/* ===== MURS ===== */}
 
-      {/* Mur d'entrée (sud) avec vitrine */}
-      <mesh position={[0, ROOM_HEIGHT / 2, ROOM_DEPTH / 2]} rotation={[0, Math.PI, 0]}>
-        <planeGeometry args={[ROOM_WIDTH, ROOM_HEIGHT]} />
-        <meshStandardMaterial map={storefrontTexture} roughness={0.3} />
-      </mesh>
+      {/* Mur d'entrée (sud) avec vitrine 3D — PBR wall + glass + posters + neon */}
+      <Storefront
+        position={[0, 0, ROOM_DEPTH / 2]}
+        roomWidth={ROOM_WIDTH}
+        roomHeight={ROOM_HEIGHT}
+        posterPaths={vitrinePosterPaths}
+      />
 
-      {/* Mur du fond (nord) */}
-      <mesh position={[0, ROOM_HEIGHT / 2, -ROOM_DEPTH / 2]} receiveShadow>
-        <planeGeometry args={[ROOM_WIDTH, ROOM_HEIGHT]} />
-        <meshStandardMaterial
-          map={wallTextures.map}
-          normalMap={wallTextures.normalMap}
-          roughnessMap={wallTextures.roughnessMap}
-          aoMap={wallTextures.aoMap}
-          color="#1e1e28"
-          normalScale={[0.6, 0.6] as unknown as THREE.Vector2}
-        />
-      </mesh>
-
-      {/* Mur gauche (ouest) */}
-      <mesh position={[-ROOM_WIDTH / 2, ROOM_HEIGHT / 2, 0]} rotation={[0, Math.PI / 2, 0]} receiveShadow>
-        <planeGeometry args={[ROOM_DEPTH, ROOM_HEIGHT]} />
-        <meshStandardMaterial
-          map={wallTextures.map}
-          normalMap={wallTextures.normalMap}
-          roughnessMap={wallTextures.roughnessMap}
-          aoMap={wallTextures.aoMap}
-          color="#1e1e28"
-          normalScale={[0.6, 0.6] as unknown as THREE.Vector2}
-        />
-      </mesh>
-
-      {/* Mur droit (est) */}
-      <mesh position={[ROOM_WIDTH / 2, ROOM_HEIGHT / 2, 0]} rotation={[0, -Math.PI / 2, 0]} receiveShadow>
-        <planeGeometry args={[ROOM_DEPTH, ROOM_HEIGHT]} />
-        <meshStandardMaterial
-          map={wallTextures.map}
-          normalMap={wallTextures.normalMap}
-          roughnessMap={wallTextures.roughnessMap}
-          aoMap={wallTextures.aoMap}
-          color="#1e1e28"
-          normalScale={[0.6, 0.6] as unknown as THREE.Vector2}
-        />
-      </mesh>
+      {/* 3 murs (nord + gauche + droit) fusionnés en 1 mesh — mergeGeometries */}
+      <MergedWalls
+        wallTextures={wallTextures}
+        roomWidth={ROOM_WIDTH}
+        roomDepth={ROOM_DEPTH}
+        roomHeight={ROOM_HEIGHT}
+      />
 
       {/* ========================================= */}
       {/* ===== SECTION HORREUR - MUR GAUCHE ===== */}
@@ -327,7 +524,6 @@ export function Aisle({ films }: AisleProps) {
           position={[-ROOM_WIDTH / 2 + 0.4, 0, -1.54]}
           rotation={[0, Math.PI / 2, 0]}
           length={3.5}
-          films={filmsByGenre.horreur.slice(0, 25)}
         />
       </group>
 
@@ -350,7 +546,6 @@ export function Aisle({ films }: AisleProps) {
           position={[-ROOM_WIDTH / 2 + 0.4, 0, 1.29]}
           rotation={[0, Math.PI / 2, 0]}
           length={2.5}
-          films={filmsByGenre.thriller.slice(0, 18)}
         />
       </group>
 
@@ -373,7 +568,6 @@ export function Aisle({ films }: AisleProps) {
           position={[-2.5, 0, -ROOM_DEPTH / 2 + 0.4]}
           rotation={[0, 0, 0]}
           length={4}
-          films={filmsByGenre.action.slice(0, 30)}
         />
       </group>
 
@@ -413,7 +607,6 @@ export function Aisle({ films }: AisleProps) {
           position={[1.5, 0, -ROOM_DEPTH / 2 + 0.4]}
           rotation={[0, 0, 0]}
           length={3}
-          films={filmsByGenre.drame.slice(0, 22)}
         />
       </group>
 
@@ -436,7 +629,6 @@ export function Aisle({ films }: AisleProps) {
           position={[ROOM_WIDTH / 2 - 0.4, 0, -1.5]}
           rotation={[0, -Math.PI / 2, 0]}
           length={4}
-          films={filmsByGenre.comedie.slice(0, 28)}
         />
       </group>
 
@@ -444,8 +636,6 @@ export function Aisle({ films }: AisleProps) {
       {/* Top films TMDB des 10 dernières années par note (fallback: catalogue local) */}
       <IslandShelf
         position={[-0.8, 0, 0]}
-        filmsLeft={nouveautesFilms.slice(0, 15)}
-        filmsRight={nouveautesFilms.slice(15, 30)}
       />
 
       {/* Panneau NOUVEAUTÉS double face au-dessus de l'îlot central (aligné avec le meuble) */}
@@ -544,17 +734,8 @@ export function Aisle({ films }: AisleProps) {
         <GameRack position={[-0.15, 0, 0]} rotation={[0, -Math.PI / 2, 0]} />
       </group>
 
-      {/* ===== MARCHES/ESCALIER ===== */}
-      <group position={[ROOM_WIDTH / 2 - 0.7, 0, 3.5]}>
-        <mesh position={[0, 0.08, 0]}>
-          <boxGeometry args={[1, 0.16, 1]} />
-          <meshStandardMaterial color="#3a3a3a" roughness={0.8} />
-        </mesh>
-        <mesh position={[0.15, 0.24, 0]}>
-          <boxGeometry args={[0.7, 0.16, 1]} />
-          <meshStandardMaterial color="#3a3a3a" roughness={0.8} />
-        </mesh>
-      </group>
+      {/* ===== MARCHES/ESCALIER — 2 boxes fusionnées en 1 mesh ===== */}
+      <MergedStairs position={[ROOM_WIDTH / 2 - 0.7, 0, 3.5]} />
 
       {/* ===== PORTE PRIVÉE ===== */}
       <group position={[ROOM_WIDTH / 2 - 1.35, 0, -ROOM_DEPTH / 2 + 0.08]}>
@@ -638,6 +819,11 @@ export function Aisle({ films }: AisleProps) {
         distance={2.5}
         decay={2.5}
       />
+
+      {/* ===== TOUTES LES CASSETTES — 1 seul InstancedMesh (520→1 draw call) ===== */}
+      {allCassetteData.length > 0 && (
+        <CassetteInstances instances={allCassetteData} />
+      )}
     </group>
   )
 }

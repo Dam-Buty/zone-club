@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useStore } from './store';
 import { tmdb } from './services/tmdb';
 import { useManagerTriggers } from './hooks/useManagerTriggers';
@@ -7,21 +7,49 @@ import { FilmDetailModal } from './components/videoclub/FilmDetailModal';
 import { ManagerChat } from './components/manager/ManagerChat';
 import { VHSPlayer } from './components/player/VHSPlayer';
 import { InteriorScene } from './components/interior';
+import { preloadPosterImage } from './utils/CassetteTextureArray';
 import mockFilmIds from './data/mock/films.json';
 
+// ===== MODULE-LEVEL PREFETCH =====
+// Starts TMDB fetches immediately when JS loads (before React mounts).
+// Once API data arrives, preloads all poster images into the shared cache.
+// By the time the user clicks "enter store", both data AND images are ready.
+const _prefetchPromise = Promise.all(
+  (Object.keys(mockFilmIds) as Array<keyof typeof mockFilmIds>).map(async (aisle) => {
+    const filmIds = mockFilmIds[aisle] as number[];
+    if (!filmIds || filmIds.length === 0) return null;
+    try {
+      return { aisle, films: await tmdb.getFilms(filmIds) };
+    } catch {
+      return null;
+    }
+  })
+);
+
+// As soon as API data arrives, preload all poster images into the shared cache.
+// preloadPosterImage() stores each Image in a Map<url, Promise<HTMLImageElement>>
+// so CassetteTextureArray.loadPosterIntoLayer() gets them instantly (~0ms).
+_prefetchPromise.then((results) => {
+  for (const result of results) {
+    if (!result) continue;
+    for (const film of result.films) {
+      if (film.poster_path) {
+        preloadPosterImage(`https://image.tmdb.org/t/p/w200${film.poster_path}`);
+      }
+    }
+  }
+});
+
 function App() {
-  // Store state
-  const {
-    currentScene,
-    setScene,
-    currentAisle,
-    selectedFilmId,
-    selectFilm,
-    films,
-    setFilmsForAisle,
-    isPlayerOpen,
-    requestPointerLock,
-  } = useStore();
+  // Individual selectors to avoid re-rendering on unrelated store changes (e.g. targetedFilm, pointerLock)
+  const currentScene = useStore(state => state.currentScene);
+  const setScene = useStore(state => state.setScene);
+  const selectedFilmId = useStore(state => state.selectedFilmId);
+  const selectFilm = useStore(state => state.selectFilm);
+  const films = useStore(state => state.films);
+  const setFilmsForAisle = useStore(state => state.setFilmsForAisle);
+  const isPlayerOpen = useStore(state => state.isPlayerOpen);
+  const requestPointerLock = useStore(state => state.requestPointerLock);
 
   // Transition state
   const [isTransitioning, setIsTransitioning] = useState(false);
@@ -29,54 +57,44 @@ function App() {
   // Manager triggers hook
   useManagerTriggers();
 
-  // Fetch ALL films for ALL aisles at startup
+  // Await the module-level prefetch and push results into the store.
+  // The TMDB fetches started at JS load time — by the time the user clicks
+  // "enter store", the promise is likely already resolved (0ms wait).
+  const hasFetchedRef = useRef(false);
   useEffect(() => {
-    const fetchAllFilms = async () => {
-      const aisles = Object.keys(mockFilmIds) as Array<keyof typeof mockFilmIds>;
+    if (hasFetchedRef.current) return;
+    hasFetchedRef.current = true;
 
-      for (const aisle of aisles) {
-        // Skip if already cached
-        if (films[aisle as keyof typeof films]?.length > 0) continue;
-
-        const filmIds = mockFilmIds[aisle] as number[];
-        if (!filmIds || filmIds.length === 0) continue;
-
-        try {
-          const fetchedFilms = await tmdb.getFilms(filmIds);
-          setFilmsForAisle(aisle as any, fetchedFilms);
-        } catch (error) {
-          console.error(`Error fetching films for ${aisle}:`, error);
-        }
+    _prefetchPromise.then((results) => {
+      // All resolved — set in one synchronous block (React 18 batches these)
+      for (const result of results) {
+        if (result) setFilmsForAisle(result.aisle as any, result.films);
       }
-    };
-
-    fetchAllFilms();
-  }, [films, setFilmsForAisle]);
+    });
+  }, [setFilmsForAisle]);
 
   // Get the selected film object - search across ALL aisles
   const selectedFilm = selectedFilmId
     ? Object.values(films).flat().find((f) => f.id === selectedFilmId) || null
     : null;
 
-  // Handle film click from 3D scene
-  const handleFilmClick = (filmId: number) => {
+  // Memoized callbacks — stable references prevent cascading re-renders to Canvas children
+  const handleFilmClick = useCallback((filmId: number) => {
     selectFilm(filmId);
-  };
+  }, [selectFilm]);
 
-  // Close modal and re-lock pointer
-  const handleCloseModal = () => {
+  const handleCloseModal = useCallback(() => {
     selectFilm(null);
     requestPointerLock();
-  };
+  }, [selectFilm, requestPointerLock]);
 
-  // Handle entering the store from exterior
-  const handleEnterStore = () => {
+  const handleEnterStore = useCallback(() => {
     setIsTransitioning(true);
     setTimeout(() => {
       setScene('interior');
       setIsTransitioning(false);
     }, 100);
-  };
+  }, [setScene]);
 
   // Show player if open
   if (isPlayerOpen) {

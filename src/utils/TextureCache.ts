@@ -22,7 +22,7 @@ export const TextureCache = {
    * Obtenir (ou charger) une texture par URL.
    * Incrémente le compteur de références.
    */
-  acquire(url: string, colorSpace = THREE.SRGBColorSpace, anisotropy = 4): THREE.Texture {
+  acquire(url: string, colorSpace = THREE.SRGBColorSpace, anisotropy = 16): THREE.Texture {
     const existing = cache.get(url)
     if (existing) {
       existing.refCount++

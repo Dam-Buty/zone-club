@@ -32,6 +32,7 @@ export function PostProcessingEffects() {
     aoPass.scale.value = 0.5      // Intensité AO (0.5 = subtil mais visible)
     aoPass.radius.value = 0.25    // Rayon de recherche en world units (~25cm)
     aoPass.thickness.value = 1.0  // Épaisseur des objets pour le calcul d'occlusion
+    aoPass.resolutionScale = 0.5  // Demi-résolution: -75% fragments, AO flou par nature
 
     // Appliquer AO à la couleur de la scène
     // IMPORTANT: GTAO render target est en RedFormat (canal R uniquement).
@@ -58,14 +59,14 @@ export function PostProcessingEffects() {
     ).oneMinus().pow(float(0.4))
     const withVignette = withBloom.mul(vignetteFactor)
 
-    // 6. FXAA — Fast Approximate Anti-Aliasing (dernière étape, après tone mapping)
-    // Lisse les bords crénelés sans le coût d'un MSAA
-    const final = fxaa(withVignette)
+    // 6. FXAA — Fast Approximate Anti-Aliasing (last step, after all color processing)
+    // ~3% GPU cost for smooth edges on geometry silhouettes and texture boundaries
+    const withFXAA = fxaa(withVignette)
 
-    postProcessing.outputNode = final
+    postProcessing.outputNode = withFXAA
 
     postProcessingRef.current = postProcessing
-    console.log('[PostProcessing] Pipeline: GTAO + Bloom + Vignette + FXAA + ACES ToneMapping')
+    console.log('[PostProcessing] Pipeline: GTAO(0.5x) + Bloom + Vignette + FXAA + ACES ToneMapping')
 
     return () => {
       postProcessing.dispose()

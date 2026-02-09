@@ -108,6 +108,7 @@ export function VideoClubScene({ onCassetteClick }: VideoClubSceneProps) {
           requiredFeatures: [],
           requiredLimits: {
             maxStorageBufferBindingSize: adapter.limits.maxStorageBufferBindingSize,
+            maxTextureArrayLayers: adapter.limits.maxTextureArrayLayers,
           },
         });
         console.log(`[VideoClub] Device obtained in ${(performance.now() - deviceStart).toFixed(2)}ms`);

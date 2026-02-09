@@ -123,7 +123,7 @@ export function Controls({ onCassetteClick }: ControlsProps) {
   useEffect(() => {
     camera.position.set(-3.5, 1.6, 3)
     camera.near = 0.1
-    camera.far = 50
+    camera.far = 15  // Pièce 11×8.5m, diagonale ~14m, frustum serré = meilleur culling
     if (camera instanceof THREE.PerspectiveCamera) {
       camera.fov = 70
       camera.updateProjectionMatrix()
@@ -301,6 +301,17 @@ export function Controls({ onCassetteClick }: ControlsProps) {
       let foundInteractive: InteractiveTarget = null
 
       for (const intersect of intersects) {
+        // Check for InstancedMesh cassettes first (Phase D optimization)
+        if (intersect.object.userData?.isCassetteInstances && intersect.instanceId !== undefined) {
+          const idToKey = intersect.object.userData.instanceIdToKey as string[]
+          const idToFilm = intersect.object.userData.instanceIdToFilmId as number[]
+          if (idToKey && idToFilm && intersect.instanceId < idToKey.length) {
+            foundFilmId = idToFilm[intersect.instanceId]
+            foundCassetteKey = idToKey[intersect.instanceId]
+            break
+          }
+        }
+
         // Chercher l'objet avec userData dans la hiérarchie
         let obj: THREE.Object3D | null = intersect.object
         while (obj) {
@@ -317,7 +328,7 @@ export function Controls({ onCassetteClick }: ControlsProps) {
             foundInteractive = 'tv'
             break
           }
-          // Vérifier les cassettes
+          // Vérifier les cassettes (legacy individual cassettes)
           if (obj.userData?.filmId && obj.userData?.cassetteKey) {
             foundFilmId = obj.userData.filmId
             foundCassetteKey = obj.userData.cassetteKey
@@ -383,10 +394,13 @@ export function Controls({ onCassetteClick }: ControlsProps) {
     // Reset le ciblage seulement quand pas locké (pas quand on skip un frame de raycast)
     if (!controlsRef.current?.isLocked) {
       targetedInteractiveRef.current = null
-      lastCassetteKeyRef.current = null
-      lastFilmIdRef.current = null
-      deselectTimerRef.current = 0
-      setTargetedFilm(null, null)
+      // Only call setTargetedFilm if not already null (avoids unnecessary re-renders)
+      if (lastCassetteKeyRef.current !== null || lastFilmIdRef.current !== null) {
+        lastCassetteKeyRef.current = null
+        lastFilmIdRef.current = null
+        deselectTimerRef.current = 0
+        setTargetedFilm(null, null)
+      }
       document.body.style.cursor = 'default'
     }
 
