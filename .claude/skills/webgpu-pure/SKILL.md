@@ -111,6 +111,7 @@ function render() {
 
 ## References
 
+- [WebGPU Fundamentals](references/WEBGPU_FUNDAMENTALS_REFERENCE.md) -- condensed from [webgpufundamentals.org](https://webgpufundamentals.org/): init, WGSL, memory layout, buffers, textures, compute, optimization
 - [Debug Playbook](references/DEBUG_PLAYBOOK.md) -- error scopes, black render checklist, shader isolation
 - [PostProcess HDR Bloom](references/POSTPROCESS_HDR_BLOOM.md) -- HDR pipeline, tone mapping, bloom, parameters guide
 - [Performance Checklist](references/PERF_CHECKLIST.md) -- FPS measurement, quick wins, pipeline hygiene
