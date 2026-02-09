@@ -9,7 +9,7 @@ interface ControlsProps {
 }
 
 // Dimensions de la pièce
-const ROOM_WIDTH = 11
+const ROOM_WIDTH = 9
 const ROOM_DEPTH = 8.5
 
 // Marge de collision (7% de distance minimum)
@@ -42,8 +42,8 @@ const COLLISION_ZONES: { minX: number; maxX: number; minZ: number; maxZ: number;
   // Escalier (position: [ROOM_WIDTH/2 - 0.7, 0, 3.5])
   { minX: ROOM_WIDTH / 2 - 1.5, maxX: ROOM_WIDTH / 2, minZ: 3, maxZ: 4, name: 'escalier' },
 
-  // Porte privée (position: [ROOM_WIDTH/2 - 0.8, 0, -ROOM_DEPTH/2 + 0.08])
-  { minX: ROOM_WIDTH / 2 - 1.3, maxX: ROOM_WIDTH / 2 - 0.3, minZ: -ROOM_DEPTH / 2, maxZ: -ROOM_DEPTH / 2 + 0.5, name: 'porte-privee' },
+  // Porte privée (position: [ROOM_WIDTH/2 - 1.05, 0, -ROOM_DEPTH/2 + 0.08])
+  { minX: ROOM_WIDTH / 2 - 1.0, maxX: ROOM_WIDTH / 2, minZ: -ROOM_DEPTH / 2, maxZ: -ROOM_DEPTH / 2 + 0.5, name: 'porte-privee' },
 
   // Plante (position: [-ROOM_WIDTH/2 + 0.5, 0, -ROOM_DEPTH/2 + 0.5])
   { minX: -ROOM_WIDTH / 2, maxX: -ROOM_WIDTH / 2 + 1, minZ: -ROOM_DEPTH / 2, maxZ: -ROOM_DEPTH / 2 + 1, name: 'plante' },
@@ -123,7 +123,7 @@ export function Controls({ onCassetteClick }: ControlsProps) {
   useEffect(() => {
     camera.position.set(-3.5, 1.6, 3)
     camera.near = 0.1
-    camera.far = 15  // Pièce 11×8.5m, diagonale ~14m, frustum serré = meilleur culling
+    camera.far = 15  // Pièce 9×8.5m, diagonale ~12.4m, frustum serré = meilleur culling
     if (camera instanceof THREE.PerspectiveCamera) {
       camera.fov = 70
       camera.updateProjectionMatrix()

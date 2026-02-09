@@ -1,26 +1,6 @@
----
-name: webgpu-canvas-text
-description: "Skill for rendering text in WebGPU/Three.js WebGPU scenes using CanvasTexture. Use this skill when implementing 3D text, neon signs, labels, UI text in any WebGPU or Three.js WebGPU project. IMPORTANT: Troika-three-text and @react-three/drei Text components are NOT compatible with WebGPU - always use this CanvasTexture technique instead."
----
+# Canvas Texture Text - Full Reference
 
-# WebGPU Canvas Text Rendering
-
-## CRITICAL: Why This Technique is Required
-
-**Problem**: The standard text solutions for Three.js/R3F do NOT work with WebGPU:
-- `@react-three/drei` Text component uses Troika-three-text
-- Troika uses GLSL shaders that are incompatible with WebGPU's WGSL
-- Result: Text simply doesn't render (invisible or error)
-
-**Source**: https://discourse.threejs.org/t/troika-three-text-and-webgpu/55737
-
-**Solution**: Use HTML5 Canvas 2D to render text, then convert to THREE.CanvasTexture
-
----
-
-## Complete Implementation
-
-### Basic createTextTexture Function
+## Complete createTextTexture Function
 
 ```typescript
 import * as THREE from 'three' // or 'three/webgpu'
@@ -49,7 +29,6 @@ function createTextTexture(
     align = 'center',
   } = options
 
-  // Create canvas
   const canvas = document.createElement('canvas')
   canvas.width = width
   canvas.height = height
@@ -87,7 +66,6 @@ function createTextTexture(
     ctx.fillText(line, x, startY + i * lineHeight)
   })
 
-  // Create Three.js texture
   const texture = new THREE.CanvasTexture(canvas)
   texture.colorSpace = THREE.SRGBColorSpace
   texture.needsUpdate = true
@@ -98,9 +76,7 @@ function createTextTexture(
 
 ---
 
-## Usage in React Three Fiber
-
-### Basic Text Plane
+## R3F Usage: Basic Text Label
 
 ```tsx
 import { useMemo, useEffect } from 'react'
@@ -116,7 +92,6 @@ function TextLabel({ text, position, color = '#ffffff' }) {
     })
   }, [text, color])
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => texture.dispose()
   }, [texture])
@@ -130,7 +105,9 @@ function TextLabel({ text, position, color = '#ffffff' }) {
 }
 ```
 
-### Neon Sign with Glow
+---
+
+## R3F Usage: Neon Sign with Glow
 
 ```tsx
 function NeonSign({ text, position, color = '#ff2d95', size = 0.2 }) {
@@ -189,7 +166,7 @@ function NeonSign({ text, position, color = '#ff2d95', size = 0.2 }) {
 
 ---
 
-## Advanced: Auto-Sizing Text
+## Auto-Sizing Text
 
 ```typescript
 function createAutoSizedTextTexture(
@@ -211,7 +188,6 @@ function createAutoSizedTextTexture(
   canvas.width = Math.ceil(textWidth + 40)
   canvas.height = Math.ceil(textHeight + 20)
 
-  // Clear and setup
   ctx.clearRect(0, 0, canvas.width, canvas.height)
   ctx.font = font
   ctx.textAlign = 'center'
@@ -241,7 +217,7 @@ function createAutoSizedTextTexture(
 
 ---
 
-## Dynamic/Animated Text
+## Dynamic / Animated Text
 
 For text that updates frequently (counters, scores, etc.):
 
@@ -250,7 +226,6 @@ function DynamicText({ value, position }) {
   const canvasRef = useRef<HTMLCanvasElement>()
   const textureRef = useRef<THREE.CanvasTexture>()
 
-  // Initialize once
   useEffect(() => {
     const canvas = document.createElement('canvas')
     canvas.width = 256
@@ -258,14 +233,11 @@ function DynamicText({ value, position }) {
     canvasRef.current = canvas
     textureRef.current = new THREE.CanvasTexture(canvas)
     textureRef.current.colorSpace = THREE.SRGBColorSpace
-
     return () => textureRef.current?.dispose()
   }, [])
 
-  // Update when value changes
   useEffect(() => {
     if (!canvasRef.current || !textureRef.current) return
-
     const ctx = canvasRef.current.getContext('2d')!
     ctx.clearRect(0, 0, 256, 64)
     ctx.font = 'bold 32px Arial'
@@ -273,7 +245,6 @@ function DynamicText({ value, position }) {
     ctx.textBaseline = 'middle'
     ctx.fillStyle = '#00ff00'
     ctx.fillText(String(value), 128, 32)
-
     textureRef.current.needsUpdate = true
   }, [value])
 
@@ -288,7 +259,7 @@ function DynamicText({ value, position }) {
 
 ---
 
-## Common Neon Colors
+## Neon Colors
 
 ```typescript
 const NEON_COLORS = {
@@ -302,41 +273,3 @@ const NEON_COLORS = {
   blue: '#0088ff',
 }
 ```
-
----
-
-## Best Practices
-
-### DO:
-- Always dispose textures on component unmount
-- Use `toneMapped={false}` for emissive/glowing text
-- Use `THREE.SRGBColorSpace` for correct color rendering
-- Use `useMemo` to avoid recreating textures on every render
-- Calculate aspect ratio from canvas dimensions for proper sizing
-
-### DON'T:
-- Don't use @react-three/drei Text component with WebGPU
-- Don't use Troika-three-text with WebGPU
-- Don't create textures in render/useFrame loops
-- Don't forget to handle multiline text with `\n`
-
----
-
-## Troubleshooting
-
-| Problem | Solution |
-|---------|----------|
-| Text invisible | Check `transparent={true}` on material |
-| Colors washed out | Add `toneMapped={false}` |
-| Text pixelated | Increase canvas width/height and fontSize |
-| Text too small | Adjust plane geometry size |
-| Memory leak | Add `texture.dispose()` in useEffect cleanup |
-| Wrong orientation | Use `side={THREE.DoubleSide}` |
-
----
-
-## References
-
-- Three.js CanvasTexture: https://threejs.org/docs/#api/en/textures/CanvasTexture
-- HTML5 Canvas Text API: https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D
-- Troika WebGPU Issue: https://discourse.threejs.org/t/troika-three-text-and-webgpu/55737

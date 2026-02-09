@@ -160,7 +160,7 @@ export function CassetteInstances({ instances }: CassetteInstancesProps) {
     // Per-instance attributes are already attached to SHARED_CASSETTE_GEOMETRY
     // in useMemo (synchronously, before first render) to avoid WebGPU warnings.
 
-    // Disable mesh-level frustum culling: instances span the entire room (11×8.5m)
+    // Disable mesh-level frustum culling: instances span the entire room (9×8.5m)
     // but the base geometry bounding sphere is tiny (~0.14m). Three.js would incorrectly
     // cull the whole InstancedMesh when the camera doesn't see the origin.
     // Per-instance culling is already handled in the animation loop.

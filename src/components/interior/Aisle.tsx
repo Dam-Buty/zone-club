@@ -31,7 +31,7 @@ function AsyncModel({ url, position, scale = 1, rotation = [0, 0, 0] }: {
     />
   )
 }
-import { WallShelf } from './WallShelf'
+import { WallShelf, SHELF_DEPTH, SHELF_TILT, SHELF_PIVOT_Y } from './WallShelf'
 import { IslandShelf } from './IslandShelf'
 import { CassetteInstances } from './CassetteInstances'
 import { CASSETTE_DIMENSIONS } from './Cassette'
@@ -50,7 +50,7 @@ interface AisleProps {
 }
 
 // Dimensions de la pièce (basées sur le plan PDF, réduites de 30%)
-const ROOM_WIDTH = 11  // x axis
+const ROOM_WIDTH = 9  // x axis
 const ROOM_DEPTH = 8.5 // z axis
 const ROOM_HEIGHT = 2.8
 
@@ -206,11 +206,13 @@ function MergedStairs({ position }: { position: [number, number, number] }) {
 // eliminating the 2-frame delay from the previous shelf callback cascade
 // (mount → useEffect → callback → wait-for-all-6 → setState → re-render).
 
-// WallShelf constants (must match WallShelf.tsx)
+// WallShelf constants (must match WallShelf.tsx — SHELF_DEPTH, SHELF_TILT, SHELF_PIVOT_Y imported)
 const WALL_ROWS = 5
 const WALL_ROW_HEIGHT = CASSETTE_DIMENSIONS.height + 0.12
-const WALL_SHELF_DEPTH = 0.38
 const WALL_CASSETTE_SPACING = CASSETTE_DIMENSIONS.width + 0.02
+
+// Pre-computed tilt quaternion for cassette positioning (same tilt as WallShelf inner group)
+const _tiltQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(-SHELF_TILT, 0, 0))
 
 // IslandShelf constants (must match IslandShelf.tsx)
 const ISLAND_ROWS = 4
@@ -239,9 +241,11 @@ function computeWallShelfCassettes(
   const totalCapacity = cassettesPerRow * WALL_ROWS
   const data: CassetteInstanceData[] = []
 
-  const parentQuat = new THREE.Quaternion().setFromEuler(
+  const baseQuat = new THREE.Quaternion().setFromEuler(
     new THREE.Euler(rotation[0], rotation[1], rotation[2])
   )
+  // Combined quaternion: parent rotation × shelf tilt
+  const parentQuat = baseQuat.clone().multiply(_tiltQuat)
   const parentPos = new THREE.Vector3(position[0], position[1], position[2])
 
   for (let index = 0; index < totalCapacity; index++) {
@@ -255,11 +259,17 @@ function computeWallShelfCassettes(
 
     const localX = (col - cassettesPerRow / 2 + 0.5) * WALL_CASSETTE_SPACING
     const localY = 0.25 + row * WALL_ROW_HEIGHT
-    const localZ = WALL_SHELF_DEPTH / 2 + 0.02
+    const localZ = SHELF_DEPTH / 2 + 0.02
 
-    const worldPos = new THREE.Vector3(localX, localY, localZ)
-    worldPos.applyQuaternion(parentQuat)
-    worldPos.add(parentPos)
+    // Apply tilt: translate to pivot, rotate, translate back
+    // Tilt pivot is at (0, SHELF_PIVOT_Y, 0) in shelf local space
+    const tiltedPos = new THREE.Vector3(localX, localY - SHELF_PIVOT_Y, localZ)
+    tiltedPos.applyQuaternion(_tiltQuat)
+    tiltedPos.y += SHELF_PIVOT_Y
+
+    // Then apply parent rotation + translation to world space
+    tiltedPos.applyQuaternion(baseQuat)
+    tiltedPos.add(parentPos)
 
     const cassetteKey = `wall-${position[0].toFixed(1)}-${position[2].toFixed(1)}-${row}-${col}`
     const posterUrl = film.poster_path
@@ -269,7 +279,7 @@ function computeWallShelfCassettes(
     data.push({
       cassetteKey,
       filmId: film.id,
-      worldPosition: worldPos,
+      worldPosition: tiltedPos,
       worldQuaternion: parentQuat.clone(),
       hoverOffsetZ: 0.08,
       posterUrl,
@@ -447,11 +457,11 @@ export function Aisle({ films }: AisleProps) {
     ))
     // WallShelf: Action
     all.push(...computeWallShelfCassettes(
-      [-2.5, 0, -ROOM_DEPTH / 2 + 0.4], [0, 0, 0], 4, actionSlice
+      [-2.25, 0, -ROOM_DEPTH / 2 + 0.4], [0, 0, 0], 3.5, actionSlice
     ))
     // WallShelf: Drame
     all.push(...computeWallShelfCassettes(
-      [1.5, 0, -ROOM_DEPTH / 2 + 0.4], [0, 0, 0], 3, drameSlice
+      [1.25, 0, -ROOM_DEPTH / 2 + 0.4], [0, 0, 0], 2.5, drameSlice
     ))
     // WallShelf: Comédie
     all.push(...computeWallShelfCassettes(
@@ -463,7 +473,8 @@ export function Aisle({ films }: AisleProps) {
     ))
 
     return all
-  }, [horreurSlice, thrillerSlice, actionSlice, drameSlice, comedieSlice, nouveautesLeft, nouveautesRight])
+  // ROOM_WIDTH & ROOM_DEPTH in deps: ensures recomputation when room dimensions change (HMR cache fix)
+  }, [horreurSlice, thrillerSlice, actionSlice, drameSlice, comedieSlice, nouveautesLeft, nouveautesRight, ROOM_WIDTH, ROOM_DEPTH])
 
   return (
     <group>
@@ -556,7 +567,7 @@ export function Aisle({ films }: AisleProps) {
         {/* Panneau ACTION suspendu - reculé de 5% */}
         <GenreSectionPanel
           genre="ACTION"
-          position={[-2.5, 2.07, -ROOM_DEPTH / 2 + 1.14]}
+          position={[-2.25, 2.07, -ROOM_DEPTH / 2 + 1.14]}
           rotation={[0, 0, 0]}
           color={GENRE_CONFIG.action.color}
           width={1.8}
@@ -565,9 +576,9 @@ export function Aisle({ films }: AisleProps) {
 
         {/* Étagères Action - partie gauche du mur du fond */}
         <WallShelf
-          position={[-2.5, 0, -ROOM_DEPTH / 2 + 0.4]}
+          position={[-2.25, 0, -ROOM_DEPTH / 2 + 0.4]}
           rotation={[0, 0, 0]}
-          length={4}
+          length={3.5}
         />
       </group>
 
@@ -595,7 +606,7 @@ export function Aisle({ films }: AisleProps) {
         {/* Panneau DRAME suspendu - reculé de 5% */}
         <GenreSectionPanel
           genre="DRAME"
-          position={[1.5, 2.07, -ROOM_DEPTH / 2 + 1.14]}
+          position={[1.25, 2.07, -ROOM_DEPTH / 2 + 1.14]}
           rotation={[0, 0, 0]}
           color={GENRE_CONFIG.drame.color}
           width={1.5}
@@ -604,9 +615,9 @@ export function Aisle({ films }: AisleProps) {
 
         {/* Étagères Drame - partie droite du mur du fond (avant la porte) */}
         <WallShelf
-          position={[1.5, 0, -ROOM_DEPTH / 2 + 0.4]}
+          position={[1.25, 0, -ROOM_DEPTH / 2 + 0.4]}
           rotation={[0, 0, 0]}
-          length={3}
+          length={2.5}
         />
       </group>
 
@@ -738,7 +749,7 @@ export function Aisle({ films }: AisleProps) {
       <MergedStairs position={[ROOM_WIDTH / 2 - 0.7, 0, 3.5]} />
 
       {/* ===== PORTE PRIVÉE ===== */}
-      <group position={[ROOM_WIDTH / 2 - 1.35, 0, -ROOM_DEPTH / 2 + 0.08]}>
+      <group position={[ROOM_WIDTH / 2 - 1.05, 0, -ROOM_DEPTH / 2 + 0.08]}>
         <mesh position={[0, 1, 0]}>
           <boxGeometry args={[0.8, 2, 0.08]} />
           <meshStandardMaterial color="#8B0000" roughness={0.5} />
@@ -748,7 +759,7 @@ export function Aisle({ films }: AisleProps) {
       </group>
 
       {/* ===== PORTE D'ENTRÉE (indication) ===== */}
-      <group position={[-ROOM_WIDTH / 2 + 1.86, 0, ROOM_DEPTH / 2 - 0.08]}>
+      <group position={[-ROOM_WIDTH / 2 + 2.16, 0, ROOM_DEPTH / 2 - 0.08]}>
         <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, -0.4]}>
           <planeGeometry args={[1.5, 0.8]} />
           <meshStandardMaterial color="#2a4a2a" roughness={0.5} />
@@ -756,14 +767,6 @@ export function Aisle({ films }: AisleProps) {
       </group>
 
       {/* ===== AFFICHES DE FILMS ===== */}
-      <PosterWall
-        position={[2.2, 2.3, ROOM_DEPTH / 2 - 0.15]}
-        rotation={[0, Math.PI, 0]}
-        posterPaths={posterPaths.slice(0, 9)}
-        spacing={0.56}
-        posterWidth={0.51}
-        posterHeight={0.73}
-      />
       <PosterWall
         position={[3.93, 2.39, -ROOM_DEPTH / 2 + 0.15]}
         rotation={[0, 0, 0]}
