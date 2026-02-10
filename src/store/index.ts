@@ -140,6 +140,10 @@ interface VideoClubState {
   isTerminalOpen: boolean;
   openTerminal: () => void;
   closeTerminal: () => void;
+
+  // VHS Case viewer
+  isVHSCaseOpen: boolean;
+  setVHSCaseOpen: (open: boolean) => void;
 }
 
 export const useStore = create<VideoClubState>()(
@@ -443,6 +447,10 @@ export const useStore = create<VideoClubState>()(
       isTerminalOpen: false,
       openTerminal: () => set({ isTerminalOpen: true }),
       closeTerminal: () => set({ isTerminalOpen: false }),
+
+      // VHS Case viewer
+      isVHSCaseOpen: false,
+      setVHSCaseOpen: (open) => set({ isVHSCaseOpen: open }),
     }),
     {
       name: 'videoclub-storage',

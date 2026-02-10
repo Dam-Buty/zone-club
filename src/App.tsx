@@ -3,7 +3,7 @@ import { useStore } from './store';
 import { tmdb } from './services/tmdb';
 import { useManagerTriggers } from './hooks/useManagerTriggers';
 import { ExteriorView } from './components/exterior';
-import { FilmDetailModal } from './components/videoclub/FilmDetailModal';
+import { VHSCaseOverlay } from './components/videoclub/VHSCaseOverlay';
 import { ManagerChat } from './components/manager/ManagerChat';
 import { VHSPlayer } from './components/player/VHSPlayer';
 import { InteriorScene } from './components/interior';
@@ -112,8 +112,8 @@ function App() {
       {/* 3D R3F + WebGPU Video Club Scene */}
       <InteriorScene onCassetteClick={handleFilmClick} />
 
-      {/* Film Detail Modal */}
-      <FilmDetailModal
+      {/* VHS Case 3D overlay (bottom bar with rental/trailer/close buttons) */}
+      <VHSCaseOverlay
         film={selectedFilm}
         isOpen={selectedFilmId !== null}
         onClose={handleCloseModal}

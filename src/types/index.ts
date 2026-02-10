@@ -9,8 +9,13 @@ export interface Film {
   release_date: string;
   runtime: number | null;
   vote_average: number;
+  vote_count?: number;
   genres: Genre[];
+  tagline?: string;
+  production_companies?: { id: number; name: string; logo_path: string | null }[];
   is_available?: boolean;
+  directors?: string[];
+  actors?: string[];
 }
 
 export interface Genre {

@@ -134,6 +134,7 @@ export function Controls({ onCassetteClick }: ControlsProps) {
   const managerVisible = useStore((state) => state.managerVisible)
   const selectedFilmId = useStore((state) => state.selectedFilmId)
   const isTerminalOpen = useStore((state) => state.isTerminalOpen)
+  const isVHSCaseOpen = useStore((state) => state.isVHSCaseOpen)
 
   // Gérer les demandes de lock/unlock depuis le store
   useEffect(() => {
@@ -148,7 +149,7 @@ export function Controls({ onCassetteClick }: ControlsProps) {
       controlsRef.current.lock()
     }
     clearPointerLockRequest()
-  }, [pointerLockRequested, clearPointerLockRequest, managerVisible, selectedFilmId, isTerminalOpen])
+  }, [pointerLockRequested, clearPointerLockRequest, managerVisible, selectedFilmId, isTerminalOpen, isVHSCaseOpen])
 
   // Fonction pour sélectionner la cassette ciblée ou interagir avec manager/TV
   const handleInteraction = useCallback(() => {
@@ -170,7 +171,7 @@ export function Controls({ onCassetteClick }: ControlsProps) {
     const targetedFilmId = useStore.getState().targetedFilmId
     if (targetedFilmId !== null) {
       onCassetteClick?.(targetedFilmId)
-      requestPointerUnlock() // Déverrouiller pour interagir avec le modal
+      requestPointerUnlock() // Unlock pour interagir avec l'overlay VHS
     }
   }, [onCassetteClick, showManager, openTerminal, requestPointerUnlock])
 
@@ -214,6 +215,10 @@ export function Controls({ onCassetteClick }: ControlsProps) {
     }
 
     handleKeyDownRef.current = (event: KeyboardEvent) => {
+      // When VHS case is open, disable ALL keys (Q/E handled by VHSCaseViewer)
+      const vhsOpen = useStore.getState().isVHSCaseOpen
+      if (vhsOpen) return
+
       switch (event.code) {
         case 'KeyW':
         case 'ArrowUp':
@@ -404,8 +409,9 @@ export function Controls({ onCassetteClick }: ControlsProps) {
       document.body.style.cursor = 'default'
     }
 
-    // Mouvement - seulement quand locké
+    // Mouvement - seulement quand locké et VHS case fermé
     if (!controlsRef.current?.isLocked) return
+    if (useStore.getState().isVHSCaseOpen) return
 
     const speed = 5.0
     velocity.current.x -= velocity.current.x * 10.0 * delta

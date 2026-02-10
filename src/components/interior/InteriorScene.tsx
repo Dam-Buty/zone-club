@@ -10,6 +10,7 @@ import { Environment } from '@react-three/drei'
 
 // Lazy loading du composant Aisle (contient tous les modèles 3D)
 const Aisle = lazy(() => import('./Aisle').then(module => ({ default: module.Aisle })))
+import { VHSCaseViewer } from './VHSCaseViewer'
 import { RectAreaLightTexturesLib } from 'three/addons/lights/RectAreaLightTexturesLib.js'
 import { TVTerminal } from '../terminal/TVTerminal'
 
@@ -77,10 +78,12 @@ function LoadingFallback() {
 // Prevents cascading re-renders from UI state changes (pointer lock, terminal, modal)
 const SceneContent = memo(function SceneContent({
   films,
-  onCassetteClick
+  onCassetteClick,
+  selectedFilm
 }: {
   films: import('../../types').Film[]
   onCassetteClick?: (filmId: number) => void
+  selectedFilm: import('../../types').Film | null
 }) {
   useEffect(() => {
     console.log('[SceneContent] Mounted with', films.length, 'films')
@@ -98,6 +101,8 @@ const SceneContent = memo(function SceneContent({
       <Aisle films={films} />
       <Controls onCassetteClick={onCassetteClick} />
       <PostProcessingEffects />
+      {/* VHS Case 3D viewer */}
+      {selectedFilm && <VHSCaseViewer film={selectedFilm} />}
     </>
   )
 })
@@ -243,6 +248,7 @@ function UIOverlays() {
 export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
   // Only subscribe to films — UI state is handled by UIOverlays separately
   const films = useStore(state => state.films)
+  const selectedFilmId = useStore(state => state.selectedFilmId)
 
   // Combiner TOUS les films de tous les rayons (sans doublons)
   const allFilms = useMemo(() => {
@@ -260,6 +266,12 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
 
     return combined
   }, [films])
+
+  // Find selected film for VHS viewer
+  const selectedFilm = useMemo(() => {
+    if (!selectedFilmId) return null
+    return allFilms.find(f => f.id === selectedFilmId) || null
+  }, [selectedFilmId, allFilms])
 
   useEffect(() => {
     console.log('[InteriorScene] Total unique films loaded:', allFilms.length)
@@ -295,7 +307,7 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
       >
         <SceneErrorBoundary>
           <Suspense fallback={<LoadingFallback />}>
-            <SceneContent films={allFilms} onCassetteClick={onCassetteClick} />
+            <SceneContent films={allFilms} onCassetteClick={onCassetteClick} selectedFilm={selectedFilm} />
           </Suspense>
         </SceneErrorBoundary>
       </Canvas>
