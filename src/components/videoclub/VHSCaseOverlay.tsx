@@ -265,7 +265,7 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
       {/* LEFT SIDE — Bande-annonce, Demander au gérant, Connexion/Louer */}
       <div data-vhs-overlay style={{
         position: 'fixed',
-        left: '13%',
+        left: '8%',
         top: '50%',
         transform: 'translateY(-50%)',
         display: 'flex',
@@ -354,7 +354,7 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
       {/* RIGHT SIDE — Reposer sur l'étagère */}
       <div data-vhs-overlay style={{
         position: 'fixed',
-        right: '13%',
+        right: '8%',
         top: '50%',
         transform: 'translateY(-50%)',
         display: 'flex',

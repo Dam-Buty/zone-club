@@ -40,6 +40,7 @@ const STUDIO_ALIASES: Record<string, number> = {
   'disney': 2,
   'metro-goldwyn-mayer': 8411,
   'mgm': 8411,
+  'metro goldwyn mayer': 8411,
   'new line cinema': 12,
   'lionsgate': 1632,
   'lionsgate films': 1632,
@@ -100,11 +101,11 @@ const LOCAL_STUDIO_LOGOS = new Set([
   1,      // Lucasfilm
   3,      // Pixar
   420,    // Marvel Studios
-  128064, // DC Films
+  128064, // DC Studios
   41077,  // A24
   3172,   // Blumhouse Productions
   10146,  // Focus Features
-  43,     // Fox Searchlight / Searchlight Pictures
+  43,     // Searchlight Pictures
   104,    // Canal+
   9,      // Gaumont
   130,    // Pathé
@@ -115,14 +116,14 @@ const LOCAL_STUDIO_LOGOS = new Set([
 async function resolveStudioLogoUrl(
   company: { id: number; name: string; logo_path: string | null }
 ): Promise<string | null> {
-  // 1. Resolve canonical ID via alias if needed
-  const canonicalId = company.logo_path ? company.id : (STUDIO_ALIASES[company.name.toLowerCase()] || company.id)
+  // 1. Always resolve canonical ID via alias
+  const aliasId = STUDIO_ALIASES[company.name.toLowerCase()]
+  const canonicalId = aliasId || company.id
 
-  // 2. Local color logo takes priority
+  // 2. Local color logo ALWAYS takes priority over TMDB monochrome
   if (LOCAL_STUDIO_LOGOS.has(canonicalId)) {
     return `/studio-logos/${canonicalId}.png`
   }
-  // Also check original ID for local logos
   if (LOCAL_STUDIO_LOGOS.has(company.id)) {
     return `/studio-logos/${company.id}.png`
   }
@@ -518,7 +519,7 @@ function isLogoBright(img: HTMLImageElement): boolean {
     if (a < 50) continue // skip transparent pixels
     opaqueCount++
     const lum = 0.2126 * pixels[i] + 0.7152 * pixels[i + 1] + 0.0722 * pixels[i + 2]
-    if (lum > 180) brightCount++
+    if (lum > 130) brightCount++
   }
   return opaqueCount > 0 && brightCount / opaqueCount > 0.5
 }
@@ -545,11 +546,12 @@ export interface VHSCoverData {
   writers: string[]
   composer: string
   tagline: string
-  studioName: string
+  studioName: string         // major/distributor (first known major)
+  productionStudioName: string // production company (first non-major, if different)
   reviews: { author: string; content: string }[]
   certification: string
   logoImg: HTMLImageElement | null
-  studioLogos: HTMLImageElement[]
+  studioLogos: { img: HTMLImageElement; companyId: number }[]
 }
 
 export async function fetchVHSCoverData(film: Film): Promise<VHSCoverData> {
@@ -565,6 +567,7 @@ export async function fetchVHSCoverData(film: Film): Promise<VHSCoverData> {
     composer: '',
     tagline: film.tagline || '',
     studioName: film.production_companies?.[0]?.name || '',
+    productionStudioName: '',
     reviews: [],
     certification: '',
     logoImg: null,
@@ -628,10 +631,33 @@ export async function fetchVHSCoverData(film: Film): Promise<VHSCoverData> {
     tmdb.getFilm(film.id)
       .then(async (fullFilm) => {
         if (!data.tagline && fullFilm.tagline) data.tagline = fullFilm.tagline
-        if (!data.studioName && fullFilm.production_companies?.length) {
-          data.studioName = fullFilm.production_companies[0].name
+        // Sort companies: known majors first (those in LOCAL_STUDIO_LOGOS)
+        const allCompanies = (fullFilm.production_companies || [])
+        allCompanies.sort((a, b) => {
+          const aId = STUDIO_ALIASES[a.name.toLowerCase()] || a.id
+          const bId = STUDIO_ALIASES[b.name.toLowerCase()] || b.id
+          const aMajor = LOCAL_STUDIO_LOGOS.has(aId) ? 0 : 1
+          const bMajor = LOCAL_STUDIO_LOGOS.has(bId) ? 0 : 1
+          return aMajor - bMajor
+        })
+        // First major = distributor, first non-major = production studio
+        if (allCompanies.length) {
+          const firstMajor = allCompanies.find(c => {
+            const cid = STUDIO_ALIASES[c.name.toLowerCase()] || c.id
+            return LOCAL_STUDIO_LOGOS.has(cid)
+          })
+          const firstNonMajor = allCompanies.find(c => {
+            const cid = STUDIO_ALIASES[c.name.toLowerCase()] || c.id
+            return !LOCAL_STUDIO_LOGOS.has(cid)
+          })
+          if (firstMajor) {
+            data.studioName = firstMajor.name
+            if (firstNonMajor) data.productionStudioName = firstNonMajor.name
+          } else {
+            data.studioName = allCompanies[0].name
+          }
         }
-        const companies = (fullFilm.production_companies || []).slice(0, 3)
+        const companies = allCompanies.slice(0, 3)
         if (companies.length > 0) {
           const logoUrls = await Promise.all(
             companies.map(c => resolveStudioLogoUrl(c))
@@ -641,7 +667,12 @@ export async function fetchVHSCoverData(film: Film): Promise<VHSCoverData> {
               url ? loadImage(url).catch(() => null) : Promise.resolve(null)
             )
           )
-          data.studioLogos = imgs.filter((img): img is HTMLImageElement => img !== null)
+          data.studioLogos = imgs
+            .map((img, idx) => img ? {
+              img,
+              companyId: STUDIO_ALIASES[companies[idx].name.toLowerCase()] || companies[idx].id,
+            } : null)
+            .filter((e): e is { img: HTMLImageElement; companyId: number } => e !== null)
         }
       })
       .catch(() => {})
@@ -1244,7 +1275,7 @@ function drawBackCover(ctx: CanvasRenderingContext2D, data: VHSCoverData, templa
       const logoMaxH = 16
       const logoGap = 10
       const logoPad = 4
-      const logoSizes = data.studioLogos.map(img => {
+      const logoSizes = data.studioLogos.map(({ img }) => {
         const aspect = img.width / img.height
         return { w: logoMaxH * aspect, h: logoMaxH }
       })
@@ -1252,12 +1283,14 @@ function drawBackCover(ctx: CanvasRenderingContext2D, data: VHSCoverData, templa
       let lx = (w - totalW) / 2
       const ly = h - 72
       for (let i = 0; i < data.studioLogos.length; i++) {
-        // Adaptive background: white for dark logos, dark for light logos
-        const isLight = isLogoBright(data.studioLogos[i])
-        tc.fillStyle = isLight ? 'rgba(20,20,30,0.9)' : 'rgba(255,255,255,0.85)'
+        const { img: logoImg } = data.studioLogos[i]
+        const bright = isLogoBright(logoImg)
+        // Background pill: dark for bright/white logos, white for dark logos
+        tc.fillStyle = bright ? 'rgba(20,20,30,0.92)' : 'rgba(255,255,255,0.88)'
+        tc.beginPath()
         roundRect(tc, lx, ly - logoPad, logoSizes[i].w + logoPad * 2, logoSizes[i].h + logoPad * 2, 3)
         tc.fill()
-        tc.drawImage(data.studioLogos[i], lx + logoPad, ly, logoSizes[i].w, logoSizes[i].h)
+        tc.drawImage(logoImg, lx + logoPad, ly, logoSizes[i].w, logoSizes[i].h)
         lx += logoSizes[i].w + logoPad * 2 + logoGap
       }
     }
@@ -1282,6 +1315,7 @@ function estimateCreditsHeight(data: VHSCoverData): number {
   if (data.writers.length > 0) h += 13
   if (data.composer) h += 13
   if (data.studioName) h += 13
+  if (data.productionStudioName) h += 13
   return h + 8
 }
 
@@ -1328,6 +1362,14 @@ function drawCreditsBlock(
     creditLine('R\u00e9alis\u00e9 par ', data.directors.join(', '))
   }
 
+  // Distributor + Production studio
+  if (data.studioName) {
+    creditLine('Distribution ', data.studioName)
+  }
+  if (data.productionStudioName) {
+    creditLine('Production ', data.productionStudioName)
+  }
+
   // Producers
   if (data.producers.length > 0) {
     creditLine('Produit par ', data.producers.join(', '))
@@ -1343,13 +1385,14 @@ function drawCreditsBlock(
     creditLine('Musique de ', data.composer)
   }
 
-  // Studio
-  if (data.studioName) {
+  // Copyright year
+  const yearCr = data.film.release_date ? new Date(data.film.release_date).getFullYear() : ''
+  if (yearCr && data.studioName) {
     curY += 2
     tc.font = 'bold 9px sans-serif'
     tc.fillStyle = 'rgba(255,255,255,0.5)'
     tc.textAlign = 'left'
-    tc.fillText('\u00a9 ' + data.studioName, pad, curY + 9)
+    tc.fillText(`\u00a9 ${yearCr} ${data.studioName}`, pad, curY + 9)
     curY += 12
   }
 
@@ -1530,16 +1573,39 @@ function drawSpine(
 
     enableTextShadow(tc)
 
-    // Genre label (top of spine, rotated)
-    if (film.genres.length > 0) {
+    // Studio logo (top of spine, horizontal)
+    if (data.studioLogos.length > 0) {
+      const studioLogo = data.studioLogos[0].img
+      tc.save()
+      disableShadow(tc)
+      tc.translate(w / 2, 50)
+      // Horizontal logo — constrained by spine width
+      const aspect = studioLogo.width / studioLogo.height
+      const maxLW = w - 12  // fit within spine width
+      const maxLH = 50       // don't take too much vertical space
+      let lW = maxLW
+      let lH = lW / aspect
+      if (lH > maxLH) { lH = maxLH; lW = lH * aspect }
+      // Dark logos need a subtle light pill on dark spine background
+      if (!isLogoBright(studioLogo)) {
+        tc.fillStyle = 'rgba(255,255,255,0.18)'
+        tc.beginPath()
+        roundRect(tc, -lW / 2 - 3, -lH / 2 - 3, lW + 6, lH + 6, 3)
+        tc.fill()
+      }
+      tc.drawImage(studioLogo, -lW / 2, -lH / 2, lW, lH)
+      enableTextShadow(tc)
+      tc.restore()
+    } else if (data.studioName) {
+      // Fallback: studio name as text
       tc.save()
       tc.translate(w / 2, 50)
-      tc.rotate(Math.PI / 2)
-      tc.font = 'bold 12px sans-serif'
+      // No rotation — text horizontal
+      tc.font = 'bold 11px sans-serif'
       tc.fillStyle = template.spineAccent
       tc.textAlign = 'center'
       tc.textBaseline = 'middle'
-      tc.fillText(film.genres[0].name.toUpperCase(), 0, 0)
+      tc.fillText(data.studioName.toUpperCase(), 0, 0)
       tc.restore()
     }
 
