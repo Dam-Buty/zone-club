@@ -49,7 +49,7 @@ export interface TmdbSearchResult {
 async function tmdbFetch<T>(endpoint: string, params: Record<string, string> = {}): Promise<T> {
     const url = new URL(`${TMDB_BASE_URL}${endpoint}`);
     url.searchParams.set('api_key', TMDB_API_KEY || '');
-    url.searchParams.set('language', 'fr-FR');
+    url.searchParams.set('language', 'en-US');
 
     for (const [key, value] of Object.entries(params)) {
         url.searchParams.set(key, value);
