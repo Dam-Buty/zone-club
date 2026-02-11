@@ -1,21 +1,25 @@
 import * as THREE from 'three/webgpu'
 import { RectAreaLightNode } from 'three/webgpu'
 import { Canvas, extend, type ThreeToJSXElements } from '@react-three/fiber'
-import { Suspense, useEffect, useMemo, useCallback, memo, Component, type ReactNode, lazy } from 'react'
+import { Suspense, useEffect, useMemo, useCallback, useRef, memo, Component, type ReactNode, lazy } from 'react'
 import { useStore } from '../../store'
 import { Lighting } from './Lighting'
 import { Controls } from './Controls'
 import { PostProcessingEffects } from './PostProcessingEffects'
 import { Environment } from '@react-three/drei'
+import { useIsMobile } from '../../hooks/useIsMobile'
+import { createMobileInput } from '../../types/mobile'
+import type { MobileInput } from '../../types/mobile'
 
 // Lazy loading du composant Aisle (contient tous les modèles 3D)
 const Aisle = lazy(() => import('./Aisle').then(module => ({ default: module.Aisle })))
 import { VHSCaseViewer } from './VHSCaseViewer'
 import { RectAreaLightTexturesLib } from 'three/addons/lights/RectAreaLightTexturesLib.js'
 import { TVTerminal } from '../terminal/TVTerminal'
+import { MobileControls } from '../mobile/MobileControls'
+import { MobileOnboarding } from '../mobile/MobileOnboarding'
 
 // Initialiser les textures LTC AVANT tout rendu
-// C'est synchrone et doit être fait une seule fois
 RectAreaLightTexturesLib.init()
 RectAreaLightNode.setLTC(RectAreaLightTexturesLib)
 console.log('[InteriorScene] LTC textures initialized')
@@ -74,16 +78,19 @@ function LoadingFallback() {
   )
 }
 
-// Memoized 3D scene content — only re-renders when films or onCassetteClick change
-// Prevents cascading re-renders from UI state changes (pointer lock, terminal, modal)
+// Memoized 3D scene content
 const SceneContent = memo(function SceneContent({
   films,
   onCassetteClick,
-  selectedFilm
+  selectedFilm,
+  isMobile,
+  mobileInputRef,
 }: {
   films: import('../../types').Film[]
   onCassetteClick?: (filmId: number) => void
   selectedFilm: import('../../types').Film | null
+  isMobile: boolean
+  mobileInputRef: React.MutableRefObject<MobileInput>
 }) {
   useEffect(() => {
     console.log('[SceneContent] Mounted with', films.length, 'films')
@@ -91,7 +98,6 @@ const SceneContent = memo(function SceneContent({
 
   return (
     <>
-      {/* Environment map HDRI pour réflexions sur surfaces brillantes (sol, métal, vitres) */}
       <Environment
         files="/textures/env/indoor_night.hdr"
         background={false}
@@ -99,16 +105,19 @@ const SceneContent = memo(function SceneContent({
       />
       <Lighting />
       <Aisle films={films} />
-      <Controls onCassetteClick={onCassetteClick} />
+      <Controls
+        onCassetteClick={onCassetteClick}
+        isMobile={isMobile}
+        mobileInputRef={mobileInputRef}
+      />
       <PostProcessingEffects />
-      {/* VHS Case 3D viewer */}
       {selectedFilm && <VHSCaseViewer film={selectedFilm} />}
     </>
   )
 })
 
 // UI Overlays — separate component to isolate UI state re-renders from the 3D Canvas
-function UIOverlays() {
+function UIOverlays({ isMobile }: { isMobile: boolean }) {
   const isPointerLocked = useStore(state => state.isPointerLocked)
   const managerVisible = useStore(state => state.managerVisible)
   const isTerminalOpen = useStore(state => state.isTerminalOpen)
@@ -123,8 +132,8 @@ function UIOverlays() {
 
   return (
     <>
-      {/* Message "Cliquez pour prendre le contrôle" quand non locké et aucun overlay ouvert */}
-      {!isPointerLocked && !isTerminalOpen && !selectedFilmId && (
+      {/* Message "Cliquez pour prendre le contrôle" — desktop only, when not locked */}
+      {!isMobile && !isPointerLocked && !isTerminalOpen && !selectedFilmId && (
         <div
           style={{
             position: 'fixed',
@@ -153,45 +162,60 @@ function UIOverlays() {
         </div>
       )}
 
-      {/* Crosshair / Viseur - seulement quand locké */}
+      {/* Crosshair — desktop: cross shape, mobile: small dot */}
       {isPointerLocked && (
-        <div
-          style={{
-            position: 'fixed',
-            top: '50%',
-            left: '50%',
-            transform: 'translate(-50%, -50%)',
-            width: '20px',
-            height: '20px',
-            pointerEvents: 'none',
-            zIndex: 20,
-          }}
-        >
-          {/* Ligne horizontale */}
+        isMobile ? (
           <div
             style={{
-              position: 'absolute',
+              position: 'fixed',
               top: '50%',
-              left: '0',
-              width: '100%',
-              height: '2px',
-              backgroundColor: 'rgba(255, 255, 255, 0.7)',
-              transform: 'translateY(-50%)',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              width: '6px',
+              height: '6px',
+              borderRadius: '50%',
+              backgroundColor: 'rgba(255, 255, 255, 0.6)',
+              pointerEvents: 'none',
+              zIndex: 20,
             }}
           />
-          {/* Ligne verticale */}
+        ) : (
           <div
             style={{
-              position: 'absolute',
-              top: '0',
+              position: 'fixed',
+              top: '50%',
               left: '50%',
-              width: '2px',
-              height: '100%',
-              backgroundColor: 'rgba(255, 255, 255, 0.7)',
-              transform: 'translateX(-50%)',
+              transform: 'translate(-50%, -50%)',
+              width: '20px',
+              height: '20px',
+              pointerEvents: 'none',
+              zIndex: 20,
             }}
-          />
-        </div>
+          >
+            <div
+              style={{
+                position: 'absolute',
+                top: '50%',
+                left: '0',
+                width: '100%',
+                height: '2px',
+                backgroundColor: 'rgba(255, 255, 255, 0.7)',
+                transform: 'translateY(-50%)',
+              }}
+            />
+            <div
+              style={{
+                position: 'absolute',
+                top: '0',
+                left: '50%',
+                width: '2px',
+                height: '100%',
+                backgroundColor: 'rgba(255, 255, 255, 0.7)',
+                transform: 'translateX(-50%)',
+              }}
+            />
+          </div>
+        )
       )}
 
       {/* Scene indicator */}
@@ -213,8 +237,8 @@ function UIOverlays() {
         VIDEO CLUB
       </div>
 
-      {/* Controls help - seulement quand locké */}
-      {isPointerLocked && (
+      {/* Controls help — desktop only, when locked */}
+      {!isMobile && isPointerLocked && (
         <div
           style={{
             position: 'fixed',
@@ -239,18 +263,20 @@ function UIOverlays() {
         </div>
       )}
 
-      {/* Terminal TV - rendu en dehors du Canvas R3F */}
+      {/* Terminal TV */}
       <TVTerminal isOpen={isTerminalOpen} onClose={handleCloseTerminal} />
     </>
   )
 }
 
 export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
-  // Only subscribe to films — UI state is handled by UIOverlays separately
+  const isMobile = useIsMobile()
+  const mobileInputRef = useRef<MobileInput>(createMobileInput())
+
   const films = useStore(state => state.films)
   const selectedFilmId = useStore(state => state.selectedFilmId)
+  const hasSeenOnboarding = useStore(state => state.hasSeenOnboarding)
 
-  // Combiner TOUS les films de tous les rayons (sans doublons)
   const allFilms = useMemo(() => {
     const seen = new Set<number>()
     const combined: import('../../types').Film[] = []
@@ -267,7 +293,6 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
     return combined
   }, [films])
 
-  // Find selected film for VHS viewer
   const selectedFilm = useMemo(() => {
     if (!selectedFilmId) return null
     return allFilms.find(f => f.id === selectedFilmId) || null
@@ -278,12 +303,10 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
   }, [allFilms.length])
 
   return (
-    <div style={{ position: 'fixed', inset: 0 }}>
+    <div style={{ position: 'fixed', inset: 0, touchAction: 'none' }}>
       <Canvas
         gl={async (props) => {
           console.log('[Canvas] Initializing WebGPU renderer...')
-          // Request elevated maxTextureArrayLayers for DataArrayTexture (520 cassette poster layers)
-          // WebGPU default is 256, M1 Metal supports up to 2048
           const adapter = await navigator.gpu.requestAdapter()
           const maxLayers = adapter ? adapter.limits.maxTextureArrayLayers : 2048
           const renderer = new THREE.WebGPURenderer({
@@ -307,12 +330,24 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
       >
         <SceneErrorBoundary>
           <Suspense fallback={<LoadingFallback />}>
-            <SceneContent films={allFilms} onCassetteClick={onCassetteClick} selectedFilm={selectedFilm} />
+            <SceneContent
+              films={allFilms}
+              onCassetteClick={onCassetteClick}
+              selectedFilm={selectedFilm}
+              isMobile={isMobile}
+              mobileInputRef={mobileInputRef}
+            />
           </Suspense>
         </SceneErrorBoundary>
       </Canvas>
 
-      <UIOverlays />
+      <UIOverlays isMobile={isMobile} />
+
+      {/* Mobile controls (joystick + touch look + interact button) */}
+      {isMobile && <MobileControls mobileInputRef={mobileInputRef} />}
+
+      {/* Onboarding — first launch only */}
+      {!hasSeenOnboarding && <MobileOnboarding isMobile={isMobile} />}
     </div>
   )
 }

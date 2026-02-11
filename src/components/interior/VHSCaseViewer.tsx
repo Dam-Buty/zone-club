@@ -111,12 +111,27 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
   useEffect(() => {
     let cancelled = false
 
+    // Hide immediately + reset animation — visible restored in useFrame when texture ready
+    textureReadyRef.current = false
+    entryProgressRef.current = 0
+    manualRotationRef.current = 0
+    isFlippedRef.current = false
+    flipProgressRef.current = 0
+    if (groupRef.current) {
+      groupRef.current.visible = false
+    }
+
     fetchVHSCoverData(film).then(data => {
       if (cancelled) return
       const tex = generateVHSCoverTexture(data)
+
+      // Dispose previous cover texture
+      if (coverTextureRef.current) {
+        coverTextureRef.current.dispose()
+      }
       coverTextureRef.current = tex
 
-      // Apply texture only to meshes that had a baseColor map (cover surfaces)
+      // Apply new texture to cover surfaces
       for (const mesh of meshesWithMap) {
         const mat = mesh.material as THREE.MeshStandardMaterial
         if (mat.map) {
@@ -159,7 +174,12 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
   const dragStartXRef = useRef(0)
   const dragAccumulatedRef = useRef(0)
 
-  // Q/E manual rotation + click to flip + drag to rotate
+  // Touch drag state
+  const activeTouchIdRef = useRef<number | null>(null)
+  const touchStartXRef = useRef(0)
+  const touchStartTimeRef = useRef(0)
+
+  // Q/E manual rotation + click/tap to flip + drag/touch to rotate
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.code === 'KeyQ') {
@@ -169,6 +189,7 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
       }
     }
 
+    // --- Mouse handlers (desktop) ---
     const handleMouseDown = (e: MouseEvent) => {
       const target = e.target as HTMLElement
       if (target.closest('button') || target.closest('[data-vhs-overlay]')) return
@@ -178,7 +199,7 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
     }
 
     const handleMouseMove = (e: MouseEvent) => {
-      if (e.buttons !== 1) return // left button held
+      if (e.buttons !== 1) return
       const dx = e.clientX - dragStartXRef.current
       if (!isDraggingRef.current && Math.abs(dx) > 5) {
         isDraggingRef.current = true
@@ -191,7 +212,6 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
     }
 
     const handleMouseUp = (e: MouseEvent) => {
-      // Click: if in original position → flip to back, otherwise → reset to original
       if (!isDraggingRef.current) {
         const target = e.target as HTMLElement
         if (!target.closest('button') && !target.closest('[data-vhs-overlay]')) {
@@ -207,15 +227,82 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
       isDraggingRef.current = false
     }
 
+    // --- Touch handlers (mobile) ---
+    const handleTouchStart = (e: TouchEvent) => {
+      const target = e.target as HTMLElement
+      if (target.closest('button') || target.closest('[data-vhs-overlay]')) return
+      if (activeTouchIdRef.current !== null) return
+
+      const touch = e.changedTouches[0]
+      activeTouchIdRef.current = touch.identifier
+      isDraggingRef.current = false
+      dragStartXRef.current = touch.clientX
+      dragAccumulatedRef.current = 0
+      touchStartXRef.current = touch.clientX
+      touchStartTimeRef.current = performance.now()
+    }
+
+    const handleTouchMove = (e: TouchEvent) => {
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        const touch = e.changedTouches[i]
+        if (touch.identifier !== activeTouchIdRef.current) continue
+
+        const dx = touch.clientX - dragStartXRef.current
+        if (!isDraggingRef.current && Math.abs(dx) > 8) {
+          isDraggingRef.current = true
+        }
+        if (isDraggingRef.current) {
+          const delta = (touch.clientX - dragStartXRef.current - dragAccumulatedRef.current) * 0.008
+          dragAccumulatedRef.current = touch.clientX - dragStartXRef.current
+          manualRotationRef.current += delta
+        }
+        break
+      }
+    }
+
+    const handleTouchEnd = (e: TouchEvent) => {
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        const touch = e.changedTouches[i]
+        if (touch.identifier !== activeTouchIdRef.current) continue
+        activeTouchIdRef.current = null
+
+        // Tap detection: short + small displacement = flip/reset
+        const dt = performance.now() - touchStartTimeRef.current
+        const dist = Math.abs(touch.clientX - touchStartXRef.current)
+        if (!isDraggingRef.current && dt < 300 && dist < 15) {
+          const target = e.target as HTMLElement
+          if (!target.closest('button') && !target.closest('[data-vhs-overlay]')) {
+            const isOriginal = Math.abs(manualRotationRef.current) < 0.01 && !isFlippedRef.current
+            if (isOriginal) {
+              isFlippedRef.current = true
+            } else {
+              manualRotationRef.current = 0
+              isFlippedRef.current = false
+            }
+          }
+        }
+        isDraggingRef.current = false
+        break
+      }
+    }
+
     document.addEventListener('keydown', handleKeyDown)
     document.addEventListener('mousedown', handleMouseDown)
     document.addEventListener('mousemove', handleMouseMove)
     document.addEventListener('mouseup', handleMouseUp)
+    document.addEventListener('touchstart', handleTouchStart, { passive: true })
+    document.addEventListener('touchmove', handleTouchMove, { passive: true })
+    document.addEventListener('touchend', handleTouchEnd, { passive: true })
+    document.addEventListener('touchcancel', handleTouchEnd, { passive: true })
     return () => {
       document.removeEventListener('keydown', handleKeyDown)
       document.removeEventListener('mousedown', handleMouseDown)
       document.removeEventListener('mousemove', handleMouseMove)
       document.removeEventListener('mouseup', handleMouseUp)
+      document.removeEventListener('touchstart', handleTouchStart)
+      document.removeEventListener('touchmove', handleTouchMove)
+      document.removeEventListener('touchend', handleTouchEnd)
+      document.removeEventListener('touchcancel', handleTouchEnd)
     }
   }, [])
 
@@ -223,6 +310,16 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
   useFrame((_, delta) => {
     if (!groupRef.current) return
     timeRef.current += delta
+
+    // Stay hidden until texture is ready
+    if (!textureReadyRef.current) {
+      groupRef.current.visible = false
+      return
+    }
+    if (!groupRef.current.visible) {
+      groupRef.current.visible = true
+      entryProgressRef.current = 0 // start entry animation fresh
+    }
 
     // Entry animation (scale 0 → 1)
     if (entryProgressRef.current < 1) {

@@ -72,3 +72,26 @@ body {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.3; }
 }
+
+/* Mobile: prevent default touch behaviors on the 3D canvas */
+canvas {
+  touch-action: none;
+}
+
+/* Onboarding animations */
+@keyframes joystickHint {
+  0%, 100% { transform: translate(0, 0); }
+  25% { transform: translate(0, -12px); }
+  50% { transform: translate(10px, 0); }
+  75% { transform: translate(0, 10px); }
+}
+
+@keyframes swipeHint {
+  0%, 100% { transform: translateX(0); }
+  50% { transform: translateX(30px); }
+}
+
+@keyframes tapHint {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(0.85); opacity: 0.6; }
+}

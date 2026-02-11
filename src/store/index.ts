@@ -144,6 +144,10 @@ interface VideoClubState {
   // VHS Case viewer
   isVHSCaseOpen: boolean;
   setVHSCaseOpen: (open: boolean) => void;
+
+  // Onboarding
+  hasSeenOnboarding: boolean;
+  setHasSeenOnboarding: (seen: boolean) => void;
 }
 
 export const useStore = create<VideoClubState>()(
@@ -451,6 +455,10 @@ export const useStore = create<VideoClubState>()(
       // VHS Case viewer
       isVHSCaseOpen: false,
       setVHSCaseOpen: (open) => set({ isVHSCaseOpen: open }),
+
+      // Onboarding
+      hasSeenOnboarding: false,
+      setHasSeenOnboarding: (seen) => set({ hasSeenOnboarding: seen }),
     }),
     {
       name: 'videoclub-storage',
@@ -458,6 +466,7 @@ export const useStore = create<VideoClubState>()(
         localUser: state.localUser,
         rentalHistory: state.rentalHistory,
         lastBonusDate: state.lastBonusDate,
+        hasSeenOnboarding: state.hasSeenOnboarding,
         // Ne pas persister authUser, les cookies de session gèrent ça
       }),
     }

@@ -4,6 +4,7 @@ import { tmdb, type TMDBVideo } from '../../services/tmdb'
 import { AuthModal } from '../auth/AuthModal'
 import { ReviewModal } from '../review/ReviewModal'
 import { RENTAL_COSTS, RENTAL_DURATIONS, type Film, type RentalTier } from '../../types'
+import { useIsMobile } from '../../hooks/useIsMobile'
 
 interface VHSCaseOverlayProps {
   film: Film | null
@@ -42,7 +43,7 @@ function sideButtonStyle(
     borderRadius: '6px',
     color: textColor,
     fontFamily: 'Orbitron, sans-serif',
-    fontSize: '0.72rem',
+    fontSize: '0.79rem',
     cursor: 'pointer',
     transition: 'all 0.2s',
     letterSpacing: '1px',
@@ -51,7 +52,37 @@ function sideButtonStyle(
   }
 }
 
+// Mobile pill button style
+function mobilePillStyle(
+  borderColor: string,
+  textColor: string,
+  extra?: React.CSSProperties
+): React.CSSProperties {
+  return {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '6px',
+    padding: '10px 16px',
+    minHeight: '48px',
+    background: 'rgba(0,0,0,0.7)',
+    backdropFilter: 'blur(8px)',
+    border: `1px solid ${borderColor}`,
+    borderRadius: '24px',
+    color: textColor,
+    fontFamily: 'Orbitron, sans-serif',
+    fontSize: '0.7rem',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
+    letterSpacing: '0.5px',
+    whiteSpace: 'nowrap',
+    flexShrink: 0,
+    ...extra,
+  }
+}
+
 export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
+  const isMobile = useIsMobile()
   const isAuthenticated = useStore(state => state.isAuthenticated)
   const getCredits = useStore(state => state.getCredits)
   const getRental = useStore(state => state.getRental)
@@ -182,6 +213,26 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
   const isRented = !!getRental(film.id)
   const canAfford = credits >= cost
 
+  // Rent button colors (shared)
+  const rentBorderColor = !isAuthenticated ? '#00ff00' : canAfford ? '#ff2d95' : '#666666'
+  const rentTextColor = !isAuthenticated || canAfford ? '#ffffff' : 'rgba(255,255,255,0.4)'
+  const rentBg = !isAuthenticated
+    ? 'linear-gradient(135deg, rgba(0,255,0,0.25), rgba(0,170,0,0.25))'
+    : canAfford
+      ? 'linear-gradient(135deg, rgba(255,45,149,0.25), rgba(138,43,226,0.25))'
+      : 'rgba(50,50,50,0.5)'
+  const rentCursor = (!isAuthenticated || (canAfford && !isRenting)) ? 'pointer' : 'not-allowed'
+  const rentShadow = (!isAuthenticated || canAfford)
+    ? `0 0 12px ${!isAuthenticated ? 'rgba(0,255,0,0.2)' : 'rgba(255,45,149,0.2)'}`
+    : 'none'
+  const rentLabel = !isAuthenticated
+    ? 'CONNEXION'
+    : isRenting
+      ? 'LOCATION...'
+      : canAfford
+        ? `LOUER (${cost} cr.)`
+        : 'PAS ASSEZ'
+
   return (
     <>
       {/* Trailer fullscreen overlay */}
@@ -238,7 +289,7 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
           zIndex: 200,
         }}>
           <div style={{
-            fontSize: '5rem',
+            fontSize: isMobile ? '3.5rem' : '5rem',
             color: '#00ff00',
             textShadow: '0 0 30px #00ff00, 0 0 60px #00ff00',
           }}>
@@ -246,7 +297,7 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
           </div>
           <div style={{
             fontFamily: 'Orbitron, sans-serif',
-            fontSize: '2rem',
+            fontSize: isMobile ? '1.4rem' : '2rem',
             color: '#00fff7',
             textShadow: '0 0 20px #00fff7',
             marginTop: '1rem',
@@ -260,161 +311,282 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
         </div>
       )}
 
-      {/* ===== Side buttons floating around the VHS case ===== */}
-
-      {/* LEFT SIDE — Bande-annonce, Demander au gérant, Connexion/Louer */}
-      <div data-vhs-overlay style={{
-        position: 'fixed',
-        left: '8%',
-        top: '50%',
-        transform: 'translateY(-50%)',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '12px',
-        zIndex: 100,
-        pointerEvents: 'auto',
-      }}>
-        {/* Lire les avis du Videoclub */}
-        <button
-          onClick={() => setShowReviewModal(true)}
-          style={sideButtonStyle('#ffd700', '#ffd700')}
-        >
-          {'\u2605'} LIRE LES AVIS DU VIDEOCLUB
-        </button>
-
-        {/* Bande-annonce */}
-        <button
-          onClick={handleWatchTrailer}
-          disabled={loadingTrailer}
-          style={sideButtonStyle('#ff4444', '#ff4444', {
-            opacity: loadingTrailer ? 0.6 : 1,
-            cursor: loadingTrailer ? 'wait' : 'pointer',
-          })}
-        >
-          {'\u25b6'} BANDE-ANNONCE
-        </button>
-
-        {/* Demander au gérant */}
-        <button
-          onClick={handleAskManager}
-          style={sideButtonStyle('#00fff7', '#00fff7')}
-        >
-          ? DEMANDER AU G{'\u00c9'}RANT
-        </button>
-
-        {/* Review button (if rented) */}
-        {isRented && (
+      {/* ===== MOBILE LAYOUT ===== */}
+      {isMobile ? (
+        <>
+          {/* Close button — floating top-right */}
           <button
-            onClick={() => setShowReviewModal(true)}
-            style={sideButtonStyle('#ffd700', '#ffd700')}
+            data-vhs-overlay
+            onClick={onClose}
+            style={{
+              position: 'fixed',
+              top: '16px',
+              right: '16px',
+              width: 48,
+              height: 48,
+              borderRadius: '50%',
+              border: '2px solid #00ff88',
+              background: 'rgba(0,0,0,0.7)',
+              color: '#00ff88',
+              fontFamily: 'Orbitron, sans-serif',
+              fontSize: '1.2rem',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              zIndex: 100,
+              boxShadow: '0 0 12px rgba(0,255,136,0.3)',
+            }}
           >
-            {'\u2605'} CRITIQUER
+            X
           </button>
-        )}
 
-        {/* Rent / Already rented / Connexion */}
-        {isRented ? (
-          <div style={sideButtonStyle('#00ff00', '#00ff00', {
-            background: 'rgba(0,255,0,0.08)',
-            cursor: 'default',
-          })}>
-            {'\u2713'} LOU{'\u00c9'}
+          {/* Bottom bar — horizontal scrollable buttons */}
+          <div data-vhs-overlay style={{
+            position: 'fixed',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            zIndex: 100,
+            pointerEvents: 'auto',
+            background: 'linear-gradient(0deg, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.5) 70%, transparent 100%)',
+            paddingBottom: `calc(12px + env(safe-area-inset-bottom, 0px))`,
+            paddingTop: '12px',
+          }}>
+            {/* Film title + meta */}
+            <div style={{
+              textAlign: 'center',
+              padding: '0 16px 10px',
+            }}>
+              <div style={{
+                fontFamily: 'Orbitron, sans-serif',
+                fontSize: '0.85rem',
+                color: '#00fff7',
+                textShadow: '0 0 12px rgba(0,255,247,0.5)',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}>
+                {film.title}
+              </div>
+              <div style={{
+                fontSize: '0.7rem',
+                color: 'rgba(255,255,255,0.45)',
+                marginTop: '2px',
+              }}>
+                {film.release_date ? new Date(film.release_date).getFullYear() : ''} {film.runtime ? `\u2022 ${film.runtime} min` : ''} {'\u2022'} {'\u2605'} {film.vote_average.toFixed(1)}
+                <span style={{ marginLeft: '8px', color: 'rgba(255,255,255,0.3)' }}>
+                  <span style={{ color: '#ffd700' }}>{credits}</span> cr.
+                </span>
+              </div>
+            </div>
+
+            {/* Scrollable button row */}
+            <div style={{
+              display: 'flex',
+              gap: '8px',
+              overflowX: 'auto',
+              padding: '0 16px',
+              WebkitOverflowScrolling: 'touch',
+              scrollbarWidth: 'none',
+            }}>
+              {/* Avis */}
+              <button
+                onClick={() => setShowReviewModal(true)}
+                style={mobilePillStyle('#ffd700', '#ffd700')}
+              >
+                {'\u2605'} AVIS
+              </button>
+
+              {/* Trailer */}
+              <button
+                onClick={handleWatchTrailer}
+                disabled={loadingTrailer}
+                style={mobilePillStyle('#ff4444', '#ff4444', {
+                  opacity: loadingTrailer ? 0.6 : 1,
+                  cursor: loadingTrailer ? 'wait' : 'pointer',
+                })}
+              >
+                {'\u25b6'} TRAILER
+              </button>
+
+              {/* Gérant */}
+              <button
+                onClick={handleAskManager}
+                style={mobilePillStyle('#00fff7', '#00fff7')}
+              >
+                ? G{'\u00c9'}RANT
+              </button>
+
+              {/* Critiquer (if rented) */}
+              {isRented && (
+                <button
+                  onClick={() => setShowReviewModal(true)}
+                  style={mobilePillStyle('#ffd700', '#ffd700')}
+                >
+                  {'\u2605'} CRITIQUER
+                </button>
+              )}
+
+              {/* Rent / Status */}
+              {isRented ? (
+                <div style={mobilePillStyle('#00ff00', '#00ff00', {
+                  background: 'rgba(0,255,0,0.08)',
+                  cursor: 'default',
+                })}>
+                  {'\u2713'} LOU{'\u00c9'}
+                </div>
+              ) : (
+                <button
+                  onClick={handleRent}
+                  disabled={isAuthenticated && (!canAfford || isRenting)}
+                  style={mobilePillStyle(rentBorderColor, rentTextColor, {
+                    background: rentBg,
+                    cursor: rentCursor,
+                    boxShadow: rentShadow,
+                  })}
+                >
+                  {rentLabel}
+                </button>
+              )}
+            </div>
           </div>
-        ) : (
-          <button
-            onClick={handleRent}
-            disabled={isAuthenticated && (!canAfford || isRenting)}
-            style={sideButtonStyle(
-              !isAuthenticated ? '#00ff00' : canAfford ? '#ff2d95' : '#666666',
-              !isAuthenticated || canAfford ? '#ffffff' : 'rgba(255,255,255,0.4)',
-              {
-                background: !isAuthenticated
-                  ? 'linear-gradient(135deg, rgba(0,255,0,0.25), rgba(0,170,0,0.25))'
-                  : canAfford
-                    ? 'linear-gradient(135deg, rgba(255,45,149,0.25), rgba(138,43,226,0.25))'
-                    : 'rgba(50,50,50,0.5)',
-                cursor: (!isAuthenticated || (canAfford && !isRenting)) ? 'pointer' : 'not-allowed',
-                boxShadow: (!isAuthenticated || canAfford)
-                  ? `0 0 12px ${!isAuthenticated ? 'rgba(0,255,0,0.2)' : 'rgba(255,45,149,0.2)'}`
-                  : 'none',
-              }
+        </>
+      ) : (
+        /* ===== DESKTOP LAYOUT (unchanged) ===== */
+        <>
+          {/* LEFT SIDE */}
+          <div data-vhs-overlay style={{
+            position: 'fixed',
+            left: '11%',
+            top: '50%',
+            transform: 'translateY(-50%)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '12px',
+            zIndex: 100,
+            pointerEvents: 'auto',
+          }}>
+            <button
+              onClick={() => setShowReviewModal(true)}
+              style={sideButtonStyle('#ffd700', '#ffd700')}
+            >
+              {'\u2605'} LIRE LES AVIS DU VIDEOCLUB
+            </button>
+
+            <button
+              onClick={handleWatchTrailer}
+              disabled={loadingTrailer}
+              style={sideButtonStyle('#ff4444', '#ff4444', {
+                opacity: loadingTrailer ? 0.6 : 1,
+                cursor: loadingTrailer ? 'wait' : 'pointer',
+              })}
+            >
+              {'\u25b6'} BANDE-ANNONCE
+            </button>
+
+            <button
+              onClick={handleAskManager}
+              style={sideButtonStyle('#00fff7', '#00fff7')}
+            >
+              ? DEMANDER AU G{'\u00c9'}RANT
+            </button>
+
+            {isRented && (
+              <button
+                onClick={() => setShowReviewModal(true)}
+                style={sideButtonStyle('#ffd700', '#ffd700')}
+              >
+                {'\u2605'} CRITIQUER
+              </button>
             )}
-          >
-            {!isAuthenticated
-              ? 'CONNEXION'
-              : isRenting
-                ? 'LOCATION...'
-                : canAfford
-                  ? `LOUER (${cost} cr.)`
-                  : 'PAS ASSEZ'}
-          </button>
-        )}
-      </div>
 
-      {/* RIGHT SIDE — Reposer sur l'étagère */}
-      <div data-vhs-overlay style={{
-        position: 'fixed',
-        right: '8%',
-        top: '50%',
-        transform: 'translateY(-50%)',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '12px',
-        zIndex: 100,
-        pointerEvents: 'auto',
-      }}>
-        <button
-          onClick={onClose}
-          style={sideButtonStyle('#00ff88', '#00ff88', {
-            background: 'rgba(0,255,136,0.12)',
-            boxShadow: '0 0 12px rgba(0,255,136,0.25)',
-          })}
-        >
-          {'\u21a9'} REPOSER SUR L'{'\u00c9'}TAG{'\u00c8'}RE
-        </button>
-      </div>
+            {isRented ? (
+              <div style={sideButtonStyle('#00ff00', '#00ff00', {
+                background: 'rgba(0,255,0,0.08)',
+                cursor: 'default',
+              })}>
+                {'\u2713'} LOU{'\u00c9'}
+              </div>
+            ) : (
+              <button
+                onClick={handleRent}
+                disabled={isAuthenticated && (!canAfford || isRenting)}
+                style={sideButtonStyle(rentBorderColor, rentTextColor, {
+                  background: rentBg,
+                  cursor: rentCursor,
+                  boxShadow: rentShadow,
+                })}
+              >
+                {rentLabel}
+              </button>
+            )}
+          </div>
 
-      {/* BOTTOM — Film title + controls hint */}
-      <div data-vhs-overlay style={{
-        position: 'fixed',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        zIndex: 100,
-        pointerEvents: 'none',
-        textAlign: 'center',
-        padding: '16px 24px',
-        background: 'linear-gradient(0deg, rgba(0,0,0,0.6) 0%, transparent 100%)',
-      }}>
-        {/* Film title + meta */}
-        <div style={{
-          fontFamily: 'Orbitron, sans-serif',
-          fontSize: '1rem',
-          color: '#00fff7',
-          textShadow: '0 0 12px rgba(0,255,247,0.5)',
-        }}>
-          {film.title}
-        </div>
-        <div style={{
-          fontSize: '0.8rem',
-          color: 'rgba(255,255,255,0.45)',
-          marginTop: '4px',
-        }}>
-          {film.release_date ? new Date(film.release_date).getFullYear() : ''} {film.runtime ? `\u2022 ${film.runtime} min` : ''} {'\u2022'} {'\u2605'} {film.vote_average.toFixed(1)}
-          <span style={{ marginLeft: '12px', color: 'rgba(255,255,255,0.3)' }}>
-            Solde: <span style={{ color: '#ffd700' }}>{credits}</span> cr{'\u00e9'}dit{credits > 1 ? 's' : ''}
-          </span>
-        </div>
-        {/* Controls hint */}
-        <div style={{
-          marginTop: '6px',
-          color: 'rgba(255,255,255,0.3)',
-          fontSize: '0.7rem',
-          fontFamily: 'sans-serif',
-        }}>
-          <strong>Clic</strong> - Retourner | <strong>Q</strong> / <strong>E</strong> - Tourner le bo{'\u00ee'}tier | <strong>ESC</strong> - Reposer
-        </div>
-      </div>
+          {/* RIGHT SIDE */}
+          <div data-vhs-overlay style={{
+            position: 'fixed',
+            right: '11%',
+            top: '50%',
+            transform: 'translateY(-50%)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '12px',
+            zIndex: 100,
+            pointerEvents: 'auto',
+          }}>
+            <button
+              onClick={onClose}
+              style={sideButtonStyle('#00ff88', '#00ff88', {
+                background: 'rgba(0,255,136,0.12)',
+                boxShadow: '0 0 12px rgba(0,255,136,0.25)',
+              })}
+            >
+              {'\u21a9'} REPOSER SUR L'{'\u00c9'}TAG{'\u00c8'}RE
+            </button>
+          </div>
+
+          {/* BOTTOM — Film title + controls hint */}
+          <div data-vhs-overlay style={{
+            position: 'fixed',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            zIndex: 100,
+            pointerEvents: 'none',
+            textAlign: 'center',
+            padding: '16px 24px',
+            background: 'linear-gradient(0deg, rgba(0,0,0,0.6) 0%, transparent 100%)',
+          }}>
+            <div style={{
+              fontFamily: 'Orbitron, sans-serif',
+              fontSize: '1rem',
+              color: '#00fff7',
+              textShadow: '0 0 12px rgba(0,255,247,0.5)',
+            }}>
+              {film.title}
+            </div>
+            <div style={{
+              fontSize: '0.8rem',
+              color: 'rgba(255,255,255,0.45)',
+              marginTop: '4px',
+            }}>
+              {film.release_date ? new Date(film.release_date).getFullYear() : ''} {film.runtime ? `\u2022 ${film.runtime} min` : ''} {'\u2022'} {'\u2605'} {film.vote_average.toFixed(1)}
+              <span style={{ marginLeft: '12px', color: 'rgba(255,255,255,0.3)' }}>
+                Solde: <span style={{ color: '#ffd700' }}>{credits}</span> cr{'\u00e9'}dit{credits > 1 ? 's' : ''}
+              </span>
+            </div>
+            <div style={{
+              marginTop: '6px',
+              color: 'rgba(255,255,255,0.3)',
+              fontSize: '0.7rem',
+              fontFamily: 'sans-serif',
+            }}>
+              <strong>Clic</strong> - Retourner | <strong>Q</strong> / <strong>E</strong> - Tourner le bo{'\u00ee'}tier | <strong>ESC</strong> - Reposer
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Auth Modal */}
       <AuthModal
