@@ -7,11 +7,12 @@ import * as THREE from 'three'
  * This allows a single InstancedMesh with 1 material to render all ~520 cassettes
  * with unique textures — reducing 520 draw calls to 1.
  *
- * Texture resolution: 200×300 per layer (matches TMDB w200 source exactly, no downscaling).
+ * Texture resolution: 200x300 per layer (matches TMDB w200 source exactly).
  * Total for 520 layers: ~125 MB RGBA (within M1 8GB GPU capabilities).
- * Mipmaps enabled for quality at distance (smooth downsampling).
  *
- * WebGPU maxTextureArrayLayers: M1 via Metal supports up to 2048 layers.
+ * WebGPU optimization: uses copyExternalImageToTexture for per-layer direct GPU upload.
+ * Each poster uploads only 240KB (1 layer) instead of re-uploading the full 125MB array.
+ * No mipmaps — LinearFilter + anisotropy 16 is sufficient at 200x300 resolution.
  */
 
 const LAYER_WIDTH = 200
@@ -45,20 +46,6 @@ export function preloadPosterImage(url: string): Promise<HTMLImageElement> {
   return promise
 }
 
-// Canvas for resizing loaded poster images
-let resizeCanvas: HTMLCanvasElement | null = null
-let resizeCtx: CanvasRenderingContext2D | null = null
-
-function getResizeCanvas(): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D } {
-  if (!resizeCanvas) {
-    resizeCanvas = document.createElement('canvas')
-    resizeCanvas.width = LAYER_WIDTH
-    resizeCanvas.height = LAYER_HEIGHT
-    resizeCtx = resizeCanvas.getContext('2d', { willReadFrequently: true })!
-  }
-  return { canvas: resizeCanvas, ctx: resizeCtx! }
-}
-
 export interface CassetteInstanceData {
   cassetteKey: string
   filmId: number
@@ -75,6 +62,8 @@ export class CassetteTextureArray {
   private data: Uint8Array
   private loadedLayers = new Set<number>()
   private _dirty = false
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private _renderer: any = null // THREE.WebGPURenderer (no @types/three export)
 
   constructor(maxLayers: number) {
     this.maxLayers = maxLayers
@@ -91,13 +80,23 @@ export class CassetteTextureArray {
     this.textureArray = new THREE.DataArrayTexture(this.data, LAYER_WIDTH, LAYER_HEIGHT, maxLayers)
     this.textureArray.format = THREE.RGBAFormat
     this.textureArray.type = THREE.UnsignedByteType
-    // Mipmaps for quality at distance — smooth downsampling instead of aliasing
-    this.textureArray.minFilter = THREE.LinearMipmapLinearFilter
+    // No mipmaps — LinearFilter + anisotropy 16 is sufficient at 200x300
+    // Saves 62.5MB VRAM (mipmap chain) and avoids full-array mipmap regeneration
+    this.textureArray.minFilter = THREE.LinearFilter
     this.textureArray.magFilter = THREE.LinearFilter
-    this.textureArray.generateMipmaps = true
+    this.textureArray.generateMipmaps = false
     this.textureArray.anisotropy = 16
     this.textureArray.colorSpace = THREE.SRGBColorSpace
     this._dirty = true
+  }
+
+  /**
+   * Store a reference to the WebGPU renderer for direct GPU uploads.
+   * Must be called after the first render (when the GPUTexture is allocated).
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  setRenderer(renderer: any): void {
+    this._renderer = renderer
   }
 
   /**
@@ -125,45 +124,86 @@ export class CassetteTextureArray {
 
   /**
    * Load a poster image from URL and copy it into the specified layer.
-   * Uses the shared poster cache — if App.tsx already preloaded this URL,
-   * the promise is already resolved and we get the image instantly (~0ms).
-   * Does NOT trigger GPU upload — call flush() to batch uploads per frame.
+   * Uses WebGPU copyExternalImageToTexture when the renderer is available,
+   * uploading only 240KB per layer instead of the full 125MB array.
+   * Falls back to the canvas path for the first frame before GPUTexture exists.
    */
-  loadPosterIntoLayer(url: string, layerIndex: number): Promise<void> {
-    if (layerIndex >= this.maxLayers) return Promise.resolve()
-    if (this.loadedLayers.has(layerIndex)) return Promise.resolve()
+  async loadPosterIntoLayer(url: string, layerIndex: number): Promise<void> {
+    if (layerIndex >= this.maxLayers) return
+    if (this.loadedLayers.has(layerIndex)) return
 
-    return preloadPosterImage(url).then((img) => {
-      const { ctx } = getResizeCanvas()
+    try {
+      const img = await preloadPosterImage(url)
 
-      // Draw resized image to canvas
-      ctx.clearRect(0, 0, LAYER_WIDTH, LAYER_HEIGHT)
-      ctx.drawImage(img, 0, 0, LAYER_WIDTH, LAYER_HEIGHT)
+      // Create ImageBitmap with hardware resize + Y-flip
+      const bitmap = await createImageBitmap(img, {
+        resizeWidth: LAYER_WIDTH,
+        resizeHeight: LAYER_HEIGHT,
+        imageOrientation: 'flipY',
+      })
 
-      // Read pixel data
-      const imageData = ctx.getImageData(0, 0, LAYER_WIDTH, LAYER_HEIGHT)
-      const pixels = imageData.data
-
-      // Copy into the correct layer of the DataArrayTexture
-      const offset = layerIndex * LAYER_WIDTH * LAYER_HEIGHT * BYTES_PER_PIXEL
-      const rowBytes = LAYER_WIDTH * BYTES_PER_PIXEL
-      // DataArrayTexture expects rows bottom-to-top (OpenGL convention)
-      // but getImageData is top-to-bottom, so we flip Y using TypedArray.set()
-      for (let y = 0; y < LAYER_HEIGHT; y++) {
-        const srcStart = y * rowBytes
-        const dstStart = (LAYER_HEIGHT - 1 - y) * rowBytes + offset
-        this.data.set(pixels.subarray(srcStart, srcStart + rowBytes), dstStart)
+      // Try direct GPU upload via WebGPU API
+      if (this._renderer) {
+        try {
+          const backend = (this._renderer as any).backend
+          if (backend?.device && backend.get) {
+            const device = backend.device as GPUDevice
+            const texData = backend.get(this.textureArray)
+            if (texData?.texture) {
+              device.queue.copyExternalImageToTexture(
+                { source: bitmap, flipY: false }, // already flipped by createImageBitmap
+                { texture: texData.texture, origin: { x: 0, y: 0, z: layerIndex } },
+                { width: LAYER_WIDTH, height: LAYER_HEIGHT, depthOrArrayLayers: 1 }
+              )
+              bitmap.close()
+              this.loadedLayers.add(layerIndex)
+              return
+            }
+          }
+        } catch {
+          // GPUTexture not ready yet — fall through to canvas path
+        }
       }
 
-      this.loadedLayers.add(layerIndex)
-      this._dirty = true
-    }).catch(() => {
+      // Fallback: canvas path (first frame before GPUTexture is allocated)
+      bitmap.close()
+      this.loadPosterViaCanvas(img, layerIndex)
+    } catch {
       // On error, keep the fallback color already set
-    })
+    }
+  }
+
+  /**
+   * Fallback poster loading via canvas (used before WebGPU GPUTexture is ready).
+   * Copies pixels into the CPU-side Uint8Array for later flush().
+   */
+  private loadPosterViaCanvas(img: HTMLImageElement, layerIndex: number): void {
+    const canvas = document.createElement('canvas')
+    canvas.width = LAYER_WIDTH
+    canvas.height = LAYER_HEIGHT
+    const ctx = canvas.getContext('2d', { willReadFrequently: true })!
+
+    ctx.drawImage(img, 0, 0, LAYER_WIDTH, LAYER_HEIGHT)
+    const imageData = ctx.getImageData(0, 0, LAYER_WIDTH, LAYER_HEIGHT)
+    const pixels = imageData.data
+
+    const offset = layerIndex * LAYER_WIDTH * LAYER_HEIGHT * BYTES_PER_PIXEL
+    const rowBytes = LAYER_WIDTH * BYTES_PER_PIXEL
+    // DataArrayTexture expects rows bottom-to-top (OpenGL convention)
+    for (let y = 0; y < LAYER_HEIGHT; y++) {
+      const srcStart = y * rowBytes
+      const dstStart = (LAYER_HEIGHT - 1 - y) * rowBytes + offset
+      this.data.set(pixels.subarray(srcStart, srcStart + rowBytes), dstStart)
+    }
+
+    this.loadedLayers.add(layerIndex)
+    this._dirty = true
   }
 
   /**
    * Flush pending texture changes to the GPU (call once per frame from animation loop).
+   * Only needed for the initial fallback color upload. Once setRenderer() is called,
+   * poster uploads go directly to the GPU via copyExternalImageToTexture.
    * Returns true if a flush occurred.
    */
   flush(): boolean {

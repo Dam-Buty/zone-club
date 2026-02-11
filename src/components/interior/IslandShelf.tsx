@@ -65,7 +65,7 @@ export function IslandShelf({
     map: woodTextures.map as THREE.Texture,
     normalMap: woodTextures.normalMap as THREE.Texture,
     roughnessMap: woodTextures.roughnessMap as THREE.Texture,
-    color: '#4a3a2a',
+    color: '#3d2d1d',
     normalScale: new THREE.Vector2(0.7, 0.7),
   }), [woodTextures])
 
@@ -73,7 +73,7 @@ export function IslandShelf({
     map: woodTextures.map as THREE.Texture,
     normalMap: woodTextures.normalMap as THREE.Texture,
     roughnessMap: woodTextures.roughnessMap as THREE.Texture,
-    color: '#3a2a1a',
+    color: '#2d1d0d',
     normalScale: new THREE.Vector2(0.7, 0.7),
   }), [woodTextures])
 

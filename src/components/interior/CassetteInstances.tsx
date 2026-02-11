@@ -1,7 +1,11 @@
 import { useRef, useEffect, useMemo } from 'react'
-import { useFrame } from '@react-three/fiber'
+import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three/webgpu'
-import { texture, attribute, uv } from 'three/tsl'
+import {
+  texture, uv, attribute,
+  Fn, instanceIndex, deltaTime, instancedArray,
+  uniform, mix, vec3, positionLocal, float,
+} from 'three/tsl'
 import { CassetteTextureArray, type CassetteInstanceData } from '../../utils/CassetteTextureArray'
 import { useStore } from '../../store'
 import { RAYCAST_LAYER_CASSETTE } from './Controls'
@@ -13,39 +17,14 @@ const CASSETTE_DEPTH = 0.03
 
 const SHARED_CASSETTE_GEOMETRY = new THREE.BoxGeometry(CASSETTE_WIDTH, CASSETTE_HEIGHT, CASSETTE_DEPTH)
 
-// Fallback colors for cassettes without posters
-const CASSETTE_COLORS = [
-  '#1a1a2e', '#16213e', '#0f3460', '#533483',
-  '#2c3e50', '#34495e', '#1e3d59', '#3d5a80'
-]
-
 // Animation constants
 const HYSTERESIS_SELECT = 0.05
 const HYSTERESIS_DESELECT = 0.25
-const ANIMATION_THROTTLE = 2
-const EMISSIVE_NONE = new THREE.Color('#000000')
-const EMISSIVE_TARGETED = new THREE.Color('#ff2d95')
-const EMISSIVE_RENTED = new THREE.Color('#00ff00')
 
-// Reusable objects
-const _frustum = new THREE.Frustum()
-const _projMatrix = new THREE.Matrix4()
-const _tempWorldPos = new THREE.Vector3()
-const _tempMatrix = new THREE.Matrix4()
-const _tempPosition = new THREE.Vector3()
-const _tempQuaternion = new THREE.Quaternion()
-const _tempScale = new THREE.Vector3(1, 1, 1)
-
-// Per-instance animation state
-interface InstanceAnimState {
+// Per-instance hysteresis state (CPU-only — not sent to GPU)
+interface InstanceHysteresisState {
   stableTargeted: boolean
   targetedTimer: number
-  smoothTargeted: number
-  currentEmissive: THREE.Color
-  basePosition: THREE.Vector3
-  baseQuaternion: THREE.Quaternion
-  hoverOffsetZ: number
-  currentHoverZ: number
 }
 
 interface CassetteInstancesProps {
@@ -55,6 +34,7 @@ interface CassetteInstancesProps {
 export function CassetteInstances({ instances }: CassetteInstancesProps) {
   const meshRef = useRef<THREE.InstancedMesh>(null!)
   const count = instances.length
+  const gl = useThree(state => state.gl)
 
   // Keep instances in a ref so useMemo doesn't rebuild on every array reference change
   const instancesRef = useRef(instances)
@@ -62,71 +42,84 @@ export function CassetteInstances({ instances }: CassetteInstancesProps) {
 
   if (count === 0) return null
 
-  // Create texture array and per-instance data
-  // Only depends on count — rebuilds only when the number of cassettes actually changes
-  const { texArray, instanceIdToKey, instanceIdToFilmId, animStates } = useMemo(() => {
+  // Create texture array, lookup tables, and GPU storage buffers
+  const {
+    texArray, instanceIdToKey, instanceIdToFilmId,
+    hysteresisStates,
+    targetHoverZBuffer, targetEmissiveBuffer,
+    currentHoverZBuffer, currentEmissiveBuffer,
+    computeNode, lerpSpeedHover, lerpSpeedEmissive,
+  } = useMemo(() => {
     const currentInstances = instancesRef.current
     const ta = new CassetteTextureArray(count)
     const idToKey: string[] = new Array(count)
     const idToFilm: number[] = new Array(count)
-    const states: InstanceAnimState[] = new Array(count)
+    const hStates: InstanceHysteresisState[] = new Array(count)
 
-    // Fallback colors are handled by the fast bulk fill in CassetteTextureArray constructor
-    // (~1ms Uint32Array.fill vs ~300-500ms for 520 individual fillLayerWithColor calls)
     for (let i = 0; i < count; i++) {
       const inst = currentInstances[i]
       idToKey[i] = inst.cassetteKey
       idToFilm[i] = inst.filmId
-
-      // Initialize animation state
-      states[i] = {
-        stableTargeted: false,
-        targetedTimer: 0,
-        smoothTargeted: 0,
-        currentEmissive: new THREE.Color('#000000'),
-        basePosition: inst.worldPosition.clone(),
-        baseQuaternion: inst.worldQuaternion.clone(),
-        hoverOffsetZ: inst.hoverOffsetZ,
-        currentHoverZ: 0,
-      }
+      hStates[i] = { stableTargeted: false, targetedTimer: 0 }
     }
+
+    // GPU storage buffers for animation (instancedArray = StorageInstancedBufferAttribute)
+    const curHoverZ = instancedArray(count, 'float')    // current hover Z (GPU lerps)
+    const tarHoverZ = instancedArray(count, 'float')    // target hover Z (CPU writes)
+    const curEmissive = instancedArray(count, 'vec3')   // current emissive RGB (GPU lerps)
+    const tarEmissive = instancedArray(count, 'vec3')   // target emissive RGB (CPU writes)
+
+    // Uniform lerp speeds
+    const speedHover = uniform(12.0)
+    const speedEmissive = uniform(10.0)
+
+    // Compute shader: lerp current toward target each frame
+    const computeFn = Fn(() => {
+      const idx = instanceIndex
+
+      // Lerp hover Z
+      const curH = curHoverZ.element(idx)
+      const tarH = tarHoverZ.element(idx)
+      const tH = deltaTime.mul(speedHover).min(float(1.0))
+      curH.assign(mix(curH, tarH, tH))
+
+      // Lerp emissive RGB
+      const curE = curEmissive.element(idx)
+      const tarE = tarEmissive.element(idx)
+      const tE = deltaTime.mul(speedEmissive).min(float(1.0))
+      curE.assign(mix(curE, tarE, tE))
+    })
+
+    const cNode = computeFn().compute(count)
 
     return {
       texArray: ta,
       instanceIdToKey: idToKey,
       instanceIdToFilmId: idToFilm,
-      animStates: states,
+      hysteresisStates: hStates,
+      targetHoverZBuffer: tarHoverZ,
+      targetEmissiveBuffer: tarEmissive,
+      currentHoverZBuffer: curHoverZ,
+      currentEmissiveBuffer: curEmissive,
+      computeNode: cNode,
+      lerpSpeedHover: speedHover,
+      lerpSpeedEmissive: speedEmissive,
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [count])
 
-  // Per-instance attributes: layerIndex (float) and emissive (vec4)
-  // CRITICAL: Attach to shared geometry synchronously here (not in useEffect)
-  // so they exist before the first render — avoids WebGPU "attribute not found" warnings
-  // and buffer size mismatches when the TSL material samples these attributes.
-  const { layerIndexAttr, emissiveAttr } = useMemo(() => {
+  // Per-instance attributes: layerIndex (for DataArrayTexture sampling)
+  const layerIndexAttr = useMemo(() => {
     const layerData = new Float32Array(count)
-    const emissiveData = new Float32Array(count * 4) // RGBA
-
     for (let i = 0; i < count; i++) {
-      layerData[i] = i // Each instance maps to its own layer
-      emissiveData[i * 4] = 0
-      emissiveData[i * 4 + 1] = 0
-      emissiveData[i * 4 + 2] = 0
-      emissiveData[i * 4 + 3] = 0
+      layerData[i] = i
     }
-
     const liAttr = new THREE.InstancedBufferAttribute(layerData, 1)
-    const emAttr = new THREE.InstancedBufferAttribute(emissiveData, 4)
-
-    // Attach to geometry now so they're available for the first render frame
     SHARED_CASSETTE_GEOMETRY.setAttribute('layerIndex', liAttr)
-    SHARED_CASSETTE_GEOMETRY.setAttribute('instanceEmissive', emAttr)
-
-    return { layerIndexAttr: liAttr, emissiveAttr: emAttr }
+    return liAttr
   }, [count])
 
-  // Create custom TSL material with DataArrayTexture sampling
+  // Create custom TSL material with DataArrayTexture + compute-driven animation
   const material = useMemo(() => {
     const mat = new THREE.MeshStandardNodeMaterial()
     mat.roughness = 0.5
@@ -134,50 +127,42 @@ export function CassetteInstances({ instances }: CassetteInstancesProps) {
 
     // TSL: read per-instance layer index and sample from DataArrayTexture
     const layerIdx = attribute('layerIndex')
-    const instanceEmissive = attribute('instanceEmissive')
-
-    // Correct Three.js TSL API for DataArrayTexture:
-    // .sample(uv) for 2D UV coordinates, .depth(layerIdx) for array layer selection
-    // This uses TextureNode.depth() which sets the depthNode for array texture sampling
     const texArrayNode = texture(texArray.textureArray)
     mat.colorNode = texArrayNode.sample(uv()).depth(layerIdx)
-    mat.emissiveNode = instanceEmissive.xyz
+
+    // Hover offset from compute shader — applied in local space
+    // instanceMatrix already contains rotation, so local Z offset hovers in correct direction
+    const hoverZ = currentHoverZBuffer.toAttribute()
+    mat.positionNode = positionLocal.add(vec3(0, 0, hoverZ))
+
+    // Emissive from compute shader
+    mat.emissiveNode = currentEmissiveBuffer.toAttribute()
 
     return mat
-  }, [texArray])
+  }, [texArray, currentHoverZBuffer, currentEmissiveBuffer])
 
-  // Setup: initialize instance matrices, attach attributes, load posters
-  // Depends on texArray/material (which only change when count changes), not on instances ref
+  // Setup: initialize instance matrices, load posters, pass renderer
   useEffect(() => {
     const mesh = meshRef.current
     if (!mesh) return
 
     const currentInstances = instancesRef.current
+    const _tempMatrix = new THREE.Matrix4()
+    const _tempScale = new THREE.Vector3(1, 1, 1)
 
     // Enable raycast layer for cassette detection
     mesh.layers.enable(RAYCAST_LAYER_CASSETTE)
 
-    // Per-instance attributes are already attached to SHARED_CASSETTE_GEOMETRY
-    // in useMemo (synchronously, before first render) to avoid WebGPU warnings.
-
-    // Disable mesh-level frustum culling: instances span the entire room (9×8.5m)
-    // but the base geometry bounding sphere is tiny (~0.14m). Three.js would incorrectly
-    // cull the whole InstancedMesh when the camera doesn't see the origin.
-    // Per-instance culling is already handled in the animation loop.
+    // Disable mesh-level frustum culling: instances span the entire room
     mesh.frustumCulled = false
 
-    // Set initial matrices
+    // Set STATIC instance matrices (never updated per frame — hover is via positionNode)
     for (let i = 0; i < count; i++) {
       const inst = currentInstances[i]
       _tempMatrix.compose(inst.worldPosition, inst.worldQuaternion, _tempScale)
       mesh.setMatrixAt(i, _tempMatrix)
     }
     mesh.instanceMatrix.needsUpdate = true
-
-    // Recompute bounding sphere from actual instance matrices.
-    // Critical for raycasting: InstancedMesh.raycast() checks the bounding sphere first.
-    // If it was computed before matrices were set (e.g., during first render with frustumCulled=true),
-    // the stale zero-radius sphere at origin causes all raycasts to miss.
     mesh.computeBoundingSphere()
 
     // Store lookup data in userData for raycasting
@@ -185,13 +170,20 @@ export function CassetteInstances({ instances }: CassetteInstancesProps) {
     mesh.userData.instanceIdToKey = instanceIdToKey
     mesh.userData.instanceIdToFilmId = instanceIdToFilmId
 
-    // Flush all fallback colors to GPU in one batch (set during useMemo)
+    // Initialize target hover Z values from instance data
+    const tarHoverArr = targetHoverZBuffer.value.array as Float32Array
+    for (let i = 0; i < count; i++) {
+      tarHoverArr[i] = 0 // Start at 0 (not hovered)
+    }
+
+    // Flush initial fallback colors to GPU
     texArray.flush()
 
+    // Pass renderer for direct GPU uploads (copyExternalImageToTexture)
+    const renderer = gl as unknown as THREE.WebGPURenderer
+    texArray.setRenderer(renderer)
+
     // Load poster textures in parallel batches
-    // Images are already preloaded in the shared cache (App.tsx module-level prefetch),
-    // so each loadPosterIntoLayer resolves instantly — only CPU canvas work remains.
-    // GPU uploads are batched via texArray.flush() in the animation loop (once per frame).
     let cancelled = false
     const BATCH_SIZE = 50
     const loadPosters = async () => {
@@ -219,112 +211,94 @@ export function CassetteInstances({ instances }: CassetteInstancesProps) {
       material.dispose()
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [texArray, material, count, instanceIdToKey, instanceIdToFilmId, layerIndexAttr, emissiveAttr])
+  }, [texArray, material, count, instanceIdToKey, instanceIdToFilmId, layerIndexAttr, gl])
 
-  // Animation loop
-  const frameCountRef2 = useRef(0)
-  const lastFrustumFrameRef = useRef(-1)
+  // Ref to store hoverOffsetZ per instance (avoids reading instancesRef in hot loop)
+  const hoverOffsetsRef = useRef<Float32Array>(new Float32Array(0))
+  useEffect(() => {
+    const offsets = new Float32Array(count)
+    const currentInstances = instancesRef.current
+    for (let i = 0; i < count; i++) {
+      offsets[i] = currentInstances[i].hoverOffsetZ
+    }
+    hoverOffsetsRef.current = offsets
+  }, [count])
 
-  useFrame(({ camera }, delta) => {
+  // Animation loop — CPU only handles hysteresis + target writes, GPU does lerp
+  useFrame((_state, delta) => {
     const mesh = meshRef.current
     if (!mesh) return
 
-    // Flush pending poster texture uploads (batched: at most 1 GPU upload per frame)
+    // Flush any remaining canvas-path poster uploads (fallback only — usually none)
     texArray.flush()
 
-    frameCountRef2.current++
-    if (frameCountRef2.current % ANIMATION_THROTTLE !== 0) return
-
-    // Frustum culling setup (once per relevant frame)
-    const currentFrame = frameCountRef2.current
-    if (lastFrustumFrameRef.current !== currentFrame) {
-      _projMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
-      _frustum.setFromProjectionMatrix(_projMatrix)
-      lastFrustumFrameRef.current = currentFrame
-    }
-
     // Read store once
-    const state = useStore.getState()
-    const targetedCassetteKey = state.targetedCassetteKey
-    const getRental = state.getRental
+    const storeState = useStore.getState()
+    const targetedCassetteKey = storeState.targetedCassetteKey
+    const getRental = storeState.getRental
 
-    let matrixNeedsUpdate = false
-    let emissiveNeedsUpdate = false
-    const emissiveData = emissiveAttr.array as Float32Array
+    // Get CPU-side typed arrays for target buffers
+    const tarHoverArr = targetHoverZBuffer.value.array as Float32Array
+    const tarEmissiveArr = targetEmissiveBuffer.value.array as Float32Array
+    const hoverOffsets = hoverOffsetsRef.current
+
+    let tarHoverDirty = false
+    let tarEmissiveDirty = false
 
     for (let i = 0; i < count; i++) {
-      const anim = animStates[i]
-
-      // Frustum culling per instance
-      _tempWorldPos.copy(anim.basePosition)
-      _tempWorldPos.y += CASSETTE_HEIGHT / 2  // Center of cassette
-      if (!_frustum.containsPoint(_tempWorldPos)) continue
-
-      // Hysteresis
+      const hs = hysteresisStates[i]
       const isTargetedRaw = targetedCassetteKey === instanceIdToKey[i]
       const isRented = !!getRental(instanceIdToFilmId[i])
 
-      if (isTargetedRaw !== anim.stableTargeted) {
-        anim.targetedTimer += delta
+      // Hysteresis
+      if (isTargetedRaw !== hs.stableTargeted) {
+        hs.targetedTimer += delta
         const delay = isTargetedRaw ? HYSTERESIS_SELECT : HYSTERESIS_DESELECT
-        if (anim.targetedTimer >= delay) {
-          anim.stableTargeted = isTargetedRaw
-          anim.targetedTimer = 0
+        if (hs.targetedTimer >= delay) {
+          hs.stableTargeted = isTargetedRaw
+          hs.targetedTimer = 0
         }
       } else {
-        anim.targetedTimer = 0
+        hs.targetedTimer = 0
       }
 
-      const isTargeted = anim.stableTargeted
+      const isTargeted = hs.stableTargeted
 
-      // Smooth hover Z
-      const targetHoverZ = isTargeted ? anim.hoverOffsetZ : 0
-      const prevHoverZ = anim.currentHoverZ
-      anim.currentHoverZ = THREE.MathUtils.lerp(anim.currentHoverZ, targetHoverZ, delta * 12)
-
-      // Only update matrix if hover Z changed significantly
-      if (Math.abs(anim.currentHoverZ - prevHoverZ) > 0.0001) {
-        _tempPosition.copy(anim.basePosition)
-        // Apply hover in the local Z direction of the cassette
-        _tempWorldPos.set(0, 0, anim.currentHoverZ)
-        _tempWorldPos.applyQuaternion(anim.baseQuaternion)
-        _tempPosition.add(_tempWorldPos)
-
-        _tempMatrix.compose(_tempPosition, anim.baseQuaternion, _tempScale)
-        mesh.setMatrixAt(i, _tempMatrix)
-        matrixNeedsUpdate = true
+      // Target hover Z
+      const newTarHoverZ = isTargeted ? hoverOffsets[i] : 0
+      if (tarHoverArr[i] !== newTarHoverZ) {
+        tarHoverArr[i] = newTarHoverZ
+        tarHoverDirty = true
       }
 
-      // Smooth targeted value
-      const targetValue = isTargeted ? 1 : 0
-      anim.smoothTargeted = THREE.MathUtils.lerp(anim.smoothTargeted, targetValue, delta * 8)
+      // Target emissive: rented=green, targeted=pink, else=black
+      let tR = 0, tG = 0, tB = 0
+      if (isRented) {
+        tR = 0; tG = 0.3; tB = 0 // green * 0.3 intensity
+      } else if (isTargeted) {
+        tR = 1.0 * 0.4; tG = 0.176 * 0.4; tB = 0.584 * 0.4 // #ff2d95 * 0.4
+      }
 
-      // Emissive color
-      const targetColor = isRented ? EMISSIVE_RENTED : (anim.smoothTargeted > 0.1 ? EMISSIVE_TARGETED : EMISSIVE_NONE)
-      anim.currentEmissive.lerp(targetColor, delta * 10)
-
-      const targetIntensity = isRented ? 0.3 : anim.smoothTargeted * 0.4
-
-      // Write emissive to buffer (pre-multiplied by intensity)
-      const idx = i * 4
-      const newR = anim.currentEmissive.r * targetIntensity
-      const newG = anim.currentEmissive.g * targetIntensity
-      const newB = anim.currentEmissive.b * targetIntensity
-      if (emissiveData[idx] !== newR || emissiveData[idx + 1] !== newG || emissiveData[idx + 2] !== newB) {
-        emissiveData[idx] = newR
-        emissiveData[idx + 1] = newG
-        emissiveData[idx + 2] = newB
-        emissiveData[idx + 3] = targetIntensity
-        emissiveNeedsUpdate = true
+      const idx3 = i * 3
+      if (tarEmissiveArr[idx3] !== tR || tarEmissiveArr[idx3 + 1] !== tG || tarEmissiveArr[idx3 + 2] !== tB) {
+        tarEmissiveArr[idx3] = tR
+        tarEmissiveArr[idx3 + 1] = tG
+        tarEmissiveArr[idx3 + 2] = tB
+        tarEmissiveDirty = true
       }
     }
 
-    if (matrixNeedsUpdate) {
-      mesh.instanceMatrix.needsUpdate = true
+    // Upload changed targets to GPU
+    if (tarHoverDirty) {
+      targetHoverZBuffer.value.needsUpdate = true
     }
-    if (emissiveNeedsUpdate) {
-      emissiveAttr.needsUpdate = true
+    if (tarEmissiveDirty) {
+      targetEmissiveBuffer.value.needsUpdate = true
     }
+
+    // Dispatch compute shader — GPU lerps current toward target
+    const renderer = gl as unknown as THREE.WebGPURenderer
+    renderer.compute(computeNode)
   })
 
   return (

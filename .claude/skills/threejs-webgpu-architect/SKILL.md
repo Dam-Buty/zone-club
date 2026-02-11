@@ -1,6 +1,6 @@
 ---
 name: threejs-webgpu-architect
-description: "Expert skill for Three.js WebGPU architecture, React Three Fiber performance, photorealism, asset pipelines, and scene optimization. Use for any Three.js/R3F task involving scene architecture, PBR materials, GTAO/SSAO, bloom post-processing, InstancedMesh patterns, GLB/KTX2 asset pipelines, glass/reflections, rain simulation, and performance budgeting. Covers both Three.js WebGPU renderer and classic WebGL patterns."
+description: "Expert skill for Three.js WebGPU architecture, React Three Fiber performance, photorealism, asset pipelines, and scene optimization. Use for any Three.js/R3F task involving scene architecture, PBR materials, GTAO/SSAO, bloom post-processing, InstancedMesh patterns, GLB/KTX2 asset pipelines, glass/reflections, rain simulation, mobile touch controls, and performance budgeting. Covers both Three.js WebGPU renderer and classic WebGL patterns."
 ---
 
 # Three.js WebGPU Architect
@@ -57,3 +57,4 @@ description: "Expert skill for Three.js WebGPU architecture, React Three Fiber p
 - [Asset Pipeline](references/ASSET_PIPELINE_GLTF_KTX2.md) -- GLB Draco, image compression, font stripping, TMDB textures
 - [Performance Strategy](references/PERFORMANCE_STRATEGY.md) -- InstancedMesh+DataArrayTexture, upload batching, image preloading, useFrame consolidation
 - [Hybrid Decision Tree](references/HYBRID_THREE_WEBGPU_DECISION.md) -- Three.js R3F vs pure WebGPU, TSL, migration path
+- [Mobile Controls R3F](references/MOBILE_CONTROLS_R3F.md) -- virtual joystick, touch camera, dual-input Controls, viewport meta, safe area

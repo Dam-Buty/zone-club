@@ -31,6 +31,7 @@ function AsyncModel({ url, position, scale = 1, rotation = [0, 0, 0] }: {
     />
   )
 }
+import { useKTX2Textures } from '../../hooks/useKTX2Textures'
 import { WallShelf, SHELF_DEPTH, SHELF_TILT, SHELF_PIVOT_Y } from './WallShelf'
 import { IslandShelf } from './IslandShelf'
 import { CassetteInstances } from './CassetteInstances'
@@ -53,14 +54,20 @@ interface AisleProps {
 const ROOM_WIDTH = 9  // x axis
 const ROOM_DEPTH = 8.5 // z axis
 const ROOM_HEIGHT = 2.8
+const WALL_SHELF_OFFSET = 0.15 // distance from wall to shelf center (accounts for depth + tilt)
+
+// Set to true once KTX2 textures have been generated via scripts/convert-textures-ktx2.sh
+// KTX2 UASTC = 4x less VRAM, hardware decompression, zero shader cost
+const USE_KTX2 = true
 
 // Hook pour charger un set de textures PBR avec tiling
-function usePBRTextures(
+// When USE_KTX2 is true, swap this function body to use useKTX2Textures instead.
+const usePBRTextures = USE_KTX2 ? useKTX2Textures : function usePBRTexturesJPEG(
   basePath: string,
   repeatX: number,
   repeatY: number,
   hasAO = false
-) {
+): Record<string, THREE.Texture> {
   const paths: Record<string, string> = {
     map: `${basePath}/color.jpg`,
     normalMap: `${basePath}/normal.jpg`,
@@ -78,10 +85,7 @@ function usePBRTextures(
       t.wrapS = THREE.RepeatWrapping
       t.wrapT = THREE.RepeatWrapping
       t.repeat.set(repeatX, repeatY)
-      // Anisotropic filtering: sharpen textures viewed at oblique angles (floors, walls)
-      // Minimal GPU cost for significant quality improvement on tiled surfaces
       t.anisotropy = 16
-      // Color map needs sRGB, others are linear data
       if (t === (textures as Record<string, THREE.Texture>).map) {
         t.colorSpace = THREE.SRGBColorSpace
       } else {
@@ -207,6 +211,7 @@ function MergedStairs({ position }: { position: [number, number, number] }) {
 // (mount → useEffect → callback → wait-for-all-6 → setState → re-render).
 
 // WallShelf constants (must match WallShelf.tsx — SHELF_DEPTH, SHELF_TILT, SHELF_PIVOT_Y imported)
+const PLANK_DEPTH = 0.10  // must match WallShelf.tsx PLANK_DEPTH
 const WALL_ROWS = 5
 const WALL_ROW_HEIGHT = CASSETTE_DIMENSIONS.height + 0.12
 const WALL_CASSETTE_SPACING = CASSETTE_DIMENSIONS.width + 0.02
@@ -259,7 +264,7 @@ function computeWallShelfCassettes(
 
     const localX = (col - cassettesPerRow / 2 + 0.5) * WALL_CASSETTE_SPACING
     const localY = 0.25 + row * WALL_ROW_HEIGHT
-    const localZ = SHELF_DEPTH / 2 + 0.02
+    const localZ = SHELF_DEPTH / 2 + PLANK_DEPTH / 2  // centered on the plank
 
     // Apply tilt: translate to pivot, rotate, translate back
     // Tilt pivot is at (0, SHELF_PIVOT_Y, 0) in shelf local space
@@ -415,8 +420,14 @@ export function Aisle({ films }: AisleProps) {
   const actionSlice = useMemo(() => filmsByGenre.action.slice(0, 30), [filmsByGenre.action])
   const drameSlice = useMemo(() => filmsByGenre.drame.slice(0, 22), [filmsByGenre.drame])
   const comedieSlice = useMemo(() => filmsByGenre.comedie.slice(0, 28), [filmsByGenre.comedie])
-  const nouveautesLeft = useMemo(() => nouveautesFilms.slice(0, 15), [nouveautesFilms])
-  const nouveautesRight = useMemo(() => nouveautesFilms.slice(15, 30), [nouveautesFilms])
+  const nouveautesLeft = useMemo(() => {
+    const half = Math.ceil(nouveautesFilms.length / 2)
+    return nouveautesFilms.slice(0, half)
+  }, [nouveautesFilms])
+  const nouveautesRight = useMemo(() => {
+    const half = Math.ceil(nouveautesFilms.length / 2)
+    return nouveautesFilms.slice(half)
+  }, [nouveautesFilms])
 
   // Extraire les poster_path pour les affiches murales
   const posterPaths = useMemo(() => {
@@ -449,23 +460,23 @@ export function Aisle({ films }: AisleProps) {
 
     // WallShelf: Horreur
     all.push(...computeWallShelfCassettes(
-      [-ROOM_WIDTH / 2 + 0.4, 0, -1.54], [0, Math.PI / 2, 0], 3.5, horreurSlice
+      [-ROOM_WIDTH / 2 + WALL_SHELF_OFFSET, 0, -1.54], [0, Math.PI / 2, 0], 3.5, horreurSlice
     ))
     // WallShelf: Thriller
     all.push(...computeWallShelfCassettes(
-      [-ROOM_WIDTH / 2 + 0.4, 0, 1.29], [0, Math.PI / 2, 0], 2.5, thrillerSlice
+      [-ROOM_WIDTH / 2 + WALL_SHELF_OFFSET, 0, 1.29], [0, Math.PI / 2, 0], 2.5, thrillerSlice
     ))
     // WallShelf: Action
     all.push(...computeWallShelfCassettes(
-      [-2.25, 0, -ROOM_DEPTH / 2 + 0.4], [0, 0, 0], 3.5, actionSlice
+      [-2.25, 0, -ROOM_DEPTH / 2 + WALL_SHELF_OFFSET], [0, 0, 0], 3.5, actionSlice
     ))
     // WallShelf: Drame
     all.push(...computeWallShelfCassettes(
-      [1.25, 0, -ROOM_DEPTH / 2 + 0.4], [0, 0, 0], 2.5, drameSlice
+      [1.25, 0, -ROOM_DEPTH / 2 + WALL_SHELF_OFFSET], [0, 0, 0], 2.5, drameSlice
     ))
     // WallShelf: Comédie
     all.push(...computeWallShelfCassettes(
-      [ROOM_WIDTH / 2 - 0.4, 0, -1.5], [0, -Math.PI / 2, 0], 4, comedieSlice
+      [ROOM_WIDTH / 2 - WALL_SHELF_OFFSET, 0, -1.5], [0, -Math.PI / 2, 0], 4, comedieSlice
     ))
     // IslandShelf: Nouveautés
     all.push(...computeIslandShelfCassettes(
@@ -532,7 +543,7 @@ export function Aisle({ films }: AisleProps) {
 
         {/* Étagères Horreur - mur gauche */}
         <WallShelf
-          position={[-ROOM_WIDTH / 2 + 0.4, 0, -1.54]}
+          position={[-ROOM_WIDTH / 2 + WALL_SHELF_OFFSET, 0, -1.54]}
           rotation={[0, Math.PI / 2, 0]}
           length={3.5}
         />
@@ -554,7 +565,7 @@ export function Aisle({ films }: AisleProps) {
 
         {/* Étagères Thriller - mur gauche */}
         <WallShelf
-          position={[-ROOM_WIDTH / 2 + 0.4, 0, 1.29]}
+          position={[-ROOM_WIDTH / 2 + WALL_SHELF_OFFSET, 0, 1.29]}
           rotation={[0, Math.PI / 2, 0]}
           length={2.5}
         />
@@ -576,7 +587,7 @@ export function Aisle({ films }: AisleProps) {
 
         {/* Étagères Action - partie gauche du mur du fond */}
         <WallShelf
-          position={[-2.25, 0, -ROOM_DEPTH / 2 + 0.4]}
+          position={[-2.25, 0, -ROOM_DEPTH / 2 + WALL_SHELF_OFFSET]}
           rotation={[0, 0, 0]}
           length={3.5}
         />
@@ -615,7 +626,7 @@ export function Aisle({ films }: AisleProps) {
 
         {/* Étagères Drame - partie droite du mur du fond (avant la porte) */}
         <WallShelf
-          position={[1.25, 0, -ROOM_DEPTH / 2 + 0.4]}
+          position={[1.25, 0, -ROOM_DEPTH / 2 + WALL_SHELF_OFFSET]}
           rotation={[0, 0, 0]}
           length={2.5}
         />
@@ -637,7 +648,7 @@ export function Aisle({ films }: AisleProps) {
 
         {/* Étagères Comédie - mur droit partie nord */}
         <WallShelf
-          position={[ROOM_WIDTH / 2 - 0.4, 0, -1.5]}
+          position={[ROOM_WIDTH / 2 - WALL_SHELF_OFFSET, 0, -1.5]}
           rotation={[0, -Math.PI / 2, 0]}
           length={4}
         />
@@ -736,7 +747,7 @@ export function Aisle({ films }: AisleProps) {
           ))}
         </group>
 
-        {/* QUENTIN - Le Gérant 3D */}
+        {/* RICK - Le Gérant 3D */}
         <Manager3D position={[0, 0, 0.8]} rotation={[0, Math.PI, 0]} />
       </group>
 
@@ -768,7 +779,7 @@ export function Aisle({ films }: AisleProps) {
 
       {/* ===== AFFICHES DE FILMS ===== */}
       <PosterWall
-        position={[3.93, 2.39, -ROOM_DEPTH / 2 + 0.15]}
+        position={[ROOM_WIDTH / 2 - 1.05, 2.39, -ROOM_DEPTH / 2 + 0.15]}
         rotation={[0, 0, 0]}
         posterPaths={posterPaths.slice(3, 6)}
         spacing={0.55}

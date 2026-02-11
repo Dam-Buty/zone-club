@@ -3,6 +3,7 @@ import * as THREE from 'three'
 import { useTexture } from '@react-three/drei'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { TextureCache } from '../../utils/TextureCache'
+import { useKTX2Textures } from '../../hooks/useKTX2Textures'
 
 interface StorefrontProps {
   position: [number, number, number]
@@ -93,6 +94,23 @@ const PUSH_BAR_MAT = new THREE.MeshStandardMaterial({
   roughness: 0.2,
   metalness: 0.8,
 })
+
+// Set to true once KTX2 textures have been generated via scripts/convert-textures-ktx2.sh
+const USE_KTX2 = true
+
+// Hook selector for storefront wall textures
+function useStorefrontTexturesJPEG(): Record<string, THREE.Texture> {
+  return useTexture({
+    map: '/textures/storefront/color.jpg',
+    normalMap: '/textures/storefront/normal.jpg',
+    roughnessMap: '/textures/storefront/roughness.jpg',
+    aoMap: '/textures/storefront/ao.jpg',
+  }) as Record<string, THREE.Texture>
+}
+function useStorefrontTexturesKTX2(): Record<string, THREE.Texture> {
+  return useKTX2Textures('/textures/storefront', 4, 1.5, true)
+}
+const useStorefrontTextures = USE_KTX2 ? useStorefrontTexturesKTX2 : useStorefrontTexturesJPEG
 
 // ===== PUSH BAR GEOMETRY (flat rectangular crash bar — full door width, matches storefront.jpeg) =====
 const PUSH_BAR_GEOM = (() => {
@@ -194,15 +212,11 @@ function VitrinePoster({ posterPath, position, width, height }: {
 
 // ===== MAIN COMPONENT =====
 export function Storefront({ position, roomWidth, roomHeight, posterPaths }: StorefrontProps) {
-  // PBR wall textures
-  const wallTextures = useTexture({
-    map: '/textures/storefront/color.jpg',
-    normalMap: '/textures/storefront/normal.jpg',
-    roughnessMap: '/textures/storefront/roughness.jpg',
-    aoMap: '/textures/storefront/ao.jpg',
-  })
+  // PBR wall textures (KTX2 or JPEG depending on USE_KTX2 flag)
+  const wallTextures = useStorefrontTextures()
 
   useMemo(() => {
+    if (USE_KTX2) return // KTX2 hook handles configuration
     Object.entries(wallTextures).forEach(([key, tex]) => {
       const t = tex as THREE.Texture
       t.wrapS = THREE.RepeatWrapping
