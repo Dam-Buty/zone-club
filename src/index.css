@@ -1,0 +1,97 @@
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Inter:wght@400;500;600&display=swap');
+@import "tailwindcss";
+
+@theme {
+  /* Neon Colors */
+  --color-neon-pink: #ff2d95;
+  --color-neon-cyan: #00fff7;
+  --color-neon-purple: #b026ff;
+  --color-neon-yellow: #fff600;
+
+  /* Backgrounds */
+  --color-dark-bg: #0a0a0f;
+  --color-darker-bg: #050508;
+  --color-card-bg: rgba(20, 20, 30, 0.8);
+
+  /* Typography */
+  --font-display: 'Orbitron', sans-serif;
+  --font-body: 'Inter', sans-serif;
+}
+
+/* Glow utilities via CSS variables */
+:root {
+  --glow-pink: 0 0 10px #ff2d95, 0 0 20px #ff2d95, 0 0 40px #ff2d95;
+  --glow-cyan: 0 0 10px #00fff7, 0 0 20px #00fff7, 0 0 40px #00fff7;
+  --glow-purple: 0 0 10px #b026ff, 0 0 20px #b026ff, 0 0 40px #b026ff;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: var(--font-body);
+  background: var(--color-darker-bg);
+  color: white;
+  overflow: hidden;
+}
+
+/* Custom glow utilities */
+.glow-pink { box-shadow: var(--glow-pink); }
+.glow-cyan { box-shadow: var(--glow-cyan); }
+.glow-purple { box-shadow: var(--glow-purple); }
+.text-glow-pink { text-shadow: var(--glow-pink); }
+.text-glow-cyan { text-shadow: var(--glow-cyan); }
+.text-glow-purple { text-shadow: var(--glow-purple); }
+
+/* Animation keyframes */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* Mobile: prevent default touch behaviors on the 3D canvas */
+canvas {
+  touch-action: none;
+}
+
+/* Onboarding animations */
+@keyframes joystickHint {
+  0%, 100% { transform: translate(0, 0); }
+  25% { transform: translate(0, -12px); }
+  50% { transform: translate(10px, 0); }
+  75% { transform: translate(0, 10px); }
+}
+
+@keyframes swipeHint {
+  0%, 100% { transform: translateX(0); }
+  50% { transform: translateX(30px); }
+}
+
+@keyframes tapHint {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(0.85); opacity: 0.6; }
+}

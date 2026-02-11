@@ -1,5 +1,31 @@
+# Dependencies
+node_modules/
+
+# Build output
+.next/
+dist/
+
+# Environment
 .env
+.env.local
+
+# Database
+*.db
+
+# Service configs (host-specific)
 bazarr-config/
 radarr-config/
 radarr-vf-config/
 radarr-vo-config/
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.sw?

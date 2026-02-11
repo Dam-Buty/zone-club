@@ -1,0 +1,212 @@
+.controls {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.9));
+  padding: 1.5rem;
+  padding-top: 3rem;
+}
+
+.progress {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+  cursor: pointer;
+  position: relative;
+  margin-bottom: 1rem;
+}
+
+.progress:hover {
+  height: 8px;
+}
+
+.progressFill {
+  height: 100%;
+  background: var(--color-neon-pink);
+  border-radius: 3px;
+  box-shadow: var(--glow-pink);
+  transition: width 100ms linear;
+}
+
+.progressHead {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 14px;
+  height: 14px;
+  background: var(--color-neon-pink);
+  border-radius: 50%;
+  box-shadow: var(--glow-pink);
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+
+.progress:hover .progressHead {
+  opacity: 1;
+}
+
+.buttons {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.left,
+.right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.btn {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 1.25rem;
+  cursor: pointer;
+  padding: 0.5rem;
+  transition: transform 150ms ease, color 150ms ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn:hover {
+  transform: scale(1.1);
+  color: var(--color-neon-cyan);
+}
+
+.btn:active {
+  transform: scale(0.95);
+}
+
+.btnIcon {
+  display: inline-block;
+  line-height: 1;
+}
+
+.playBtn {
+  font-size: 1.5rem;
+  background: var(--color-neon-pink);
+  border-radius: 50%;
+  width: 50px;
+  height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--glow-pink);
+  margin: 0 0.5rem;
+}
+
+.playBtn:hover {
+  color: white;
+  background: var(--color-neon-cyan);
+  box-shadow: var(--glow-cyan);
+}
+
+.time {
+  font-family: var(--font-display);
+  font-size: 0.875rem;
+  color: var(--color-neon-cyan);
+  letter-spacing: 0.05em;
+  text-shadow: var(--glow-cyan);
+}
+
+.volumeSlider {
+  width: 80px;
+  height: 4px;
+  appearance: none;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.volumeSlider::-webkit-slider-thumb {
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  background: var(--color-neon-cyan);
+  border-radius: 50%;
+  box-shadow: var(--glow-cyan);
+  cursor: pointer;
+}
+
+.volumeSlider::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  background: var(--color-neon-cyan);
+  border-radius: 50%;
+  box-shadow: var(--glow-cyan);
+  cursor: pointer;
+  border: none;
+}
+
+.volumeSlider::-webkit-slider-runnable-track {
+  height: 4px;
+  background: linear-gradient(
+    to right,
+    var(--color-neon-cyan) 0%,
+    var(--color-neon-cyan) var(--volume-percent, 100%),
+    rgba(255, 255, 255, 0.2) var(--volume-percent, 100%),
+    rgba(255, 255, 255, 0.2) 100%
+  );
+  border-radius: 2px;
+}
+
+.volumeSlider::-moz-range-track {
+  height: 4px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 2px;
+}
+
+/* Center section for track controls */
+.center {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.trackSelector {
+  display: flex;
+  gap: 2px;
+  background: rgba(0, 0, 0, 0.5);
+  border-radius: 4px;
+  padding: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.trackBtn {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.5);
+  font-family: var(--font-display);
+  font-size: 0.75rem;
+  font-weight: bold;
+  letter-spacing: 0.05em;
+  padding: 0.4rem 0.75rem;
+  cursor: pointer;
+  border-radius: 3px;
+  transition: all 150ms ease;
+  text-transform: uppercase;
+}
+
+.trackBtn:hover:not(:disabled) {
+  color: white;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.trackBtn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.trackBtn.trackActive {
+  background: var(--color-neon-pink);
+  color: white;
+  box-shadow: 0 0 10px var(--color-neon-pink);
+}
+
+.trackBtn.trackActive:hover {
+  background: var(--color-neon-pink);
+}

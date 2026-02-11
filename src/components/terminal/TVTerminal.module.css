@@ -1,0 +1,665 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.95);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 100;
+}
+
+.terminal {
+  width: 600px;
+  max-height: 80vh;
+  background: #0a0a0a;
+  border: 3px solid #00ff00;
+  border-radius: 8px;
+  font-family: 'Courier New', monospace;
+  color: #00ff00;
+  overflow: hidden;
+  position: relative;
+  box-shadow: 0 0 40px rgba(0, 255, 0, 0.3);
+}
+
+/* CRT scanline effect */
+.terminal::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0, 0, 0, 0.15) 0px,
+    rgba(0, 0, 0, 0.15) 1px,
+    transparent 1px,
+    transparent 2px
+  );
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* CRT glow effect */
+.terminal::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  box-shadow: inset 0 0 60px rgba(0, 255, 0, 0.08);
+  pointer-events: none;
+}
+
+.header {
+  padding: 16px 20px;
+  border-bottom: 2px solid #00ff00;
+  text-align: center;
+  font-size: 1.1rem;
+  text-transform: uppercase;
+  letter-spacing: 4px;
+  text-shadow: 0 0 10px #00ff00;
+  background: rgba(0, 255, 0, 0.05);
+}
+
+.content {
+  padding: 20px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.menu {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.menuItem {
+  padding: 14px 20px;
+  cursor: pointer;
+  transition: background 0.1s;
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  border-bottom: 1px solid rgba(0, 255, 0, 0.1);
+}
+
+.menuItem:last-child {
+  border-bottom: none;
+}
+
+.menuItem.selected {
+  background: rgba(0, 255, 0, 0.15);
+}
+
+.menuItem:hover {
+  background: rgba(0, 255, 0, 0.1);
+}
+
+.prefix {
+  color: #00ff00;
+  font-weight: bold;
+  opacity: 0.7;
+}
+
+.backButton {
+  padding: 12px 20px;
+  margin-bottom: 15px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #00ff00;
+  opacity: 0.7;
+  transition: opacity 0.1s;
+}
+
+.backButton:hover {
+  opacity: 1;
+}
+
+.sectionTitle {
+  font-size: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  margin-bottom: 15px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(0, 255, 0, 0.3);
+}
+
+.infoRow {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(0, 255, 0, 0.1);
+}
+
+.infoLabel {
+  opacity: 0.7;
+}
+
+.infoValue {
+  font-weight: bold;
+  text-shadow: 0 0 8px #00ff00;
+}
+
+.infoValueLarge {
+  font-size: 2rem;
+  text-shadow: 0 0 15px #00ff00;
+}
+
+.rentalItem {
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(0, 255, 0, 0.1);
+}
+
+.rentalTitle {
+  font-weight: bold;
+  margin-bottom: 4px;
+}
+
+.rentalMeta {
+  font-size: 0.85rem;
+  opacity: 0.7;
+}
+
+.emptyMessage {
+  text-align: center;
+  opacity: 0.5;
+  padding: 30px 0;
+  font-style: italic;
+}
+
+.footer {
+  padding: 12px 20px;
+  border-top: 2px solid #00ff00;
+  font-size: 0.8rem;
+  opacity: 0.6;
+  text-align: center;
+  background: rgba(0, 255, 0, 0.03);
+}
+
+/* Blink cursor animation */
+.cursor {
+  display: inline-block;
+  width: 10px;
+  height: 18px;
+  background: #00ff00;
+  margin-left: 5px;
+  animation: blink 1s step-end infinite;
+}
+
+@keyframes blink {
+  50% { opacity: 0; }
+}
+
+.levelBadge {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-size: 0.9rem;
+}
+
+.levelBronze {
+  background: rgba(205, 127, 50, 0.2);
+  color: #cd7f32;
+  border: 1px solid #cd7f32;
+}
+
+.levelArgent {
+  background: rgba(192, 192, 192, 0.2);
+  color: #c0c0c0;
+  border: 1px solid #c0c0c0;
+}
+
+.levelOr {
+  background: rgba(255, 215, 0, 0.2);
+  color: #ffd700;
+  border: 1px solid #ffd700;
+}
+
+.levelPlatine {
+  background: rgba(229, 228, 226, 0.2);
+  color: #e5e4e2;
+  border: 1px solid #e5e4e2;
+}
+
+.progressBar {
+  height: 8px;
+  background: rgba(0, 255, 0, 0.1);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-top: 8px;
+}
+
+.progressFill {
+  height: 100%;
+  background: #00ff00;
+  box-shadow: 0 0 10px #00ff00;
+  transition: width 0.3s ease;
+}
+
+.playButton {
+  background: rgba(255, 45, 149, 0.2);
+  border: 1px solid #ff2d95;
+  color: #ff2d95;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: 'Courier New', monospace;
+  font-size: 0.85rem;
+  font-weight: bold;
+  transition: all 0.2s;
+  text-shadow: 0 0 8px #ff2d95;
+  flex-shrink: 0;
+}
+
+.playButton:hover {
+  background: rgba(255, 45, 149, 0.4);
+  box-shadow: 0 0 15px rgba(255, 45, 149, 0.5);
+}
+
+/* Auth menu item */
+.authItem {
+  color: #00fff7 !important;
+  border: 1px solid rgba(0, 255, 247, 0.3);
+  background: rgba(0, 255, 247, 0.05);
+}
+
+.authItem:hover {
+  background: rgba(0, 255, 247, 0.15) !important;
+}
+
+.authItem .prefix {
+  color: #00fff7 !important;
+}
+
+/* User display item */
+.userItem {
+  color: #ffd700 !important;
+  border: 1px solid rgba(255, 215, 0, 0.3);
+  background: rgba(255, 215, 0, 0.05);
+  cursor: default !important;
+}
+
+.userItem .prefix {
+  color: #ffd700 !important;
+}
+
+/* Logout item */
+.logoutItem {
+  color: #ff4444 !important;
+  margin-top: 10px;
+  border-top: 1px solid rgba(255, 68, 68, 0.2);
+  padding-top: 20px !important;
+}
+
+.logoutItem:hover {
+  background: rgba(255, 68, 68, 0.1) !important;
+}
+
+.logoutItem .prefix {
+  color: #ff4444 !important;
+}
+
+/* Search item */
+.searchItem {
+  color: #ff2d95 !important;
+  border: 1px solid rgba(255, 45, 149, 0.3);
+  background: rgba(255, 45, 149, 0.05);
+  margin-top: 10px;
+}
+
+.searchItem:hover {
+  background: rgba(255, 45, 149, 0.15) !important;
+}
+
+.searchItem .prefix {
+  color: #ff2d95 !important;
+}
+
+/* Reviews menu item */
+.reviewsItem {
+  color: #ffd700 !important;
+}
+
+.reviewsItem:hover {
+  background: rgba(255, 215, 0, 0.1) !important;
+}
+
+.reviewsItem .prefix {
+  color: #ffd700 !important;
+}
+
+/* Review items in list */
+.reviewItem {
+  padding: 15px;
+  background: rgba(255, 215, 0, 0.05);
+  border: 1px solid rgba(255, 215, 0, 0.2);
+  border-radius: 4px;
+  margin-bottom: 12px;
+}
+
+.reviewHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 8px;
+}
+
+.reviewFilmTitle {
+  font-weight: bold;
+  color: #ffd700;
+  text-shadow: 0 0 8px rgba(255, 215, 0, 0.3);
+  flex: 1;
+  margin-right: 10px;
+}
+
+.reviewRating {
+  color: #ffd700;
+  font-size: 1.1rem;
+  text-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+  flex-shrink: 0;
+}
+
+.reviewRatings {
+  display: flex;
+  gap: 15px;
+  font-size: 0.75rem;
+  color: rgba(255, 215, 0, 0.7);
+  margin-bottom: 10px;
+}
+
+.reviewContent {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.7);
+  line-height: 1.5;
+  margin-bottom: 8px;
+}
+
+.reviewDate {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.4);
+  text-align: right;
+}
+
+/* ============ ADMIN STYLES ============ */
+
+.adminTitle {
+  color: #ff4444 !important;
+  border-bottom-color: #ff4444 !important;
+  text-shadow: 0 0 10px rgba(255, 68, 68, 0.5);
+}
+
+.adminStats {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  margin-bottom: 15px;
+}
+
+.adminStatItem {
+  background: rgba(255, 68, 68, 0.1);
+  border: 1px solid rgba(255, 68, 68, 0.3);
+  border-radius: 4px;
+  padding: 12px;
+  text-align: center;
+}
+
+.adminStatValue {
+  display: block;
+  font-size: 1.5rem;
+  font-weight: bold;
+  color: #ff4444;
+  text-shadow: 0 0 10px rgba(255, 68, 68, 0.5);
+}
+
+.adminStatLabel {
+  font-size: 0.7rem;
+  color: rgba(255, 68, 68, 0.7);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.adminMenuItem {
+  color: #ff4444 !important;
+  border: 1px solid rgba(255, 68, 68, 0.3);
+  background: rgba(255, 68, 68, 0.05);
+}
+
+.adminMenuItem:hover {
+  background: rgba(255, 68, 68, 0.15) !important;
+}
+
+.adminMenuItem .prefix {
+  color: #ff4444 !important;
+}
+
+/* Admin form */
+.adminForm {
+  padding: 15px 0;
+}
+
+.adminLabel {
+  display: block;
+  font-size: 0.85rem;
+  color: #ff4444;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.adminInput {
+  width: 100%;
+  padding: 12px 15px;
+  background: rgba(255, 68, 68, 0.1);
+  border: 1px solid rgba(255, 68, 68, 0.4);
+  border-radius: 4px;
+  color: #ffffff;
+  font-family: 'Courier New', monospace;
+  font-size: 1rem;
+  box-sizing: border-box;
+}
+
+.adminInput:focus {
+  outline: none;
+  border-color: #ff4444;
+  box-shadow: 0 0 15px rgba(255, 68, 68, 0.3);
+}
+
+.adminInput::placeholder {
+  color: rgba(255, 68, 68, 0.4);
+}
+
+.adminHint {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.4);
+  margin-top: 8px;
+}
+
+.adminError {
+  margin-top: 12px;
+  padding: 10px;
+  background: rgba(255, 68, 68, 0.15);
+  border: 1px solid #ff4444;
+  border-radius: 4px;
+  color: #ff4444;
+  font-size: 0.85rem;
+}
+
+.adminSuccess {
+  margin-top: 12px;
+  padding: 10px;
+  background: rgba(0, 255, 0, 0.15);
+  border: 1px solid #00ff00;
+  border-radius: 4px;
+  color: #00ff00;
+  font-size: 0.85rem;
+  text-shadow: 0 0 10px rgba(0, 255, 0, 0.5);
+}
+
+.adminButton {
+  width: 100%;
+  margin-top: 15px;
+  padding: 12px 20px;
+  background: rgba(255, 68, 68, 0.2);
+  border: 2px solid #ff4444;
+  border-radius: 4px;
+  color: #ff4444;
+  font-family: 'Courier New', monospace;
+  font-size: 0.9rem;
+  font-weight: bold;
+  letter-spacing: 2px;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-shadow: 0 0 8px rgba(255, 68, 68, 0.5);
+}
+
+.adminButton:hover:not(:disabled) {
+  background: rgba(255, 68, 68, 0.35);
+  box-shadow: 0 0 20px rgba(255, 68, 68, 0.4);
+}
+
+.adminButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Admin film list */
+.adminFilmItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  border-bottom: 1px solid rgba(255, 68, 68, 0.1);
+}
+
+.adminFilmInfo {
+  flex: 1;
+  min-width: 0;
+}
+
+.adminFilmTitle {
+  font-weight: bold;
+  color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.adminFilmMeta {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.4);
+  margin-top: 4px;
+}
+
+.adminToggleBtn {
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-family: 'Courier New', monospace;
+  font-size: 0.7rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-left: 10px;
+  flex-shrink: 0;
+}
+
+.adminToggleOn {
+  background: rgba(0, 255, 0, 0.2);
+  border: 1px solid #00ff00;
+  color: #00ff00;
+}
+
+.adminToggleOff {
+  background: rgba(255, 68, 68, 0.2);
+  border: 1px solid #ff4444;
+  color: #ff4444;
+}
+
+/* Admin requests */
+.adminRequestItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  border-bottom: 1px solid rgba(255, 68, 68, 0.1);
+}
+
+.adminRequestInfo {
+  flex: 1;
+  min-width: 0;
+}
+
+.adminRequestTitle {
+  font-weight: bold;
+  color: #ffffff;
+}
+
+.adminRequestMeta {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.4);
+  margin-top: 4px;
+}
+
+.adminRequestActions {
+  display: flex;
+  gap: 8px;
+  margin-left: 10px;
+}
+
+.adminApproveBtn,
+.adminRejectBtn {
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: none;
+}
+
+.adminApproveBtn {
+  background: rgba(0, 255, 0, 0.2);
+  border: 1px solid #00ff00;
+  color: #00ff00;
+}
+
+.adminApproveBtn:hover {
+  background: rgba(0, 255, 0, 0.4);
+  box-shadow: 0 0 10px rgba(0, 255, 0, 0.5);
+}
+
+.adminRejectBtn {
+  background: rgba(255, 68, 68, 0.2);
+  border: 1px solid #ff4444;
+  color: #ff4444;
+}
+
+.adminRejectBtn:hover {
+  background: rgba(255, 68, 68, 0.4);
+  box-shadow: 0 0 10px rgba(255, 68, 68, 0.5);
+}
+
+.adminRequestStatus {
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: bold;
+  letter-spacing: 1px;
+}
+
+.status_added {
+  background: rgba(0, 255, 0, 0.2);
+  color: #00ff00;
+  border: 1px solid #00ff00;
+}
+
+.status_rejected {
+  background: rgba(255, 68, 68, 0.2);
+  color: #ff4444;
+  border: 1px solid #ff4444;
+}
+
+.status_approved {
+  background: rgba(255, 215, 0, 0.2);
+  color: #ffd700;
+  border: 1px solid #ffd700;
+}

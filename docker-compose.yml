@@ -1,23 +1,30 @@
 services:
-  sveltekit:
-    build: ./app
+  app:
+    image: node:22-slim
     container_name: zone-app
+    working_dir: /app
+    command: node server.js
+    volumes:
+      - ./.next/standalone:/app
+      - ./.next/static:/app/.next/static
+      - ./public:/app/public
+      - db_data:/data
+      - /data/zone-club/films-vo:/media/films-vo:ro
+      - /data/zone-club/films-vf:/media/films-vf:ro
+      - media_public:/media/public:rw
     environment:
       - DATABASE_PATH=/data/zone.db
       - DOMAIN=${DOMAIN}
       - SUBDOMAIN=${SUBDOMAIN}
       - STORAGE_SUBDOMAIN=${STORAGE_SUBDOMAIN}
       - RADARR_VO_URL=http://radarr-vo:7878
-      - RADARR_VO_API_KEY=${RADARR_VO_API_KEY}
       - RADARR_VF_URL=http://radarr-vf:7878
+      - RADARR_VO_API_KEY=${RADARR_VO_API_KEY}
       - RADARR_VF_API_KEY=${RADARR_VF_API_KEY}
       - TMDB_API_KEY=${TMDB_API_KEY}
       - HMAC_SECRET=${HMAC_SECRET}
-    volumes:
-      - db_data:/data
-      - /data/zone-club/films-vo:/media/films-vo:ro
-      - /data/zone-club/films-vf:/media/films-vf:ro
-      - media_public:/media/public:rw
+      - HOSTNAME=0.0.0.0
+      - PORT=3000
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.zone-app.rule=Host(`${SUBDOMAIN}.${DOMAIN}`)"
@@ -27,8 +34,9 @@ services:
     depends_on:
       - radarr-vo
       - radarr-vf
+    restart: unless-stopped
 
-  lighttpd:
+  storage:
     image: sebp/lighttpd
     container_name: zone-storage
     volumes:
@@ -40,7 +48,9 @@ services:
       - "traefik.enable=true"
       - "traefik.http.routers.zone-storage.rule=Host(`${STORAGE_SUBDOMAIN}.${DOMAIN}`)"
       - "traefik.http.routers.zone-storage.entrypoints=websecure"
+      - "traefik.http.routers.zone-storage.tls.certresolver=letsencrypt"
       - "traefik.http.services.zone-storage.loadbalancer.server.port=80"
+    restart: unless-stopped
 
   radarr-vo:
     image: linuxserver/radarr:latest
@@ -53,10 +63,15 @@ services:
       - ./radarr-vo-config:/config
       - /data/zone-club/films-vo:/movies
       - ${SABNZBD_DOWNLOADS}:/downloads
-    ports:
-      - "7878:7878"
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.radarr-vo.rule=Host(`radarr-vo.${DOMAIN}`)"
+      - "traefik.http.routers.radarr-vo.entrypoints=websecure"
+      - "traefik.http.routers.radarr-vo.tls.certresolver=letsencrypt"
+      - "traefik.http.services.radarr-vo.loadbalancer.server.port=7878"
+    restart: unless-stopped
 
   radarr-vf:
     image: linuxserver/radarr:latest
@@ -69,10 +84,15 @@ services:
       - ./radarr-vf-config:/config
       - /data/zone-club/films-vf:/movies
       - ${SABNZBD_DOWNLOADS}:/downloads
-    ports:
-      - "7879:7878"
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.radarr-vf.rule=Host(`radarr-vf.${DOMAIN}`)"
+      - "traefik.http.routers.radarr-vf.entrypoints=websecure"
+      - "traefik.http.routers.radarr-vf.tls.certresolver=letsencrypt"
+      - "traefik.http.services.radarr-vf.loadbalancer.server.port=7878"
+    restart: unless-stopped
 
   bazarr:
     image: linuxserver/bazarr:latest
@@ -85,8 +105,13 @@ services:
       - ./bazarr-config:/config
       - /data/zone-club/films-vo:/movies-vo
       - /data/zone-club/films-vf:/movies-vf
-    ports:
-      - "6767:6767"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.bazarr.rule=Host(`bazarr.${DOMAIN}`)"
+      - "traefik.http.routers.bazarr.entrypoints=websecure"
+      - "traefik.http.routers.bazarr.tls.certresolver=letsencrypt"
+      - "traefik.http.services.bazarr.loadbalancer.server.port=6767"
+    restart: unless-stopped
 
 volumes:
   db_data:
