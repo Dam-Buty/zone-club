@@ -145,6 +145,7 @@ export class CassetteTextureArray {
       // Try direct GPU upload via WebGPU API
       if (this._renderer) {
         try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const backend = (this._renderer as any).backend
           if (backend?.device && backend.get) {
             const device = backend.device as GPUDevice

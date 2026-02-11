@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useStore } from '../../store';
-import { tmdb, type TMDBVideo } from '../../services/tmdb';
+import { tmdb } from '../../services/tmdb';
 import { Modal } from '../ui/Modal';
 import { AuthModal } from '../auth/AuthModal';
 import { ReviewModal } from '../review/ReviewModal';
@@ -31,7 +31,6 @@ export function FilmDetailModal({ film, isOpen, onClose }: FilmDetailModalProps)
   const {
     isAuthenticated,
     authUser,
-    localUser,
     getCredits,
     deductCredits,
     addRental,

@@ -85,7 +85,7 @@ export function createDetailedCassetteWithGroove(): Mesh {
   const b = bevel;
 
   // Get the base beveled box
-  const baseBox = createBeveledBox(width, height, depth, bevel);
+  const _baseBox = createBeveledBox(width, height, depth, bevel);
 
   // Copy all vertices except the front face (we'll rebuild it with groove)
   // The front face is the first face in createBeveledBox, vertices 0-3

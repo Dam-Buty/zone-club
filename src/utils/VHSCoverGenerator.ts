@@ -330,7 +330,7 @@ function fillGradient(ctx: CanvasRenderingContext2D, w: number, h: number, stops
   ctx.fillRect(0, 0, w, h)
 }
 
-function drawBorder(ctx: CanvasRenderingContext2D, w: number, h: number, template: VHSTemplate) {
+function _drawBorder(ctx: CanvasRenderingContext2D, w: number, h: number, template: VHSTemplate) {
   switch (template.borderStyle) {
     case 'neon-lines':
       ctx.fillStyle = template.accentColor
@@ -775,7 +775,6 @@ function blitFlipped(
 
 function drawFrontCover(ctx: CanvasRenderingContext2D, data: VHSCoverData, template: VHSTemplate) {
   blitFlipped(ctx, FRONT, (tc, w, h) => {
-    const { film, posterImg } = data
     const pad = 14
 
     fillGradient(tc, w, h, template.frontBg)

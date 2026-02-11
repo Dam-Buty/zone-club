@@ -89,7 +89,7 @@ export class AisleScene {
     this.loadFilmData();
   }
 
-  private createPipelines(device: GPUDevice, format: GPUTextureFormat) {
+  private createPipelines(device: GPUDevice, _format: GPUTextureFormat) {
     // === COLOR PIPELINE (for untextured objects) ===
     const colorShaderCode = `
       struct Uniforms {
@@ -827,7 +827,7 @@ export class AisleScene {
   }
 
   private async loadFilmData() {
-    const API_KEY = import.meta.env.VITE_TMDB_API_KEY;
+    const API_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY;
     if (!API_KEY) return;
 
     // Film IDs to load

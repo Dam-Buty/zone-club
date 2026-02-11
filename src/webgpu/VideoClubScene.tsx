@@ -9,7 +9,7 @@ interface VideoClubSceneProps {
 }
 
 // Using PBR deferred rendering with full logging
-export function VideoClubScene({ onCassetteClick }: VideoClubSceneProps) {
+export function VideoClubScene({ onCassetteClick: _onCassetteClick }: VideoClubSceneProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const interiorSceneRef = useRef<AisleScenePBR | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -77,6 +77,7 @@ export function VideoClubScene({ onCassetteClick }: VideoClubSceneProps) {
         // Log adapter info (if available - not all browsers support this)
         try {
           if ('requestAdapterInfo' in adapter) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const adapterInfo = await (adapter as any).requestAdapterInfo();
             console.log('[VideoClub] Adapter info:', {
               vendor: adapterInfo.vendor,

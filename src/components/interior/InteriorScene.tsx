@@ -63,7 +63,7 @@ declare module '@react-three/fiber' {
   interface ThreeElements extends ThreeToJSXElements<typeof THREE> {}
 }
 
-extend(THREE as unknown as Record<string, unknown>)
+extend(THREE as any)
 
 interface InteriorSceneProps {
   onCassetteClick?: (filmId: number) => void
@@ -305,7 +305,7 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
   return (
     <div style={{ position: 'fixed', inset: 0, touchAction: 'none' }}>
       <Canvas
-        gl={async (props) => {
+        gl={(async (props: any) => {
           console.log('[Canvas] Initializing WebGPU renderer...')
           const adapter = await navigator.gpu.requestAdapter()
           const maxLayers = adapter ? adapter.limits.maxTextureArrayLayers : 2048
@@ -322,7 +322,8 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
           renderer.toneMappingExposure = 1.0
           console.log('[Canvas] WebGPU renderer initialized with shadows + ACES tone mapping')
           return renderer
-        }}
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        }) as any}
         onCreated={(state) => {
           console.log('[Canvas] onCreated - scene ready')
           console.log('[Canvas] Renderer type:', state.gl.constructor.name)

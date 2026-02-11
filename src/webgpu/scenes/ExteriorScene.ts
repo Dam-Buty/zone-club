@@ -124,7 +124,7 @@ export class ExteriorScene {
     this.loadFilmData();
   }
 
-  private createPipelines(device: GPUDevice, format: GPUTextureFormat) {
+  private createPipelines(device: GPUDevice, _format: GPUTextureFormat) {
     // === MAIN SHADER - Night exterior with wet ground, neon, rain ===
     const colorShaderCode = `
       struct Uniforms {
@@ -882,7 +882,7 @@ export class ExteriorScene {
   }
 
   private async loadFilmData() {
-    const API_KEY = import.meta.env.VITE_TMDB_API_KEY;
+    const API_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY;
     if (!API_KEY) {
       console.warn('TMDB API key not found, using placeholder posters');
       this.buildPlaceholderPosters();
@@ -1305,7 +1305,7 @@ export class ExteriorScene {
     }
 
     // Center aisle shelving (visible through door)
-    for (let side of [-1.8, 1.8]) {
+    for (const side of [-1.8, 1.8]) {
       for (let i = 0; i < 5; i++) {
         const shelfY = 0.5 + i * 0.6;
         const shelf = createBox(0.8, 0.04, 2.5);

@@ -63,7 +63,6 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
     isAuthenticated,
     authUser,
     localUser,
-    getCredits,
     logout,
     rentals,
     rentalHistory,
@@ -229,7 +228,7 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
     }
   }, []);
 
-  const handleApproveRequest = useCallback(async (requestId: number, tmdbId: number) => {
+  const handleApproveRequest = useCallback(async (requestId: number, _tmdbId: number) => {
     try {
       await api.admin.updateRequestStatus(requestId, 'added');
       setAdminRequests(prev => prev.map(r =>

@@ -196,7 +196,7 @@ export function packMaterials(materials: PBRMaterial[]): Float32Array {
  */
 export function getMaterialByName(name: string): PBRMaterial | undefined {
   const entries = Object.entries(Materials) as [string, PBRMaterial][];
-  const found = entries.find(([_, mat]) => mat.name === name);
+  const found = entries.find(([, mat]) => mat.name === name);
   return found ? found[1] : undefined;
 }
 

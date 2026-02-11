@@ -75,7 +75,7 @@ export interface AuthUser {
 }
 
 // Compatibilité avec l'ancien type User
-export interface User extends LocalUser {}
+export type User = LocalUser;
 
 // Manager types
 export type ManagerTrigger = 'HOVER_LONG' | 'HESITATION' | 'GENRE_RETURN' | 'POST_RENTAL' | 'BELL_CLICK';

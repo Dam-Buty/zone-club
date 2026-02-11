@@ -1,7 +1,12 @@
 import { useStore } from '../../store';
 
 export function Header() {
-  const { user, showManager } = useStore();
+  const localUser = useStore(state => state.localUser);
+  const getCredits = useStore(state => state.getCredits);
+  const showManager = useStore(state => state.showManager);
+
+  const credits = getCredits();
+  const level = localUser.level;
 
   return (
     <header className="fixed top-0 left-0 right-0 h-[60px] flex justify-between items-center px-6 bg-gradient-to-b from-[rgba(10,10,15,0.95)] to-[rgba(10,10,15,0.8)] border-b border-neon-pink/30 z-[100]">
@@ -12,15 +17,15 @@ export function Header() {
 
       <div className="flex items-center gap-6">
         <div className="flex flex-col items-center">
-          <span className="text-[0.6rem] text-white/50 tracking-wider">CRÉDITS</span>
+          <span className="text-[0.6rem] text-white/50 tracking-wider">CREDITS</span>
           <span className="font-display text-xl text-neon-yellow drop-shadow-[0_0_10px_var(--color-neon-yellow)]">
-            {user.credits}
+            {credits}
           </span>
         </div>
 
         <div className="px-4 py-1 border border-neon-purple rounded">
           <span className="font-display text-xs text-neon-purple tracking-wider">
-            {user.level.toUpperCase()}
+            {level.toUpperCase()}
           </span>
         </div>
 

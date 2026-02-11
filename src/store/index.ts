@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Film, Rental, AisleType, SceneType, MemberLevel } from '../types';
-import api, { type ApiUser, type ApiRentalWithFilm, type ApiFilm, type ReviewWithUser } from '../api';
+import api, { type ApiRentalWithFilm, type ApiFilm, type ReviewWithUser } from '../api';
 
 function calculateLevel(totalRentals: number): MemberLevel {
   if (totalRentals >= 50) return 'platine';

@@ -2,7 +2,7 @@
  * API Service pour communiquer avec le backend Zone Club
  */
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5179';
+const API_BASE = '';
 
 // Types correspondant au backend
 export interface ApiUser {
@@ -84,7 +84,6 @@ async function request<T>(
 
   const response = await fetch(url, {
     ...options,
-    credentials: 'include', // Important pour les cookies de session
     headers: {
       'Content-Type': 'application/json',
       ...options.headers,

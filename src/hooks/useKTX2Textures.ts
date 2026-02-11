@@ -10,7 +10,7 @@ import { KTX2Loader } from 'three/examples/jsm/loaders/KTX2Loader.js'
 let _ktx2Loader: KTX2Loader | null = null
 let _supportDetected = false
 
-function getKTX2Loader(gl: THREE.WebGLRenderer): KTX2Loader {
+function _getKTX2Loader(gl: THREE.WebGLRenderer): KTX2Loader {
   if (!_ktx2Loader) {
     _ktx2Loader = new KTX2Loader()
     _ktx2Loader.setTranscoderPath('/basis/')

@@ -24,7 +24,7 @@ export function ReviewModal({ isOpen, onClose, film }: ReviewModalProps) {
   const [reviewsData, setReviewsData] = useState<ReviewsResponse | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const { isAuthenticated, authUser, addCredits } = useStore();
+  const { isAuthenticated, addCredits } = useStore();
 
   // Load reviews and check if user can review
   useEffect(() => {

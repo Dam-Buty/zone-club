@@ -296,9 +296,9 @@ export function filterFilmsByGenre<T extends { genres: { id: number }[] }>(
   genreKey: GenreKey
 ): T[] {
   const config = GENRE_CONFIG[genreKey]
-  const validIds = [config.id, ...config.altIds]
+  const validIds: number[] = [config.id, ...config.altIds]
 
   return films.filter(film =>
-    film.genres.some(g => validIds.includes(g.id as number))
+    film.genres.some(g => validIds.includes(g.id))
   )
 }

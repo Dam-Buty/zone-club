@@ -77,8 +77,8 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
           mat.metalness = Math.min(mat.metalness, 0.02)
           if (mat.map) {
             // Only include cover surfaces (1024×1024 atlas), not tape/reel meshes
-            const mapImg = mat.map.image
-            if (!mapImg || (mapImg.width >= 512 && mapImg.height >= 512)) {
+            const mapImg = mat.map.image as { width?: number; height?: number } | null
+            if (!mapImg || ((mapImg.width ?? 0) >= 512 && (mapImg.height ?? 0) >= 512)) {
               meshes.push(child)
             }
           }

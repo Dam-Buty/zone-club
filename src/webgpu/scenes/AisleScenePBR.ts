@@ -1228,7 +1228,7 @@ export class AisleScenePBR {
    * Load film data from TMDB API
    */
   private async loadFilmData(): Promise<void> {
-    const API_KEY = import.meta.env.VITE_TMDB_API_KEY;
+    const API_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY;
     if (!API_KEY) return;
 
     const filmIds = [550, 238, 78, 603, 680, 694, 348, 1091, 105, 562, 280, 115, 620, 62, 985, 185, 111, 103, 769, 578];
