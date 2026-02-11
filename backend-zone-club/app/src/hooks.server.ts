@@ -31,7 +31,10 @@ function ensureCleanupStarted() {
 
 // ============ CORS ============
 // CORS origins autorisées
+const FRONTEND_ORIGIN = `https://${process.env.FRONTEND_SUBDOMAIN || 'club'}.${process.env.DOMAIN || 'lazone.at'}`;
+
 const ALLOWED_ORIGINS = [
+    FRONTEND_ORIGIN,
     'http://localhost:5173',
     'http://localhost:5174',
     'http://localhost:5175',

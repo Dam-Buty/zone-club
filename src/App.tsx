@@ -1,14 +1,16 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, lazy, Suspense } from 'react';
 import { useStore } from './store';
 import { tmdb } from './services/tmdb';
 import { useManagerTriggers } from './hooks/useManagerTriggers';
-import { ExteriorView } from './components/exterior';
 import { VHSCaseOverlay } from './components/videoclub/VHSCaseOverlay';
 import { ManagerChat } from './components/manager/ManagerChat';
 import { VHSPlayer } from './components/player/VHSPlayer';
-import { InteriorScene } from './components/interior';
 import { preloadPosterImage } from './utils/CassetteTextureArray';
 import mockFilmIds from './data/mock/films.json';
+
+// Lazy-load WebGPU-dependent components so they don't crash browsers without support
+const ExteriorView = lazy(() => import('./components/exterior').then(m => ({ default: m.ExteriorView })));
+const InteriorScene = lazy(() => import('./components/interior').then(m => ({ default: m.InteriorScene })));
 
 // ===== MODULE-LEVEL PREFETCH =====
 // Starts TMDB fetches immediately when JS loads (before React mounts).
@@ -40,7 +42,30 @@ _prefetchPromise.then((results) => {
   }
 });
 
+function WebGPUNotSupported() {
+  return (
+    <div style={{
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      height: '100vh', backgroundColor: '#0a0a0a', color: '#ff2d95',
+      fontFamily: 'Orbitron, sans-serif', textAlign: 'center', padding: '2rem',
+    }}>
+      <h1 style={{ fontSize: '2rem', textShadow: '0 0 20px #ff2d95', marginBottom: '1rem' }}>
+        WebGPU non disponible
+      </h1>
+      <p style={{ color: '#ccc', fontFamily: 'sans-serif', maxWidth: '500px', lineHeight: 1.6 }}>
+        Ce vidéoclub utilise WebGPU pour le rendu 3D.
+        Utilisez Chrome, Edge ou un navigateur basé sur Chromium pour y accéder.
+      </p>
+    </div>
+  );
+}
+
 function App() {
+  // WebGPU support check
+  if (!navigator.gpu) {
+    return <WebGPUNotSupported />;
+  }
+
   // Individual selectors to avoid re-rendering on unrelated store changes (e.g. targetedFilm, pointerLock)
   const currentScene = useStore(state => state.currentScene);
   const setScene = useStore(state => state.setScene);
@@ -103,14 +128,20 @@ function App() {
 
   // Exterior view
   if (currentScene === 'exterior') {
-    return <ExteriorView onEnter={handleEnterStore} />;
+    return (
+      <Suspense fallback={null}>
+        <ExteriorView onEnter={handleEnterStore} />
+      </Suspense>
+    );
   }
 
   // Interior view (3D scene)
   return (
     <>
       {/* 3D R3F + WebGPU Video Club Scene */}
-      <InteriorScene onCassetteClick={handleFilmClick} />
+      <Suspense fallback={null}>
+        <InteriorScene onCassetteClick={handleFilmClick} />
+      </Suspense>
 
       {/* VHS Case 3D overlay (bottom bar with rental/trailer/close buttons) */}
       <VHSCaseOverlay

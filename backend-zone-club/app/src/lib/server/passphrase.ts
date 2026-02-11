@@ -1,19 +1,11 @@
-import { readFileSync } from 'fs';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
 import { randomInt } from 'crypto';
+import platsJson from './dictionaries/plats.json';
+import originesJson from './dictionaries/origines.json';
+import qualificatifsJson from './dictionaries/qualificatifs.json';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-function loadDictionary(name: string): string[] {
-    const path = join(__dirname, 'dictionaries', `${name}.json`);
-    return JSON.parse(readFileSync(path, 'utf-8'));
-}
-
-const plats = loadDictionary('plats');
-const origines = loadDictionary('origines');
-const qualificatifs = loadDictionary('qualificatifs');
+const plats: string[] = platsJson;
+const origines: string[] = originesJson;
+const qualificatifs: string[] = qualificatifsJson;
 
 function secureRandomChoice<T>(array: T[]): T {
     return array[randomInt(0, array.length)];
