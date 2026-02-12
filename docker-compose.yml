@@ -3,12 +3,12 @@ services:
     image: node:22-slim
     container_name: zone-app
     working_dir: /app
-    command: node server.js
+    command: sh -c "apt-get update && apt-get install -y --no-install-recommends ffmpeg && node server.js"
     volumes:
       - ./.next/standalone:/app
       - ./.next/static:/app/.next/static
       - ./public:/app/public
-      - db_data:/data
+      - ./zone.db:/data/zone.db
       - /data/zone-club/films-vo:/media/films-vo:ro
       - /data/zone-club/films-vf:/media/films-vf:ro
       - media_public:/media/public:rw
@@ -114,5 +114,4 @@ services:
     restart: unless-stopped
 
 volumes:
-  db_data:
   media_public:
