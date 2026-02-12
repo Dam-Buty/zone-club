@@ -20,7 +20,14 @@ export interface Film {
     subtitle_path: string | null;
     radarr_vo_id: number | null;
     radarr_vf_id: number | null;
+    aisle: string | null;
+    is_nouveaute: boolean;
     is_available: boolean;
+    transcode_status: string | null;
+    transcode_progress: number;
+    transcode_error: string | null;
+    file_path_vo_transcoded: string | null;
+    file_path_vf_transcoded: string | null;
     created_at: string;
 }
 
@@ -46,6 +53,7 @@ function parseFilm(row: any): Film {
         genres: JSON.parse(row.genres || '[]'),
         directors: JSON.parse(row.directors || '[]'),
         actors: JSON.parse(row.actors || '[]'),
+        is_nouveaute: !!row.is_nouveaute,
         is_available: !!row.is_available
     };
 }
@@ -93,13 +101,21 @@ export async function addFilmFromTmdb(tmdbId: number): Promise<Film> {
         db.prepare('INSERT INTO film_genres (film_id, genre_id) VALUES (?, ?)').run(filmId, genreRow.id);
     }
 
-    // Try to add to both Radarr instances
-    try {
-        const { vo, vf } = await addToRadarr(tmdbId, tmdbData.title);
-        db.prepare('UPDATE films SET radarr_vo_id = ?, radarr_vf_id = ? WHERE id = ?').run(vo.id, vf.id, filmId);
-    } catch (error) {
-        console.error('Failed to add to Radarr:', error);
+    return getFilmById(filmId)!;
+}
+
+export async function triggerDownload(filmId: number): Promise<Film> {
+    const film = getFilmById(filmId);
+    if (!film) {
+        throw new Error('Film introuvable');
     }
+
+    if (film.radarr_vo_id && film.radarr_vf_id) {
+        throw new Error('Le téléchargement est déjà en cours ou terminé');
+    }
+
+    const { vo, vf } = await addToRadarr(film.tmdb_id, film.title);
+    db.prepare('UPDATE films SET radarr_vo_id = ?, radarr_vf_id = ? WHERE id = ?').run(vo.id, vf.id, filmId);
 
     return getFilmById(filmId)!;
 }
@@ -150,8 +166,28 @@ export function getGenresWithFilmCount(): (Genre & { film_count: number })[] {
     `).all() as (Genre & { film_count: number })[];
 }
 
+export function getFilmsByAisle(aisle: string): Film[] {
+    return db.prepare(
+        'SELECT * FROM films WHERE aisle = ? AND is_available = 1 ORDER BY title'
+    ).all(aisle).map(parseFilm);
+}
+
+export function getNouveautes(): Film[] {
+    return db.prepare(
+        'SELECT * FROM films WHERE is_nouveaute = 1 AND is_available = 1 ORDER BY created_at DESC'
+    ).all().map(parseFilm);
+}
+
 export function setFilmAvailability(filmId: number, available: boolean): void {
     db.prepare('UPDATE films SET is_available = ? WHERE id = ?').run(available ? 1 : 0, filmId);
+}
+
+export function setFilmAisle(filmId: number, aisle: string | null): void {
+    db.prepare('UPDATE films SET aisle = ? WHERE id = ?').run(aisle, filmId);
+}
+
+export function setFilmNouveaute(filmId: number, isNouveaute: boolean): void {
+    db.prepare('UPDATE films SET is_nouveaute = ? WHERE id = ?').run(isNouveaute ? 1 : 0, filmId);
 }
 
 export function deleteFilm(filmId: number): void {
@@ -183,4 +219,33 @@ export function updateFilmPaths(filmId: number, paths: {
         values.push(filmId);
         db.prepare(`UPDATE films SET ${updates.join(', ')} WHERE id = ?`).run(...values);
     }
+}
+
+export interface TranscodeStatusInfo {
+  id: number;
+  title: string;
+  transcode_status: string | null;
+  transcode_progress: number;
+  transcode_error: string | null;
+  radarr_vo_id: number | null;
+  radarr_vf_id: number | null;
+  file_path_vo: string | null;
+  file_path_vf: string | null;
+  file_path_vo_transcoded: string | null;
+  file_path_vf_transcoded: string | null;
+  is_available: boolean;
+}
+
+export function getTranscodeStatuses(): TranscodeStatusInfo[] {
+  return db.prepare(`
+    SELECT id, title, transcode_status, transcode_progress, transcode_error,
+           radarr_vo_id, radarr_vf_id, file_path_vo, file_path_vf,
+           file_path_vo_transcoded, file_path_vf_transcoded, is_available
+    FROM films
+    WHERE radarr_vo_id IS NOT NULL OR radarr_vf_id IS NOT NULL
+    ORDER BY created_at DESC
+  `).all().map(row => ({
+    ...(row as any),
+    is_available: !!(row as any).is_available
+  })) as TranscodeStatusInfo[];
 }
