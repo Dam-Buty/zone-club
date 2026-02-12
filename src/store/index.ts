@@ -10,6 +10,14 @@ function calculateLevel(totalRentals: number): MemberLevel {
   return 'bronze';
 }
 
+// Extract TMDB path from full poster URL
+// e.g. "https://image.tmdb.org/t/p/w500/xxx.jpg" → "/xxx.jpg"
+function extractTmdbPath(url: string | null): string | null {
+  if (!url) return null;
+  const match = url.match(/\/t\/p\/\w+(\/.+)$/);
+  return match ? match[1] : null;
+}
+
 // Convertit un ApiFilm en Film frontend
 function apiFilmToFilm(apiFilm: ApiFilm): Film {
   return {
@@ -17,8 +25,8 @@ function apiFilmToFilm(apiFilm: ApiFilm): Film {
     tmdb_id: apiFilm.tmdb_id,
     title: apiFilm.title,
     overview: apiFilm.synopsis || '',
-    poster_path: apiFilm.poster_url,
-    backdrop_path: apiFilm.backdrop_url,
+    poster_path: extractTmdbPath(apiFilm.poster_url),
+    backdrop_path: extractTmdbPath(apiFilm.backdrop_url),
     release_date: apiFilm.release_year ? `${apiFilm.release_year}-01-01` : '',
     runtime: apiFilm.runtime,
     vote_average: 0,
@@ -356,39 +364,18 @@ export const useStore = create<VideoClubState>()(
         })),
 
       loadFilmsFromApi: async () => {
+        const aisles: AisleType[] = ['nouveautes', 'action', 'horreur', 'sf', 'comedie', 'classiques', 'bizarre'];
         try {
-          const allFilms = await api.films.getAll();
-          const converted = allFilms.map(apiFilmToFilm);
-
-          // Pour l'instant, mettre tous les films dans "nouveautes"
-          // Plus tard, on pourra les trier par genre
-          set((state) => ({
-            films: { ...state.films, nouveautes: converted },
-          }));
-
-          // Charger les films par genre
-          const genresResponse = await api.genres.getAll();
-
-          const genreMapping: Record<string, AisleType> = {
-            'action': 'action',
-            'horreur': 'horreur',
-            'science-fiction': 'sf',
-            'comedie': 'comedie',
+          const results = await Promise.all(
+            aisles.map(aisle => api.films.getByAisle(aisle).catch(() => ({ aisle, films: [] })))
+          );
+          const filmsMap: Record<AisleType, Film[]> = {
+            nouveautes: [], action: [], horreur: [], sf: [], comedie: [], classiques: [], bizarre: [],
           };
-
-          for (const genre of genresResponse) {
-            const aisleType = genreMapping[genre.slug];
-            if (aisleType) {
-              try {
-                const { films: genreFilms } = await api.films.getByGenre(genre.slug);
-                set((state) => ({
-                  films: { ...state.films, [aisleType]: genreFilms.map(apiFilmToFilm) },
-                }));
-              } catch {
-                // Ignorer les erreurs de genre
-              }
-            }
+          for (const { aisle, films: aisleFilms } of results) {
+            filmsMap[aisle as AisleType] = (aisleFilms as ApiFilm[]).map(apiFilmToFilm);
           }
+          set({ films: filmsMap });
         } catch (error) {
           console.error('Erreur chargement films:', error);
         }
