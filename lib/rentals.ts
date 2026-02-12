@@ -90,8 +90,8 @@ function enrichRental(rental: Rental): RentalWithFilm | null {
         ...rental,
         film,
         streaming_urls: {
-            vf: film.file_path_vf ? getStreamingUrl(rental.symlink_uuid, 'film_vf.mp4') : null,
-            vo: film.file_path_vo ? getStreamingUrl(rental.symlink_uuid, 'film_vo.mp4') : null,
+            vf: film.file_path_vf_transcoded ? getStreamingUrl(rental.symlink_uuid, 'film_vf.mp4') : null,
+            vo: film.file_path_vo_transcoded ? getStreamingUrl(rental.symlink_uuid, 'film_vo.mp4') : null,
             subtitles: film.subtitle_path ? getStreamingUrl(rental.symlink_uuid, 'subs_fr.vtt') : null
         },
         time_remaining: timeRemaining
@@ -123,8 +123,8 @@ export async function rentFilm(userId: number, filmId: number): Promise<RentalWi
     }
 
     const symlinks = await createRentalSymlinks(film.tmdb_id, {
-        vf: film.file_path_vf,
-        vo: film.file_path_vo,
+        vf: film.file_path_vf_transcoded,
+        vo: film.file_path_vo_transcoded,
         subtitles: film.subtitle_path
     });
 
