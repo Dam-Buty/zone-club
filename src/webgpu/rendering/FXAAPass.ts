@@ -15,7 +15,7 @@
  * Use the quality presets to balance between performance and quality.
  */
 
-import fxaaShaderSource from '../shaders/fxaa.wgsl?raw';
+import fxaaShaderSource from '../shaders/fxaa.wgsl';
 
 /**
  * Quality preset for FXAA

@@ -171,6 +171,12 @@ declare module 'three/addons/lights/RectAreaLightTexturesLib.js' {
     }
 }
 
+// WGSL shader modules (loaded as raw text via webpack asset/source)
+declare module '*.wgsl' {
+    const source: string;
+    export default source;
+}
+
 // Fix TypeScript 5.x strict ArrayBuffer generics for WebGPU
 // Float32Array<ArrayBufferLike> is not assignable to GPUAllowSharedBufferSource
 // because SharedArrayBuffer lacks properties added in ES2024 (resizable, transfer, etc.)

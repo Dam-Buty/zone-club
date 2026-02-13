@@ -11,7 +11,7 @@
  * - Support for multiple shadow-casting lights
  */
 
-import shadowShaderCode from '../shaders/shadow.wgsl?raw';
+import shadowShaderCode from '../shaders/shadow.wgsl';
 
 // ============================================================================
 // Configuration Types

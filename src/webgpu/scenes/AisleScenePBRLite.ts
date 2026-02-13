@@ -12,8 +12,8 @@ import { Camera } from '../core/Camera';
 import { createPlane, createBox, createVerticalPlane, type Mesh } from '../core/Geometry';
 import { GBuffer } from '../rendering/GBuffer';
 
-import gbufferShaderSource from '../shaders/gbuffer.wgsl?raw';
-import pbrLightingShaderSource from '../shaders/pbr-lighting.wgsl?raw';
+import gbufferShaderSource from '../shaders/gbuffer.wgsl';
+import pbrLightingShaderSource from '../shaders/pbr-lighting.wgsl';
 
 // Simple material
 interface SimpleMaterial {

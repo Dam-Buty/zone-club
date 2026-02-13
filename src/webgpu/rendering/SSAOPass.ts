@@ -12,7 +12,7 @@
  * - Noise texture for randomized sample rotation
  */
 
-import ssaoShaderSource from '../shaders/ssao.wgsl?raw';
+import ssaoShaderSource from '../shaders/ssao.wgsl';
 
 // ============================================================================
 // Types and Interfaces

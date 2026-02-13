@@ -12,7 +12,7 @@
  * The final bloom texture can be composited with the main scene in a post-process pass.
  */
 
-import bloomShaderSource from '../shaders/bloom.wgsl?raw';
+import bloomShaderSource from '../shaders/bloom.wgsl';
 
 /**
  * Configuration for the bloom effect

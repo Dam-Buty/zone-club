@@ -18,7 +18,7 @@
  * 5. sRGB gamma correction
  */
 
-import toneMappingShaderSource from '../shaders/tonemapping.wgsl?raw';
+import toneMappingShaderSource from '../shaders/tonemapping.wgsl';
 
 /**
  * Tone mapping algorithm selection
