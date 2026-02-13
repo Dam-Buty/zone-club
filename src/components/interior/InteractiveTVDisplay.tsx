@@ -219,9 +219,7 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
       material.emissiveIntensity = 0.8
     } else if (tvMode === 'playing') {
       material.emissiveIntensity = 1.0
-      if (videoTexture) {
-        videoTexture.needsUpdate = true
-      }
+      // VideoTexture auto-updates from HTMLVideoElement — no manual needsUpdate needed
     }
   })
 

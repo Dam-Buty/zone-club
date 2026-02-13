@@ -105,7 +105,7 @@ export function Controls({ onCassetteClick, isMobile, mobileInputRef }: Controls
 
   // Configurer la caméra
   useEffect(() => {
-    camera.position.set(-3.5, 1.6, 3)
+    camera.position.set(-3.0, 1.6, 3)
     camera.near = 0.1
     camera.far = 15
     if (camera instanceof THREE.PerspectiveCamera) {
@@ -184,6 +184,7 @@ export function Controls({ onCassetteClick, isMobile, mobileInputRef }: Controls
     controlsCreated.current = true
 
     const controls = new PointerLockControlsImpl(camera, gl.domElement)
+    controls.pointerSpeed = 0.7
     controlsRef.current = controls
 
     const handleLock = () => setPointerLocked(true)
@@ -403,7 +404,7 @@ export function Controls({ onCassetteClick, isMobile, mobileInputRef }: Controls
     if (!isActive) return
     if (useStore.getState().isVHSCaseOpen) return
 
-    const speed = 5.0
+    const speed = 1.75
     velocity.current.x -= velocity.current.x * 10.0 * delta
     velocity.current.z -= velocity.current.z * 10.0 * delta
 

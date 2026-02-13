@@ -1,0 +1,95 @@
+{
+	"/": [
+		"src/routes/+page.server.ts",
+		"src/routes/+layout.server.ts",
+		"src/routes/+layout.server.ts"
+	],
+	"/admin/films": [
+		"src/routes/admin/films/+page.server.ts",
+		"src/routes/+layout.server.ts"
+	],
+	"/api/admin/films": [
+		"src/routes/api/admin/films/+server.ts"
+	],
+	"/api/admin/films/[filmId]/availability": [
+		"src/routes/api/admin/films/[filmId]/availability/+server.ts"
+	],
+	"/api/admin/requests": [
+		"src/routes/api/admin/requests/+server.ts"
+	],
+	"/api/admin/requests/[id]": [
+		"src/routes/api/admin/requests/[id]/+server.ts"
+	],
+	"/api/admin/stats": [
+		"src/routes/api/admin/stats/+server.ts"
+	],
+	"/api/auth/login": [
+		"src/routes/api/auth/login/+server.ts"
+	],
+	"/api/auth/logout": [
+		"src/routes/api/auth/logout/+server.ts"
+	],
+	"/api/auth/recover": [
+		"src/routes/api/auth/recover/+server.ts"
+	],
+	"/api/auth/register": [
+		"src/routes/api/auth/register/+server.ts"
+	],
+	"/api/films": [
+		"src/routes/api/films/+server.ts"
+	],
+	"/api/films/genre/[slug]": [
+		"src/routes/api/films/genre/[slug]/+server.ts"
+	],
+	"/api/films/[tmdbId]": [
+		"src/routes/api/films/[tmdbId]/+server.ts"
+	],
+	"/api/genres": [
+		"src/routes/api/genres/+server.ts"
+	],
+	"/api/me": [
+		"src/routes/api/me/+server.ts"
+	],
+	"/api/rentals/[filmId]": [
+		"src/routes/api/rentals/[filmId]/+server.ts"
+	],
+	"/api/requests": [
+		"src/routes/api/requests/+server.ts"
+	],
+	"/api/reviews/[filmId]": [
+		"src/routes/api/reviews/[filmId]/+server.ts"
+	],
+	"/compte": [
+		"src/routes/compte/+page.server.ts",
+		"src/routes/+layout.server.ts"
+	],
+	"/film/[id]": [
+		"src/routes/film/[id]/+page.server.ts",
+		"src/routes/+layout.server.ts"
+	],
+	"/film/[id]/review": [
+		"src/routes/film/[id]/review/+page.server.ts",
+		"src/routes/+layout.server.ts"
+	],
+	"/film/[id]/watch": [
+		"src/routes/film/[id]/watch/+page.server.ts",
+		"src/routes/+layout.server.ts"
+	],
+	"/login": [
+		"src/routes/+layout.server.ts"
+	],
+	"/rayons": [
+		"src/routes/rayons/+page.server.ts",
+		"src/routes/+layout.server.ts"
+	],
+	"/rayons/[slug]": [
+		"src/routes/rayons/[slug]/+page.server.ts",
+		"src/routes/+layout.server.ts"
+	],
+	"/recover": [
+		"src/routes/+layout.server.ts"
+	],
+	"/register": [
+		"src/routes/+layout.server.ts"
+	]
+}

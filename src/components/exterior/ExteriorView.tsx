@@ -132,6 +132,12 @@ export function ExteriorView({ onEnter }: ExteriorViewProps) {
           left: contentArea.left,
         }}
       >
+        {/* Floating indicator above door */}
+        <div className={styles.doorIndicator}>
+          <span className={styles.doorIndicatorText}>PUSH</span>
+          <span className={styles.doorIndicatorArrow}>&#9660;</span>
+        </div>
+
         {/* Door hotspot */}
         <button
           className={`${styles.doorHotspot} ${isHoveringDoor ? styles.doorHover : ''}`}

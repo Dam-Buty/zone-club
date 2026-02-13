@@ -6,73 +6,89 @@ import { bloom } from 'three/addons/tsl/display/BloomNode.js'
 import { ao } from 'three/addons/tsl/display/GTAONode.js'
 import { fxaa } from 'three/addons/tsl/display/FXAANode.js'
 
-export function PostProcessingEffects() {
+interface PostProcessingEffectsProps {
+  isMobile?: boolean
+}
+
+export function PostProcessingEffects({ isMobile = false }: PostProcessingEffectsProps) {
   const { gl: renderer, scene, camera } = useThree()
   const postProcessingRef = useRef<THREE.PostProcessing | null>(null)
 
   useEffect(() => {
     const postProcessing = new THREE.PostProcessing(renderer as unknown as THREE.WebGPURenderer)
 
-    // 1. Scene pass avec MRT (Multiple Render Targets) pour normales + depth
-    // Nécessaire pour GTAO (Screen-Space Ambient Occlusion)
-    const scenePass = pass(scene, camera)
-    scenePass.setMRT(mrt({
-      output: output,
-      normal: normalView,
-    }))
+    // Vignette — shared between mobile and desktop
+    const applyVignette = (input: ReturnType<typeof pass>) => {
+      const dist = viewportUV.sub(float(0.5)).length()
+      const vignetteFactor = clamp(
+        dist.mul(float(1.2)),
+        float(0.0),
+        float(1.0),
+      ).oneMinus().pow(float(0.4))
+      return input.mul(vignetteFactor)
+    }
 
-    const scenePassColor = scenePass.getTextureNode('output')
-    const scenePassNormal = scenePass.getTextureNode('normal')
-    const scenePassDepth = scenePass.getTextureNode('depth')
+    if (isMobile) {
+      // ===== MOBILE PIPELINE: Scene → Bloom → Vignette =====
+      // No MRT needed (no GTAO), no FXAA (unnecessary at dpr ≤1.5 on small screens)
+      const scenePass = pass(scene, camera)
+      const scenePassColor = scenePass.getTextureNode('output')
 
-    // 2. GTAO — Ground Truth Ambient Occlusion
-    // Ajoute des ombres de contact subtiles dans les coins et entre objets proches.
-    // Essentiel pour le photoréalisme d'une scène intérieure.
-    const aoPass = ao(scenePassDepth, scenePassNormal, camera)
-    aoPass.scale.value = 0.5      // Intensité AO (0.5 = subtil mais visible)
-    aoPass.radius.value = 0.25    // Rayon de recherche en world units (~25cm)
-    aoPass.thickness.value = 1.0  // Épaisseur des objets pour le calcul d'occlusion
-    aoPass.resolutionScale = 0.5  // Demi-résolution: -75% fragments, AO flou par nature
+      // Bloom with slightly reduced strength on mobile
+      const bloomPass = bloom(scenePassColor, 0.15, 0.4, 0.9)
+      const withBloom = scenePassColor.add(bloomPass)
 
-    // Appliquer AO à la couleur de la scène
-    // IMPORTANT: GTAO render target est en RedFormat (canal R uniquement).
-    // Il faut extraire .x comme scalaire pour broadcast sur RGB, sinon G=0 B=0 → tout rouge.
-    const aoTexture = aoPass.getTextureNode()
-    const aoValue = aoTexture.x  // scalar float: broadcast R sur RGB
-    const withAO = scenePassColor.mul(aoValue)
+      const withVignette = applyVignette(withBloom)
+      postProcessing.outputNode = withVignette
 
-    // 3. Bloom sur la scène avec AO
-    // threshold=0.9: seuls les pixels très lumineux bloom (néons avec emissiveIntensity>=2)
-    // strength=0.19: glow subtil (réduit pour éviter le flou)
-    // radius=0.4: dispersion douce
-    const bloomPass = bloom(withAO, 0.19, 0.4, 0.9)
+      console.log('[PostProcessing] Pipeline: Bloom + Vignette (mobile)')
+    } else {
+      // ===== DESKTOP PIPELINE: Scene MRT → GTAO → Bloom → Vignette → FXAA =====
 
-    // 4. Combiner: scène AO + bloom additif
-    const withBloom = withAO.add(bloomPass)
+      // 1. Scene pass avec MRT (Multiple Render Targets) pour normales + depth
+      const scenePass = pass(scene, camera)
+      scenePass.setMRT(mrt({
+        output: output,
+        normal: normalView,
+      }))
 
-    // 5. Vignette (assombrissement subtil aux bords)
-    const dist = viewportUV.sub(float(0.5)).length()
-    const vignetteFactor = clamp(
-      dist.mul(float(1.2)),
-      float(0.0),
-      float(1.0),
-    ).oneMinus().pow(float(0.4))
-    const withVignette = withBloom.mul(vignetteFactor)
+      const scenePassColor = scenePass.getTextureNode('output')
+      const scenePassNormal = scenePass.getTextureNode('normal')
+      const scenePassDepth = scenePass.getTextureNode('depth')
 
-    // 6. FXAA — Fast Approximate Anti-Aliasing (last step, after all color processing)
-    // ~3% GPU cost for smooth edges on geometry silhouettes and texture boundaries
-    const withFXAA = fxaa(withVignette)
+      // 2. GTAO — Ground Truth Ambient Occlusion
+      const aoPass = ao(scenePassDepth, scenePassNormal, camera)
+      aoPass.scale.value = 0.5
+      aoPass.radius.value = 0.25
+      aoPass.thickness.value = 1.0
+      aoPass.resolutionScale = 0.5
 
-    postProcessing.outputNode = withFXAA
+      // GTAO RenderTarget is RedFormat — extract .x as scalar to broadcast across RGB
+      const aoTexture = aoPass.getTextureNode()
+      const aoValue = aoTexture.x
+      const withAO = scenePassColor.mul(aoValue)
+
+      // 3. Bloom
+      const bloomPass = bloom(withAO, 0.19, 0.4, 0.9)
+      const withBloom = withAO.add(bloomPass)
+
+      // 4. Vignette
+      const withVignette = applyVignette(withBloom)
+
+      // 5. FXAA
+      const withFXAA = fxaa(withVignette)
+      postProcessing.outputNode = withFXAA
+
+      console.log('[PostProcessing] Pipeline: GTAO(0.5x) + Bloom + Vignette + FXAA + ACES ToneMapping')
+    }
 
     postProcessingRef.current = postProcessing
-    console.log('[PostProcessing] Pipeline: GTAO(0.5x) + Bloom + Vignette + FXAA + ACES ToneMapping')
 
     return () => {
       postProcessing.dispose()
       postProcessingRef.current = null
     }
-  }, [renderer, scene, camera])
+  }, [renderer, scene, camera, isMobile])
 
   // renderPriority=1 tells R3F to skip its default renderer.render() call
   useFrame(() => {

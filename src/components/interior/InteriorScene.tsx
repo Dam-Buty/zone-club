@@ -103,14 +103,14 @@ const SceneContent = memo(function SceneContent({
         background={false}
         environmentIntensity={0.35}
       />
-      <Lighting />
+      <Lighting isMobile={isMobile} />
       <Aisle films={films} />
       <Controls
         onCassetteClick={onCassetteClick}
         isMobile={isMobile}
         mobileInputRef={mobileInputRef}
       />
-      <PostProcessingEffects />
+      <PostProcessingEffects isMobile={isMobile} />
       {selectedFilm && <VHSCaseViewer film={selectedFilm} />}
     </>
   )
@@ -305,6 +305,7 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
   return (
     <div style={{ position: 'fixed', inset: 0, touchAction: 'none' }}>
       <Canvas
+        dpr={isMobile ? Math.min(window.devicePixelRatio, 1.5) : Math.min(window.devicePixelRatio, 2)}
         gl={(async (props: any) => {
           console.log('[Canvas] Initializing WebGPU renderer...')
           const adapter = await navigator.gpu.requestAdapter()
@@ -317,10 +318,10 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
           })
           await renderer.init()
           renderer.shadowMap.enabled = true
-          renderer.shadowMap.type = THREE.PCFSoftShadowMap
+          renderer.shadowMap.type = isMobile ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap
           renderer.toneMapping = THREE.ACESFilmicToneMapping
           renderer.toneMappingExposure = 1.0
-          console.log('[Canvas] WebGPU renderer initialized with shadows + ACES tone mapping')
+          console.log(`[Canvas] WebGPU renderer initialized — shadows: ${isMobile ? 'PCF' : 'PCFSoft'}, dpr: ${isMobile ? '≤1.5' : '≤2'}`)
           return renderer
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
         }) as any}
