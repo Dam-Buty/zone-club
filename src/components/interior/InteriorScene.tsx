@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu'
 import { RectAreaLightNode } from 'three/webgpu'
 import { Canvas, extend, type ThreeToJSXElements } from '@react-three/fiber'
-import { Suspense, useEffect, useMemo, useCallback, useRef, memo, Component, type ReactNode, lazy } from 'react'
+import { Suspense, useEffect, useMemo, useCallback, useRef, useState, memo, Component, type ReactNode, lazy } from 'react'
 import { useStore } from '../../store'
 import { Lighting } from './Lighting'
 import { Controls } from './Controls'
@@ -116,6 +116,12 @@ const SceneContent = memo(function SceneContent({
   )
 })
 
+// Desktop help text auto-fade delay (ms)
+const HELP_FADE_DELAY = 15000
+
+// Mobile aim hint delay (ms) — show after this long without targeting
+const AIM_HINT_DELAY = 5000
+
 // UI Overlays — separate component to isolate UI state re-renders from the 3D Canvas
 function UIOverlays({ isMobile }: { isMobile: boolean }) {
   const isPointerLocked = useStore(state => state.isPointerLocked)
@@ -124,6 +130,42 @@ function UIOverlays({ isMobile }: { isMobile: boolean }) {
   const selectedFilmId = useStore(state => state.selectedFilmId)
   const closeTerminal = useStore(state => state.closeTerminal)
   const requestPointerLock = useStore(state => state.requestPointerLock)
+
+  // (#7) Desktop: auto-fade help text after 15s of pointer lock
+  const [showHelp, setShowHelp] = useState(true)
+  useEffect(() => {
+    if (isMobile || !isPointerLocked) {
+      setShowHelp(true) // reset when unlocked so it re-shows next lock
+      return
+    }
+    const timer = setTimeout(() => setShowHelp(false), HELP_FADE_DELAY)
+    return () => clearTimeout(timer)
+  }, [isMobile, isPointerLocked])
+
+  // (#6) Mobile: "aim at a cassette" hint — visible after 5s of no targeting, hidden once user targets
+  const [showAimHint, setShowAimHint] = useState(false)
+  const hasEverTargeted = useRef(false)
+
+  useEffect(() => {
+    if (!isMobile) return
+
+    // Subscribe to targeting changes
+    const unsub = useStore.subscribe((state) => {
+      if (state.targetedCassetteKey !== null) {
+        hasEverTargeted.current = true
+        setShowAimHint(false)
+      }
+    })
+    return unsub
+  }, [isMobile])
+
+  useEffect(() => {
+    if (!isMobile || !isPointerLocked || hasEverTargeted.current) return
+    const timer = setTimeout(() => {
+      if (!hasEverTargeted.current) setShowAimHint(true)
+    }, AIM_HINT_DELAY)
+    return () => clearTimeout(timer)
+  }, [isMobile, isPointerLocked])
 
   const handleCloseTerminal = useCallback(() => {
     closeTerminal()
@@ -218,6 +260,30 @@ function UIOverlays({ isMobile }: { isMobile: boolean }) {
         )
       )}
 
+      {/* (#6) Mobile aim hint — "Visez une cassette" below crosshair */}
+      {isMobile && showAimHint && isPointerLocked && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 'calc(50% + 24px)',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            padding: '0.4rem 0.8rem',
+            backgroundColor: 'rgba(0, 0, 0, 0.7)',
+            borderRadius: '6px',
+            color: 'rgba(255, 255, 255, 0.85)',
+            fontFamily: 'Orbitron, sans-serif',
+            fontSize: '0.65rem',
+            textAlign: 'center',
+            pointerEvents: 'none',
+            zIndex: 20,
+            animation: 'fadeInHint 0.5s ease-out',
+          }}
+        >
+          Visez une cassette avec le point
+        </div>
+      )}
+
       {/* Scene indicator */}
       <div
         style={{
@@ -237,8 +303,8 @@ function UIOverlays({ isMobile }: { isMobile: boolean }) {
         VIDEO CLUB
       </div>
 
-      {/* Controls help — desktop only, when locked */}
-      {!isMobile && isPointerLocked && (
+      {/* (#7) Controls help — desktop only, when locked, fades out after 15s */}
+      {!isMobile && isPointerLocked && showHelp && (
         <div
           style={{
             position: 'fixed',
@@ -254,6 +320,7 @@ function UIOverlays({ isMobile }: { isMobile: boolean }) {
             textAlign: 'center',
             pointerEvents: 'none',
             zIndex: 10,
+            transition: 'opacity 1s ease',
           }}
         >
           <div><strong>WASD</strong> - Se déplacer | <strong>Souris</strong> - Regarder</div>

@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, useCallback, Suspense, lazy } from 'react';
 import { ExteriorScene } from '../../webgpu/ExteriorScene';
 import { useIdleDetection } from '../../hooks/useIdleDetection';
+import { useIsMobile } from '../../hooks/useIsMobile';
 import styles from './ExteriorView.module.css';
 
-// Lazy load the video component
+// Lazy load the video component (desktop only)
 const IdleVideo = lazy(() =>
   import('./IdleVideo').then((module) => ({ default: module.IdleVideo }))
 );
@@ -16,19 +17,20 @@ interface ExteriorViewProps {
 }
 
 export function ExteriorView({ onEnter }: ExteriorViewProps) {
+  const isMobile = useIsMobile();
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<ExteriorScene | null>(null);
   const [isHoveringDoor, setIsHoveringDoor] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
 
-  // Content area dimensions (for hotspot positioning)
+  // Content area dimensions (for hotspot positioning) — desktop only
   const [contentArea, setContentArea] = useState({ width: '100%', height: '100%', top: '0', left: '0' });
 
-  // Video state
+  // Video state — desktop only
   const [isVideoReady, setIsVideoReady] = useState(false);
   const [isVideoPlaying, setIsVideoPlaying] = useState(false);
 
-  // Handle idle state
+  // Handle idle state (desktop only)
   const handleIdle = useCallback(() => {
     if (isVideoReady && !isTransitioning) {
       setIsVideoPlaying(true);
@@ -39,14 +41,14 @@ export function ExteriorView({ onEnter }: ExteriorViewProps) {
     setIsVideoPlaying(false);
   }, []);
 
-  // Idle detection hook
-  const { isIdle } = useIdleDetection({
+  // Idle detection hook (desktop only — noop on mobile since video is never loaded)
+  useIdleDetection({
     idleTimeout: IDLE_TIMEOUT,
     onIdle: handleIdle,
     onActive: handleActive,
   });
 
-  // Video callbacks
+  // Video callbacks (desktop only)
   const handleVideoReady = useCallback(() => {
     setIsVideoReady(true);
   }, []);
@@ -59,7 +61,7 @@ export function ExteriorView({ onEnter }: ExteriorViewProps) {
     setIsVideoPlaying(false);
   }, []);
 
-  // Calculate content area based on aspect ratio and window size
+  // Calculate content area based on aspect ratio and window size (desktop only)
   const updateContentArea = useCallback(() => {
     const windowWidth = window.innerWidth;
     const windowHeight = window.innerHeight;
@@ -89,8 +91,9 @@ export function ExteriorView({ onEnter }: ExteriorViewProps) {
     });
   }, []);
 
-  // Initialize WebGL scene and content area
+  // Initialize WebGL scene and content area (desktop only)
   useEffect(() => {
+    if (isMobile) return;
     if (!containerRef.current) return;
 
     // Create the exterior scene
@@ -107,7 +110,7 @@ export function ExteriorView({ onEnter }: ExteriorViewProps) {
       sceneRef.current = null;
       window.removeEventListener('resize', updateContentArea);
     };
-  }, [updateContentArea]);
+  }, [isMobile, updateContentArea]);
 
   const handleEnterClick = () => {
     setIsTransitioning(true);
@@ -117,6 +120,41 @@ export function ExteriorView({ onEnter }: ExteriorViewProps) {
     }, 600);
   };
 
+  // ===== MOBILE: Static storefront image + touch-friendly enter =====
+  if (isMobile) {
+    return (
+      <div className={`${styles.container} ${isTransitioning ? styles.fadeOut : ''}`}>
+        {/* Static storefront image — portrait, full-screen */}
+        <div className={styles.mobileImageContainer}>
+          <img
+            src="/storefront-mobile.jpeg"
+            alt="Zone Club - Vidéoclub"
+            className={styles.mobileImage}
+            draggable={false}
+          />
+        </div>
+
+        {/* PUSH indicator + door hotspot — positioned at door handle level */}
+        <div className={styles.mobileDoorIndicator}>
+          <span className={styles.doorIndicatorText}>PUSH</span>
+          <span className={styles.doorIndicatorArrow}>&#9660;</span>
+        </div>
+
+        <button
+          className={styles.mobileDoorHotspot}
+          onClick={handleEnterClick}
+          aria-label="Entrer dans le vidéoclub"
+        >
+          <span className={styles.mobileEnterText}>Appuyez pour entrer</span>
+        </button>
+
+        {/* Transition overlay */}
+        {isTransitioning && <div className={styles.transitionOverlay} />}
+      </div>
+    );
+  }
+
+  // ===== DESKTOP: WebGL scene + idle video + hover hotspot =====
   return (
     <div className={`${styles.container} ${isTransitioning ? styles.fadeOut : ''}`}>
       {/* WebGL Canvas Container */}

@@ -109,10 +109,10 @@ export function Controls({ onCassetteClick, isMobile, mobileInputRef }: Controls
     camera.near = 0.1
     camera.far = 15
     if (camera instanceof THREE.PerspectiveCamera) {
-      camera.fov = 70
+      camera.fov = isMobile ? 80 : 70 // wider FOV on mobile for spatial awareness on small screens
       camera.updateProjectionMatrix()
     }
-  }, [camera])
+  }, [camera, isMobile])
 
   // Vérifier si un overlay est ouvert
   const managerVisible = useStore((state) => state.managerVisible)
@@ -404,7 +404,7 @@ export function Controls({ onCassetteClick, isMobile, mobileInputRef }: Controls
     if (!isActive) return
     if (useStore.getState().isVHSCaseOpen) return
 
-    const speed = 1.75
+    const speed = isMobile ? 2.2 : 1.75 // faster on mobile — joystick rarely hits 100% deflection
     velocity.current.x -= velocity.current.x * 10.0 * delta
     velocity.current.z -= velocity.current.z * 10.0 * delta
 

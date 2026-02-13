@@ -7,6 +7,8 @@
   background: #000;
 }
 
+/* ===== DESKTOP: WebGL canvas ===== */
+
 .canvasContainer {
   position: absolute;
   inset: 0;
@@ -28,13 +30,6 @@
   position: absolute;
   pointer-events: none;
   container-type: inline-size;
-}
-
-.storefront {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: center;
 }
 
 .doorHotspot {
@@ -96,6 +91,8 @@
   animation: indicatorBob 2s ease-in-out infinite;
 }
 
+/* ===== SHARED: indicator text + arrow (used by both desktop and mobile) ===== */
+
 .doorIndicatorText {
   font-family: 'Orbitron', sans-serif;
   font-size: clamp(0.78rem, 1.32cqw, 1.08rem);
@@ -123,6 +120,102 @@
   50% { transform: translateX(-50%) translateY(-6px); }
 }
 
+/* ===== MOBILE: Static storefront image ===== */
+
+.mobileImageContainer {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+}
+
+.mobileImage {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center top;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* Mobile PUSH indicator — positioned above door handle area */
+.mobileDoorIndicator {
+  position: fixed;
+  /* Door handle is at ~68% from top in the portrait image, indicator sits above */
+  left: 60%;
+  top: 61%;
+  transform: translateX(-50%);
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  animation: indicatorBob 2s ease-in-out infinite;
+  z-index: 5;
+}
+
+.mobileDoorIndicator .doorIndicatorText {
+  font-size: 1rem;
+}
+
+.mobileDoorIndicator .doorIndicatorArrow {
+  font-size: 1rem;
+}
+
+/* Mobile door hotspot — large touch-friendly area around the door handle */
+.mobileDoorHotspot {
+  position: fixed;
+  /* Centered on the door handle area in the portrait image */
+  left: 40%;
+  top: 58%;
+  width: 40%;
+  height: 18%;
+  background: transparent;
+  border: 2px solid rgba(180, 120, 255, 0.0);
+  border-radius: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 8px;
+  z-index: 5;
+  transition: border-color 0.3s ease, background 0.3s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobileDoorHotspot:active {
+  border-color: rgba(180, 120, 255, 0.4);
+  background: radial-gradient(
+    ellipse at center,
+    rgba(180, 120, 255, 0.15) 0%,
+    rgba(180, 120, 255, 0.05) 60%,
+    transparent 80%
+  );
+}
+
+.mobileEnterText {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.85);
+  text-shadow:
+    0 0 10px rgba(180, 120, 255, 0.8),
+    0 0 20px rgba(180, 120, 255, 0.5);
+  letter-spacing: 0.1em;
+  text-align: center;
+  white-space: nowrap;
+  animation: mobileTextPulse 3s ease-in-out infinite;
+}
+
+@keyframes mobileTextPulse {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
+
+/* ===== SHARED: transitions ===== */
+
 .fadeOut {
   animation: fadeToBlack 0.6s ease forwards;
 }
@@ -142,6 +235,7 @@
   background: #000;
   animation: fadeIn 0.6s ease forwards;
   pointer-events: none;
+  z-index: 10;
 }
 
 @keyframes fadeIn {

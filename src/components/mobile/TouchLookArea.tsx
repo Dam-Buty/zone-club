@@ -1,7 +1,7 @@
 import { useRef, useEffect, type MutableRefObject } from 'react'
 import type { MobileInput } from '../../types/mobile'
 
-const SENSITIVITY = 0.004
+const SENSITIVITY = 0.005
 const TAP_MAX_DURATION = 200  // ms
 const TAP_MAX_DISTANCE = 10  // px
 
