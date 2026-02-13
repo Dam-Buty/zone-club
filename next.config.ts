@@ -10,6 +10,13 @@ const nextConfig: NextConfig = {
     // Pre-existing lint issues from Vite migration — fix incrementally
     ignoreDuringBuilds: true,
   },
+  webpack(config) {
+    config.module.rules.push({
+      test: /\.wgsl$/,
+      type: 'asset/source',
+    });
+    return config;
+  },
 };
 
 export default nextConfig;

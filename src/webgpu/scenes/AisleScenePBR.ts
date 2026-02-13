@@ -41,10 +41,10 @@ import { InstancedMeshGroup } from '../objects/InstancedMeshGroup';
 console.log('[AisleScenePBR] InstancedMeshGroup imported');
 
 // Import shaders
-import gbufferShaderSource from '../shaders/gbuffer.wgsl?raw';
+import gbufferShaderSource from '../shaders/gbuffer.wgsl';
 console.log('[AisleScenePBR] gbuffer shader imported, length:', gbufferShaderSource.length);
 
-import pbrLightingShaderSource from '../shaders/pbr-lighting.wgsl?raw';
+import pbrLightingShaderSource from '../shaders/pbr-lighting.wgsl';
 console.log('[AisleScenePBR] pbr-lighting shader imported, length:', pbrLightingShaderSource.length);
 
 console.log('[AisleScenePBR] Module loading - ALL IMPORTS DONE');

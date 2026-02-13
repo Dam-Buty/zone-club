@@ -33,7 +33,7 @@ services:
     depends_on:
       - radarr-vo
       - radarr-vf
-    restart: unless-stopped
+
 
   storage:
     image: sebp/lighttpd
@@ -49,7 +49,7 @@ services:
       - "traefik.http.routers.zone-storage.entrypoints=websecure"
       - "traefik.http.routers.zone-storage.tls.certresolver=letsencrypt"
       - "traefik.http.services.zone-storage.loadbalancer.server.port=80"
-    restart: unless-stopped
+
 
   radarr-vo:
     image: linuxserver/radarr:latest
@@ -70,7 +70,7 @@ services:
       - "traefik.http.routers.radarr-vo.entrypoints=websecure"
       - "traefik.http.routers.radarr-vo.tls.certresolver=letsencrypt"
       - "traefik.http.services.radarr-vo.loadbalancer.server.port=7878"
-    restart: unless-stopped
+
 
   radarr-vf:
     image: linuxserver/radarr:latest
@@ -91,7 +91,7 @@ services:
       - "traefik.http.routers.radarr-vf.entrypoints=websecure"
       - "traefik.http.routers.radarr-vf.tls.certresolver=letsencrypt"
       - "traefik.http.services.radarr-vf.loadbalancer.server.port=7878"
-    restart: unless-stopped
+
 
   bazarr:
     image: linuxserver/bazarr:latest
@@ -110,7 +110,7 @@ services:
       - "traefik.http.routers.bazarr.entrypoints=websecure"
       - "traefik.http.routers.bazarr.tls.certresolver=letsencrypt"
       - "traefik.http.services.bazarr.loadbalancer.server.port=6767"
-    restart: unless-stopped
+
 
 volumes:
   node_modules:

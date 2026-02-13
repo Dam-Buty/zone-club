@@ -1,6 +1,6 @@
-import basicShaderCode from '../shaders/basic.wgsl?raw';
-import neonShaderCode from '../shaders/neon.wgsl?raw';
-import vhsShaderCode from '../shaders/vhs.wgsl?raw';
+import basicShaderCode from '../shaders/basic.wgsl';
+import neonShaderCode from '../shaders/neon.wgsl';
+import vhsShaderCode from '../shaders/vhs.wgsl';
 
 export interface RenderObject {
   vertexBuffer: GPUBuffer;
