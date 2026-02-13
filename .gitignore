@@ -23,6 +23,16 @@ logs
 *.log
 npm-debug.log*
 
+# Screenshots (debug artifacts)
+*.png
+!public/**/*.png
+
+# SvelteKit remnants
+backend-zone-club/
+
+# TypeScript build info
+tsconfig.tsbuildinfo
+
 # Editor
 .vscode/*
 !.vscode/extensions.json
