@@ -9,7 +9,7 @@
 }
 
 .terminal {
-  width: 600px;
+  width: 90vw;
   max-height: 80vh;
   background: #0a0a0a;
   border: 3px solid #00ff00;
@@ -59,7 +59,7 @@
 
 .content {
   padding: 20px;
-  max-height: 400px;
+  max-height: 60vh;
   overflow-y: auto;
 }
 
@@ -550,6 +550,60 @@
   margin-top: 4px;
 }
 
+.adminFilmActions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-shrink: 0;
+  margin-left: 10px;
+}
+
+.adminAisleSelect {
+  padding: 4px 6px;
+  border-radius: 4px;
+  font-family: 'Courier New', monospace;
+  font-size: 0.65rem;
+  font-weight: bold;
+  cursor: pointer;
+  background: #1a1a1a;
+  border: 1px solid rgba(255, 68, 68, 0.4);
+  color: #ff4444;
+}
+
+.adminAisleSelect option {
+  background: #1a1a1a;
+  color: #ff4444;
+}
+
+.adminAisleSelect:focus {
+  outline: none;
+  border-color: #ff4444;
+}
+
+.adminToggleNew {
+  background: rgba(255, 215, 0, 0.2);
+  border: 1px solid #ffd700;
+  color: #ffd700;
+}
+
+.adminDlBtn {
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-family: 'Courier New', monospace;
+  font-size: 0.7rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: rgba(0, 170, 255, 0.2);
+  border: 1px solid #00aaff;
+  color: #00aaff;
+}
+
+.adminDlBtn:hover {
+  background: rgba(0, 170, 255, 0.4);
+  box-shadow: 0 0 10px rgba(0, 170, 255, 0.5);
+}
+
 .adminToggleBtn {
   padding: 6px 12px;
   border-radius: 4px;
@@ -558,7 +612,6 @@
   font-weight: bold;
   cursor: pointer;
   transition: all 0.2s;
-  margin-left: 10px;
   flex-shrink: 0;
 }
 
@@ -662,4 +715,30 @@
   background: rgba(255, 215, 0, 0.2);
   color: #ffd700;
   border: 1px solid #ffd700;
+}
+
+.adminTranscoding {
+  color: #ffaa00;
+  font-size: 0.8rem;
+  font-family: monospace;
+  min-width: 60px;
+  text-align: center;
+}
+
+.adminPending {
+  color: #888;
+  font-size: 0.8rem;
+}
+
+.adminDownloading {
+  color: #00aaff;
+  font-size: 0.8rem;
+  animation: blink 1.5s step-end infinite;
+}
+
+.adminError {
+  color: #ff4444;
+  font-size: 0.8rem;
+  font-weight: bold;
+  cursor: help;
 }

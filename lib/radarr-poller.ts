@@ -1,6 +1,7 @@
 import { db } from './db';
 import { radarrVO, radarrVF } from './radarr';
-import { getFilmById, updateFilmPaths, setFilmAvailability } from './films';
+import { updateFilmPaths } from './films';
+import { enqueueTranscode } from './transcoder';
 
 const POLL_INTERVAL = 2 * 60 * 1000; // 2 minutes
 
@@ -39,6 +40,7 @@ async function pollRadarrStatus(): Promise<void> {
                 const status = await radarrVO.getMovieStatus(film.radarr_vo_id);
                 if (status.hasFile && status.movieFile?.path) {
                     updateFilmPaths(film.id, { file_path_vo: stripRootFolder(status.movieFile.path) });
+                    enqueueTranscode(film.id, 'vo', stripRootFolder(status.movieFile.path));
                 }
             }
 
@@ -46,13 +48,8 @@ async function pollRadarrStatus(): Promise<void> {
                 const status = await radarrVF.getMovieStatus(film.radarr_vf_id);
                 if (status.hasFile && status.movieFile?.path) {
                     updateFilmPaths(film.id, { file_path_vf: stripRootFolder(status.movieFile.path) });
+                    enqueueTranscode(film.id, 'vf', stripRootFolder(status.movieFile.path));
                 }
-            }
-
-            const updated = getFilmById(film.id);
-            if (updated && !updated.is_available && (updated.file_path_vo || updated.file_path_vf)) {
-                setFilmAvailability(film.id, true);
-                console.log(`[radarr-poller] Film activé: "${updated.title}"`);
             }
         } catch (error) {
             console.error(`[radarr-poller] Erreur pour "${film.title}":`, error);

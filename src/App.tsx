@@ -1,27 +1,28 @@
 import { useEffect, useState, useCallback, useRef, lazy, Suspense } from 'react';
 import { useStore } from './store';
-import { tmdb } from './services/tmdb';
 import { useManagerTriggers } from './hooks/useManagerTriggers';
 import { VHSCaseOverlay } from './components/videoclub/VHSCaseOverlay';
 import { ManagerChat } from './components/manager/ManagerChat';
 import { VHSPlayer } from './components/player/VHSPlayer';
 import { preloadPosterImage } from './utils/CassetteTextureArray';
-import mockFilmIds from './data/mock/films.json';
+import api from './api';
+import type { AisleType } from './types';
 
 // Lazy-load WebGPU-dependent components so they don't crash browsers without support
 const ExteriorView = lazy(() => import('./components/exterior').then(m => ({ default: m.ExteriorView })));
 const InteriorScene = lazy(() => import('./components/interior').then(m => ({ default: m.InteriorScene })));
 
 // ===== MODULE-LEVEL PREFETCH =====
-// Starts TMDB fetches immediately when JS loads (before React mounts).
-// Once API data arrives, preloads all poster images into the shared cache.
+// Starts API fetches immediately when JS loads (before React mounts).
+// Once data arrives, preloads all poster images into the shared cache.
 // By the time the user clicks "enter store", both data AND images are ready.
+const AISLES: AisleType[] = ['nouveautes', 'action', 'horreur', 'sf', 'comedie', 'classiques', 'bizarre'];
+
 const _prefetchPromise = Promise.all(
-  (Object.keys(mockFilmIds) as Array<keyof typeof mockFilmIds>).map(async (aisle) => {
-    const filmIds = mockFilmIds[aisle] as number[];
-    if (!filmIds || filmIds.length === 0) return null;
+  AISLES.map(async (aisle) => {
     try {
-      return { aisle, films: await tmdb.getFilms(filmIds) };
+      const { films } = await api.films.getByAisle(aisle);
+      return { aisle, films };
     } catch {
       return null;
     }
@@ -35,8 +36,10 @@ _prefetchPromise.then((results) => {
   for (const result of results) {
     if (!result) continue;
     for (const film of result.films) {
-      if (film.poster_path) {
-        preloadPosterImage(`https://image.tmdb.org/t/p/w200${film.poster_path}`);
+      if (film.poster_url) {
+        // Extract path and build w200 URL for cassette textures
+        const m = film.poster_url.match(/\/t\/p\/\w+(\/.+)$/);
+        if (m) preloadPosterImage(`https://image.tmdb.org/t/p/w200${m[1]}`);
       }
     }
   }
@@ -82,8 +85,14 @@ function App() {
   // Manager triggers hook
   useManagerTriggers();
 
+  // Restore auth session from cookie on mount
+  const fetchMe = useStore(state => state.fetchMe);
+  useEffect(() => {
+    fetchMe();
+  }, [fetchMe]);
+
   // Await the module-level prefetch and push results into the store.
-  // The TMDB fetches started at JS load time — by the time the user clicks
+  // The API fetches started at JS load time — by the time the user clicks
   // "enter store", the promise is likely already resolved (0ms wait).
   const hasFetchedRef = useRef(false);
   useEffect(() => {
@@ -93,7 +102,30 @@ function App() {
     _prefetchPromise.then((results) => {
       // All resolved — set in one synchronous block (React 18 batches these)
       for (const result of results) {
-        if (result) setFilmsForAisle(result.aisle as any, result.films);
+        if (!result) continue;
+        // Convert ApiFilm to frontend Film format
+        const films = result.films.map(f => {
+          // Extract TMDB path from full URL (e.g. ".../w500/xxx.jpg" → "/xxx.jpg")
+          const extractPath = (url: string | null) => {
+            if (!url) return null;
+            const m = url.match(/\/t\/p\/\w+(\/.+)$/);
+            return m ? m[1] : null;
+          };
+          return {
+            id: f.id,
+            tmdb_id: f.tmdb_id,
+            title: f.title,
+            overview: f.synopsis || '',
+            poster_path: extractPath(f.poster_url),
+            backdrop_path: extractPath(f.backdrop_url),
+            release_date: f.release_year ? `${f.release_year}-01-01` : '',
+            runtime: f.runtime,
+            vote_average: 0,
+            genres: f.genres,
+            is_available: f.is_available,
+          };
+        });
+        setFilmsForAisle(result.aisle as AisleType, films);
       }
     });
   }, [setFilmsForAisle]);

@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useStore } from '../../store';
 import { AuthModal } from '../auth/AuthModal';
 import { SearchModal } from '../search/SearchModal';
-import api, { type AdminStats, type FilmRequestWithUser, type ApiFilm } from '../../api';
+import api, { type AdminStats, type FilmRequestWithUser, type ApiFilm, type TranscodeStatus } from '../../api';
 import styles from './TVTerminal.module.css';
 
 interface TVTerminalProps {
@@ -58,6 +58,8 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
   const [addFilmSuccess, setAddFilmSuccess] = useState(false);
   const [secretCode, setSecretCode] = useState('');
   const [adminUnlocked, setAdminUnlocked] = useState(false);
+  const [filmSearchQuery, setFilmSearchQuery] = useState('');
+  const [transcodeStatuses, setTranscodeStatuses] = useState<Map<number, TranscodeStatus>>(new Map());
 
   const {
     isAuthenticated,
@@ -163,6 +165,27 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
     }
   }, [isOpen]);
 
+  // Poll transcode status when on admin-films page
+  useEffect(() => {
+    if (currentSection !== 'admin-films' || !adminUnlocked) return;
+
+    let active = true;
+    const poll = async () => {
+      try {
+        const statuses = await api.admin.getTranscodeStatus();
+        if (active) {
+          const map = new Map<number, TranscodeStatus>();
+          for (const s of statuses) map.set(s.id, s);
+          setTranscodeStatuses(map);
+        }
+      } catch {}
+    };
+
+    poll();
+    const interval = setInterval(poll, 5000);
+    return () => { active = false; clearInterval(interval); };
+  }, [currentSection, adminUnlocked]);
+
   const handleMenuClick = useCallback((section: MenuSection) => {
     setCurrentSection(section);
     setSelectedIndex(0);
@@ -225,6 +248,39 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
       ));
     } catch (err) {
       console.error('Error toggling availability:', err);
+    }
+  }, []);
+
+  const handleDownloadFilm = useCallback(async (filmId: number) => {
+    try {
+      const { film } = await api.admin.downloadFilm(filmId);
+      setAdminFilms(prev => prev.map(f =>
+        f.id === filmId ? { ...f, radarr_vo_id: film.radarr_vo_id, radarr_vf_id: film.radarr_vf_id } : f
+      ));
+    } catch (err) {
+      console.error('Error triggering download:', err);
+    }
+  }, []);
+
+  const handleSetAisle = useCallback(async (filmId: number, aisle: string | null) => {
+    try {
+      await api.admin.setFilmAisle(filmId, { aisle });
+      setAdminFilms(prev => prev.map(f =>
+        f.id === filmId ? { ...f, aisle } : f
+      ));
+    } catch (err) {
+      console.error('Error setting aisle:', err);
+    }
+  }, []);
+
+  const handleToggleNouveaute = useCallback(async (filmId: number, current: boolean) => {
+    try {
+      await api.admin.setFilmAisle(filmId, { is_nouveaute: !current });
+      setAdminFilms(prev => prev.map(f =>
+        f.id === filmId ? { ...f, is_nouveaute: !current } : f
+      ));
+    } catch (err) {
+      console.error('Error toggling nouveaute:', err);
     }
   }, []);
 
@@ -609,7 +665,7 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
                     </li>
                     <li
                       className={`${styles.menuItem} ${styles.adminMenuItem}`}
-                      onClick={() => { setCurrentSection('admin-films'); loadAdminFilms(); }}
+                      onClick={() => { setCurrentSection('admin-films'); setFilmSearchQuery(''); loadAdminFilms(); }}
                     >
                       <span className={styles.prefix}>&gt;</span>
                       GERER LES FILMS ({adminStats.totalFilms})
@@ -680,12 +736,23 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
                 GESTION DES FILMS
               </div>
 
+              <input
+                type="text"
+                value={filmSearchQuery}
+                onChange={(e) => setFilmSearchQuery(e.target.value)}
+                placeholder="Rechercher un film..."
+                className={styles.adminInput}
+                style={{ marginBottom: '10px' }}
+              />
+
               {adminLoading ? (
                 <div className={styles.emptyMessage}>CHARGEMENT...</div>
               ) : adminFilms.length === 0 ? (
                 <div className={styles.emptyMessage}>Aucun film dans le catalogue</div>
               ) : (
-                adminFilms.map(film => (
+                adminFilms
+                  .filter(f => !filmSearchQuery || f.title.toLowerCase().includes(filmSearchQuery.toLowerCase()))
+                  .map(film => (
                   <div key={film.id} className={styles.adminFilmItem}>
                     <div className={styles.adminFilmInfo}>
                       <div className={styles.adminFilmTitle}>{film.title}</div>
@@ -693,12 +760,73 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
                         ID: {film.tmdb_id} | {film.release_year || 'N/A'}
                       </div>
                     </div>
-                    <button
-                      className={`${styles.adminToggleBtn} ${film.is_available ? styles.adminToggleOn : styles.adminToggleOff}`}
-                      onClick={() => handleToggleFilmAvailability(film.id, film.is_available)}
-                    >
-                      {film.is_available ? 'DISPO' : 'MASQUÉ'}
-                    </button>
+                    <div className={styles.adminFilmActions}>
+                      <select
+                        className={styles.adminAisleSelect}
+                        value={film.aisle || ''}
+                        onChange={(e) => handleSetAisle(film.id, e.target.value || null)}
+                      >
+                        <option value="">--</option>
+                        <option value="action">ACTION</option>
+                        <option value="horreur">HORREUR</option>
+                        <option value="sf">SF</option>
+                        <option value="comedie">COMEDIE</option>
+                        <option value="classiques">CLASSIQUES</option>
+                        <option value="bizarre">BIZARRE</option>
+                      </select>
+                      <button
+                        className={`${styles.adminToggleBtn} ${film.is_nouveaute ? styles.adminToggleNew : styles.adminToggleOff}`}
+                        onClick={() => handleToggleNouveaute(film.id, film.is_nouveaute)}
+                      >
+                        NEW
+                      </button>
+                      {(() => {
+                        const ts = transcodeStatuses.get(film.id);
+                        const hasRadarr = film.radarr_vo_id || film.radarr_vf_id;
+                        const status = ts?.transcode_status;
+
+                        if (!hasRadarr) {
+                          return (
+                            <button className={styles.adminDlBtn} onClick={() => handleDownloadFilm(film.id)}>
+                              DL
+                            </button>
+                          );
+                        }
+
+                        if (status === 'transcoding' || status === 'remuxing') {
+                          return (
+                            <span className={styles.adminTranscoding}>
+                              {Math.round(ts!.transcode_progress)}%
+                            </span>
+                          );
+                        }
+
+                        if (status === 'error') {
+                          return (
+                            <span className={styles.adminError} title={ts?.transcode_error || 'Erreur'}>
+                              ERR
+                            </span>
+                          );
+                        }
+
+                        if (status === 'pending' || status === 'probing') {
+                          return <span className={styles.adminPending}>...</span>;
+                        }
+
+                        if (!ts?.file_path_vo && !ts?.file_path_vf && !status) {
+                          return <span className={styles.adminDownloading}>DL...</span>;
+                        }
+
+                        return (
+                          <button
+                            className={`${styles.adminToggleBtn} ${film.is_available ? styles.adminToggleOn : styles.adminToggleOff}`}
+                            onClick={() => handleToggleFilmAvailability(film.id, film.is_available)}
+                          >
+                            {film.is_available ? 'DISPO' : 'MASQUÉ'}
+                          </button>
+                        );
+                      })()}
+                    </div>
                   </div>
                 ))
               )}

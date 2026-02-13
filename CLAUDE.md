@@ -24,21 +24,35 @@ npm run seed         # Seed films database
 docker compose up -d # Production (5 services)
 ```
 
+**IMPORTANT** : Le container app build automatiquement au demarrage (npm install + npm run build). Pour tester des modifications, TOUJOURS relancer le container :
+```bash
+docker compose down app && docker compose up -d app
+```
+Ne JAMAIS lancer `npm run build` seul — le container s'en charge.
+
 ## Architecture
 
 ```
 app/
 ├── page.tsx                 # Dynamic import de src/App (ssr: false)
 ├── layout.tsx               # Root layout
-├── api/                     # 20 API routes (Next.js App Router)
+├── api/                     # API routes (Next.js App Router)
 │   ├── auth/                # login, logout, register, recover
-│   ├── films/               # list, [tmdbId], aisle/[aisle], genre/[slug]
+│   ├── films/               # list, [tmdbId], genre/[slug]
+│   │   └── aisle/[aisle]/   # GET films par allee
 │   ├── rentals/[filmId]/    # GET|POST|DELETE
 │   ├── reviews/[filmId]/    # GET|POST|DELETE
 │   ├── requests/            # GET|POST|DELETE
 │   ├── genres/              # GET
 │   ├── me/                  # GET (current user)
-│   └── admin/               # films, download, aisle, availability, requests, stats
+│   └── admin/
+│       ├── films/           # POST (ajouter film), GET (liste admin)
+│       │   └── [filmId]/
+│       │       ├── aisle/       # PATCH (assigner allee)
+│       │       ├── availability/# PATCH (toggle dispo)
+│       │       └── download/    # POST (lancer Radarr VO+VF)
+│       ├── requests/        # GET|PATCH (gestion demandes)
+│       └── stats/           # GET
 lib/
 ├── db.ts                    # SQLite (better-sqlite3)
 ├── auth.ts                  # Auth helpers
@@ -69,6 +83,8 @@ src/
 ├── services/tmdb.ts         # TMDB client (frontend)
 └── types/three-webgpu.d.ts  # Custom WebGPU type declarations
 instrumentation.ts           # Startup code (cleanup scheduler, Radarr poller)
+scripts/
+└── seed-films.ts            # Seed DB depuis src/data/mock/films.json
 ```
 
 ## API Backend
@@ -77,6 +93,101 @@ instrumentation.ts           # Startup code (cleanup scheduler, Radarr poller)
 - Auth par cookies signes httpOnly (`credentials: 'include'`)
 - Les IDs films dans les URLs sont des `tmdb_id`, pas des `id` internes
 - Dual Radarr : `radarr_vo_id` + `radarr_vf_id` pour films VO/VF
+
+### Routes admin (auth admin requise)
+
+| Methode | Route | Description |
+|---|---|---|
+| `POST` | `/api/admin/films` | Ajouter un film (body: `{ tmdb_id }`) |
+| `POST` | `/api/admin/films/[filmId]/download` | Lancer telechargement Radarr VO+VF |
+| `PATCH` | `/api/admin/films/[filmId]/aisle` | Assigner allee / nouveaute (body: `{ aisle?, is_nouveaute? }`) |
+| `PATCH` | `/api/admin/films/[filmId]/availability` | Toggle disponibilite |
+| `GET` | `/api/admin/stats` | Stats (users, films, rentals, requests) |
+
+### Routes films
+
+| Methode | Route | Description |
+|---|---|---|
+| `GET` | `/api/films/aisle/[aisle]` | Films par allee (action, horreur, sf, comedie, classiques, bizarre, nouveautes) |
+
+## Catalogue de films
+
+### Schema DB (table `films`)
+
+Colonnes cles pour le catalogue :
+- `aisle TEXT` — allee dans le videoclub (action, horreur, sf, comedie, classiques, bizarre)
+- `is_nouveaute BOOLEAN` — badge "nouveau" (un film peut etre dans une allee ET nouveaute)
+- `radarr_vo_id INTEGER` — ID dans Radarr VO (null = pas encore telecharge)
+- `radarr_vf_id INTEGER` — ID dans Radarr VF (null = pas encore telecharge)
+- `is_available BOOLEAN` — visible pour les utilisateurs
+- `file_path_vo TEXT` / `file_path_vf TEXT` — chemins fichiers (remplis par radarr-poller)
+
+### Flow complet : ajouter un film
+
+```
+1. SEED (bulk)           npm run seed
+   └─ Lit src/data/mock/films.json (structure: { aisle: [tmdb_id, ...] })
+   └─ Fetch metadata TMDB pour chaque film
+   └─ Insert en DB avec aisle + is_nouveaute
+   └─ Ne lance PAS les telechargements Radarr
+
+2. AJOUT UNITAIRE        POST /api/admin/films { tmdb_id }
+   └─ Fetch metadata TMDB (titre, synopsis, poster, acteurs, genres...)
+   └─ Insert en DB (aisle=null, is_available=false)
+
+3. ASSIGNER ALLEE        PATCH /api/admin/films/{id}/aisle { aisle, is_nouveaute }
+   └─ Place le film dans une allee du videoclub 3D
+   └─ Optionnel: marquer comme nouveaute
+
+4. LANCER TELECHARGEMENT POST /api/admin/films/{id}/download
+   └─ Appelle addMovie() sur Radarr VO (version originale)
+   └─ Appelle addMovie() sur Radarr VF (version francaise)
+   └─ Stocke radarr_vo_id + radarr_vf_id en DB
+   └─ Radarr surveille et telecharge automatiquement
+
+5. RADARR POLLER         (automatique, instrumentation.ts)
+   └─ Sync periodique des fichiers depuis Radarr
+   └─ Met a jour file_path_vo / file_path_vf en DB
+
+6. ACTIVER               PATCH /api/admin/films/{id}/availability
+   └─ Toggle is_available = true
+   └─ Le film apparait dans le videoclub 3D
+```
+
+### Allees valides
+
+`action` | `horreur` | `sf` | `comedie` | `classiques` | `bizarre` | `nouveautes` (virtual)
+
+`nouveautes` n'est pas une allee physique — c'est un filtre sur `is_nouveaute = 1`. Un film peut etre dans `action` ET `nouveautes`.
+
+### Script seed (`npm run seed`)
+
+Lit `src/data/mock/films.json` :
+```json
+{
+  "action": [550, 603, ...],
+  "nouveautes": [550, 999, ...],
+  ...
+}
+```
+- Premier allee gagne si un film apparait dans plusieurs sections
+- `nouveautes` set `is_nouveaute=true` (additif, pas une allee)
+- Delai 250ms entre chaque appel TMDB (rate limit)
+- Films existants : met a jour aisle/nouveaute seulement
+
+### Admin Terminal (TVTerminal.tsx)
+
+Panel admin cache accessible via code "admin" tape au clavier quand le terminal est ouvert.
+
+Fonctionnalites :
+- **Ajouter un film** : saisir TMDB ID → fetch metadata → insert DB
+- **Gestion films** : liste avec controles par film :
+  - Dropdown allee (--/action/horreur/sf/comedie/classiques/bizarre)
+  - Toggle NEW (is_nouveaute)
+  - Bouton DL (lance telechargement Radarr VO+VF, disparait une fois lance)
+  - Toggle DISPO (is_available)
+- **Demandes** : gestion des film_requests (approve/reject)
+- **Stats** : users, films dispo/total, locations actives, demandes en attente
 
 ## Frontend 3D
 

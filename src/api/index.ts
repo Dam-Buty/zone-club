@@ -26,6 +26,10 @@ export interface ApiFilm {
   directors: { tmdb_id: number; name: string }[];
   actors: { tmdb_id: number; name: string; character: string }[];
   runtime: number | null;
+  radarr_vo_id: number | null;
+  radarr_vf_id: number | null;
+  aisle: string | null;
+  is_nouveaute: boolean;
   is_available: boolean;
   created_at: string;
 }
@@ -84,6 +88,7 @@ async function request<T>(
 
   const response = await fetch(url, {
     ...options,
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       ...options.headers,
@@ -245,6 +250,10 @@ export const films = {
     return request(`/api/films/genre/${slug}`);
   },
 
+  async getByAisle(aisle: string): Promise<{ aisle: string; films: ApiFilm[] }> {
+    return request(`/api/films/aisle/${aisle}`);
+  },
+
   async getById(tmdbId: number): Promise<FilmWithRentalStatus> {
     return request(`/api/films/${tmdbId}`);
   },
@@ -293,6 +302,21 @@ export interface AdminStats {
   pendingRequests: number;
 }
 
+export interface TranscodeStatus {
+  id: number;
+  title: string;
+  transcode_status: string | null;
+  transcode_progress: number;
+  transcode_error: string | null;
+  radarr_vo_id: number | null;
+  radarr_vf_id: number | null;
+  file_path_vo: string | null;
+  file_path_vf: string | null;
+  file_path_vo_transcoded: string | null;
+  file_path_vf_transcoded: string | null;
+  is_available: boolean;
+}
+
 export interface FilmRequestWithUser extends ApiFilmRequest {
   username: string;
 }
@@ -330,6 +354,23 @@ export const admin = {
       method: 'PATCH',
       body: JSON.stringify({ available }),
     });
+  },
+
+  async downloadFilm(filmId: number): Promise<{ film: ApiFilm }> {
+    return request(`/api/admin/films/${filmId}/download`, {
+      method: 'POST',
+    });
+  },
+
+  async setFilmAisle(filmId: number, updates: { aisle?: string | null; is_nouveaute?: boolean }): Promise<void> {
+    await request(`/api/admin/films/${filmId}/aisle`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
+    });
+  },
+
+  async getTranscodeStatus(): Promise<TranscodeStatus[]> {
+    return request('/api/admin/films/status');
   },
 };
 

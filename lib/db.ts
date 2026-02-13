@@ -27,4 +27,31 @@ try {
     // Migration already done or not needed
 }
 
+// Migrate: add aisle and is_nouveaute columns
+try {
+    const columns = db.prepare("PRAGMA table_info(films)").all() as { name: string }[];
+    if (!columns.some(c => c.name === 'aisle')) {
+        db.exec('ALTER TABLE films ADD COLUMN aisle TEXT');
+    }
+    if (!columns.some(c => c.name === 'is_nouveaute')) {
+        db.exec('ALTER TABLE films ADD COLUMN is_nouveaute BOOLEAN DEFAULT FALSE');
+    }
+    db.exec('CREATE INDEX IF NOT EXISTS idx_films_aisle ON films(aisle)');
+} catch {
+    // Migration already done or not needed
+}
+
+// Migrate: add transcode columns
+const transcodeMigrations = [
+  'ALTER TABLE films ADD COLUMN transcode_status TEXT DEFAULT NULL',
+  'ALTER TABLE films ADD COLUMN transcode_progress REAL DEFAULT 0',
+  'ALTER TABLE films ADD COLUMN transcode_error TEXT DEFAULT NULL',
+  'ALTER TABLE films ADD COLUMN file_path_vo_transcoded TEXT DEFAULT NULL',
+  'ALTER TABLE films ADD COLUMN file_path_vf_transcoded TEXT DEFAULT NULL',
+];
+
+for (const sql of transcodeMigrations) {
+  try { db.exec(sql); } catch {}
+}
+
 export default db;

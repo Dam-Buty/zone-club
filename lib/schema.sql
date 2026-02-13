@@ -28,7 +28,14 @@ CREATE TABLE IF NOT EXISTS films (
     subtitle_path TEXT,
     radarr_vo_id INTEGER,
     radarr_vf_id INTEGER,
+    aisle TEXT,
+    is_nouveaute BOOLEAN DEFAULT FALSE,
     is_available BOOLEAN DEFAULT FALSE,
+    transcode_status TEXT DEFAULT NULL,
+    transcode_progress REAL DEFAULT 0,
+    transcode_error TEXT DEFAULT NULL,
+    file_path_vo_transcoded TEXT DEFAULT NULL,
+    file_path_vf_transcoded TEXT DEFAULT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
