@@ -27,6 +27,7 @@
 .contentArea {
   position: absolute;
   pointer-events: none;
+  container-type: inline-size;
 }
 
 .storefront {
@@ -65,7 +66,7 @@
 .enterText {
   opacity: 0;
   font-family: 'Orbitron', sans-serif;
-  font-size: clamp(0.7rem, 1.2vw, 1rem);
+  font-size: clamp(0.7rem, 1.2cqw, 1rem);
   font-weight: 700;
   color: #fff;
   text-shadow:
@@ -80,6 +81,46 @@
 
 .doorHover .enterText {
   opacity: 1;
+}
+
+.doorIndicator {
+  position: absolute;
+  /* Anchored to horizontal center of doorHotspot (left:29% + width:2%/2 = 30%) */
+  left: 30%;
+  top: 64%;
+  transform: translateX(-50%);
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  animation: indicatorBob 2s ease-in-out infinite;
+}
+
+.doorIndicatorText {
+  font-family: 'Orbitron', sans-serif;
+  font-size: clamp(0.78rem, 1.32cqw, 1.08rem);
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.9);
+  text-shadow:
+    0 0 10px rgba(180, 120, 255, 0.8),
+    0 0 20px rgba(180, 120, 255, 0.5),
+    0 0 30px rgba(180, 120, 255, 0.3);
+  letter-spacing: 0.15em;
+  white-space: nowrap;
+}
+
+.doorIndicatorArrow {
+  font-size: clamp(0.84rem, 1.32cqw, 1.08rem);
+  color: rgba(255, 255, 255, 0.8);
+  text-shadow:
+    0 0 10px rgba(180, 120, 255, 0.8),
+    0 0 20px rgba(180, 120, 255, 0.4);
+  margin-top: 2px;
+}
+
+@keyframes indicatorBob {
+  0%, 100% { transform: translateX(-50%) translateY(0); }
+  50% { transform: translateX(-50%) translateY(-6px); }
 }
 
 .fadeOut {

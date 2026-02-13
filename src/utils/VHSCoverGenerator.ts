@@ -6,6 +6,13 @@ import { preloadPosterImage } from './CassetteTextureArray'
 // ---- Canvas & UV Layout Constants ----
 const TEX_SIZE = 1024
 
+// ---- Reusable temp canvas for blitFlipped (avoids GC pressure from per-call allocations) ----
+const _tempCanvas = document.createElement('canvas')
+const _tempCtx = _tempCanvas.getContext('2d')!
+
+// ---- Cache for isLogoBright results (avoids repeated GPU→CPU readbacks) ----
+const _logoBrightnessCache = new Map<string, boolean>()
+
 // Face regions in canvas pixel coordinates { x, y, w, h }
 const FRONT = { x: 614, y: 117, w: 395, h: 712 }
 const BACK  = { x: 117, y: 117, w: 395, h: 712 }
@@ -503,15 +510,19 @@ function drawTitleOrLogo(
   return dy + 4
 }
 
-/** Detect if a logo image is predominantly bright (white/light) by sampling pixels */
+/** Detect if a logo image is predominantly bright (white/light) by sampling pixels.
+ *  Results are cached by img.src to avoid repeated GPU→CPU readbacks. */
 function isLogoBright(img: HTMLImageElement): boolean {
+  const cached = _logoBrightnessCache.get(img.src)
+  if (cached !== undefined) return cached
+
   const size = 32
-  const c = document.createElement('canvas')
-  c.width = size
-  c.height = size
-  const ctx = c.getContext('2d')!
-  ctx.drawImage(img, 0, 0, size, size)
-  const pixels = ctx.getImageData(0, 0, size, size).data
+  // Reuse the module-level temp canvas
+  _tempCanvas.width = size
+  _tempCanvas.height = size
+  _tempCtx.clearRect(0, 0, size, size)
+  _tempCtx.drawImage(img, 0, 0, size, size)
+  const pixels = _tempCtx.getImageData(0, 0, size, size).data
   let brightCount = 0
   let opaqueCount = 0
   for (let i = 0; i < pixels.length; i += 4) {
@@ -521,7 +532,9 @@ function isLogoBright(img: HTMLImageElement): boolean {
     const lum = 0.2126 * pixels[i] + 0.7152 * pixels[i + 1] + 0.0722 * pixels[i + 2]
     if (lum > 130) brightCount++
   }
-  return opaqueCount > 0 && brightCount / opaqueCount > 0.5
+  const result = opaqueCount > 0 && brightCount / opaqueCount > 0.5
+  _logoBrightnessCache.set(img.src, result)
+  return result
 }
 
 /** Awards badge based on vote_average (proxy for critical acclaim) */
@@ -757,15 +770,15 @@ function blitFlipped(
   region: { x: number; y: number; w: number; h: number },
   drawFn: (tc: CanvasRenderingContext2D, w: number, h: number) => void
 ) {
-  const temp = document.createElement('canvas')
-  temp.width = region.w
-  temp.height = region.h
-  const tc = temp.getContext('2d')!
-  drawFn(tc, region.w, region.h)
+  // Reuse module-level temp canvas (avoids allocation + GC per call)
+  _tempCanvas.width = region.w
+  _tempCanvas.height = region.h
+  _tempCtx.clearRect(0, 0, region.w, region.h)
+  drawFn(_tempCtx, region.w, region.h)
   ctx.save()
   ctx.translate(region.x + region.w, region.y)
   ctx.scale(-1, 1)
-  ctx.drawImage(temp, 0, 0)
+  ctx.drawImage(_tempCanvas, 0, 0)
   ctx.restore()
 }
 

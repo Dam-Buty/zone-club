@@ -78,7 +78,9 @@ function NeonTubesInstanced() {
 }
 
 // Version OPTIMISÉE: 7 lumières au lieu de 21
-function OptimizedLighting() {
+function OptimizedLighting({ isMobile = false }: { isMobile?: boolean }) {
+  const shadowMapSize = isMobile ? 512 : 1024
+
   return (
     <>
       {/* 1. Lumière ambiante - réduite pour ambiance sombre */}
@@ -149,14 +151,14 @@ function OptimizedLighting() {
         rotation={[0, 0, 0]}
       />
 
-      {/* 9. DirectionalLight pour les ombres - vient du plafond, légèrement angulée */}
+      {/* 9. DirectionalLight pour les ombres — mobile: 512px shadow map, desktop: 1024px */}
       <directionalLight
         position={[2, 2.7, 1]}
         intensity={0.3}
         color="#fff5e6"
         castShadow
-        shadow-mapSize-width={1024}
-        shadow-mapSize-height={1024}
+        shadow-mapSize-width={shadowMapSize}
+        shadow-mapSize-height={shadowMapSize}
         shadow-camera-left={-6}
         shadow-camera-right={6}
         shadow-camera-top={5}
@@ -290,7 +292,7 @@ function FullLighting() {
   )
 }
 
-export function Lighting() {
+export function Lighting({ isMobile = false }: { isMobile?: boolean }) {
   // Toggle entre les deux modes ici
-  return LIGHTING_MODE === 'optimized' ? <OptimizedLighting /> : <FullLighting />
+  return LIGHTING_MODE === 'optimized' ? <OptimizedLighting isMobile={isMobile} /> : <FullLighting />
 }

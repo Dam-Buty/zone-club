@@ -183,27 +183,29 @@ export function CassetteInstances({ instances }: CassetteInstancesProps) {
     const renderer = gl as unknown as THREE.WebGPURenderer
     texArray.setRenderer(renderer)
 
-    // Load poster textures in parallel batches
+    // Load poster textures spread across frames (2 per frame to avoid GPU stalls)
     let cancelled = false
-    const BATCH_SIZE = 50
-    const loadPosters = async () => {
-      const queue: { index: number; url: string }[] = []
-      for (let i = 0; i < count; i++) {
-        const inst = currentInstances[i]
-        if (inst.posterUrl) {
-          queue.push({ index: i, url: inst.posterUrl })
-        }
-      }
-
-      for (let j = 0; j < queue.length; j += BATCH_SIZE) {
-        if (cancelled) return
-        const batch = queue.slice(j, j + BATCH_SIZE)
-        await Promise.all(
-          batch.map(({ index, url }) => texArray.loadPosterIntoLayer(url, index))
-        )
+    const POSTERS_PER_FRAME = 2
+    const queue: { index: number; url: string }[] = []
+    for (let i = 0; i < count; i++) {
+      const inst = currentInstances[i]
+      if (inst.posterUrl) {
+        queue.push({ index: i, url: inst.posterUrl })
       }
     }
-    loadPosters()
+
+    let queueIdx = 0
+    const loadNextBatch = () => {
+      if (cancelled || queueIdx >= queue.length) return
+      const end = Math.min(queueIdx + POSTERS_PER_FRAME, queue.length)
+      for (let j = queueIdx; j < end; j++) {
+        const { index, url } = queue[j]
+        texArray.loadPosterIntoLayer(url, index)
+      }
+      queueIdx = end
+      requestAnimationFrame(loadNextBatch)
+    }
+    requestAnimationFrame(loadNextBatch)
 
     return () => {
       cancelled = true

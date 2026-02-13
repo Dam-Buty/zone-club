@@ -860,6 +860,7 @@ export class ExteriorScene {
   public dispose() {
     window.removeEventListener('resize', this.handleResize);
     cancelAnimationFrame(this.animationId);
+    this.renderer.domElement.remove();
     this.renderer.dispose();
     this.material.dispose();
   }
