@@ -44,13 +44,16 @@ export function VirtualJoystick({ mobileInputRef }: VirtualJoystickProps) {
     const nx = dx / MAX_OFFSET
     const ny = dy / MAX_OFFSET
 
-    // Apply dead zone
+    // Apply dead zone + power curve for precision near shelves
     const mag = Math.sqrt(nx * nx + ny * ny)
     if (mag < DEAD_ZONE) {
       mobileInputRef.current.moveX = 0
       mobileInputRef.current.moveZ = 0
     } else {
-      const scale = (mag - DEAD_ZONE) / (1 - DEAD_ZONE) / mag
+      const linear = (mag - DEAD_ZONE) / (1 - DEAD_ZONE)
+      // Power curve: slow at small deflection, fast at full throw
+      const curved = Math.pow(linear, 1.5)
+      const scale = curved / mag
       mobileInputRef.current.moveX = nx * scale
       mobileInputRef.current.moveZ = -ny * scale // inverted: drag up = move forward = positive Z
     }
