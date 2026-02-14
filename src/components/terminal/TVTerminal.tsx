@@ -71,7 +71,9 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
     userReviews,
     films,
     openPlayer,
-    closeTerminal
+    closeTerminal,
+    benchmarkEnabled,
+    setBenchmarkEnabled,
   } = useStore();
 
   // Utiliser authUser si connecté, sinon localUser
@@ -555,6 +557,19 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
               <div className={styles.infoRow}>
                 <span className={styles.infoLabel}>Critiques publiées</span>
                 <span className={styles.infoValue}>{userReviews.length}</span>
+              </div>
+              <div className={styles.infoRow}>
+                <span className={styles.infoLabel}>Benchmark WebGPU</span>
+                <button
+                  type="button"
+                  className={`${styles.benchmarkToggle} ${benchmarkEnabled ? styles.benchmarkToggleOn : styles.benchmarkToggleOff}`}
+                  onClick={() => setBenchmarkEnabled(!benchmarkEnabled)}
+                >
+                  {benchmarkEnabled ? 'ACTIF' : 'INACTIF'}
+                </button>
+              </div>
+              <div className={styles.benchmarkHint}>
+                Active le mode benchmark pour afficher les métriques FPS/frametime en superposition temps réel.
               </div>
               {user.badges.length > 0 && (
                 <>

@@ -12,6 +12,10 @@ Naviguez entre les etageres, prenez des cassettes VHS, louez des films et regard
 - SQLite (better-sqlite3) + cookie auth
 - Docker (5 services, 0 builds)
 
+## Documentation technique
+
+- Rendu 3D (WebGPU/WebGL) + optimisations: `docs/3d-rendering-webgpu.md`
+
 ## Demarrage rapide
 
 ```bash
@@ -53,3 +57,24 @@ Voir `.env.example` pour la liste complete. Variables principales :
 - `RADARR_VO_API_KEY` / `RADARR_VF_API_KEY` — API keys Radarr
 - `HMAC_SECRET` — Signature cookies
 - `DOMAIN` / `SUBDOMAIN` / `STORAGE_SUBDOMAIN` — Configuration domaine
+
+## Tests de phase (refacto safe)
+
+Pour chaque phase de nettoyage/refactor :
+
+```bash
+npm run test:phase
+npm run test:phase:full
+```
+
+- `test:phase` : garde-fous architecture (imports cassés, assets manquants, cohérence domaine, budget taille de fichiers)
+- `test:phase:full` : garde-fous + build complet
+
+## Audit fichiers inutilises
+
+```bash
+npm run audit:unused
+```
+
+- `audit:unused` : detecte les assets `public/` et scripts potentiellement orphelins (mode informatif, non bloquant)
+- `audit:unused:strict` : meme audit, mais avec code retour non-zero en cas d'orphelins

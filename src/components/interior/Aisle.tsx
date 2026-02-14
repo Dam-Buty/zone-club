@@ -48,6 +48,7 @@ import type { CassetteInstanceData } from '../../utils/CassetteTextureArray'
 
 interface AisleProps {
   films: Film[]
+  maxTextureArrayLayers?: number
 }
 
 // Dimensions de la pièce (basées sur le plan PDF, réduites de 30%)
@@ -142,9 +143,6 @@ function PrivateSign({ position }: { position: [number, number, number] }) {
   )
 }
 
-// OPTIMISATION: 3 murs (nord + gauche + droit) fusionnés en 1 seul mesh (3→1 draw call)
-const MERGED_WALLS_MAT = new THREE.MeshStandardMaterial({ color: '#1e1e28' })
-
 function MergedWalls({ wallTextures, roomWidth, roomDepth, roomHeight }: {
   wallTextures: Record<string, THREE.Texture>
   roomWidth: number
@@ -170,18 +168,22 @@ function MergedWalls({ wallTextures, roomWidth, roomDepth, roomHeight }: {
   }, [roomWidth, roomDepth, roomHeight])
 
   const material = useMemo(() => {
-    MERGED_WALLS_MAT.map = wallTextures.map
-    MERGED_WALLS_MAT.normalMap = wallTextures.normalMap
-    MERGED_WALLS_MAT.roughnessMap = wallTextures.roughnessMap
-    MERGED_WALLS_MAT.aoMap = wallTextures.aoMap ?? null
-    MERGED_WALLS_MAT.normalScale = new THREE.Vector2(0.6, 0.6)
-    MERGED_WALLS_MAT.needsUpdate = true
-    return MERGED_WALLS_MAT
+    const next = new THREE.MeshStandardMaterial({ color: '#1e1e28' })
+    next.map = wallTextures.map
+    next.normalMap = wallTextures.normalMap
+    next.roughnessMap = wallTextures.roughnessMap
+    next.aoMap = wallTextures.aoMap ?? null
+    next.normalScale.set(0.6, 0.6)
+    return next
   }, [wallTextures])
 
   useEffect(() => {
     return () => { geometry.dispose() }
   }, [geometry])
+
+  useEffect(() => {
+    return () => { material.dispose() }
+  }, [material])
 
   return <mesh geometry={geometry} material={material} receiveShadow />
 }
@@ -370,7 +372,7 @@ function computeIslandShelfCassettes(
   return data
 }
 
-export function Aisle({ films }: AisleProps) {
+export function Aisle({ films, maxTextureArrayLayers = 256 }: AisleProps) {
   // ===== FILMS POUR NOUVEAUTÉS (ÎLOT CENTRAL) =====
   // Uses films from the store's "nouveautes" aisle (already fetched in App.tsx alongside other aisles).
   // No separate TMDB fetch — avoids a second allCassetteData recomputation that caused
@@ -834,9 +836,12 @@ export function Aisle({ films }: AisleProps) {
         decay={2.5}
       />
 
-      {/* ===== TOUTES LES CASSETTES — 1 seul InstancedMesh (520→1 draw call) ===== */}
+      {/* ===== TOUTES LES CASSETTES — InstancedMesh chunké selon maxTextureArrayLayers ===== */}
       {allCassetteData.length > 0 && (
-        <CassetteInstances instances={allCassetteData} />
+        <CassetteInstances
+          instances={allCassetteData}
+          maxTextureArrayLayers={maxTextureArrayLayers}
+        />
       )}
     </group>
   )

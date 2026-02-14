@@ -12,44 +12,35 @@ interface OnboardingStep {
   animation: string
 }
 
+const MOBILE_COMMANDS_TITLE = 'COMMANDES MOBILE'
+const WEBGPU_WARNING_TITLE = 'AVERTISSEMENT WEBGPU'
+
 const MOBILE_STEPS: OnboardingStep[] = [
   {
-    title: 'SE D\u00c9PLACER',
-    description: 'Utilisez le joystick en bas \u00e0 gauche pour vous d\u00e9placer dans le vid\u00e9oclub.',
-    icon: '\u{1F579}\uFE0F',
-    animation: 'joystickHint',
-  },
-  {
-    title: 'REGARDER',
-    description: 'Glissez votre doigt sur l\'\u00e9cran pour tourner la cam\u00e9ra et explorer le magasin.',
-    icon: '\u{1F440}',
+    title: WEBGPU_WARNING_TITLE,
+    description: 'Ce vid\u00e9oclub est optimis\u00e9 pour les appareils compatibles WebGPU. Sur mobile, un mod\u00e8le r\u00e9cent est recommand\u00e9 pour garder une exp\u00e9rience fluide.',
+    icon: '\u{26A0}\uFE0F',
     animation: 'swipeHint',
   },
   {
-    title: 'INTERAGIR',
-    description: 'Visez une cassette et tapez l\'\u00e9cran ou appuyez sur le bouton E pour la prendre.',
-    icon: '\u{1F4FC}',
+    title: 'COMMANDES MOBILE',
+    description: 'D\u00e9placez-vous avec le joystick (bas gauche), regardez en glissant sur l\'\u00e9cran, puis visez une cassette et touchez l\'\u00e9cran ou le bouton E pour interagir.',
+    icon: '\u{1F4F1}',
     animation: 'tapHint',
   },
 ]
 
 const DESKTOP_STEPS: OnboardingStep[] = [
   {
-    title: 'SE D\u00c9PLACER',
-    description: 'Utilisez les touches WASD ou les fl\u00e8ches pour vous d\u00e9placer dans le vid\u00e9oclub.',
-    icon: '\u{2328}\uFE0F',
-    animation: 'joystickHint',
-  },
-  {
-    title: 'REGARDER',
-    description: 'Bougez la souris pour tourner la cam\u00e9ra. Cliquez pour prendre le contr\u00f4le.',
-    icon: '\u{1F5B1}\uFE0F',
+    title: WEBGPU_WARNING_TITLE,
+    description: 'Ce vid\u00e9oclub est optimis\u00e9 pour les appareils compatibles WebGPU. Pour de meilleures performances, utilisez un navigateur \u00e0 jour avec acc\u00e9l\u00e9ration mat\u00e9rielle activ\u00e9e.',
+    icon: '\u{26A0}\uFE0F',
     animation: 'swipeHint',
   },
   {
-    title: 'INTERAGIR',
-    description: 'Visez une cassette avec le viseur et cliquez ou appuyez sur E pour l\'examiner.',
-    icon: '\u{1F4FC}',
+    title: 'COMMANDES DESKTOP',
+    description: 'Cliquez pour prendre le contr\u00f4le. D\u00e9placez-vous avec les fl\u00e8ches \u2191 \u2193 \u2190 \u2192, regardez avec la souris, interagissez avec clic ou E, et utilisez ESC pour lib\u00e9rer la souris.',
+    icon: '\u{2328}\uFE0F',
     animation: 'tapHint',
   },
 ]
@@ -61,6 +52,8 @@ export function MobileOnboarding({ isMobile }: MobileOnboardingProps) {
   const steps = isMobile ? MOBILE_STEPS : DESKTOP_STEPS
   const step = steps[currentStep]
   const isLast = currentStep === steps.length - 1
+  const isMobileCommandsStep = isMobile && step.title === MOBILE_COMMANDS_TITLE
+  const isWebgpuWarningStep = step.title === WEBGPU_WARNING_TITLE
 
   const handleNext = useCallback(() => {
     if (isLast) {
@@ -87,6 +80,16 @@ export function MobileOnboarding({ isMobile }: MobileOnboardingProps) {
       padding: '24px',
       touchAction: 'none',
     }}>
+      <style>{`
+        @keyframes joystickKnobCycle {
+          0%, 10% { transform: translate(-50%, -50%) translate(0, -14px); }
+          25%, 35% { transform: translate(-50%, -50%) translate(0, 14px); }
+          50%, 60% { transform: translate(-50%, -50%) translate(-14px, 0); }
+          75%, 85% { transform: translate(-50%, -50%) translate(14px, 0); }
+          100% { transform: translate(-50%, -50%) translate(0, -14px); }
+        }
+      `}</style>
+
       {/* Step indicator dots */}
       <div style={{
         display: 'flex',
@@ -108,14 +111,171 @@ export function MobileOnboarding({ isMobile }: MobileOnboardingProps) {
         ))}
       </div>
 
-      {/* Animated icon */}
-      <div style={{
-        fontSize: '4rem',
-        marginBottom: '24px',
-        animation: `${step.animation} 2s ease-in-out infinite`,
-      }}>
-        {step.icon}
-      </div>
+      {/* Animated icon / logos / joystick demo */}
+      {isWebgpuWarningStep ? (
+        <div style={{
+          width: '100%',
+          maxWidth: isMobile ? '340px' : '420px',
+          marginBottom: '24px',
+          padding: isMobile ? '14px 12px' : '16px',
+          borderRadius: '12px',
+          border: 'none',
+          background: 'transparent',
+          boxShadow: 'none',
+        }}>
+          <div style={{
+            display: 'flex',
+            justifyContent: 'center',
+            marginBottom: '12px',
+          }}>
+            <img
+              src="/webgpulogo.png"
+              alt="WebGPU"
+              style={{
+                height: isMobile ? '36px' : '48px',
+                objectFit: 'contain',
+              }}
+            />
+          </div>
+
+          <div style={{
+            height: '1px',
+            margin: isMobile ? '0 8px 10px' : '0 16px 12px',
+            background: 'linear-gradient(90deg, rgba(0,255,247,0), rgba(0,255,247,0.65), rgba(0,255,247,0))',
+          }} />
+
+          <div style={{
+            textAlign: 'center',
+            fontFamily: 'Inter, sans-serif',
+            fontSize: isMobile ? '0.68rem' : '0.72rem',
+            color: 'rgba(0,255,247,0.78)',
+            letterSpacing: '0.9px',
+            marginBottom: '8px',
+            textTransform: 'uppercase',
+          }}>
+            Backends GPU natifs
+          </div>
+
+          <div style={{
+            display: 'flex',
+            justifyContent: 'center',
+            gap: isMobile ? '8px' : '10px',
+            alignItems: 'stretch',
+          }}>
+            <div style={{
+              width: isMobile ? '88px' : '102px',
+              borderRadius: '8px',
+              border: 'none',
+              background: 'transparent',
+              padding: isMobile ? '8px 6px' : '9px 7px',
+              textAlign: 'center',
+            }}>
+              <div style={{
+                height: isMobile ? '22px' : '25px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}>
+                <img
+                  src="/Metalogo.png"
+                  alt="Metal backend"
+                  style={{
+                    width: isMobile ? '34px' : '38px',
+                    objectFit: 'contain',
+                  }}
+                />
+              </div>
+            </div>
+
+            <div style={{
+              width: isMobile ? '88px' : '102px',
+              borderRadius: '8px',
+              border: 'none',
+              background: 'transparent',
+              padding: isMobile ? '8px 6px' : '9px 7px',
+              textAlign: 'center',
+            }}>
+              <div style={{
+                height: isMobile ? '22px' : '25px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}>
+                <img
+                  src="/Vulkanlogo.jpeg"
+                  alt="Vulkan backend"
+                  style={{
+                    width: isMobile ? '42px' : '50px',
+                    objectFit: 'contain',
+                  }}
+                />
+              </div>
+            </div>
+
+            <div style={{
+              width: isMobile ? '88px' : '102px',
+              borderRadius: '8px',
+              border: 'none',
+              background: 'transparent',
+              padding: isMobile ? '8px 6px' : '9px 7px',
+              textAlign: 'center',
+            }}>
+              <div style={{
+                height: isMobile ? '22px' : '25px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}>
+                <img
+                  src="/DirectX_12_logo.png"
+                  alt="Direct3D 12 backend"
+                  style={{
+                    width: isMobile ? '50px' : '60px',
+                    objectFit: 'contain',
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : isMobileCommandsStep ? (
+        <div style={{
+          position: 'relative',
+          width: '108px',
+          height: '108px',
+          marginBottom: '24px',
+        }}>
+          <div style={{
+            position: 'absolute',
+            inset: 0,
+            borderRadius: '50%',
+            border: '2px solid rgba(0, 255, 247, 0.5)',
+            background: 'radial-gradient(circle at 40% 35%, rgba(255,255,255,0.12), rgba(0,0,0,0.12))',
+            boxShadow: '0 0 20px rgba(0, 255, 247, 0.2)',
+          }} />
+          <div style={{
+            position: 'absolute',
+            top: '50%',
+            left: '50%',
+            width: '34px',
+            height: '34px',
+            borderRadius: '50%',
+            border: '2px solid rgba(255, 45, 149, 0.85)',
+            background: 'rgba(255, 45, 149, 0.28)',
+            boxShadow: '0 0 15px rgba(255, 45, 149, 0.45)',
+            transform: 'translate(-50%, -50%)',
+            animation: 'joystickKnobCycle 2.8s ease-in-out infinite',
+          }} />
+        </div>
+      ) : (
+        <div style={{
+          fontSize: '4rem',
+          marginBottom: '24px',
+          animation: `${step.animation} 2s ease-in-out infinite`,
+        }}>
+          {step.icon}
+        </div>
+      )}
 
       {/* Title */}
       <div style={{

@@ -1,36 +1,32 @@
-import { useMemo } from 'react'
+import { useMemo, useEffect } from 'react'
 import { useLoader, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { KTX2Loader } from 'three/examples/jsm/loaders/KTX2Loader.js'
 
-/**
- * Singleton KTX2Loader — shared across all hook instances.
- * detectSupport() is called once with the first renderer that uses it.
- */
-let _ktx2Loader: KTX2Loader | null = null
-let _supportDetected = false
+type ThreeRendererLike = THREE.WebGLRenderer & {
+  isWebGPURenderer?: boolean
+  isWebGLRenderer?: boolean
+  hasFeature?: (feature: string) => boolean
+}
 
-function _getKTX2Loader(gl: THREE.WebGLRenderer): KTX2Loader {
-  if (!_ktx2Loader) {
-    _ktx2Loader = new KTX2Loader()
-    _ktx2Loader.setTranscoderPath('/basis/')
+function canUseKTX2WithRenderer(renderer: ThreeRendererLike): boolean {
+  const isKnownRenderer = renderer.isWebGLRenderer === true || renderer.isWebGPURenderer === true
+  if (!isKnownRenderer) return false
+
+  try {
+    const probe = new KTX2Loader()
+    probe.setTranscoderPath('/basis/')
+    probe.detectSupport(renderer)
+    probe.dispose()
+    return true
+  } catch {
+    return false
   }
-  if (!_supportDetected) {
-    _ktx2Loader.detectSupport(gl)
-    _supportDetected = true
-  }
-  return _ktx2Loader
 }
 
 /**
- * Load KTX2-compressed PBR textures with tiling and anisotropic filtering.
- * Hardware-compressed textures (BC7 on desktop, ASTC on mobile) — 4x less VRAM.
- *
- * @param basePath - Base path to texture directory (e.g. '/textures/floor')
- * @param repeatX - Texture repeat X
- * @param repeatY - Texture repeat Y
- * @param hasAO - Whether an AO map exists
- * @returns Object with map, normalMap, roughnessMap, and optionally aoMap
+ * Load PBR textures with KTX2 when renderer support is valid, otherwise JPEG fallback.
+ * KTX2Loader in three r182 supports both WebGLRenderer and WebGPURenderer.
  */
 export function useKTX2Textures(
   basePath: string,
@@ -38,26 +34,49 @@ export function useKTX2Textures(
   repeatY: number,
   hasAO = false
 ): Record<string, THREE.Texture> {
-  const gl = useThree(state => state.gl)
+  const gl = useThree(state => state.gl) as unknown as ThreeRendererLike
+
+  const canUseKTX2 = useMemo(() => canUseKTX2WithRenderer(gl), [gl])
 
   const paths = useMemo(() => {
-    const p = [
-      `${basePath}/color.ktx2`,
-      `${basePath}/normal.ktx2`,
-      `${basePath}/roughness.ktx2`,
-    ]
-    if (hasAO) {
-      p.push(`${basePath}/ao.ktx2`)
+    if (canUseKTX2) {
+      const compressed = [
+        `${basePath}/color.ktx2`,
+        `${basePath}/normal.ktx2`,
+        `${basePath}/roughness.ktx2`,
+      ]
+      if (hasAO) compressed.push(`${basePath}/ao.ktx2`)
+      return compressed
     }
-    return p
-  }, [basePath, hasAO])
 
-  const textures = useLoader(KTX2Loader, paths, (loader) => {
-    loader.setTranscoderPath('/basis/')
-    loader.detectSupport(gl)
-  })
+    const jpg = [
+      `${basePath}/color.jpg`,
+      `${basePath}/normal.jpg`,
+      `${basePath}/roughness.jpg`,
+    ]
+    if (hasAO) jpg.push(`${basePath}/ao.jpg`)
+    return jpg
+  }, [basePath, hasAO, canUseKTX2])
 
-  // Configure tiling + anisotropy (same logic as usePBRTextures)
+  const textures = useLoader(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (canUseKTX2 ? KTX2Loader : THREE.TextureLoader) as any,
+    paths,
+    (loader) => {
+      if (!canUseKTX2) return
+
+      const ktx2Loader = loader as KTX2Loader
+      ktx2Loader.setTranscoderPath('/basis/')
+      ktx2Loader.detectSupport(gl)
+    }
+  )
+
+  useEffect(() => {
+    if (!canUseKTX2) {
+      console.warn(`[useKTX2Textures] KTX2 unsupported with current renderer, fallback JPEG for ${basePath}`)
+    }
+  }, [canUseKTX2, basePath])
+
   useMemo(() => {
     const textureArray = Array.isArray(textures) ? textures : [textures]
     textureArray.forEach((tex, i) => {
@@ -65,18 +84,23 @@ export function useKTX2Textures(
       tex.wrapT = THREE.RepeatWrapping
       tex.repeat.set(repeatX, repeatY)
       tex.anisotropy = 16
-      // Bilinear + nearest mip: sharper than trilinear at distance, less blur
-      tex.minFilter = THREE.LinearMipmapNearestFilter
-      tex.magFilter = THREE.LinearFilter
-      tex.generateMipmaps = false // mipmaps are already in the KTX2 file
-      // Color map (index 0) needs sRGB, others are linear data
+
+      if (canUseKTX2) {
+        tex.minFilter = THREE.LinearMipmapNearestFilter
+        tex.magFilter = THREE.LinearFilter
+        tex.generateMipmaps = false // mipmaps are already in KTX2
+      } else {
+        tex.minFilter = THREE.LinearMipmapLinearFilter
+        tex.magFilter = THREE.LinearFilter
+      }
+
       if (i === 0) {
         tex.colorSpace = THREE.SRGBColorSpace
       } else {
         tex.colorSpace = THREE.LinearSRGBColorSpace
       }
     })
-  }, [textures, repeatX, repeatY])
+  }, [textures, repeatX, repeatY, canUseKTX2])
 
   const textureArray = Array.isArray(textures) ? textures : [textures]
   const result: Record<string, THREE.Texture> = {

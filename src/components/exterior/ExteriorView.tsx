@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback, Suspense, lazy } from 'react';
-import { ExteriorScene } from '../../webgpu/ExteriorScene';
+import { ExteriorScene } from './scene/ExteriorScene';
 import { useIdleDetection } from '../../hooks/useIdleDetection';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import styles from './ExteriorView.module.css';

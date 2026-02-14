@@ -144,9 +144,9 @@
 /* Mobile PUSH indicator — positioned above door handle area */
 .mobileDoorIndicator {
   position: fixed;
-  /* Door handle is at ~68% from top in the portrait image, indicator sits above */
-  left: 60%;
-  top: 61%;
+  /* Aligned with the real PUSH plate on storefront-mobile.jpeg */
+  left: calc(70.5% + 20px);
+  top: 63.5%;
   transform: translateX(-50%);
   pointer-events: none;
   display: flex;
@@ -167,19 +167,16 @@
 /* Mobile door hotspot — large touch-friendly area around the door handle */
 .mobileDoorHotspot {
   position: fixed;
-  /* Centered on the door handle area in the portrait image */
-  left: 40%;
-  top: 58%;
-  width: 40%;
-  height: 18%;
+  /* Covers the plate + middle bar interaction area */
+  left: 37%;
+  top: 56%;
+  width: 44%;
+  height: 20%;
   background: transparent;
   border: 2px solid rgba(180, 120, 255, 0.0);
   border-radius: 12px;
   cursor: pointer;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  padding-bottom: 8px;
+  display: block;
   z-index: 5;
   transition: border-color 0.3s ease, background 0.3s ease;
   -webkit-tap-highlight-color: transparent;
@@ -196,6 +193,10 @@
 }
 
 .mobileEnterText {
+  position: absolute;
+  left: 50%;
+  top: calc(62% + 93px);
+  transform: translate(-50%, -50%);
   font-family: 'Orbitron', sans-serif;
   font-size: 0.75rem;
   font-weight: 700;

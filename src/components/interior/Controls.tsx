@@ -54,6 +54,8 @@ const _right = new THREE.Vector3()
 
 // Mobile pitch clamp (±60°)
 const MAX_PITCH = (60 * Math.PI) / 180
+const URL_BENCHMARK_MODE = typeof window !== 'undefined'
+  && new URLSearchParams(window.location.search).get('benchmark') === '1'
 
 // OPTIMISATION: Layers Three.js pour le raycaster
 export const RAYCAST_LAYER_CASSETTE = 1
@@ -63,6 +65,7 @@ type InteractiveTarget = 'manager' | 'bell' | 'tv' | null
 
 export function Controls({ onCassetteClick, isMobile, mobileInputRef }: ControlsProps) {
   const { camera, gl, scene } = useThree()
+  const benchmarkEnabled = useStore((state) => state.benchmarkEnabled)
   const setTargetedFilm = useStore((state) => state.setTargetedFilm)
   const setPointerLocked = useStore((state) => state.setPointerLocked)
   const showManager = useStore((state) => state.showManager)
@@ -102,6 +105,8 @@ export function Controls({ onCassetteClick, isMobile, mobileInputRef }: Controls
   // Throttle raycast
   const frameCountRef = useRef(0)
   const RAYCAST_INTERVAL = isMobile ? 3 : 2 // 20/sec mobile, 30/sec desktop
+  const RAYCAST_TARGET_REFRESH_MS = 800
+  const raycastTargetsRef = useRef<THREE.Object3D[]>([])
 
   // Configurer la caméra
   useEffect(() => {
@@ -184,7 +189,9 @@ export function Controls({ onCassetteClick, isMobile, mobileInputRef }: Controls
     controlsCreated.current = true
 
     const controls = new PointerLockControlsImpl(camera, gl.domElement)
-    controls.pointerSpeed = 0.7
+    if ('pointerSpeed' in controls) {
+      ;(controls as unknown as { pointerSpeed: number }).pointerSpeed = 0.7
+    }
     controlsRef.current = controls
 
     const handleLock = () => setPointerLocked(true)
@@ -276,12 +283,41 @@ export function Controls({ onCassetteClick, isMobile, mobileInputRef }: Controls
     }
   }, [isMobile, camera, gl, setPointerLocked])
 
+  // Build a compact raycast target list to avoid full recursive scene raycasts every tick.
+  const refreshRaycastTargets = useCallback(() => {
+    const targets: THREE.Object3D[] = []
+
+    scene.traverse((obj) => {
+      if (!obj.visible) return
+
+      if (
+        obj.userData?.isCassetteInstances ||
+        obj.userData?.isManager ||
+        obj.userData?.isServiceBell ||
+        obj.userData?.isTVScreen ||
+        (obj.userData?.filmId && obj.userData?.cassetteKey)
+      ) {
+        targets.push(obj)
+      }
+    })
+
+    raycastTargetsRef.current = targets
+  }, [scene])
+
+  useEffect(() => {
+    refreshRaycastTargets()
+    const interval = window.setInterval(refreshRaycastTargets, RAYCAST_TARGET_REFRESH_MS)
+    return () => window.clearInterval(interval)
+  }, [refreshRaycastTargets])
+
   // Main loop — movement + targeting
   useFrame((_, delta) => {
     frameCountRef.current++
 
     // Determine if controls are active
-    const isActive = isMobile ? true : !!controlsRef.current?.isLocked
+    const isActive = isMobile
+      ? true
+      : (benchmarkEnabled || URL_BENCHMARK_MODE || !!controlsRef.current?.isLocked)
 
     // === Mobile camera look ===
     if (isMobile && mobileInputRef) {
@@ -312,7 +348,10 @@ export function Controls({ onCassetteClick, isMobile, mobileInputRef }: Controls
     if (isActive && shouldRaycast) {
       raycasterRef.current.setFromCamera(SCREEN_CENTER, camera)
       raycasterRef.current.far = 6
-      const intersects = raycasterRef.current.intersectObjects(scene.children, true)
+      if (raycastTargetsRef.current.length === 0) {
+        refreshRaycastTargets()
+      }
+      const intersects = raycasterRef.current.intersectObjects(raycastTargetsRef.current, false)
 
       let foundFilmId: number | null = null
       let foundCassetteKey: string | null = null

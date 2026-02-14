@@ -29,9 +29,15 @@ interface InstanceHysteresisState {
 
 interface CassetteInstancesProps {
   instances: CassetteInstanceData[]
+  maxTextureArrayLayers?: number
 }
 
-export function CassetteInstances({ instances }: CassetteInstancesProps) {
+interface CassetteChunkProps {
+  instances: CassetteInstanceData[]
+  chunkIndex: number
+}
+
+function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
   const meshRef = useRef<THREE.InstancedMesh>(null!)
   const count = instances.length
   const gl = useThree(state => state.gl)
@@ -40,15 +46,13 @@ export function CassetteInstances({ instances }: CassetteInstancesProps) {
   const instancesRef = useRef(instances)
   instancesRef.current = instances
 
-  if (count === 0) return null
-
   // Create texture array, lookup tables, and GPU storage buffers
   const {
     texArray, instanceIdToKey, instanceIdToFilmId,
     hysteresisStates,
     targetHoverZBuffer, targetEmissiveBuffer,
     currentHoverZBuffer, currentEmissiveBuffer,
-    computeNode, lerpSpeedHover, lerpSpeedEmissive,
+    computeNode,
   } = useMemo(() => {
     const currentInstances = instancesRef.current
     const ta = new CassetteTextureArray(count)
@@ -102,21 +106,19 @@ export function CassetteInstances({ instances }: CassetteInstancesProps) {
       currentHoverZBuffer: curHoverZ,
       currentEmissiveBuffer: curEmissive,
       computeNode: cNode,
-      lerpSpeedHover: speedHover,
-      lerpSpeedEmissive: speedEmissive,
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [count])
 
-  // Per-instance attributes: layerIndex (for DataArrayTexture sampling)
-  const layerIndexAttr = useMemo(() => {
+  // Each chunk gets its own geometry copy to avoid layerIndex attribute collisions.
+  const geometry = useMemo(() => {
+    const chunkGeometry = SHARED_CASSETTE_GEOMETRY.clone()
     const layerData = new Float32Array(count)
     for (let i = 0; i < count; i++) {
       layerData[i] = i
     }
-    const liAttr = new THREE.InstancedBufferAttribute(layerData, 1)
-    SHARED_CASSETTE_GEOMETRY.setAttribute('layerIndex', liAttr)
-    return liAttr
+    const layerIndexAttr = new THREE.InstancedBufferAttribute(layerData, 1)
+    chunkGeometry.setAttribute('layerIndex', layerIndexAttr)
+    return chunkGeometry
   }, [count])
 
   // Create custom TSL material with DataArrayTexture + compute-driven animation
@@ -211,9 +213,10 @@ export function CassetteInstances({ instances }: CassetteInstancesProps) {
       cancelled = true
       texArray.dispose()
       material.dispose()
+      geometry.dispose()
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [texArray, material, count, instanceIdToKey, instanceIdToFilmId, layerIndexAttr, gl])
+  }, [texArray, material, geometry, count, instanceIdToKey, instanceIdToFilmId, gl])
 
   // Ref to store hoverOffsetZ per instance (avoids reading instancesRef in hot loop)
   const hoverOffsetsRef = useRef<Float32Array>(new Float32Array(0))
@@ -274,7 +277,7 @@ export function CassetteInstances({ instances }: CassetteInstancesProps) {
       }
 
       // Target emissive: rented=green, targeted=pink, else=black
-      let tR = 0, tG = 0, tB = 0
+      let tR = 0; let tG = 0; let tB = 0
       if (isRented) {
         tR = 0; tG = 0.3; tB = 0 // green * 0.3 intensity
       } else if (isTargeted) {
@@ -306,10 +309,45 @@ export function CassetteInstances({ instances }: CassetteInstancesProps) {
   return (
     <instancedMesh
       ref={meshRef}
-      args={[SHARED_CASSETTE_GEOMETRY, material, count]}
+      args={[geometry, material, count]}
       frustumCulled={false}
       castShadow={false}
       receiveShadow
+      userData={{ cassetteChunkIndex: chunkIndex }}
     />
+  )
+}
+
+export function CassetteInstances({ instances, maxTextureArrayLayers = 2048 }: CassetteInstancesProps) {
+  const safeLayerBudget = Math.max(1, Math.floor(maxTextureArrayLayers))
+
+  const chunks = useMemo(() => {
+    if (instances.length <= safeLayerBudget) return [instances]
+
+    const grouped: CassetteInstanceData[][] = []
+    for (let i = 0; i < instances.length; i += safeLayerBudget) {
+      grouped.push(instances.slice(i, i + safeLayerBudget))
+    }
+    return grouped
+  }, [instances, safeLayerBudget])
+
+  useEffect(() => {
+    if (chunks.length > 1) {
+      console.log(
+        `[CassetteInstances] Layer budget ${safeLayerBudget} -> ${chunks.length} chunks for ${instances.length} cassettes`
+      )
+    }
+  }, [chunks.length, safeLayerBudget, instances.length])
+
+  return (
+    <>
+      {chunks.map((chunk, index) => (
+        <CassetteInstancesChunk
+          key={`cassette-chunk-${index}-${chunk[0]?.cassetteKey ?? 'empty'}`}
+          instances={chunk}
+          chunkIndex={index}
+        />
+      ))}
+    </>
   )
 }
