@@ -1,51 +1,23 @@
 .overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.95);
-  display: flex;
-  justify-content: center;
-  align-items: flex-start;
-  padding-top: 5vh;
-  z-index: 200;
-  overflow-y: auto;
+  composes: overlayBase overlayTop from '../../styles/primitives/modalCrt.module.css';
 }
 
 .modal {
+  composes: panelBase panelScanlines from '../../styles/primitives/modalCrt.module.css';
   width: 700px;
   max-width: 95vw;
   max-height: 90vh;
-  background: #0a0a0a;
   border: 3px solid #ff2d95;
-  border-radius: 8px;
-  font-family: 'Courier New', monospace;
   color: #ff2d95;
-  overflow: hidden;
   display: flex;
   flex-direction: column;
   box-shadow: 0 0 40px rgba(255, 45, 149, 0.3);
 }
 
-.modal::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: repeating-linear-gradient(
-    0deg,
-    rgba(0, 0, 0, 0.15) 0px,
-    rgba(0, 0, 0, 0.15) 1px,
-    transparent 1px,
-    transparent 2px
-  );
-  pointer-events: none;
-  z-index: 10;
-}
-
 .header {
-  padding: 16px 20px;
+  composes: headerBase from '../../styles/primitives/modalCrt.module.css';
   border-bottom: 2px solid #ff2d95;
-  text-align: center;
   font-size: 1.1rem;
-  text-transform: uppercase;
   letter-spacing: 4px;
   text-shadow: 0 0 10px #ff2d95;
   background: rgba(255, 45, 149, 0.05);
@@ -240,22 +212,15 @@
 }
 
 .footer {
-  padding: 12px 20px;
+  composes: footerBase from '../../styles/primitives/modalCrt.module.css';
   border-top: 2px solid #ff2d95;
-  font-size: 0.8rem;
-  opacity: 0.6;
-  text-align: center;
   background: rgba(255, 45, 149, 0.03);
   flex-shrink: 0;
 }
 
 .cursor {
-  display: inline-block;
-  width: 10px;
-  height: 18px;
+  composes: cursorBlink from '../../styles/primitives/modalCrt.module.css';
   background: #ff2d95;
-  margin-left: 5px;
-  animation: blink 1s step-end infinite;
   vertical-align: middle;
 }
 

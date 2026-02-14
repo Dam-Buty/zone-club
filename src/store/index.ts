@@ -156,6 +156,11 @@ interface VideoClubState {
   // Onboarding
   hasSeenOnboarding: boolean;
   setHasSeenOnboarding: (seen: boolean) => void;
+
+  // Benchmark
+  benchmarkEnabled: boolean;
+  setBenchmarkEnabled: (enabled: boolean) => void;
+  toggleBenchmarkEnabled: () => void;
 }
 
 export const useStore = create<VideoClubState>()(
@@ -446,6 +451,11 @@ export const useStore = create<VideoClubState>()(
       // Onboarding
       hasSeenOnboarding: false,
       setHasSeenOnboarding: (seen) => set({ hasSeenOnboarding: seen }),
+
+      // Benchmark
+      benchmarkEnabled: false,
+      setBenchmarkEnabled: (enabled) => set({ benchmarkEnabled: enabled }),
+      toggleBenchmarkEnabled: () => set((state) => ({ benchmarkEnabled: !state.benchmarkEnabled })),
     }),
     {
       name: 'videoclub-storage',
@@ -454,6 +464,7 @@ export const useStore = create<VideoClubState>()(
         rentalHistory: state.rentalHistory,
         lastBonusDate: state.lastBonusDate,
         hasSeenOnboarding: state.hasSeenOnboarding,
+        benchmarkEnabled: state.benchmarkEnabled,
         // Ne pas persister authUser, les cookies de session gèrent ça
       }),
     }

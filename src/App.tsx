@@ -6,11 +6,12 @@ import { ManagerChat } from './components/manager/ManagerChat';
 import { VHSPlayer } from './components/player/VHSPlayer';
 import { preloadPosterImage } from './utils/CassetteTextureArray';
 import api from './api';
-import type { AisleType } from './types';
+import type { ApiFilm } from './api';
+import type { AisleType, Film } from './types';
 
 // Lazy-load WebGPU-dependent components so they don't crash browsers without support
-const ExteriorView = lazy(() => import('./components/exterior').then(m => ({ default: m.ExteriorView })));
-const InteriorScene = lazy(() => import('./components/interior').then(m => ({ default: m.InteriorScene })));
+const ExteriorView = lazy(() => import('./components/exterior/ExteriorView').then(m => ({ default: m.ExteriorView })));
+const InteriorScene = lazy(() => import('./components/interior/InteriorScene').then(m => ({ default: m.InteriorScene })));
 
 // ===== MODULE-LEVEL PREFETCH =====
 // Starts API fetches immediately when JS loads (before React mounts).
@@ -18,11 +19,35 @@ const InteriorScene = lazy(() => import('./components/interior').then(m => ({ de
 // By the time the user clicks "enter store", both data AND images are ready.
 const AISLES: AisleType[] = ['nouveautes', 'action', 'horreur', 'sf', 'comedie', 'classiques', 'bizarre'];
 
-const _prefetchPromise = Promise.all(
+function apiFilmToFilm(f: ApiFilm): Film {
+  const extractPath = (url: string | null) => {
+    if (!url) return null;
+    const m = url.match(/\/t\/p\/\w+(\/.+)$/);
+    return m ? m[1] : null;
+  };
+
+  return {
+    id: f.id,
+    tmdb_id: f.tmdb_id,
+    title: f.title,
+    overview: f.synopsis || '',
+    poster_path: extractPath(f.poster_url),
+    backdrop_path: extractPath(f.backdrop_url),
+    release_date: f.release_year ? `${f.release_year}-01-01` : '',
+    runtime: f.runtime,
+    vote_average: 0,
+    genres: f.genres,
+    is_available: f.is_available,
+  };
+}
+
+type PrefetchResult = { aisle: AisleType; films: Film[] } | null;
+
+const _prefetchPromise: Promise<PrefetchResult[]> = Promise.all(
   AISLES.map(async (aisle) => {
     try {
       const { films } = await api.films.getByAisle(aisle);
-      return { aisle, films };
+      return { aisle, films: films.map(apiFilmToFilm) };
     } catch {
       return null;
     }
@@ -36,10 +61,8 @@ _prefetchPromise.then((results) => {
   for (const result of results) {
     if (!result) continue;
     for (const film of result.films) {
-      if (film.poster_url) {
-        // Extract path and build w200 URL for cassette textures
-        const m = film.poster_url.match(/\/t\/p\/\w+(\/.+)$/);
-        if (m) preloadPosterImage(`https://image.tmdb.org/t/p/w200${m[1]}`);
+      if (film.poster_path) {
+        preloadPosterImage(`https://image.tmdb.org/t/p/w200${film.poster_path}`);
       }
     }
   }
@@ -57,7 +80,8 @@ function WebGPUNotSupported() {
       </h1>
       <p style={{ color: '#ccc', fontFamily: 'sans-serif', maxWidth: '500px', lineHeight: 1.6 }}>
         Ce vidéoclub utilise WebGPU pour le rendu 3D.
-        Utilisez Chrome, Edge ou un navigateur basé sur Chromium pour y accéder.
+        Utilisez une version récente de Chrome, Edge, Firefox ou Safari avec accélération matérielle activée.
+        Selon le système, WebGPU peut aussi nécessiter l’activation d’options expérimentales.
       </p>
     </div>
   );
@@ -103,29 +127,7 @@ function App() {
       // All resolved — set in one synchronous block (React 18 batches these)
       for (const result of results) {
         if (!result) continue;
-        // Convert ApiFilm to frontend Film format
-        const films = result.films.map(f => {
-          // Extract TMDB path from full URL (e.g. ".../w500/xxx.jpg" → "/xxx.jpg")
-          const extractPath = (url: string | null) => {
-            if (!url) return null;
-            const m = url.match(/\/t\/p\/\w+(\/.+)$/);
-            return m ? m[1] : null;
-          };
-          return {
-            id: f.id,
-            tmdb_id: f.tmdb_id,
-            title: f.title,
-            overview: f.synopsis || '',
-            poster_path: extractPath(f.poster_url),
-            backdrop_path: extractPath(f.backdrop_url),
-            release_date: f.release_year ? `${f.release_year}-01-01` : '',
-            runtime: f.runtime,
-            vote_average: 0,
-            genres: f.genres,
-            is_available: f.is_available,
-          };
-        });
-        setFilmsForAisle(result.aisle as AisleType, films);
+        setFilmsForAisle(result.aisle, result.films);
       }
     });
   }, [setFilmsForAisle]);
