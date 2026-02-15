@@ -6,9 +6,11 @@ import { preloadPosterImage } from './CassetteTextureArray'
 // ---- Canvas & UV Layout Constants ----
 const TEX_SIZE = 1024
 
-// ---- Reusable temp canvas for blitFlipped (avoids GC pressure from per-call allocations) ----
-const _tempCanvas = document.createElement('canvas')
-const _tempCtx = _tempCanvas.getContext('2d')!
+// ---- Reusable canvases (separate responsibilities to avoid draw-state corruption) ----
+const _blitCanvas = document.createElement('canvas')
+const _blitCtx = _blitCanvas.getContext('2d')!
+const _logoSampleCanvas = document.createElement('canvas')
+const _logoSampleCtx = _logoSampleCanvas.getContext('2d', { willReadFrequently: true })!
 
 // ---- Cache for isLogoBright results (avoids repeated GPU→CPU readbacks) ----
 const _logoBrightnessCache = new Map<string, boolean>()
@@ -337,32 +339,6 @@ function fillGradient(ctx: CanvasRenderingContext2D, w: number, h: number, stops
   ctx.fillRect(0, 0, w, h)
 }
 
-function _drawBorder(ctx: CanvasRenderingContext2D, w: number, h: number, template: VHSTemplate) {
-  switch (template.borderStyle) {
-    case 'neon-lines':
-      ctx.fillStyle = template.accentColor
-      ctx.fillRect(0, 0, 2, h); ctx.fillRect(w - 2, 0, 2, h)
-      ctx.globalAlpha = 0.4
-      ctx.fillRect(0, 0, w, 2); ctx.fillRect(0, h - 2, w, 2)
-      ctx.globalAlpha = 1.0
-      break
-    case 'thick-band':
-      ctx.fillStyle = template.accentColor
-      ctx.fillRect(0, 0, w, 6); ctx.fillRect(0, h - 6, w, 6)
-      ctx.fillRect(0, 0, 4, h); ctx.fillRect(w - 4, 0, 4, h)
-      break
-    case 'double-stripe':
-      ctx.fillStyle = template.accentColor
-      ctx.fillRect(0, 0, 2, h); ctx.fillRect(4, 0, 1, h)
-      ctx.fillRect(w - 2, 0, 2, h); ctx.fillRect(w - 5, 0, 1, h)
-      ctx.fillRect(0, 0, w, 2); ctx.fillRect(0, 4, w, 1)
-      ctx.fillRect(0, h - 2, w, 2); ctx.fillRect(0, h - 5, w, 1)
-      break
-    case 'none':
-      break
-  }
-}
-
 /** Draw MPAA/FR certification badge (rounded rect with text) */
 function drawCertificationBadge(
   ctx: CanvasRenderingContext2D, cert: string,
@@ -517,12 +493,12 @@ function isLogoBright(img: HTMLImageElement): boolean {
   if (cached !== undefined) return cached
 
   const size = 32
-  // Reuse the module-level temp canvas
-  _tempCanvas.width = size
-  _tempCanvas.height = size
-  _tempCtx.clearRect(0, 0, size, size)
-  _tempCtx.drawImage(img, 0, 0, size, size)
-  const pixels = _tempCtx.getImageData(0, 0, size, size).data
+  // Dedicated sampling canvas (must not be shared with cover blit rendering)
+  _logoSampleCanvas.width = size
+  _logoSampleCanvas.height = size
+  _logoSampleCtx.clearRect(0, 0, size, size)
+  _logoSampleCtx.drawImage(img, 0, 0, size, size)
+  const pixels = _logoSampleCtx.getImageData(0, 0, size, size).data
   let brightCount = 0
   let opaqueCount = 0
   for (let i = 0; i < pixels.length; i += 4) {
@@ -568,6 +544,7 @@ export interface VHSCoverData {
 }
 
 export async function fetchVHSCoverData(film: Film): Promise<VHSCoverData> {
+  const tmdbFilmId = film.tmdb_id ?? null
   const data: VHSCoverData = {
     film,
     posterImg: null,
@@ -598,134 +575,136 @@ export async function fetchVHSCoverData(film: Film): Promise<VHSCoverData> {
     )
   }
 
-  // Expanded credits
-  if (!film.directors?.length || !film.actors?.length) {
+  if (tmdbFilmId !== null) {
+    // Expanded credits
+    if (!film.directors?.length || !film.actors?.length) {
+      promises.push(
+        tmdb.getCredits(tmdbFilmId)
+          .then(credits => {
+            data.directors = credits.directors
+            data.actors = credits.actors
+            data.secondaryActors = credits.secondaryActors
+            data.producers = credits.producers
+            data.writers = credits.writers
+            data.composer = credits.composer
+          })
+          .catch(() => {})
+      )
+    }
+
+    // Reviews
     promises.push(
-      tmdb.getCredits(film.id)
-        .then(credits => {
-          data.directors = credits.directors
-          data.actors = credits.actors
-          data.secondaryActors = credits.secondaryActors
-          data.producers = credits.producers
-          data.writers = credits.writers
-          data.composer = credits.composer
+      tmdb.getReviews(tmdbFilmId)
+        .then(reviews => { data.reviews = reviews })
+        .catch(() => {})
+    )
+
+    // Certification (MPAA / FR rating)
+    promises.push(
+      tmdb.getCertification(tmdbFilmId)
+        .then(cert => { data.certification = cert })
+        .catch(() => {})
+    )
+
+    // Movie logo (official title treatment from TMDB)
+    promises.push(
+      tmdb.getMovieLogo(tmdbFilmId)
+        .then(async (logoUrl) => {
+          if (logoUrl) {
+            data.logoImg = await loadImage(logoUrl).catch(() => null)
+          }
+        })
+        .catch(() => {})
+    )
+
+    // Fetch full film details (for production_companies, tagline) then load studio logos
+    promises.push(
+      tmdb.getFilm(tmdbFilmId)
+        .then(async (fullFilm) => {
+          if (!data.tagline && fullFilm.tagline) data.tagline = fullFilm.tagline
+          // Sort companies: known majors first (those in LOCAL_STUDIO_LOGOS)
+          const allCompanies = (fullFilm.production_companies || [])
+          allCompanies.sort((a, b) => {
+            const aId = STUDIO_ALIASES[a.name.toLowerCase()] || a.id
+            const bId = STUDIO_ALIASES[b.name.toLowerCase()] || b.id
+            const aMajor = LOCAL_STUDIO_LOGOS.has(aId) ? 0 : 1
+            const bMajor = LOCAL_STUDIO_LOGOS.has(bId) ? 0 : 1
+            return aMajor - bMajor
+          })
+          // First major = distributor, first non-major = production studio
+          if (allCompanies.length) {
+            const firstMajor = allCompanies.find(c => {
+              const cid = STUDIO_ALIASES[c.name.toLowerCase()] || c.id
+              return LOCAL_STUDIO_LOGOS.has(cid)
+            })
+            const firstNonMajor = allCompanies.find(c => {
+              const cid = STUDIO_ALIASES[c.name.toLowerCase()] || c.id
+              return !LOCAL_STUDIO_LOGOS.has(cid)
+            })
+            if (firstMajor) {
+              data.studioName = firstMajor.name
+              if (firstNonMajor) data.productionStudioName = firstNonMajor.name
+            } else {
+              data.studioName = allCompanies[0].name
+            }
+          }
+          const companies = allCompanies.slice(0, 3)
+          if (companies.length > 0) {
+            const logoUrls = await Promise.all(
+              companies.map(c => resolveStudioLogoUrl(c))
+            )
+            const imgs = await Promise.all(
+              logoUrls.map(url =>
+                url ? loadImage(url).catch(() => null) : Promise.resolve(null)
+              )
+            )
+            data.studioLogos = imgs
+              .map((img, idx) => img ? {
+                img,
+                companyId: STUDIO_ALIASES[companies[idx].name.toLowerCase()] || companies[idx].id,
+              } : null)
+              .filter((e): e is { img: HTMLImageElement; companyId: number } => e !== null)
+          }
+        })
+        .catch(() => {})
+    )
+
+    // Backdrop images (deduplicated — avoid visually similar shots)
+    promises.push(
+      tmdb.getImages(tmdbFilmId)
+        .then(async (images: TMDBImage[]) => {
+          const candidates = images
+            .filter(img => img.aspect_ratio > 1.3)
+            .sort((a, b) => b.width - a.width)
+
+          // Deduplicate: skip images whose file_path base name is too similar
+          // and spread picks across different aspect ratios to get varied shots
+          const seen = new Set<string>()
+          const picked: TMDBImage[] = []
+          for (const img of candidates) {
+            if (picked.length >= 3) break
+            // Skip exact duplicate paths
+            if (seen.has(img.file_path)) continue
+            seen.add(img.file_path)
+            // Skip images with nearly identical dimensions (same shot, different quality)
+            const isDupe = picked.some(p =>
+              Math.abs(p.aspect_ratio - img.aspect_ratio) < 0.05 &&
+              Math.abs(p.width - img.width) < 200
+            )
+            if (isDupe) continue
+            picked.push(img)
+          }
+
+          const results = await Promise.all(
+            picked.map(img =>
+              loadImage(tmdb.backdropUrl(img.file_path, 'w780') || '').catch(() => null)
+            )
+          )
+          data.backdropImgs = results.filter((img): img is HTMLImageElement => img !== null)
         })
         .catch(() => {})
     )
   }
-
-  // Reviews
-  promises.push(
-    tmdb.getReviews(film.id)
-      .then(reviews => { data.reviews = reviews })
-      .catch(() => {})
-  )
-
-  // Certification (MPAA / FR rating)
-  promises.push(
-    tmdb.getCertification(film.id)
-      .then(cert => { data.certification = cert })
-      .catch(() => {})
-  )
-
-  // Movie logo (official title treatment from TMDB)
-  promises.push(
-    tmdb.getMovieLogo(film.id)
-      .then(async (logoUrl) => {
-        if (logoUrl) {
-          data.logoImg = await loadImage(logoUrl).catch(() => null)
-        }
-      })
-      .catch(() => {})
-  )
-
-  // Fetch full film details (for production_companies, tagline) then load studio logos
-  promises.push(
-    tmdb.getFilm(film.id)
-      .then(async (fullFilm) => {
-        if (!data.tagline && fullFilm.tagline) data.tagline = fullFilm.tagline
-        // Sort companies: known majors first (those in LOCAL_STUDIO_LOGOS)
-        const allCompanies = (fullFilm.production_companies || [])
-        allCompanies.sort((a, b) => {
-          const aId = STUDIO_ALIASES[a.name.toLowerCase()] || a.id
-          const bId = STUDIO_ALIASES[b.name.toLowerCase()] || b.id
-          const aMajor = LOCAL_STUDIO_LOGOS.has(aId) ? 0 : 1
-          const bMajor = LOCAL_STUDIO_LOGOS.has(bId) ? 0 : 1
-          return aMajor - bMajor
-        })
-        // First major = distributor, first non-major = production studio
-        if (allCompanies.length) {
-          const firstMajor = allCompanies.find(c => {
-            const cid = STUDIO_ALIASES[c.name.toLowerCase()] || c.id
-            return LOCAL_STUDIO_LOGOS.has(cid)
-          })
-          const firstNonMajor = allCompanies.find(c => {
-            const cid = STUDIO_ALIASES[c.name.toLowerCase()] || c.id
-            return !LOCAL_STUDIO_LOGOS.has(cid)
-          })
-          if (firstMajor) {
-            data.studioName = firstMajor.name
-            if (firstNonMajor) data.productionStudioName = firstNonMajor.name
-          } else {
-            data.studioName = allCompanies[0].name
-          }
-        }
-        const companies = allCompanies.slice(0, 3)
-        if (companies.length > 0) {
-          const logoUrls = await Promise.all(
-            companies.map(c => resolveStudioLogoUrl(c))
-          )
-          const imgs = await Promise.all(
-            logoUrls.map(url =>
-              url ? loadImage(url).catch(() => null) : Promise.resolve(null)
-            )
-          )
-          data.studioLogos = imgs
-            .map((img, idx) => img ? {
-              img,
-              companyId: STUDIO_ALIASES[companies[idx].name.toLowerCase()] || companies[idx].id,
-            } : null)
-            .filter((e): e is { img: HTMLImageElement; companyId: number } => e !== null)
-        }
-      })
-      .catch(() => {})
-  )
-
-  // Backdrop images (deduplicated — avoid visually similar shots)
-  promises.push(
-    tmdb.getImages(film.id)
-      .then(async (images: TMDBImage[]) => {
-        const candidates = images
-          .filter(img => img.aspect_ratio > 1.3)
-          .sort((a, b) => b.width - a.width)
-
-        // Deduplicate: skip images whose file_path base name is too similar
-        // and spread picks across different aspect ratios to get varied shots
-        const seen = new Set<string>()
-        const picked: TMDBImage[] = []
-        for (const img of candidates) {
-          if (picked.length >= 3) break
-          // Skip exact duplicate paths
-          if (seen.has(img.file_path)) continue
-          seen.add(img.file_path)
-          // Skip images with nearly identical dimensions (same shot, different quality)
-          const isDupe = picked.some(p =>
-            Math.abs(p.aspect_ratio - img.aspect_ratio) < 0.05 &&
-            Math.abs(p.width - img.width) < 200
-          )
-          if (isDupe) continue
-          picked.push(img)
-        }
-
-        const results = await Promise.all(
-          picked.map(img =>
-            loadImage(tmdb.backdropUrl(img.file_path, 'w780') || '').catch(() => null)
-          )
-        )
-        data.backdropImgs = results.filter((img): img is HTMLImageElement => img !== null)
-      })
-      .catch(() => {})
-  )
 
   await Promise.all(promises)
   return data
@@ -770,15 +749,15 @@ function blitFlipped(
   region: { x: number; y: number; w: number; h: number },
   drawFn: (tc: CanvasRenderingContext2D, w: number, h: number) => void
 ) {
-  // Reuse module-level temp canvas (avoids allocation + GC per call)
-  _tempCanvas.width = region.w
-  _tempCanvas.height = region.h
-  _tempCtx.clearRect(0, 0, region.w, region.h)
-  drawFn(_tempCtx, region.w, region.h)
+  // Reuse blit canvas only for region rendering
+  _blitCanvas.width = region.w
+  _blitCanvas.height = region.h
+  _blitCtx.clearRect(0, 0, region.w, region.h)
+  drawFn(_blitCtx, region.w, region.h)
   ctx.save()
   ctx.translate(region.x + region.w, region.y)
   ctx.scale(-1, 1)
-  ctx.drawImage(_tempCanvas, 0, 0)
+  ctx.drawImage(_blitCanvas, 0, 0)
   ctx.restore()
 }
 

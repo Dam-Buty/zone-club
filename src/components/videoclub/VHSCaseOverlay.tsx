@@ -134,9 +134,11 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
 
   const handleWatchTrailer = useCallback(async () => {
     if (!film || loadingTrailer) return
+    const tmdbFilmId = film.tmdb_id
+    if (!tmdbFilmId) return
     setLoadingTrailer(true)
     try {
-      const videos = await tmdb.getVideos(film.id)
+      const videos = await tmdb.getVideos(tmdbFilmId)
       const trailer = videos.find(
         (v: TMDBVideo) => v.site === 'YouTube' && v.type === 'Trailer' && v.official
       ) || videos.find(
