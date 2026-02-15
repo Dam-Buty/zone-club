@@ -43,6 +43,11 @@ description: "Expert skill for Three.js WebGPU architecture, React Three Fiber p
 - **InstancedMesh + DataArrayTexture** for 500+ unique-texture objects (1 draw call)
 - **GTAO half-res** (resolutionScale=0.5) for SSAO at 75% less cost
 - **Pipeline order**: Scene MRT -> GTAO(0.5x) -> Bloom -> Vignette -> FXAA
+- **GLB clone: always clone materials** -- `glbScene.clone(true)` shares materials by reference
+- **RectAreaLight for neon signs** -- real PBR wall illumination, luminance-compensated intensity
+- **TSL colorNode for lighting correction** -- per-fragment Y-gradient on held objects
+- **TSL bumpMap for normalNode** -- classic `material.bumpMap` is ignored in WebGPU
+- **LRU cache for generated textures** -- avoid re-rendering Canvas2D textures
 
 ---
 
