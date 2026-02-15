@@ -16,7 +16,7 @@ export async function GET() {
     const rentalHistory = getUserRentalHistory(user.id);
     const reviews = getUserReviews(user.id);
 
-    return NextResponse.json({
+    const response = NextResponse.json({
         user: {
             id: user.id,
             username: user.username,
@@ -28,4 +28,6 @@ export async function GET() {
         rentalHistory,
         reviews
     });
+    response.headers.set('Cache-Control', 'private, max-age=60');
+    return response;
 }

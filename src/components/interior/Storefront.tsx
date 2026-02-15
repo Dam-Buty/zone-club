@@ -237,7 +237,7 @@ export function Storefront({ position, roomWidth, roomHeight, posterPaths }: Sto
   }), [wallTextures])
 
   // Exterior backdrop (exterior.jpeg — placed at real 3D depth behind wall for geometric parallax)
-  const exteriorTex = useTexture('/exterior.jpeg')
+  const exteriorTex = useTexture('/exterior.webp')
 
   const backdropMat = useMemo(() => {
     exteriorTex.colorSpace = THREE.SRGBColorSpace

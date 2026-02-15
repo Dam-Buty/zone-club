@@ -12,5 +12,12 @@ export async function GET(request: NextRequest) {
     const availableOnly = includeAll && user?.is_admin ? false : true;
 
     const films = getAllFilms(availableOnly);
-    return NextResponse.json(films);
+    const response = NextResponse.json(films);
+    // Public cache only for non-admin filtered list; admin sees all → no cache
+    if (availableOnly) {
+        response.headers.set('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=3600');
+    } else {
+        response.headers.set('Cache-Control', 'private, no-cache');
+    }
+    return response;
 }

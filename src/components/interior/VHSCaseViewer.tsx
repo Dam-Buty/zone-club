@@ -2,6 +2,7 @@ import { useRef, useEffect, useMemo } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import { useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
+import { bumpMap, texture, positionLocal, mix, float, clamp as tslClamp } from 'three/tsl'
 import { useStore } from '../../store'
 import { fetchVHSCoverData, generateVHSCoverTexture } from '../../utils/VHSCoverGenerator'
 import type { Film } from '../../types'
@@ -28,10 +29,14 @@ const PORTRAIT_QUAT = new THREE.Quaternion().setFromAxisAngle(
   new THREE.Vector3(0, 0, 1), Math.PI / 2
 )
 
+// Albedo dampening — base attenuation for scene lighting (ceiling RectAreaLight 10×8, 1.2)
+// Per-fragment Y-gradient correction is applied via TSL colorNode (see texture apply useEffect)
+const ALBEDO_COLOR = new THREE.Color(0.50, 0.50, 0.50)
+
 // Animation constants
 const DISTANCE_FROM_CAMERA = 0.45 // meters in front of camera
 const CASE_SCALE = 0.255          // model is ~2m tall → ~51cm
-const TILT_ANGLE = (15 * Math.PI) / 180 // 15° backward tilt (mostly facing viewer)
+const TILT_ANGLE = (3 * Math.PI) / 180 // 3° backward tilt — reduced from 10° to minimize ceiling light on top
 const MANUAL_ROTATE_SPEED = 2.5   // rad/s
 const ENTRY_DURATION = 0.3        // seconds
 const FLIP_DURATION = 0.4         // seconds for 180° flip animation
@@ -41,7 +46,7 @@ interface VHSCaseViewerProps {
 }
 
 export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
-  const { camera } = useThree()
+  const { camera, scene } = useThree()
   const groupRef = useRef<THREE.Group>(null)
   const coverTextureRef = useRef<THREE.CanvasTexture | null>(null)
   const textureReadyRef = useRef(false)
@@ -62,6 +67,8 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
   const { scene: glbScene } = useGLTF('/models/vhs_cassette_tape.glb', true)
 
   // Clone model and collect meshes that have a baseColor map (cover surfaces only)
+  // CRITICAL: clone materials explicitly — glbScene.clone(true) shares materials by reference.
+  // Without this, setting mat.map=null or colorNode on a shared material corrupts future instances.
   const { clonedScene, meshesWithMap } = useMemo(() => {
     const cloned = glbScene.clone(true)
     const meshes: THREE.Mesh[] = []
@@ -70,11 +77,15 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
       if (child instanceof THREE.Mesh) {
         child.castShadow = false
         child.receiveShadow = false
-        const mat = child.material as THREE.MeshStandardMaterial
-        if (mat) {
-          // Reduce specular reflections — matte VHS plastic look
-          mat.roughness = Math.max(mat.roughness, 0.92)
-          mat.metalness = Math.min(mat.metalness, 0.02)
+        const origMat = child.material as THREE.MeshStandardMaterial
+        if (origMat) {
+          // Deep-clone material so original GLB materials stay pristine
+          const mat = origMat.clone()
+          child.material = mat
+          // Fully matte VHS cardboard — roughness 1.0 eliminates all specular reflections
+          mat.roughness = 1.0
+          mat.metalness = 0
+          mat.color.copy(ALBEDO_COLOR) // darken albedo to counter scene overhead lights
           if (mat.map) {
             // Only include cover surfaces (1024×1024 atlas), not tape/reel meshes
             const mapImg = mat.map.image as { width?: number; height?: number } | null
@@ -89,7 +100,7 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
     return { clonedScene: cloned, meshesWithMap: meshes }
   }, [glbScene])
 
-  // Signal VHS case is open + save camera pitch
+  // Signal VHS case is open + save camera pitch + dim scene overhead lights
   useEffect(() => {
     setVHSCaseOpen(true)
     // Save current camera pitch to restore on close
@@ -97,6 +108,23 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
     euler.setFromQuaternion(camera.quaternion, 'YXZ')
     savedPitchRef.current = euler.x
     pitchCorrectedRef.current = false
+
+    // Dim overhead lights to reduce top glare on VHS case
+    // Save original intensities to restore on close
+    const savedLights: { light: THREE.Light; intensity: number }[] = []
+    scene.traverse((child) => {
+      if (child instanceof THREE.RectAreaLight) {
+        savedLights.push({ light: child, intensity: child.intensity })
+        child.intensity *= 0.35 // reduce ceiling panel to ~35% while viewing case
+      } else if (child instanceof THREE.DirectionalLight) {
+        savedLights.push({ light: child, intensity: child.intensity })
+        child.intensity *= 0.4
+      } else if (child instanceof THREE.HemisphereLight) {
+        savedLights.push({ light: child, intensity: child.intensity })
+        child.intensity *= 0.5
+      }
+    })
+
     return () => {
       setVHSCaseOpen(false)
       // Restore original camera pitch
@@ -104,8 +132,12 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
       e.setFromQuaternion(camera.quaternion, 'YXZ')
       e.x = savedPitchRef.current
       camera.quaternion.setFromEuler(e)
+      // Restore original light intensities
+      for (const { light, intensity } of savedLights) {
+        light.intensity = intensity
+      }
     }
-  }, [setVHSCaseOpen, camera])
+  }, [setVHSCaseOpen, camera, scene])
 
   // Fetch cover data and generate texture
   useEffect(() => {
@@ -125,20 +157,33 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
       if (cancelled) return
       const tex = generateVHSCoverTexture(data)
 
-      // Dispose previous cover texture
-      if (coverTextureRef.current) {
-        coverTextureRef.current.dispose()
-      }
+      // Don't dispose — LRU cache in VHSCoverGenerator manages texture lifecycle
       coverTextureRef.current = tex
 
-      // Apply new texture to cover surfaces
+      // Apply texture via TSL colorNode with Y-based lighting correction.
+      // The ceiling RectAreaLight (10×8, 1.2) overexposes the top of the case.
+      // Instead of uniform ALBEDO_COLOR (darkens everything equally), we use a
+      // per-fragment gradient: darken albedo at top, brighten at bottom.
+      // positionLocal.x = model height axis (maps to visual vertical after portrait rotation)
+      const bumpTex = tex.userData.bumpMap as THREE.CanvasTexture | undefined
+      const texNode = texture(tex)
+      const albedoBase = float(0.5)  // matches ALBEDO_COLOR
+      // Normalize model height to 0(bottom)–1(top). Model is ~2m centered at origin.
+      const normalizedHeight = tslClamp(positionLocal.x.add(1.0).div(2.0), 0.0, 1.0)
+      // Top (1): darken 36% to compensate ceiling overexposure
+      // Bottom (0): brighten 32% to compensate underexposure
+      const correction = mix(float(1.67), float(0.64), normalizedHeight)
+      const correctedColor = texNode.mul(albedoBase).mul(correction)
+
       for (const mesh of meshesWithMap) {
         const mat = mesh.material as THREE.MeshStandardMaterial
-        if (mat.map) {
-          mat.map.dispose()
-          mat.map = tex
-          mat.needsUpdate = true
+        mat.map = null  // disable built-in map — colorNode handles sampling
+        ;(mat as any).colorNode = correctedColor
+        if (bumpTex) {
+          // WebGPU renderer requires TSL normalNode (classic bumpMap property is ignored)
+          ;(mat as any).normalNode = bumpMap(texture(bumpTex), 1.5)
         }
+        mat.needsUpdate = true
       }
 
       textureReadyRef.current = true
@@ -147,13 +192,10 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
     return () => { cancelled = true }
   }, [film, meshesWithMap])
 
-  // Cleanup cloned scene + textures on unmount
+  // Cleanup cloned scene on unmount (textures managed by LRU cache)
   useEffect(() => {
     return () => {
-      if (coverTextureRef.current) {
-        coverTextureRef.current.dispose()
-        coverTextureRef.current = null
-      }
+      coverTextureRef.current = null
       clonedScene.traverse((child) => {
         if (child instanceof THREE.Mesh) {
           child.geometry?.dispose()
@@ -407,18 +449,24 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
   return (
     <group ref={groupRef}>
       <primitive object={clonedScene} />
-      {/* Soft neon-tinted lighting matching video club ambiance */}
+      {/* Fill lights — gentle ambient fill, Y-gradient in colorNode handles balance */}
       <pointLight
-        intensity={0.12}
+        intensity={0.10}
         distance={1.5}
         color="#ff88c0"
-        position={[0.3, 0.2, 0.4]}
+        position={[0.15, 0, 0.4]}
       />
       <pointLight
         intensity={0.08}
         distance={1.5}
         color="#80ffee"
-        position={[-0.3, 0.1, 0.3]}
+        position={[-0.15, 0, 0.4]}
+      />
+      <pointLight
+        intensity={0.15}
+        distance={2.0}
+        color="#fff0e0"
+        position={[0, -0.25, 0.45]}
       />
     </group>
   )

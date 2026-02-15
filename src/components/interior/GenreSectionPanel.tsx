@@ -15,10 +15,11 @@ interface GenreSectionPanelProps {
 }
 
 // Texture de halo diffus (glow derrière le panneau)
+// Large canvas with very gradual falloff to avoid hard rectangular edges
 function createGlowTexture(
   color: string,
-  width: number = 256,
-  height: number = 64
+  width: number = 512,
+  height: number = 256
 ): THREE.CanvasTexture {
   const canvas = document.createElement('canvas')
   canvas.width = width
@@ -29,9 +30,12 @@ function createGlowTexture(
     width / 2, height / 2, 0,
     width / 2, height / 2, Math.max(width, height) / 2
   )
-  gradient.addColorStop(0, color + '88')
-  gradient.addColorStop(0.3, color + '44')
-  gradient.addColorStop(0.7, color + '10')
+  // Very soft falloff — bright core quickly fades to near-zero
+  gradient.addColorStop(0, color + '66')
+  gradient.addColorStop(0.15, color + '33')
+  gradient.addColorStop(0.35, color + '18')
+  gradient.addColorStop(0.6, color + '08')
+  gradient.addColorStop(0.85, color + '02')
   gradient.addColorStop(1, '#00000000')
 
   ctx.fillStyle = gradient
@@ -121,6 +125,14 @@ export function GenreSectionPanel({
     return THREE.MathUtils.clamp(1.3 / luminance, 1.3, 4.5)
   }, [color])
 
+  // RectAreaLight intensity — compensate for perceptual luminance like emissive
+  // Brighter colors (yellow) need less light intensity, darker ones (purple) need more
+  const rectLightIntensity = useMemo(() => {
+    const c = new THREE.Color(color)
+    const luminance = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b
+    return THREE.MathUtils.clamp(0.6 / luminance, 0.4, 1.5)
+  }, [color])
+
   // Matériau partagé pour les tubes du cadre
   const borderMaterial = useMemo(() => {
     return new THREE.MeshStandardMaterial({
@@ -183,18 +195,29 @@ export function GenreSectionPanel({
           </>
         )}
 
-        {/* Halo diffus derrière le panneau */}
+        {/* Halo diffus derrière le panneau — oversized so the soft gradient fades fully before mesh edge */}
         <mesh position={[0, 0, -0.03]}>
-          <planeGeometry args={[width * 1.3, height * 1.8]} />
+          <planeGeometry args={[width * 3, height * 4]} />
           <meshBasicMaterial
             map={glowTexture}
             transparent
-            opacity={0.4}
+            opacity={0.15}
             toneMapped={false}
             depthWrite={false}
             blending={THREE.AdditiveBlending}
           />
         </mesh>
+
+        {/* RectAreaLight — real PBR illumination on the wall behind the sign */}
+        {/* Faces backward (-z in local space) toward the wall, sized to match the panel */}
+        <rectAreaLight
+          width={width * 0.9}
+          height={height * 0.7}
+          intensity={rectLightIntensity}
+          color={color}
+          position={[0, 0, -0.04]}
+          rotation={[0, Math.PI, 0]}
+        />
 
         {/* Cadre du panneau - plastique noir mat (matériau partagé) */}
         <mesh position={[0, 0, -depth / 2]} material={SHARED_FRAME_MAT}>
