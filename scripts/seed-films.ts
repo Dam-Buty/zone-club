@@ -1,17 +1,35 @@
 /**
- * Seed the database with all films from src/data/mock/films.json
+ * Seed the database with mock films from src/data/mock/films.json
  *
- * Usage: npm run seed
+ * ⚠️  DEVELOPMENT/TEST ONLY — requires SEED_MOCK=1 environment variable.
  *
- * For each TMDB ID in the JSON, fetches metadata from TMDB and inserts into DB.
- * Assigns aisle and is_nouveaute based on the JSON structure.
- * Skips films that already exist. Does NOT trigger Radarr downloads.
+ * Usage:
+ *   SEED_MOCK=1 npm run seed          # Populate DB with mock film catalog
+ *
+ * What it does:
+ *   - Reads TMDB IDs from src/data/mock/films.json (grouped by aisle)
+ *   - Fetches full metadata from TMDB API for each film
+ *   - Inserts into SQLite DB with aisle + is_nouveaute assignments
+ *   - Skips films that already exist (only updates aisle/nouveaute)
+ *   - Does NOT trigger Radarr downloads
+ *
+ * In production, films should be added exclusively via the admin panel:
+ *   POST /api/admin/films { tmdb_id }
+ *   PATCH /api/admin/films/{id}/aisle { aisle, is_nouveaute }
  */
 
 import Database from 'better-sqlite3';
 import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+
+// Guard: only run with explicit SEED_MOCK=1
+if (process.env.SEED_MOCK !== '1') {
+    console.error('⚠️  Ce script peuple la DB avec les films mock (src/data/mock/films.json).');
+    console.error('   Pour l\'exécuter, utilisez : SEED_MOCK=1 npm run seed');
+    console.error('   En production, ajoutez les films via le panel admin.');
+    process.exit(1);
+}
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');

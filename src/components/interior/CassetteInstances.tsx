@@ -168,9 +168,12 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
     mesh.computeBoundingSphere()
 
     // Store lookup data in userData for raycasting
+    // NOTE: ALL userData must be set here (not via JSX prop) because R3F reconciler
+    // re-applies JSX userData on every re-render, wiping imperative additions.
     mesh.userData.isCassetteInstances = true
     mesh.userData.instanceIdToKey = instanceIdToKey
     mesh.userData.instanceIdToFilmId = instanceIdToFilmId
+    mesh.userData.cassetteChunkIndex = chunkIndex
 
     // Initialize target hover Z values from instance data
     const tarHoverArr = targetHoverZBuffer.value.array as Float32Array
@@ -313,7 +316,6 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
       frustumCulled={false}
       castShadow={false}
       receiveShadow
-      userData={{ cassetteChunkIndex: chunkIndex }}
     />
   )
 }
