@@ -316,6 +316,7 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
       frustumCulled={false}
       castShadow={false}
       receiveShadow
+      userData={{ cassetteChunkIndex: chunkIndex }}
     />
   )
 }
