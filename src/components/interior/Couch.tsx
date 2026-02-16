@@ -68,16 +68,6 @@ export function Couch({ position, rotation = [0, 0, 0], onSit }: CouchProps) {
     normalScale: new THREE.Vector2(0.7, 0.7),
   }), [woodTextures])
 
-  const cushionMaterial = useMemo(() => new THREE.MeshStandardMaterial({
-    map: fabricTextures.map as THREE.Texture,
-    normalMap: fabricTextures.normalMap as THREE.Texture,
-    color: '#ff6b9d',
-    roughness: 1.0,
-    metalness: 0.0,
-    normalScale: new THREE.Vector2(3.0, 3.0),
-    envMapIntensity: 0,
-  }), [fabricTextures])
-
   const footMaterial = useMemo(() => new THREE.MeshStandardMaterial({
     map: woodTextures.map as THREE.Texture,
     normalMap: woodTextures.normalMap as THREE.Texture,
@@ -90,10 +80,9 @@ export function Couch({ position, rotation = [0, 0, 0], onSit }: CouchProps) {
     return () => {
       fabricMaterial.dispose()
       woodMaterial.dispose()
-      cushionMaterial.dispose()
       footMaterial.dispose()
     }
-  }, [fabricMaterial, woodMaterial, cushionMaterial, footMaterial])
+  }, [fabricMaterial, woodMaterial, footMaterial])
 
   return (
     <group ref={groupRef} position={position} rotation={rotation}>
@@ -166,16 +155,6 @@ export function Couch({ position, rotation = [0, 0, 0], onSit }: CouchProps) {
           <cylinderGeometry args={[0.03, 0.024, 0.144, 6]} />
         </mesh>
       ))}
-
-      {/* Coussin décoratif - tissu rose arrondi (matériau partagé) */}
-      <RoundedBox
-        args={[0.192, 0.168, 0.084]}
-        radius={0.03}
-        smoothness={2}
-        position={[-0.3, 0.48, 0.06]}
-        rotation={[0.2, 0.3, 0.1]}
-        material={cushionMaterial}
-      />
 
       {/* Zone de clic invisible (+20%) */}
       <mesh position={[0, 0.42, 0]} onClick={handleClick} visible={false}>

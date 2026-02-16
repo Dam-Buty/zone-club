@@ -111,35 +111,28 @@ function OptimizedLighting({ isMobile = false }: { isMobile?: boolean }) {
         decay={2}
       />
 
-      {/* 6. PointLight vitrine - lumière urbaine nocturne (remplace RectAreaLight) */}
+      {/* 6. PointLight vitrine - lumière urbaine nocturne */}
+      {/* distance>0 + decay=2 : atténuation smooth jusqu'à zéro (pas de cutoff dur) + GPU culling */}
       <pointLight
         position={[1.0, 0.8, 4.0]}
         intensity={1.5}
         color="#5c6bc0"
-        distance={6}
-        decay={1.5}
-      />
-
-      {/* 7. PointLight porte - néon rose (remplace RectAreaLight) */}
-      <pointLight
-        position={[-3.7, 2.55, 4.0]}
-        intensity={2.5}
-        color="#ff2d95"
-        distance={4}
+        distance={10}
         decay={2}
       />
 
-      {/* 8. PointLight porte vitre principale (remplace RectAreaLight) */}
+      {/* 7. PointLight porte — rose/violet fusionné (2→1 lumière) */}
       <pointLight
-        position={[-3.7, 1.15, 4.0]}
-        intensity={1.5}
-        color="#6a4c93"
-        distance={5}
+        position={[-3.7, 1.8, 4.0]}
+        intensity={2.5}
+        color="#cc3d9e"
+        distance={8}
         decay={1.5}
       />
 
 
-      {/* 9. DirectionalLight pour les ombres — mobile: 512px shadow map, desktop: 1024px */}
+      {/* 9. DirectionalLight pour les ombres */}
+      {/* Frustum serré sur la pièce (9×8.5m) → 2048px = ~227px/m (vs 85px/m avant) */}
       <directionalLight
         position={[2, 2.7, 1]}
         intensity={0.3}
@@ -147,13 +140,13 @@ function OptimizedLighting({ isMobile = false }: { isMobile?: boolean }) {
         castShadow
         shadow-mapSize-width={shadowMapSize}
         shadow-mapSize-height={shadowMapSize}
-        shadow-camera-left={-6}
-        shadow-camera-right={6}
-        shadow-camera-top={5}
-        shadow-camera-bottom={-5}
+        shadow-camera-left={-5}
+        shadow-camera-right={5}
+        shadow-camera-top={4.5}
+        shadow-camera-bottom={-4.5}
         shadow-camera-near={0.1}
-        shadow-camera-far={8}
-        shadow-bias={-0.0003}
+        shadow-camera-far={6}
+        shadow-bias={-0.0002}
       />
 
       {/* Tubes néon décoratifs - 9 tubes via 2 InstancedMesh (18→2 draw calls) */}

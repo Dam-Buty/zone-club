@@ -5,6 +5,45 @@ import { Text3D, Center } from '@react-three/drei'
 
 const NEON_FONT_URL = '/fonts/caveat-bold.typeface.json'
 
+// OPTIMISATION: Consolidated animation registry — 7 useFrame → 1 useFrame
+// Each GenreSectionPanel registers its refs here; GenrePanelAnimator iterates once per frame.
+interface PanelAnimEntry {
+  groupRef: React.RefObject<THREE.Group | null>
+  neonRef: React.RefObject<THREE.Mesh | null>
+  borderMatRef: React.MutableRefObject<THREE.MeshStandardMaterial | null>
+  neonIntensity: number
+  hanging: boolean
+  timeRef: React.MutableRefObject<number>
+}
+const panelRegistry = new Map<string, PanelAnimEntry>()
+
+export function GenrePanelAnimator() {
+  useFrame((_, delta) => {
+    panelRegistry.forEach((entry) => {
+      entry.timeRef.current += delta
+
+      const t = entry.timeRef.current
+
+      if (entry.hanging && entry.groupRef.current) {
+        entry.groupRef.current.rotation.z = Math.sin(t * 0.5) * 0.02
+      }
+
+      const flicker = 1.0 + Math.sin(t * 8) * 0.03 + Math.sin(t * 23) * 0.02
+
+      if (entry.neonRef.current) {
+        const mat = entry.neonRef.current.material as THREE.MeshStandardMaterial
+        mat.emissiveIntensity = entry.neonIntensity * flicker
+      }
+
+      if (entry.borderMatRef.current) {
+        entry.borderMatRef.current.emissiveIntensity = entry.neonIntensity * 0.6 * flicker
+      }
+    })
+  })
+
+  return null
+}
+
 interface GenreSectionPanelProps {
   genre: string
   position: [number, number, number]
@@ -12,40 +51,6 @@ interface GenreSectionPanelProps {
   color: string
   width?: number
   hanging?: boolean
-}
-
-// Texture de halo diffus (glow derrière le panneau)
-// Large canvas with very gradual falloff to avoid hard rectangular edges
-function createGlowTexture(
-  color: string,
-  width: number = 512,
-  height: number = 256
-): THREE.CanvasTexture {
-  const canvas = document.createElement('canvas')
-  canvas.width = width
-  canvas.height = height
-  const ctx = canvas.getContext('2d')!
-
-  const gradient = ctx.createRadialGradient(
-    width / 2, height / 2, 0,
-    width / 2, height / 2, Math.max(width, height) / 2
-  )
-  // Very soft falloff — bright core quickly fades to near-zero
-  gradient.addColorStop(0, color + '66')
-  gradient.addColorStop(0.15, color + '33')
-  gradient.addColorStop(0.35, color + '18')
-  gradient.addColorStop(0.6, color + '08')
-  gradient.addColorStop(0.85, color + '02')
-  gradient.addColorStop(1, '#00000000')
-
-  ctx.fillStyle = gradient
-  ctx.fillRect(0, 0, width, height)
-
-  const texture = new THREE.CanvasTexture(canvas)
-  texture.colorSpace = THREE.SRGBColorSpace
-  texture.needsUpdate = true
-
-  return texture
 }
 
 // OPTIMISATION: Géométries et matériaux partagés (identiques pour les 5 panneaux)
@@ -111,10 +116,6 @@ export function GenreSectionPanel({
   const borderMatRef = useRef<THREE.MeshStandardMaterial>(null)
   const timeRef = useRef(0)
 
-  const glowTexture = useMemo(() => {
-    return createGlowTexture(color)
-  }, [color])
-
   // Compenser l'intensité émissive selon la luminance perceptuelle de la couleur.
   // Le bloom (threshold=0.9) utilise la luminance : les couleurs sombres (violet, rouge, magenta)
   // ne déclenchaient pas le bloom contrairement au jaune/vert.
@@ -139,32 +140,23 @@ export function GenreSectionPanel({
   useEffect(() => {
     borderMatRef.current = borderMaterial
     return () => {
-      glowTexture.dispose()
       borderMaterial.dispose()
     }
-  }, [glowTexture, borderMaterial])
+  }, [borderMaterial])
 
-  // Animation : balancement + scintillement néon subtil
-  useFrame((_, delta) => {
-    timeRef.current += delta
-
-    if (hanging && groupRef.current) {
-      groupRef.current.rotation.z = Math.sin(timeRef.current * 0.5) * 0.02
-    }
-
-    // Scintillement néon sur le texte 3D (intensité compensée par luminance)
-    if (neonRef.current) {
-      const mat = neonRef.current.material as THREE.MeshStandardMaterial
-      const flicker = 1.0 + Math.sin(timeRef.current * 8) * 0.03 + Math.sin(timeRef.current * 23) * 0.02
-      mat.emissiveIntensity = neonIntensity * flicker
-    }
-
-    // Scintillement synchronisé sur le cadre
-    if (borderMatRef.current) {
-      const flicker = 1.0 + Math.sin(timeRef.current * 8) * 0.03 + Math.sin(timeRef.current * 23) * 0.02
-      borderMatRef.current.emissiveIntensity = neonIntensity * 0.6 * flicker
-    }
-  })
+  // Register in consolidated animation registry (7 useFrame → 1)
+  const registryKey = `${genre}-${position[0]}-${position[1]}-${position[2]}`
+  useEffect(() => {
+    panelRegistry.set(registryKey, {
+      groupRef,
+      neonRef,
+      borderMatRef,
+      neonIntensity,
+      hanging,
+      timeRef,
+    })
+    return () => { panelRegistry.delete(registryKey) }
+  }, [registryKey, neonIntensity, hanging])
 
   const height = width * 0.25
   const depth = 0.02
@@ -187,21 +179,18 @@ export function GenreSectionPanel({
           </>
         )}
 
-        {/* Halo diffus derrière le panneau — oversized so the soft gradient fades fully before mesh edge */}
-        <mesh position={[0, 0, -0.03]}>
-          <planeGeometry args={[width * 3, height * 4]} />
-          <meshBasicMaterial
-            map={glowTexture}
-            transparent
-            opacity={0.20}
-            toneMapped={false}
-            depthWrite={false}
-            blending={THREE.AdditiveBlending}
-          />
-        </mesh>
+        {/* PointLight PBR — centré sur le texte pour que la lumière émane des lettres */}
+        {/* decay=1.0 : falloff linéaire → nappe de lumière douce et uniforme */}
+        <pointLight
+          position={[0, 0, 0.12]}
+          intensity={2.0}
+          color={color}
+          distance={3}
+          decay={1.0}
+        />
 
         {/* Cadre du panneau - plastique noir mat (matériau partagé) */}
-        <mesh position={[0, 0, -depth / 2]} material={SHARED_FRAME_MAT}>
+        <mesh position={[0, 0, -depth / 2]} material={SHARED_FRAME_MAT} castShadow>
           <boxGeometry args={[width + 0.04, height + 0.04, depth]} />
         </mesh>
 

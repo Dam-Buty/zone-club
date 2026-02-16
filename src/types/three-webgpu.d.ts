@@ -143,6 +143,14 @@ declare module 'three/addons/tsl/display/FXAANode.js' {
     export const fxaa: any;
 }
 
+declare module 'three/addons/tsl/display/ChromaticAberrationNode.js' {
+    export const chromaticAberration: any;
+}
+
+declare module 'three/addons/tsl/display/DepthOfFieldNode.js' {
+    export const dof: any;
+}
+
 declare module 'three/addons/controls/PointerLockControls.js' {
     export class PointerLockControls {
         constructor(camera: any, domElement?: any);

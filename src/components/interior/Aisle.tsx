@@ -2,6 +2,7 @@ import { useMemo, useEffect, Suspense } from 'react'
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { useGLTF, useTexture } from '@react-three/drei'
+import { generateKentTileTextures } from '../../utils/KentTileTexture'
 
 // Composant pour chargement async des modèles 3D
 function AsyncModel({ url, position, scale = 1, rotation = [0, 0, 0] }: {
@@ -36,13 +37,14 @@ import { WallShelf, SHELF_DEPTH, SHELF_TILT, SHELF_PIVOT_Y } from './WallShelf'
 import { IslandShelf } from './IslandShelf'
 import { CassetteInstances } from './CassetteInstances'
 import { CASSETTE_DIMENSIONS } from './Cassette'
-import { GenreSectionPanel, GENRE_CONFIG, filterFilmsByGenre } from './GenreSectionPanel'
+import { GenreSectionPanel, GenrePanelAnimator, GENRE_CONFIG, filterFilmsByGenre } from './GenreSectionPanel'
 import { GameRack } from './GameBox'
 import { PosterWall } from './Poster'
 import { Storefront } from './Storefront'
 import { InteractiveTVDisplay } from './InteractiveTVDisplay'
 import { Manager3D } from './Manager3D'
 import { ServiceBell } from './ServiceBell'
+import { DustParticles } from './DustParticles'
 import type { Film } from '../../types'
 import type { CassetteInstanceData } from '../../utils/CassetteTextureArray'
 
@@ -188,23 +190,106 @@ function MergedWalls({ wallTextures, roomWidth, roomDepth, roomHeight }: {
   return <mesh geometry={geometry} material={material} receiveShadow />
 }
 
-// OPTIMISATION: 2 marches d'escalier fusionnées en 1 mesh (2→1 draw call)
-const STAIRS_MAT = new THREE.MeshStandardMaterial({ color: '#3a3a3a', roughness: 0.8 })
+// Shared VHS tape geometry & material for desk pile and storage cabinet
+const DESK_VHS_GEO = new THREE.BoxGeometry(0.168, 0.03, 0.228)
+const DESK_VHS_MAT = new THREE.MeshStandardMaterial({ color: '#1a1a1a', roughness: 0.4 })
 
-function MergedStairs({ position }: { position: [number, number, number] }) {
-  const geometry = useMemo(() => {
-    const step1 = new THREE.BoxGeometry(1, 0.16, 1)
-    step1.translate(0, 0.08, 0)
-    const step2 = new THREE.BoxGeometry(0.7, 0.16, 1)
-    step2.translate(0.15, 0.24, 0)
-    return mergeGeometries([step1, step2])!
+// Module-level shared materials for VHS storage cabinet (3 draw calls total)
+const CABINET_OAK_MAT = new THREE.MeshStandardMaterial({ color: '#b5873a', roughness: 0.7 })
+const CABINET_BACK_MAT = new THREE.MeshStandardMaterial({ color: '#5a4020', roughness: 0.8 })
+
+function VHSStorageCabinet({ position }: { position: [number, number, number] }) {
+  const { frameGeo, backGeo, vhsGeo } = useMemo(() => {
+    const W = 0.7, H = 1.7, D = 0.22
+    const PANEL_T = 0.02    // side panel thickness
+    const SHELF_T = 0.012   // shelf plank thickness
+    const DIV_T = 0.012     // central divider thickness
+    const BACK_T = 0.008    // back panel thickness
+    const NUM_INNER = 10    // inner shelves (12 total with top/bottom)
+    const TOTAL_SHELVES = NUM_INNER + 2
+    const innerW = W - 2 * PANEL_T
+
+    const frameParts: THREE.BufferGeometry[] = []
+
+    // Side panels
+    const sideL = new THREE.BoxGeometry(PANEL_T, H, D)
+    sideL.translate(-W / 2 + PANEL_T / 2, H / 2, 0)
+    frameParts.push(sideL)
+    const sideR = new THREE.BoxGeometry(PANEL_T, H, D)
+    sideR.translate(W / 2 - PANEL_T / 2, H / 2, 0)
+    frameParts.push(sideR)
+
+    // Central vertical divider
+    const div = new THREE.BoxGeometry(DIV_T, H, D)
+    div.translate(0, H / 2, 0)
+    frameParts.push(div)
+
+    // Horizontal shelves (top + bottom + 10 inner)
+    for (let i = 0; i < TOTAL_SHELVES; i++) {
+      const y = i * (H / (TOTAL_SHELVES - 1))
+      const shelf = new THREE.BoxGeometry(innerW, SHELF_T, D)
+      shelf.translate(0, y, 0)
+      frameParts.push(shelf)
+    }
+
+    // Feet — two flat traverses extending forward for stability
+    const FOOT_W = 0.28, FOOT_H = 0.025, FOOT_D = D + 0.08
+    const footL = new THREE.BoxGeometry(FOOT_W, FOOT_H, FOOT_D)
+    footL.translate(-W / 4, FOOT_H / 2, 0.02)
+    frameParts.push(footL)
+    const footR = new THREE.BoxGeometry(FOOT_W, FOOT_H, FOOT_D)
+    footR.translate(W / 4, FOOT_H / 2, 0.02)
+    frameParts.push(footR)
+
+    const frameGeo = mergeGeometries(frameParts)!
+
+    // Back panel
+    const backGeo = new THREE.BoxGeometry(innerW, H, BACK_T)
+    backGeo.translate(0, H / 2, -D / 2 + BACK_T / 2)
+
+    // VHS tapes — lying flat (stacked) in each cell, spine-out
+    const vhsParts: THREE.BufferGeometry[] = []
+    const VHS_W = 0.14, VHS_T = 0.025, VHS_D = 0.18, VHS_GAP = 0.003
+    const colW = (innerW - DIV_T) / 2
+    const cellH = H / (TOTAL_SHELVES - 1) - SHELF_T
+    const maxTapes = Math.floor(cellH / (VHS_T + VHS_GAP))
+
+    for (let row = 0; row < NUM_INNER; row++) {
+      const shelfTopY = row * (H / (TOTAL_SHELVES - 1)) + SHELF_T / 2
+      for (let col = 0; col < 2; col++) {
+        const cx = col === 0 ? -(colW / 2 + DIV_T / 2) : (colW / 2 + DIV_T / 2)
+        const count = maxTapes - ((row + col) % 2)  // vary slightly per cell
+        for (let t = 0; t < count; t++) {
+          const vhs = new THREE.BoxGeometry(VHS_W, VHS_T, VHS_D)
+          vhs.translate(
+            cx + ((t % 3) - 1) * 0.003,
+            shelfTopY + VHS_T / 2 + t * (VHS_T + VHS_GAP),
+            0.01
+          )
+          vhsParts.push(vhs)
+        }
+      }
+    }
+
+    const vhsGeo = vhsParts.length > 0 ? mergeGeometries(vhsParts)! : new THREE.BufferGeometry()
+    return { frameGeo, backGeo, vhsGeo }
   }, [])
 
   useEffect(() => {
-    return () => { geometry.dispose() }
-  }, [geometry])
+    return () => {
+      frameGeo.dispose()
+      backGeo.dispose()
+      vhsGeo.dispose()
+    }
+  }, [frameGeo, backGeo, vhsGeo])
 
-  return <mesh position={position} geometry={geometry} material={STAIRS_MAT} />
+  return (
+    <group position={position} rotation={[0, -Math.PI / 2, 0]}>
+      <mesh geometry={frameGeo} material={CABINET_OAK_MAT} receiveShadow />
+      <mesh geometry={backGeo} material={CABINET_BACK_MAT} />
+      <mesh geometry={vhsGeo} material={DESK_VHS_MAT} />
+    </group>
+  )
 }
 
 // ===== CASSETTE POSITION PRE-COMPUTATION =====
@@ -397,12 +482,115 @@ export function Aisle({ films, maxTextureArrayLayers = 256 }: AisleProps) {
   // ===== TEXTURES =====
   const fireExtinguisherPanelTexture = useTexture('/panneau-extincteur.png')
 
-  // Textures PBR - Sol (carrelage sombre, tiling 6x5 pour la taille de la pièce)
-  const floorTextures = usePBRTextures('/textures/floor', 6, 5)
+  // Sol — Carrelage Kent octogone+cabochon noir 33×33cm (procédural Canvas2D)
+  // 9m / 0.33m ≈ 27 carreaux en X, 8.5m / 0.33m ≈ 26 en Y
+  const floorTextures = useMemo(() => generateKentTileTextures(27, 26, 256, 6), [])
   // Textures PBR - Murs (plâtre peint, tiling adapté par mur)
   const wallTextures = usePBRTextures('/textures/wall', 4, 2, true)
   // Textures PBR - Bois (pour comptoir)
   const woodTextures = usePBRTextures('/textures/wood', 2, 1)
+
+  // Textures PBR - Plafond (faux plafond dalles 60×60cm, généré Canvas2D)
+  // Génère color + normal + roughness pour une seule dalle, tilé 15×14 sur la pièce
+  const ceilingTextures = useMemo(() => {
+    const SIZE = 512
+    const GROOVE = 6 // groove width in pixels (T-bar joint)
+    const BEVEL = 3  // bevel transition pixels
+
+    // --- Helper: create canvas ---
+    const makeCanvas = () => {
+      const c = document.createElement('canvas')
+      c.width = SIZE
+      c.height = SIZE
+      return c
+    }
+
+    // --- COLOR MAP: light cream tile + dark grooves + subtle speckle ---
+    const colorCanvas = makeCanvas()
+    const cCtx = colorCanvas.getContext('2d')!
+    // Base tile color (light warm off-white, typical mineral fiber tile)
+    cCtx.fillStyle = '#e2ddd6'
+    cCtx.fillRect(0, 0, SIZE, SIZE)
+    // Add subtle noise/speckle for mineral fiber texture
+    const cImgData = cCtx.getImageData(0, 0, SIZE, SIZE)
+    for (let i = 0; i < cImgData.data.length; i += 4) {
+      const noise = (Math.random() - 0.5) * 18
+      cImgData.data[i] = Math.max(0, Math.min(255, cImgData.data[i] + noise))
+      cImgData.data[i + 1] = Math.max(0, Math.min(255, cImgData.data[i + 1] + noise))
+      cImgData.data[i + 2] = Math.max(0, Math.min(255, cImgData.data[i + 2] + noise))
+    }
+    cCtx.putImageData(cImgData, 0, 0)
+    // T-bar grooves (slightly metallic white/gray)
+    cCtx.fillStyle = '#b0aaa0'
+    cCtx.fillRect(0, 0, GROOVE, SIZE)         // left edge
+    cCtx.fillRect(0, 0, SIZE, GROOVE)         // top edge
+    // Groove shadow line (inner edge = darker)
+    cCtx.fillStyle = '#8a857e'
+    cCtx.fillRect(GROOVE, GROOVE, 1, SIZE - GROOVE)    // left inner shadow
+    cCtx.fillRect(GROOVE, GROOVE, SIZE - GROOVE, 1)    // top inner shadow
+
+    const colorTex = new THREE.CanvasTexture(colorCanvas)
+    colorTex.wrapS = THREE.RepeatWrapping
+    colorTex.wrapT = THREE.RepeatWrapping
+    colorTex.repeat.set(15, 14)
+    colorTex.colorSpace = THREE.SRGBColorSpace
+
+    // --- NORMAL MAP: flat tile surface + indented grooves ---
+    const normalCanvas = makeCanvas()
+    const nCtx = normalCanvas.getContext('2d')!
+    // Flat surface: (128, 128, 255) = straight up
+    nCtx.fillStyle = 'rgb(128, 128, 255)'
+    nCtx.fillRect(0, 0, SIZE, SIZE)
+    // Groove normals — left groove
+    // Left face of groove: normal points right (+X = R>128)
+    nCtx.fillStyle = 'rgb(200, 128, 255)'
+    nCtx.fillRect(GROOVE, 0, BEVEL, SIZE)
+    // Top face of groove: normal points down (+Y = G>128)
+    nCtx.fillStyle = 'rgb(128, 200, 255)'
+    nCtx.fillRect(0, GROOVE, SIZE, BEVEL)
+    // Inside groove: pointing up-left (recessed)
+    nCtx.fillStyle = 'rgb(80, 80, 200)'
+    nCtx.fillRect(0, 0, GROOVE, GROOVE)
+    // Add very subtle noise to tile surface normal for micro-texture
+    const nImgData = nCtx.getImageData(0, 0, SIZE, SIZE)
+    for (let y = GROOVE + BEVEL; y < SIZE; y++) {
+      for (let x = GROOVE + BEVEL; x < SIZE; x++) {
+        const idx = (y * SIZE + x) * 4
+        nImgData.data[idx] += (Math.random() - 0.5) * 6     // slight X perturbation
+        nImgData.data[idx + 1] += (Math.random() - 0.5) * 6 // slight Y perturbation
+      }
+    }
+    nCtx.putImageData(nImgData, 0, 0)
+
+    const normalTex = new THREE.CanvasTexture(normalCanvas)
+    normalTex.wrapS = THREE.RepeatWrapping
+    normalTex.wrapT = THREE.RepeatWrapping
+    normalTex.repeat.set(15, 14)
+
+    // --- ROUGHNESS MAP: matte tiles (bright = rough) + smoother grooves ---
+    const roughCanvas = makeCanvas()
+    const rCtx = roughCanvas.getContext('2d')!
+    // Tile surface: roughness ~0.85 (matte mineral fiber)
+    rCtx.fillStyle = 'rgb(217, 217, 217)'
+    rCtx.fillRect(0, 0, SIZE, SIZE)
+    // Grooves: slightly smoother (painted metal T-bar)
+    rCtx.fillStyle = 'rgb(140, 140, 140)'
+    rCtx.fillRect(0, 0, GROOVE, SIZE)
+    rCtx.fillRect(0, 0, SIZE, GROOVE)
+
+    const roughTex = new THREE.CanvasTexture(roughCanvas)
+    roughTex.wrapS = THREE.RepeatWrapping
+    roughTex.wrapT = THREE.RepeatWrapping
+    roughTex.repeat.set(15, 14)
+
+    return { map: colorTex, normalMap: normalTex, roughnessMap: roughTex }
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      Object.values(ceilingTextures).forEach(t => (t as THREE.Texture).dispose())
+    }
+  }, [ceilingTextures])
 
   // ===== FILTRER LES FILMS PAR GENRE =====
   // Memoize each genre slice individually to avoid new array refs on every render
@@ -497,18 +685,25 @@ export function Aisle({ films, maxTextureArrayLayers = 256 }: AisleProps) {
         <meshStandardMaterial
           map={floorTextures.map}
           normalMap={floorTextures.normalMap}
-          roughnessMap={floorTextures.roughnessMap}
-          color="#3a3a4a"
-          roughness={0.6}
-          metalness={0.05}
+          color="#d8d0cc"
+          roughness={0.35}
+          metalness={0.0}
+          envMapIntensity={0.7}
           normalScale={[0.8, 0.8] as unknown as THREE.Vector2}
         />
       </mesh>
 
-      {/* ===== PLAFOND ===== */}
-      <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, ROOM_HEIGHT, 0]}>
+      {/* ===== PLAFOND — Faux plafond dalles 60×60cm (Canvas2D procedural) ===== */}
+      <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, ROOM_HEIGHT, 0]} receiveShadow>
         <planeGeometry args={[ROOM_WIDTH, ROOM_DEPTH]} />
-        <meshStandardMaterial color="#1a1a2a" roughness={0.9} />
+        <meshStandardMaterial
+          map={ceilingTextures.map}
+          normalMap={ceilingTextures.normalMap}
+          roughnessMap={ceilingTextures.roughnessMap}
+          color="#c8c0b8"
+          roughness={0.92}
+          normalScale={[0.6, 0.6] as unknown as THREE.Vector2}
+        />
       </mesh>
 
       {/* ===== MURS ===== */}
@@ -528,6 +723,9 @@ export function Aisle({ films, maxTextureArrayLayers = 256 }: AisleProps) {
         roomDepth={ROOM_DEPTH}
         roomHeight={ROOM_HEIGHT}
       />
+
+      {/* Consolidated animation loop for all genre panels (7 useFrame → 1) */}
+      <GenrePanelAnimator />
 
       {/* ========================================= */}
       {/* ===== SECTION HORREUR - MUR GAUCHE ===== */}
@@ -739,13 +937,10 @@ export function Aisle({ films, maxTextureArrayLayers = 256 }: AisleProps) {
           </mesh>
         </group>
 
-        {/* Pile de cassettes retournées */}
+        {/* Pile de 3 K7 VHS noires empilées à plat */}
         <group position={[-0.3, 1.08, 0.15]}>
           {[0, 1, 2].map((i) => (
-            <mesh key={`return-${i}`} position={[(i - 1) * 0.06, i * 0.02, 0]} rotation={[0, 0.1 * (i - 1), 0]}>
-              <boxGeometry args={[0.14, 0.02, 0.19]} />
-              <meshStandardMaterial color={['#1a1a2e', '#16213e', '#0f3460'][i]} roughness={0.4} />
-            </mesh>
+            <mesh key={`return-${i}`} position={[0, i * 0.032, 0]} rotation={[0, [-0.08, 0.05, -0.12][i], 0]} geometry={DESK_VHS_GEO} material={DESK_VHS_MAT} />
           ))}
         </group>
 
@@ -758,21 +953,28 @@ export function Aisle({ films, maxTextureArrayLayers = 256 }: AisleProps) {
         <GameRack position={[-0.15, 0, 0]} rotation={[0, -Math.PI / 2, 0]} />
       </group>
 
-      {/* ===== MARCHES/ESCALIER — 2 boxes fusionnées en 1 mesh ===== */}
-      <MergedStairs position={[ROOM_WIDTH / 2 - 0.7, 0, 3.5]} />
+      {/* ===== MEUBLE RANGEMENT VHS EN CHÊNE — 3 merged meshes ===== */}
+      <VHSStorageCabinet position={[ROOM_WIDTH / 2 - 0.15, 0, 3.5]} />
 
       {/* ===== PORTE PRIVÉE ===== */}
       <group position={[ROOM_WIDTH / 2 - 1.05, 0, -ROOM_DEPTH / 2 + 0.08]}>
         <mesh position={[0, 1, 0]}>
           <boxGeometry args={[0.8, 2, 0.08]} />
-          <meshStandardMaterial color="#8B0000" roughness={0.5} />
+          <meshStandardMaterial
+            map={woodTextures.map}
+            normalMap={woodTextures.normalMap}
+            roughnessMap={woodTextures.roughnessMap}
+            color="#5a1a1a"
+            roughness={0.6}
+            normalScale={[0.5, 0.5] as unknown as THREE.Vector2}
+          />
         </mesh>
         {/* Écriteau PRIVÉE */}
         <PrivateSign position={[0, 1.5, 0.05]} />
       </group>
 
       {/* ===== PORTE D'ENTRÉE (indication) ===== */}
-      <group position={[-ROOM_WIDTH / 2 + 2.16, 0, ROOM_DEPTH / 2 - 0.08]}>
+      <group position={[-ROOM_WIDTH / 2 + 1.26, 0, ROOM_DEPTH / 2 - 0.08]}>
         <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, -0.4]}>
           <planeGeometry args={[1.5, 0.8]} />
           <meshStandardMaterial color="#2a4a2a" roughness={0.5} />
@@ -793,17 +995,20 @@ export function Aisle({ films, maxTextureArrayLayers = 256 }: AisleProps) {
         rotation={[0, -Math.PI / 2, 0]}
       />
 
-      {/* ===== DÉTAILS DU SOL ===== */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[-ROOM_WIDTH / 2 + 2.23, 0.005, ROOM_DEPTH / 2 - 0.8]}>
+      {/* ===== DÉTAILS DU SOL — Paillasson d'entrée ===== */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[-ROOM_WIDTH / 2 + 1.33, 0.005, ROOM_DEPTH / 2 - 0.8]}>
         <planeGeometry args={[2, 1.2]} />
-        <meshStandardMaterial color="#4a2a1a" roughness={0.9} />
+        <meshStandardMaterial
+          color="#3a2215"
+          roughness={0.95}
+        />
       </mesh>
 
-      {/* ===== CORBEILLE À PAPIER ===== */}
+      {/* ===== CORBEILLE À PAPIER — métal brossé ===== */}
       <group position={[ROOM_WIDTH / 2 - 1, 0, ROOM_DEPTH / 2 - 0.8]}>
         <mesh position={[0, 0.2, 0]}>
-          <cylinderGeometry args={[0.15, 0.12, 0.4, 6]} />
-          <meshStandardMaterial color="#2a2a2a" roughness={0.7} />
+          <cylinderGeometry args={[0.15, 0.12, 0.4, 8]} />
+          <meshStandardMaterial color="#2a2a2a" roughness={0.5} metalness={0.4} />
         </mesh>
       </group>
 
@@ -843,6 +1048,9 @@ export function Aisle({ films, maxTextureArrayLayers = 256 }: AisleProps) {
           maxTextureArrayLayers={maxTextureArrayLayers}
         />
       )}
+
+      {/* ===== PARTICULES DE POUSSIÈRE — atmosphère intérieure ===== */}
+      <DustParticles count={250} />
     </group>
   )
 }

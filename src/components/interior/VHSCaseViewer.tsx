@@ -176,7 +176,7 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
       // positionLocal.x = model height axis (maps to visual vertical after portrait rotation)
       const bumpTex = tex.userData.bumpMap as THREE.CanvasTexture | undefined
       const texNode = texture(tex)
-      const albedoBase = float(0.55)  // slightly brighter base for IBL-only scene
+      const albedoBase = float(1.0)  // full brightness jacket artwork
       // Normalize model height to 0(bottom)–1(top). Model is ~2m centered at origin.
       const normalizedHeight = tslClamp(positionLocal.x.add(1.0).div(2.0), 0.0, 1.0)
       // Flattened gradient: top=0.85, bottom=1.1 (subtle, avoids hotspot amplification)

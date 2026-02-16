@@ -100,7 +100,7 @@ export function Controls({ onCassetteClick, isMobile, mobileInputRef }: Controls
 
   // Throttle raycast
   const frameCountRef = useRef(0)
-  const RAYCAST_INTERVAL = isMobile ? 3 : 2 // 20/sec mobile, 30/sec desktop
+  const RAYCAST_INTERVAL = isMobile ? 3 : 3 // 20/sec both mobile & desktop
 
   // Configurer la caméra
   useEffect(() => {
