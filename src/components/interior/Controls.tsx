@@ -96,7 +96,7 @@ export function Controls({ onCassetteClick, isMobile, mobileInputRef }: Controls
   const deselectTimerRef = useRef<number>(0)
   const hitCountRef = useRef<number>(0)
   const DESELECT_DELAY = 0.4
-  const MIN_HITS_TO_CHANGE = 3
+  const MIN_HITS_TO_CHANGE = 10 // ~0.5s at 20 raycasts/sec (RAYCAST_INTERVAL=3)
 
   // Throttle raycast
   const frameCountRef = useRef(0)

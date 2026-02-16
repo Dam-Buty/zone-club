@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Film, Rental, AisleType, SceneType, MemberLevel } from '../types';
 import api, { type ApiRentalWithFilm, type ApiFilm, type ReviewWithUser } from '../api';
+import { preloadPosterImage } from '../utils/CassetteTextureArray';
+import { fetchVHSCoverData } from '../utils/VHSCoverGenerator';
 
 function calculateLevel(totalRentals: number): MemberLevel {
   if (totalRentals >= 50) return 'platine';
@@ -351,7 +353,16 @@ export const useStore = create<VideoClubState>()(
       selectedFilmId: null,
       setScene: (scene) => set({ currentScene: scene }),
       setAisle: (aisle) => set({ currentAisle: aisle }),
-      selectFilm: (filmId) => set({ selectedFilmId: filmId }),
+      selectFilm: (filmId) => {
+        set({ selectedFilmId: filmId });
+        // Pre-fetch VHS cover data at click time (before VHSCaseViewer mounts)
+        // fetchVHSCoverData checks its own cache — no double-fetch risk
+        if (filmId !== null) {
+          const allFilms = Object.values(get().films).flat();
+          const film = allFilms.find(f => f.id === filmId);
+          if (film) fetchVHSCoverData(film).catch(() => {});
+        }
+      },
 
       // Films cache
       films: {
@@ -416,7 +427,17 @@ export const useStore = create<VideoClubState>()(
       // Targeting
       targetedFilmId: null,
       targetedCassetteKey: null,
-      setTargetedFilm: (filmId, cassetteKey = null) => set({ targetedFilmId: filmId, targetedCassetteKey: cassetteKey }),
+      setTargetedFilm: (filmId, cassetteKey = null) => {
+        set({ targetedFilmId: filmId, targetedCassetteKey: cassetteKey });
+        // Preload w500 poster as soon as cassette is aimed at (before click)
+        if (filmId !== null) {
+          const allFilms = Object.values(get().films).flat();
+          const film = allFilms.find(f => f.id === filmId);
+          if (film?.poster_path) {
+            preloadPosterImage(`https://image.tmdb.org/t/p/w500${film.poster_path}`);
+          }
+        }
+      },
 
       // Pointer lock
       isPointerLocked: false,
