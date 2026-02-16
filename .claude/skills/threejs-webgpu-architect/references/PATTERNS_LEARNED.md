@@ -79,6 +79,31 @@ Wrap all Canvas-level components in `React.memo()`. Use individual Zustand selec
 Calling setState inside useMemo → "Cannot update component while rendering".
 **Fix**: Use `useEffect` for callbacks that trigger parent setState.
 
+### NEVER Mix JSX userData Prop with Imperative userData (CRITICAL — 16/02/2026)
+
+**Problem**: R3F reconciler re-applies JSX props on **every re-render**. Setting `userData={{ foo: true }}` in JSX completely **replaces** the entire `userData` object — wiping any fields set imperatively via `mesh.userData.bar = true` in useEffect.
+
+**Symptom**: Raycast stops finding objects after any parent re-render. Scene traverse looking for `userData.isCassetteInstances` returns nothing because JSX wiped it.
+
+**Root cause in our codebase**: `CassetteInstances.tsx` had:
+```tsx
+// useEffect (runs once)
+mesh.userData.isCassetteInstances = true
+mesh.userData.instanceIdToKey = idToKey
+
+// JSX (runs on EVERY render)
+<instancedMesh userData={{ cassetteChunkIndex: chunkIndex }} />
+// ↑ On re-render, this REPLACES entire userData → isCassetteInstances gone
+```
+
+Combined with a raycast target cache in `Controls.tsx` that relied on `userData.isCassetteInstances` to build its target list → empty cache → no cassette selection.
+
+**Fix**:
+1. **Remove `userData` from JSX entirely** — set ALL fields imperatively in useEffect
+2. **Prefer recursive `scene.children` traversal** for raycast over cached target lists that depend on stable userData flags
+
+**Rule**: If a mesh has ANY imperative userData, it must have ZERO JSX userData props. One OR the other, never both.
+
 ### Cross-Origin Image Preloading
 Browser HTTP cache doesn't persist cross-origin images → re-fetch (940ms).
 **Fix**: `Map<string, Promise<HTMLImageElement>>` at module level. 940ms → 142ms.

@@ -283,6 +283,31 @@ useFrame(() => {
 
 **Gain :** -50% CPU raycast
 
+### DANGER: Raycast Target Caching + userData JSX Prop
+
+**Anti-pattern** (causes broken selection):
+```typescript
+// Controls.tsx — cache built from scene.traverse() checking userData flags
+const refreshRaycastTargets = () => {
+  scene.traverse((obj) => {
+    if (obj.userData?.isCassetteInstances) targets.push(obj)
+  })
+}
+// Uses cached list (non-recursive):
+raycaster.intersectObjects(raycastTargetsRef.current, false)
+```
+
+If the InstancedMesh has `userData` set via JSX prop (`<instancedMesh userData={{ ... }} />`),
+R3F reconciler **replaces entire userData** on every re-render → `isCassetteInstances` is wiped
+→ cache refresh finds nothing → no cassette selection.
+
+**Safe approach**: Use `scene.children` with recursive traversal. Layers already filter targets efficiently:
+```typescript
+raycaster.layers.set(RAYCAST_LAYER_CASSETTE)
+raycaster.layers.enable(RAYCAST_LAYER_INTERACTIVE)
+const hits = raycaster.intersectObjects(scene.children, true)
+```
+
 ---
 
 ## Quand utiliser / ne PAS utiliser l'Instancing
