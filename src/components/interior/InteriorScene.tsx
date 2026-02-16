@@ -121,7 +121,7 @@ const SceneContent = memo(function SceneContent({
         isMobile={isMobile}
         maxTextureArrayLayers={maxTextureArrayLayers}
       />
-      {selectedFilm && <VHSCaseViewer film={selectedFilm} />}
+      {selectedFilm && <VHSCaseViewer key={selectedFilm.id} film={selectedFilm} />}
     </>
   )
 })

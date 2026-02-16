@@ -207,22 +207,21 @@ function Cassette({ posterUrl }) {
 
 Chaque lumière = calculs supplémentaires par pixel.
 
-| Type | Coût |
-|------|------|
-| AmbientLight | Très faible |
-| HemisphereLight | Faible |
-| DirectionalLight | Moyen |
-| PointLight | Élevé (avec decay) |
-| RectAreaLight | Très élevé |
-| SpotLight | Très élevé |
+| Type | Coût | Notes |
+|------|------|-------|
+| AmbientLight | Très faible | |
+| HemisphereLight | Faible | |
+| DirectionalLight | Moyen | |
+| PointLight | Élevé (avec decay) | |
+| RectAreaLight (grande, ceiling) | Élevé | Couvre toute la scène |
+| RectAreaLight (petite, neon sign) | **Très faible** | Analytique, rayon limité |
+| SpotLight | Très élevé | |
 
 ### Solution
 
 Mode optimisé avec lumières combinées.
 
 ```typescript
-const LIGHTING_MODE: 'full' | 'optimized' = 'optimized'
-
 function OptimizedLighting() {
   return (
     <>
@@ -235,6 +234,8 @@ function OptimizedLighting() {
   )
 }
 ```
+
+**Note :** Les petites RectAreaLights (neon signs, ~1.5m × 0.1m) sont quasi gratuites car elles n'éclairent qu'une petite zone. 6 panneaux néon = coût négligeable. Voir PHOTOREALISM_PIPELINE.md § Neon Sign Lighting.
 
 **Gain :** -50% à -70% calculs éclairage
 
@@ -284,18 +285,18 @@ useFrame(() => {
 
 ---
 
-## Quand NE PAS utiliser l'Instancing
+## Quand utiliser / ne PAS utiliser l'Instancing
 
 **InstancedMesh** est puissant mais a des limitations :
 
-| Cas d'usage | Instancing ? |
-|-------------|--------------|
-| Mêmes objets, couleurs différentes | Oui |
-| Mêmes objets, transformations différentes | Oui |
-| Objets avec textures uniques par instance | Non |
-| Objets nécessitant matériaux différents | Non |
+| Cas d'usage | Instancing ? | Technique |
+|-------------|--------------|-----------|
+| Mêmes objets, couleurs différentes | Oui | `instanceColor` attribute |
+| Mêmes objets, transformations différentes | Oui | `setMatrixAt()` |
+| Objets avec textures uniques par instance | **Oui** | **DataArrayTexture + layer index** |
+| Objets nécessitant matériaux différents | Non | Groupes séparés |
 
-**Exemple :** Des cassettes VHS avec chacune leur propre poster TMDB ne peuvent PAS être instancées car chaque instance a besoin de sa propre texture.
+**Exemple :** 520 cassettes VHS avec posters TMDB uniques → 1 InstancedMesh + DataArrayTexture (1 draw call). Voir `PERFORMANCE_STRATEGY.md` § InstancedMesh + DataArrayTexture.
 
 ---
 

@@ -178,3 +178,64 @@ For texture-dependent materials: use `useMemo` + dispose in cleanup.
 - **NEVER call setState inside `useMemo`** → "Cannot update component while rendering"
 - **Array literal props** like `position={[1,2,3]}` create new ref every render → use scalars
 - **Memoize callback factories** in `useMemo` with stable deps
+
+---
+
+## GLB Scene Clone — Material Sharing Bug
+
+`glbScene.clone(true)` shares materials by reference. First instance corrupting `mat.map` or `mat.colorNode` breaks ALL future clones.
+
+```typescript
+// FIX: Explicitly clone materials before modifying
+cloned.traverse((child) => {
+  if (child instanceof THREE.Mesh && child.material) {
+    child.material = (child.material as THREE.MeshStandardMaterial).clone()
+  }
+})
+```
+
+---
+
+## LRU Texture Cache for Generated Textures
+
+When generating textures dynamically (Canvas2D → CanvasTexture), cache results to avoid re-rendering.
+
+```typescript
+const TEXTURE_CACHE = new Map<number, THREE.CanvasTexture>()
+const LRU: number[] = [] // oldest first
+const MAX_CACHED = 20    // ~80MB VRAM (20 × 4MB per 1024² RGBA)
+
+function getOrCreate(id: number): THREE.CanvasTexture {
+  const cached = TEXTURE_CACHE.get(id)
+  if (cached) return cached
+  const tex = generateTexture(id)
+  // Evict oldest if at capacity
+  if (LRU.length >= MAX_CACHED) {
+    const evictId = LRU.shift()!
+    TEXTURE_CACHE.get(evictId)?.dispose()
+    TEXTURE_CACHE.delete(evictId)
+  }
+  TEXTURE_CACHE.set(id, tex)
+  LRU.push(id)
+  return tex
+}
+```
+
+Store associated bump maps as `texture.userData.bumpMap` for co-disposal.
+
+---
+
+## TMDB Client-Side Response Cache
+
+Avoid redundant TMDB API calls for stable data (credits, trailers, certifications).
+
+```typescript
+const cache = new Map<string, { data: unknown; ts: number }>()
+const TTL = 24 * 60 * 60 * 1000 // 24h
+
+function withCache<T>(key: string, fetcher: () => Promise<T>): Promise<T> {
+  const cached = cache.get(key)
+  if (cached && Date.now() - cached.ts < TTL) return Promise.resolve(cached.data as T)
+  return fetcher().then(data => { cache.set(key, { data, ts: Date.now() }); return data })
+}
+```

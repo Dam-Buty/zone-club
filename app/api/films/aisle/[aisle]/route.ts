@@ -11,7 +11,9 @@ export async function GET(
 
     if (aisle === 'nouveautes') {
         const films = getNouveautes();
-        return NextResponse.json({ aisle, films });
+        const response = NextResponse.json({ aisle, films });
+        response.headers.set('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=3600');
+        return response;
     }
 
     if (!VALID_AISLES.includes(aisle)) {
@@ -19,5 +21,7 @@ export async function GET(
     }
 
     const films = getFilmsByAisle(aisle);
-    return NextResponse.json({ aisle, films });
+    const response = NextResponse.json({ aisle, films });
+    response.headers.set('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=3600');
+    return response;
 }

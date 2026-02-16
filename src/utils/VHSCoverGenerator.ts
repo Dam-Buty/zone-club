@@ -15,6 +15,12 @@ const _logoSampleCtx = _logoSampleCanvas.getContext('2d', { willReadFrequently: 
 // ---- Cache for isLogoBright results (avoids repeated GPU→CPU readbacks) ----
 const _logoBrightnessCache = new Map<string, boolean>()
 
+// ---- VHS Cover caches (avoid re-fetching TMDB data + re-rendering canvas) ----
+const VHS_DATA_CACHE = new Map<number, VHSCoverData>()
+const VHS_TEXTURE_CACHE = new Map<number, THREE.CanvasTexture>()
+const VHS_TEXTURE_LRU: number[] = [] // oldest first
+const VHS_TEXTURE_MAX = 20 // ~80MB VRAM max (20 × 4MB per 1024² RGBA)
+
 // Face regions in canvas pixel coordinates { x, y, w, h }
 const FRONT = { x: 614, y: 117, w: 395, h: 712 }
 const BACK  = { x: 117, y: 117, w: 395, h: 712 }
@@ -25,7 +31,7 @@ const BOTTOM_EDGE = { x: 117, y: 829, w: 395, h: 102 }
 
 // Notch safe zone — top center of front face where tape is visible through jacket cutout
 // Content drawn here is hidden by the physical notch, so skip important elements
-const NOTCH_BOTTOM = 58
+const NOTCH_BOTTOM = 22
 
 // ---- Studio name → canonical TMDB company ID (for entries without logo_path) ----
 const STUDIO_ALIASES: Record<string, number> = {
@@ -425,8 +431,15 @@ function drawRuntimeBar(
 
 /** Enable subtle text shadow for readability */
 function enableTextShadow(ctx: CanvasRenderingContext2D) {
-  ctx.shadowColor = 'rgba(0,0,0,0.7)'
-  ctx.shadowBlur = 3
+  ctx.shadowColor = 'rgba(0,0,0,0.55)'
+  ctx.shadowBlur = 2
+  ctx.shadowOffsetX = 1
+  ctx.shadowOffsetY = 1
+}
+
+function enableLightTextShadow(ctx: CanvasRenderingContext2D) {
+  ctx.shadowColor = 'rgba(0,0,0,0.45)'
+  ctx.shadowBlur = 2
   ctx.shadowOffsetX = 1
   ctx.shadowOffsetY = 1
 }
@@ -524,6 +537,26 @@ function getAwardsText(film: Film): string | null {
 
 // ---- Data types ----
 
+/** Recorded fillText call for bump map replay */
+interface TextBumpOp {
+  text: string
+  x: number
+  y: number
+  font: string
+  align: CanvasTextAlign
+}
+
+/** Position info captured during front cover color rendering, used for bump map alignment */
+interface FrontTitleBumpInfo {
+  x: number
+  y: number
+  maxW: number
+  fontSize: number
+  align: 'center' | 'left'
+  maxLines: number
+  textOps: TextBumpOp[]
+}
+
 export interface VHSCoverData {
   film: Film
   posterImg: HTMLImageElement | null
@@ -544,6 +577,9 @@ export interface VHSCoverData {
 }
 
 export async function fetchVHSCoverData(film: Film): Promise<VHSCoverData> {
+  const cached = VHS_DATA_CACHE.get(film.id)
+  if (cached) return cached
+
   const tmdbFilmId = film.tmdb_id ?? null
   const data: VHSCoverData = {
     film,
@@ -622,6 +658,8 @@ export async function fetchVHSCoverData(film: Film): Promise<VHSCoverData> {
       tmdb.getFilm(tmdbFilmId)
         .then(async (fullFilm) => {
           if (!data.tagline && fullFilm.tagline) data.tagline = fullFilm.tagline
+          // Use TMDB vote_average (the DB doesn't store it — fetched at runtime)
+          if (fullFilm.vote_average) data.film = { ...data.film, vote_average: fullFilm.vote_average }
           // Sort companies: known majors first (those in LOCAL_STUDIO_LOGOS)
           const allCompanies = (fullFilm.production_companies || [])
           allCompanies.sort((a, b) => {
@@ -707,6 +745,7 @@ export async function fetchVHSCoverData(film: Film): Promise<VHSCoverData> {
   }
 
   await Promise.all(promises)
+  VHS_DATA_CACHE.set(film.id, data)
   return data
 }
 
@@ -719,6 +758,11 @@ function getTemplate(film: Film): VHSTemplate {
 // ---- Texture generation ----
 
 export function generateVHSCoverTexture(data: VHSCoverData): THREE.CanvasTexture {
+  // Return cached texture if available
+  const filmId = data.film.id
+  const cachedTex = VHS_TEXTURE_CACHE.get(filmId)
+  if (cachedTex) return cachedTex
+
   const canvas = document.createElement('canvas')
   canvas.width = TEX_SIZE
   canvas.height = TEX_SIZE
@@ -729,16 +773,46 @@ export function generateVHSCoverTexture(data: VHSCoverData): THREE.CanvasTexture
   ctx.fillStyle = '#0a0a12'
   ctx.fillRect(0, 0, TEX_SIZE, TEX_SIZE)
 
-  drawFrontCover(ctx, data, template)
-  drawBackCover(ctx, data, template)
+  const frontTitleInfo = drawFrontCover(ctx, data, template)
+  const backTextOps = drawBackCover(ctx, data, template)
   drawSpine(ctx, SPINE1, data, template)
   drawSpine(ctx, SPINE2, data, template)
   drawEdge(ctx, TOP_EDGE)
   drawEdge(ctx, BOTTOM_EDGE)
 
+  // Generate bump map for text/logo relief (light-reactive emboss on all surfaces)
+  const bumpCanvas = document.createElement('canvas')
+  bumpCanvas.width = TEX_SIZE
+  bumpCanvas.height = TEX_SIZE
+  const bCtx = bumpCanvas.getContext('2d')!
+  bCtx.fillStyle = '#000000'
+  bCtx.fillRect(0, 0, TEX_SIZE, TEX_SIZE)
+  drawSpineBump(bCtx, SPINE1, data, template)
+  drawSpineBump(bCtx, SPINE2, data, template)
+  drawFrontBump(bCtx, data, template, frontTitleInfo)
+  drawBackBump(bCtx, backTextOps)
+
+  const bumpTexture = new THREE.CanvasTexture(bumpCanvas)
+  bumpTexture.flipY = false
+
   const texture = new THREE.CanvasTexture(canvas)
   texture.colorSpace = THREE.SRGBColorSpace
   texture.flipY = false
+  texture.userData.bumpMap = bumpTexture
+
+  // LRU cache: evict oldest if at capacity
+  if (VHS_TEXTURE_LRU.length >= VHS_TEXTURE_MAX) {
+    const evictId = VHS_TEXTURE_LRU.shift()!
+    const evicted = VHS_TEXTURE_CACHE.get(evictId)
+    if (evicted) {
+      evicted.userData.bumpMap?.dispose()
+      evicted.dispose()
+      VHS_TEXTURE_CACHE.delete(evictId)
+    }
+  }
+  VHS_TEXTURE_CACHE.set(filmId, texture)
+  VHS_TEXTURE_LRU.push(filmId)
+
   return texture
 }
 
@@ -765,28 +839,41 @@ function blitFlipped(
 //  FRONT COVER
 // ============================================================
 
-function drawFrontCover(ctx: CanvasRenderingContext2D, data: VHSCoverData, template: VHSTemplate) {
+function drawFrontCover(ctx: CanvasRenderingContext2D, data: VHSCoverData, template: VHSTemplate): FrontTitleBumpInfo {
+  let titleInfo: FrontTitleBumpInfo = { x: 0, y: 0, maxW: 0, fontSize: 32, align: 'center', maxLines: 2, textOps: [] }
+  const textOps: TextBumpOp[] = []
   blitFlipped(ctx, FRONT, (tc, w, h) => {
+    // Record all fillText calls for bump map replay
+    const origFillText = tc.fillText
+    ;(tc as any).fillText = (text: string, x: number, y: number, maxWidth?: number) => {
+      textOps.push({ text, x, y, font: tc.font, align: tc.textAlign as CanvasTextAlign })
+      origFillText.call(tc, text, x, y, maxWidth!)
+    }
+
     const pad = 14
 
     fillGradient(tc, w, h, template.frontBg)
     enableTextShadow(tc)
 
     if (template.posterLayout === 'full-bleed') {
-      drawFrontFullBleed(tc, w, h, pad, data, template)
+      titleInfo = drawFrontFullBleed(tc, w, h, pad, data, template)
     } else if (template.posterLayout === 'centered-padded') {
-      drawFrontCenteredPadded(tc, w, h, pad, data, template)
+      titleInfo = drawFrontCenteredPadded(tc, w, h, pad, data, template)
     } else {
-      drawFrontOffsetLeft(tc, w, h, pad, data, template)
+      titleInfo = drawFrontOffsetLeft(tc, w, h, pad, data, template)
     }
 
+    // Restore fillText (remove instance shadow → prototype method)
+    delete (tc as any).fillText
   })
+  titleInfo.textOps = textOps
+  return titleInfo
 }
 
 function drawFrontFullBleed(
   tc: CanvasRenderingContext2D, w: number, h: number, pad: number,
   data: VHSCoverData, template: VHSTemplate
-) {
+): FrontTitleBumpInfo {
   const { film, posterImg } = data
 
   if (posterImg) {
@@ -819,16 +906,8 @@ function drawFrontFullBleed(
   // --- Top zone (below notch) ---
   let topY = NOTCH_BOTTOM + 4
 
-  // VHS badge (top-right)
-  drawVHSBadge(tc, w - pad - 50, topY, template.accentColor)
-
-  // Certification badge (top-left)
-  if (data.certification) {
-    drawCertificationBadge(tc, data.certification, pad, topY, template.accentColor)
-  }
-
-  // Studio (centered below badges)
-  topY += 26
+  // Studio (centered, top)
+  enableLightTextShadow(tc)
   if (data.studioName) {
     tc.font = 'bold 10px sans-serif'
     tc.fillStyle = 'rgba(255,255,255,0.55)'
@@ -848,6 +927,14 @@ function drawFrontFullBleed(
       tc.fillText(line, w / 2, topY + 18)
       topY += 22
     }
+    topY += 4
+  }
+  enableTextShadow(tc)
+
+  // VHS badge (right) + Certification badge (left) — below studio/actors
+  drawVHSBadge(tc, w - pad - 50, topY, template.accentColor)
+  if (data.certification) {
+    drawCertificationBadge(tc, data.certification, pad, topY, template.accentColor)
   }
 
   // --- Bottom text zone ---
@@ -863,11 +950,16 @@ function drawFrontFullBleed(
     curY += 20
   }
 
+  // Capture title position for bump map alignment
+  const _titleY = curY
+
   // Title (logo or text)
+  enableLightTextShadow(tc)
   curY += drawTitleOrLogo(tc, data, {
     x: w / 2, y: curY, maxW: w - pad * 2,
     fontSize: 32, color: template.titleColor, align: 'center',
   })
+  enableTextShadow(tc)
 
   // Tagline
   if (template.showTagline && data.tagline) {
@@ -912,12 +1004,14 @@ function drawFrontFullBleed(
 
   // Runtime bar (bottom)
   drawRuntimeBar(tc, film.runtime, pad, curY + 2, w - pad * 2, template.accentColor)
+
+  return { x: w / 2, y: _titleY, maxW: w - pad * 2, fontSize: 32, align: 'center', maxLines: 2, textOps: [] }
 }
 
 function drawFrontCenteredPadded(
   tc: CanvasRenderingContext2D, w: number, h: number, pad: number,
   data: VHSCoverData, template: VHSTemplate
-) {
+): FrontTitleBumpInfo {
   const { film, posterImg } = data
   let curY = 8
 
@@ -934,15 +1028,17 @@ function drawFrontCenteredPadded(
     curY = 46
   }
 
-  // Actor names (below notch zone)
+  // Studio + actors (below notch zone, above badges)
   curY = Math.max(curY, NOTCH_BOTTOM + 6)
 
-  // Certification + VHS badges on same line
-  if (data.certification) {
-    drawCertificationBadge(tc, data.certification, pad, curY, template.accentColor)
+  enableLightTextShadow(tc)
+  if (data.studioName && template.borderStyle !== 'thick-band') {
+    tc.font = 'bold 10px sans-serif'
+    tc.fillStyle = 'rgba(255,255,255,0.55)'
+    tc.textAlign = 'center'
+    tc.fillText(data.studioName.toUpperCase(), w / 2, curY + 10)
+    curY += 14
   }
-  drawVHSBadge(tc, w - pad - 50, curY, template.accentColor)
-  curY += 26
 
   if (data.actors.length > 0) {
     tc.font = 'bold 16px sans-serif'
@@ -954,8 +1050,16 @@ function drawFrontCenteredPadded(
       tc.fillText(line, w / 2, curY + 16)
       curY += 20
     }
-    curY += 6
+    curY += 4
   }
+  enableTextShadow(tc)
+
+  // Certification + VHS badges on same line (below studio/actors)
+  if (data.certification) {
+    drawCertificationBadge(tc, data.certification, pad, curY, template.accentColor)
+  }
+  drawVHSBadge(tc, w - pad - 50, curY, template.accentColor)
+  curY += 26
 
   // Poster image centered
   if (posterImg) {
@@ -992,11 +1096,16 @@ function drawFrontCenteredPadded(
     curY += 18
   }
 
+  // Capture title position for bump map alignment
+  const _titleY = curY
+
   // Title (logo or text)
+  enableLightTextShadow(tc)
   curY += drawTitleOrLogo(tc, data, {
     x: w / 2, y: curY, maxW: w - pad * 2,
     fontSize: 28, color: template.titleColor, align: 'center',
   })
+  enableTextShadow(tc)
 
   // Director
   if (data.directors.length > 0) {
@@ -1028,12 +1137,14 @@ function drawFrontCenteredPadded(
 
   // Runtime bar
   drawRuntimeBar(tc, film.runtime, pad, curY + 2, w - pad * 2, template.accentColor)
+
+  return { x: w / 2, y: _titleY, maxW: w - pad * 2, fontSize: 28, align: 'center', maxLines: 2, textOps: [] }
 }
 
 function drawFrontOffsetLeft(
   tc: CanvasRenderingContext2D, w: number, h: number, pad: number,
   data: VHSCoverData, template: VHSTemplate
-) {
+): FrontTitleBumpInfo {
   const { film, posterImg } = data
 
   if (posterImg) {
@@ -1051,14 +1162,8 @@ function drawFrontOffsetLeft(
     const textW = w - posterW - 6 - pad
     let rY = NOTCH_BOTTOM + 8
 
-    // VHS badge + certification
-    drawVHSBadge(tc, textX, rY, template.accentColor)
-    if (data.certification) {
-      drawCertificationBadge(tc, data.certification, textX + 54, rY, template.accentColor)
-    }
-    rY += 28
-
-    // Studio
+    // Studio (top of right column)
+    enableLightTextShadow(tc)
     if (data.studioName) {
       tc.font = 'bold 10px sans-serif'
       tc.fillStyle = 'rgba(255,255,255,0.5)'
@@ -1075,7 +1180,15 @@ function drawFrontOffsetLeft(
       tc.fillText(actor.toUpperCase(), textX, rY + 14)
       rY += 18
     }
-    rY += 8
+    rY += 6
+    enableTextShadow(tc)
+
+    // VHS badge + certification (below studio/actors)
+    drawVHSBadge(tc, textX, rY, template.accentColor)
+    if (data.certification) {
+      drawCertificationBadge(tc, data.certification, textX + 54, rY, template.accentColor)
+    }
+    rY += 28
 
     // Tagline
     if (template.showTagline && data.tagline) {
@@ -1090,11 +1203,16 @@ function drawFrontOffsetLeft(
       rY += 6
     }
 
+    // Capture title position for bump map alignment
+    const _titleY = rY
+
     // Title (logo or text)
+    enableLightTextShadow(tc)
     rY += drawTitleOrLogo(tc, data, {
       x: textX, y: rY, maxW: textW,
       fontSize: 20, color: template.titleColor, align: 'left', maxLines: 4,
     })
+    enableTextShadow(tc)
 
     // Awards
     const awardsOL = getAwardsText(film)
@@ -1141,6 +1259,8 @@ function drawFrontOffsetLeft(
 
     // Runtime bar at bottom of right column
     drawRuntimeBar(tc, film.runtime, textX, rY, textW, template.accentColor)
+
+    return { x: textX, y: _titleY, maxW: textW, fontSize: 20, align: 'left', maxLines: 4, textOps: [] }
   } else {
     tc.fillStyle = `${template.accentColor}18`
     tc.fillRect(pad, pad, w - pad * 2, h - pad * 2)
@@ -1148,6 +1268,8 @@ function drawFrontOffsetLeft(
     tc.fillStyle = template.accentColor
     tc.textAlign = 'center'
     tc.fillText(film.title.substring(0, 2).toUpperCase(), w / 2, h / 2 + 16)
+
+    return { x: w / 2, y: h / 2 - 16, maxW: w - pad * 2, fontSize: 48, align: 'center', maxLines: 1, textOps: [] }
   }
 }
 
@@ -1155,8 +1277,16 @@ function drawFrontOffsetLeft(
 //  BACK COVER
 // ============================================================
 
-function drawBackCover(ctx: CanvasRenderingContext2D, data: VHSCoverData, template: VHSTemplate) {
+function drawBackCover(ctx: CanvasRenderingContext2D, data: VHSCoverData, template: VHSTemplate): TextBumpOp[] {
+  const textOps: TextBumpOp[] = []
   blitFlipped(ctx, BACK, (tc, w, h) => {
+    // Record all fillText calls for bump map replay
+    const origFillText = tc.fillText
+    ;(tc as any).fillText = (text: string, x: number, y: number, maxWidth?: number) => {
+      textOps.push({ text, x, y, font: tc.font, align: tc.textAlign as CanvasTextAlign })
+      origFillText.call(tc, text, x, y, maxWidth!)
+    }
+
     const { film, backdropImgs } = data
     const pad = 14
 
@@ -1167,10 +1297,12 @@ function drawBackCover(ctx: CanvasRenderingContext2D, data: VHSCoverData, templa
     let curY = pad + topMargin
 
     // Title header (logo or text)
+    enableLightTextShadow(tc)
     curY += drawTitleOrLogo(tc, data, {
       x: pad, y: curY, maxW: w - pad * 2,
       fontSize: 16, color: template.accentColor, align: 'left', maxLines: 1,
     })
+    enableTextShadow(tc)
 
     // Separator
     tc.fillStyle = `${template.accentColor}60`
@@ -1294,7 +1426,11 @@ function drawBackCover(ctx: CanvasRenderingContext2D, data: VHSCoverData, templa
     tc.fillStyle = 'rgba(255,255,255,0.5)'
     tc.textAlign = 'center'
     tc.fillText('ZONE CLUB \u00c9DITIONS', w / 2, h - 10)
+
+    // Restore fillText
+    delete (tc as any).fillText
   })
+  return textOps
 }
 
 function estimateCreditsHeight(data: VHSCoverData): number {
@@ -1601,6 +1737,7 @@ function drawSpine(
     }
 
     // Title (center of spine — logo if available, adaptive text fallback)
+    enableLightTextShadow(tc)
     if (data.logoImg) {
       // Draw official movie logo rotated on spine
       tc.save()
@@ -1618,11 +1755,10 @@ function drawSpine(
       tc.drawImage(data.logoImg, -logoW / 2, -logoH / 2, logoW, logoH)
       tc.restore()
     } else {
-      // Fallback: adaptive font size text
+      // Fallback: adaptive font size text with offset-print emboss effect
       tc.save()
       tc.translate(w / 2, h / 2)
       tc.rotate(Math.PI / 2)
-      tc.fillStyle = '#ffffff'
       tc.textAlign = 'center'
       tc.textBaseline = 'middle'
       const spineTitle = film.title.toUpperCase()
@@ -1635,9 +1771,23 @@ function drawSpine(
         spineFontSize--
         tc.font = `bold ${spineFontSize}px sans-serif`
       }
+
+      // Offset-print emboss: shadow pass (depth)
+      disableShadow(tc)
+      tc.fillStyle = 'rgba(0,0,0,0.55)'
+      tc.fillText(spineTitle, 1.5, 1.5)
+
+      // Highlight pass (catch light on raised edge)
+      tc.fillStyle = 'rgba(255,255,255,0.25)'
+      tc.fillText(spineTitle, -1, -1)
+
+      // Main text
+      tc.fillStyle = '#ffffff'
       tc.fillText(spineTitle, 0, 0)
       tc.restore()
     }
+
+    enableTextShadow(tc)
 
     // Certification (below title)
     if (data.certification) {
@@ -1658,6 +1808,199 @@ function drawSpine(
     tc.textAlign = 'center'
     tc.textBaseline = 'middle'
     tc.fillText('VHS', w / 2, h - 35)
+  })
+}
+
+// ---- BUMP MAP generators (white = raised, black = flat) ----
+
+function drawSpineBump(
+  ctx: CanvasRenderingContext2D,
+  region: { x: number; y: number; w: number; h: number },
+  data: VHSCoverData,
+  _template: VHSTemplate
+) {
+  blitFlipped(ctx, region, (tc, w, h) => {
+    // Draw on TRANSPARENT canvas first (blitFlipped clears for us)
+    // Then convert all content to white silhouette for consistent bump height
+
+    const { film } = data
+
+    // Title (center of spine) — use SAME asset as color version
+    if (data.logoImg) {
+      // Official movie logo from TMDB API — exact same coords as drawSpine()
+      tc.save()
+      tc.translate(w / 2, h / 2)
+      tc.rotate(Math.PI / 2)
+      const logoAspect = data.logoImg.width / data.logoImg.height
+      const maxLogoW = h - 160
+      const maxLogoH = w - 16
+      let logoW = maxLogoW
+      let logoH = logoW / logoAspect
+      if (logoH > maxLogoH) { logoH = maxLogoH; logoW = logoH * logoAspect }
+      tc.drawImage(data.logoImg, -logoW / 2, -logoH / 2, logoW, logoH)
+      tc.restore()
+    } else {
+      // Text fallback — same font sizing as drawSpine()
+      tc.save()
+      tc.translate(w / 2, h / 2)
+      tc.rotate(Math.PI / 2)
+      tc.fillStyle = '#ffffff'
+      tc.textAlign = 'center'
+      tc.textBaseline = 'middle'
+      const spineTitle = film.title.toUpperCase()
+      const maxTitleWidth = h - 160
+      const MIN_SPINE_FONT = 14
+      const MAX_SPINE_FONT = 38
+      let spineFontSize = MAX_SPINE_FONT
+      tc.font = `bold ${spineFontSize}px sans-serif`
+      while (tc.measureText(spineTitle).width > maxTitleWidth && spineFontSize > MIN_SPINE_FONT) {
+        spineFontSize--
+        tc.font = `bold ${spineFontSize}px sans-serif`
+      }
+      tc.fillText(spineTitle, 0, 0)
+      tc.restore()
+    }
+
+    // VHS label (bottom) — same coords as drawSpine()
+    tc.font = 'bold 24px sans-serif'
+    tc.fillStyle = '#ffffff'
+    tc.textAlign = 'center'
+    tc.textBaseline = 'middle'
+    tc.fillText('VHS', w / 2, h - 35)
+
+    // Studio logo or text (top) — same coords as drawSpine()
+    if (data.studioLogos.length > 0) {
+      const studioLogo = data.studioLogos[0].img
+      tc.save()
+      tc.translate(w / 2, 50)
+      const aspect = studioLogo.width / studioLogo.height
+      const maxLW = w - 12
+      const maxLH = 50
+      let lW = maxLW
+      let lH = lW / aspect
+      if (lH > maxLH) { lH = maxLH; lW = lH * aspect }
+      tc.drawImage(studioLogo, -lW / 2, -lH / 2, lW, lH)
+      tc.restore()
+    } else if (data.studioName) {
+      tc.save()
+      tc.translate(w / 2, 50)
+      tc.font = 'bold 11px sans-serif'
+      tc.fillStyle = '#ffffff'
+      tc.textAlign = 'center'
+      tc.textBaseline = 'middle'
+      tc.fillText(data.studioName.toUpperCase(), 0, 0)
+      tc.restore()
+    }
+
+    // Convert all drawn content to white silhouette (consistent bump regardless of logo colors)
+    tc.globalCompositeOperation = 'source-atop'
+    tc.fillStyle = '#ffffff'
+    tc.fillRect(0, 0, w, h)
+    tc.globalCompositeOperation = 'source-over'
+
+    // Fill black behind all content (flat = no bump)
+    tc.globalCompositeOperation = 'destination-over'
+    tc.fillStyle = '#000000'
+    tc.fillRect(0, 0, w, h)
+    tc.globalCompositeOperation = 'source-over'
+  })
+}
+
+function drawFrontBump(
+  ctx: CanvasRenderingContext2D,
+  data: VHSCoverData,
+  _template: VHSTemplate,
+  info: FrontTitleBumpInfo
+) {
+  blitFlipped(ctx, FRONT, (tc, w, h) => {
+    const studioNameUpper = data.studioName?.toUpperCase()
+    const topThreshold = h * 0.2 // top 20% of face = studio + actors zone
+
+    // 1. Draw text at per-zone gray levels (no gradient — discrete per-op)
+    for (const op of info.textOps) {
+      tc.font = op.font
+      tc.textAlign = op.align
+      if (studioNameUpper && op.text === studioNameUpper) {
+        // Studio name: 50% reduction
+        tc.fillStyle = '#555555'
+      } else if (op.y < topThreshold) {
+        // Top section (actors): 30% reduction
+        tc.fillStyle = '#777777'
+      } else if (op.text.includes('\u2022')) {
+        // Genre line (contains bullet separator): 50% reduction + 10% boost
+        tc.fillStyle = '#606060'
+      } else {
+        // Everything else: standard bump
+        tc.fillStyle = '#aaaaaa'
+      }
+      tc.fillText(op.text, op.x, op.y)
+    }
+
+    // 4. Overdraw title at full white (#ffffff → full 1.5 effective bump)
+    const { x: titleX, y: titleY, maxW: titleMaxW, fontSize: titleFontSize, align: titleAlign, maxLines: titleMaxLines } = info
+    if (data.logoImg) {
+      const logoAspect = data.logoImg.width / data.logoImg.height
+      let logoW = titleMaxW
+      let logoH = logoW / logoAspect
+      const maxH = titleFontSize * titleMaxLines * 1.4
+      if (logoH > maxH) { logoH = maxH; logoW = logoH * logoAspect }
+      const drawX = titleAlign === 'center' ? titleX - logoW / 2 : titleX
+      tc.drawImage(data.logoImg, drawX, titleY, logoW, logoH)
+    } else {
+      tc.font = `bold ${titleFontSize}px sans-serif`
+      tc.fillStyle = '#ffffff'
+      tc.textAlign = titleAlign
+      const lines = wrapText(tc, data.film.title.toUpperCase(), titleMaxW, titleMaxLines)
+      let dy = 0
+      const lineH = Math.round(titleFontSize * 1.2)
+      for (const line of lines) {
+        tc.fillText(line, titleX, titleY + titleFontSize + dy)
+        dy += lineH
+      }
+    }
+
+    // 5. Black background behind everything (flat = no bump)
+    tc.globalCompositeOperation = 'destination-over'
+    tc.fillStyle = '#000000'
+    tc.fillRect(0, 0, w, h)
+    tc.globalCompositeOperation = 'source-over'
+  })
+}
+
+// Credit labels and review markers used to identify low-bump text on the back cover
+const CREDIT_PREFIXES = ['Avec ', '\u00c9galement ', 'R\u00e9alis\u00e9 par ', 'Distribution ', 'Production ', 'Produit par ', '\u00c9crit par ', 'Musique ']
+
+function isBackCreditOrReview(text: string): boolean {
+  // Review quote lines (« ... ») and author attribution (— ...)
+  if (text.startsWith('\u00ab') || text.startsWith('\u2014')) return true
+  // Credit labels and their values (9px font lines in the credits block)
+  for (const prefix of CREDIT_PREFIXES) {
+    if (text.startsWith(prefix)) return true
+  }
+  return false
+}
+
+function drawBackBump(ctx: CanvasRenderingContext2D, textOps: TextBumpOp[]) {
+  blitFlipped(ctx, BACK, (tc, w, h) => {
+    // Replay all recorded back cover text with per-op bump levels
+    for (const op of textOps) {
+      tc.font = op.font
+      tc.textAlign = op.align
+      if (isBackCreditOrReview(op.text)) {
+        // Credits + review: 50% of standard back bump (#555555 → #2a2a2a)
+        tc.fillStyle = '#2a2a2a'
+      } else {
+        // Everything else (synopsis, headers, branding): standard back bump
+        tc.fillStyle = '#555555'
+      }
+      tc.fillText(op.text, op.x, op.y)
+    }
+
+    // Black background (flat = no bump)
+    tc.globalCompositeOperation = 'destination-over'
+    tc.fillStyle = '#000000'
+    tc.fillRect(0, 0, w, h)
+    tc.globalCompositeOperation = 'source-over'
   })
 }
 

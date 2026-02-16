@@ -479,8 +479,9 @@ export function Controls({ onCassetteClick, isMobile, mobileInputRef }: Controls
       camera.position.addScaledVector(_right, -velocity.current.x)
       camera.position.addScaledVector(_forward, -velocity.current.z)
     } else {
-      controlsRef.current!.moveRight(-velocity.current.x)
-      controlsRef.current!.moveForward(-velocity.current.z)
+      if (!controlsRef.current) return
+      controlsRef.current.moveRight(-velocity.current.x)
+      controlsRef.current.moveForward(-velocity.current.z)
     }
 
     // Wall limits

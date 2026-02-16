@@ -13,7 +13,8 @@ src/
 │   │   ├── Controls.tsx        # FPS controls + raycasting + collisions
 │   │   ├── Manager3D.tsx       # Animated character (Quentin)
 │   │   ├── InteractiveTVDisplay.tsx # TV screen triggering terminal
-│   │   ├── GenreSectionPanel.tsx    # Genre label panels
+│   │   ├── GenreSectionPanel.tsx    # Genre label panels (neon + RectAreaLight)
+│   │   ├── VHSCaseViewer.tsx       # 3D VHS case viewer (GLB + TSL lighting)
 │   │   ├── Lighting.tsx        # Optimized lighting (8 lights)
 │   │   └── ServiceBell.tsx     # Interactive desk bell
 │   ├── terminal/           # TV terminal UI (HTML overlay)
@@ -27,6 +28,7 @@ src/
 │   └── index.ts            # Zustand store (auth, rentals, UI, player)
 ├── utils/
 │   ├── CassetteTextureArray.ts  # DataArrayTexture for poster atlas
+│   ├── VHSCoverGenerator.ts    # VHS jacket texture + bump map (Canvas2D → CanvasTexture, LRU cached)
 │   ├── CassetteAnimationSystem.ts # Animation registry (legacy)
 │   └── TextureCache.ts     # Ref-counted cache (legacy, replaced by DataArrayTexture)
 ├── api/

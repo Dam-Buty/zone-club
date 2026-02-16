@@ -50,7 +50,6 @@ if (!columns.some(c => c.name === 'aisle')) {
 if (!columns.some(c => c.name === 'is_nouveaute')) {
     db.exec('ALTER TABLE films ADD COLUMN is_nouveaute BOOLEAN DEFAULT FALSE');
 }
-
 // --- TMDB ---
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 if (!TMDB_API_KEY) {

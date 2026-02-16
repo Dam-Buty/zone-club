@@ -4,6 +4,16 @@ const API_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY;
 const BASE_URL = 'https://api.themoviedb.org/3';
 const IMAGE_BASE = 'https://image.tmdb.org/t/p';
 
+// ---- Response cache (session-lifetime, avoids redundant TMDB network calls) ----
+const _tmdbCache = new Map<string, { data: unknown; ts: number }>();
+const CACHE_TTL = 24 * 60 * 60 * 1000; // 24h for stable data (credits, trailers, certifications)
+
+function withCache<T>(key: string, fetcher: () => Promise<T>): Promise<T> {
+  const cached = _tmdbCache.get(key);
+  if (cached && Date.now() - cached.ts < CACHE_TTL) return Promise.resolve(cached.data as T);
+  return fetcher().then(data => { _tmdbCache.set(key, { data, ts: Date.now() }); return data; });
+}
+
 export interface TMDBVideo {
   id: string;
   key: string;
@@ -62,11 +72,13 @@ export const tmdb = {
     path ? `${IMAGE_BASE}/${size}${path}` : null,
 
   async getFilm(id: number): Promise<Film> {
-    const res = await fetch(
-      `${BASE_URL}/movie/${id}?api_key=${API_KEY}&language=fr-FR`
-    );
-    if (!res.ok) throw new Error(`TMDB error: ${res.status}`);
-    return res.json();
+    return withCache(`film:${id}`, async () => {
+      const res = await fetch(
+        `${BASE_URL}/movie/${id}?api_key=${API_KEY}&language=fr-FR`
+      );
+      if (!res.ok) throw new Error(`TMDB error: ${res.status}`);
+      return res.json();
+    });
   },
 
   async getFilms(ids: number[]): Promise<Film[]> {
@@ -77,24 +89,26 @@ export const tmdb = {
   },
 
   async getVideos(id: number): Promise<TMDBVideo[]> {
-    // Try French first, fallback to English for trailers
-    const resFr = await fetch(
-      `${BASE_URL}/movie/${id}/videos?api_key=${API_KEY}&language=fr-FR`
-    );
-    if (!resFr.ok) throw new Error(`TMDB error: ${resFr.status}`);
-    const dataFr = await resFr.json();
-
-    // If no French videos, try English
-    if (dataFr.results.length === 0) {
-      const resEn = await fetch(
-        `${BASE_URL}/movie/${id}/videos?api_key=${API_KEY}&language=en-US`
+    return withCache(`videos:${id}`, async () => {
+      // Try French first, fallback to English for trailers
+      const resFr = await fetch(
+        `${BASE_URL}/movie/${id}/videos?api_key=${API_KEY}&language=fr-FR`
       );
-      if (!resEn.ok) throw new Error(`TMDB error: ${resEn.status}`);
-      const dataEn = await resEn.json();
-      return dataEn.results;
-    }
+      if (!resFr.ok) throw new Error(`TMDB error: ${resFr.status}`);
+      const dataFr = await resFr.json();
 
-    return dataFr.results;
+      // If no French videos, try English
+      if (dataFr.results.length === 0) {
+        const resEn = await fetch(
+          `${BASE_URL}/movie/${id}/videos?api_key=${API_KEY}&language=en-US`
+        );
+        if (!resEn.ok) throw new Error(`TMDB error: ${resEn.status}`);
+        const dataEn = await resEn.json();
+        return dataEn.results;
+      }
+
+      return dataFr.results;
+    });
   },
 
   getYouTubeUrl(videoKey: string): string {
@@ -133,41 +147,47 @@ export const tmdb = {
   },
 
   async getImages(id: number): Promise<TMDBImage[]> {
-    const res = await fetch(
-      `${BASE_URL}/movie/${id}/images?api_key=${API_KEY}&include_image_language=null`
-    );
-    if (!res.ok) throw new Error(`TMDB error: ${res.status}`);
-    const data = await res.json();
-    return data.backdrops || [];
+    return withCache(`images:${id}`, async () => {
+      const res = await fetch(
+        `${BASE_URL}/movie/${id}/images?api_key=${API_KEY}&include_image_language=null`
+      );
+      if (!res.ok) throw new Error(`TMDB error: ${res.status}`);
+      const data = await res.json();
+      return data.backdrops || [];
+    });
   },
 
   async getMovieLogo(id: number): Promise<string | null> {
-    const res = await fetch(
-      `${BASE_URL}/movie/${id}/images?api_key=${API_KEY}&include_image_language=en,fr,null`
-    );
-    if (!res.ok) return null;
-    const data = await res.json();
-    const logos: TMDBImage[] = data.logos || [];
-    if (logos.length === 0) return null;
-    // Prefer French, then English, then any — pick widest for quality
-    const frLogo = logos.find((l: TMDBImage & { iso_639_1?: string }) =>
-      (l as TMDBImage & { iso_639_1?: string }).iso_639_1 === 'fr'
-    );
-    const best = frLogo || logos.sort((a, b) => b.width - a.width)[0];
-    return best ? `${IMAGE_BASE}/w500${best.file_path}` : null;
-  },
-
-  async getCompanyLogo(companyId: number): Promise<string | null> {
-    try {
+    return withCache(`logo:${id}`, async () => {
       const res = await fetch(
-        `${BASE_URL}/company/${companyId}?api_key=${API_KEY}`
+        `${BASE_URL}/movie/${id}/images?api_key=${API_KEY}&include_image_language=en,fr,null`
       );
       if (!res.ok) return null;
       const data = await res.json();
-      return data.logo_path ? `${IMAGE_BASE}/w200${data.logo_path}` : null;
-    } catch {
-      return null;
-    }
+      const logos: TMDBImage[] = data.logos || [];
+      if (logos.length === 0) return null;
+      // Prefer French, then English, then any — pick widest for quality
+      const frLogo = logos.find((l: TMDBImage & { iso_639_1?: string }) =>
+        (l as TMDBImage & { iso_639_1?: string }).iso_639_1 === 'fr'
+      );
+      const best = frLogo || logos.sort((a, b) => b.width - a.width)[0];
+      return best ? `${IMAGE_BASE}/w500${best.file_path}` : null;
+    });
+  },
+
+  async getCompanyLogo(companyId: number): Promise<string | null> {
+    return withCache(`company:${companyId}`, async () => {
+      try {
+        const res = await fetch(
+          `${BASE_URL}/company/${companyId}?api_key=${API_KEY}`
+        );
+        if (!res.ok) return null;
+        const data = await res.json();
+        return data.logo_path ? `${IMAGE_BASE}/w200${data.logo_path}` : null;
+      } catch {
+        return null;
+      }
+    });
   },
 
   async getCredits(id: number): Promise<{
@@ -178,6 +198,7 @@ export const tmdb = {
     writers: string[]
     composer: string
   }> {
+    return withCache(`credits:${id}`, async () => {
     const res = await fetch(
       `${BASE_URL}/movie/${id}/credits?api_key=${API_KEY}&language=fr-FR`
     );
@@ -204,41 +225,45 @@ export const tmdb = {
       .find((c: TMDBCrew) => c.job === 'Original Music Composer');
     const composer = composerEntry?.name || '';
     return { directors, actors, secondaryActors, producers, writers, composer };
+    });
   },
 
   async getCertification(id: number): Promise<string> {
-    try {
-      const res = await fetch(
-        `${BASE_URL}/movie/${id}/release_dates?api_key=${API_KEY}`
-      );
-      if (!res.ok) return '';
-      const data = await res.json();
-      const results: { iso_3166_1: string; release_dates: { certification: string; type: number }[] }[] = data.results || [];
-      // Prefer FR, then US, then any
-      for (const country of ['FR', 'US', 'GB', 'DE']) {
-        const entry = results.find(r => r.iso_3166_1 === country);
-        if (entry) {
-          // Prefer theatrical (3), then limited (2), then premiere (1), then any
-          for (const type of [3, 4, 5, 6, 1, 2]) {
-            const rd = entry.release_dates.find(d => d.type === type && d.certification?.trim());
-            if (rd) return rd.certification.trim();
+    return withCache(`cert:${id}`, async () => {
+      try {
+        const res = await fetch(
+          `${BASE_URL}/movie/${id}/release_dates?api_key=${API_KEY}`
+        );
+        if (!res.ok) return '';
+        const data = await res.json();
+        const results: { iso_3166_1: string; release_dates: { certification: string; type: number }[] }[] = data.results || [];
+        // Prefer FR, then US, then any
+        for (const country of ['FR', 'US', 'GB', 'DE']) {
+          const entry = results.find(r => r.iso_3166_1 === country);
+          if (entry) {
+            // Prefer theatrical (3), then limited (2), then premiere (1), then any
+            for (const type of [3, 4, 5, 6, 1, 2]) {
+              const rd = entry.release_dates.find(d => d.type === type && d.certification?.trim());
+              if (rd) return rd.certification.trim();
+            }
+            const any = entry.release_dates.find(d => d.certification?.trim());
+            if (any) return any.certification.trim();
           }
-          const any = entry.release_dates.find(d => d.certification?.trim());
+        }
+        // Fallback: first certification found
+        for (const entry of results) {
+          const any = entry.release_dates.find((d: { certification: string }) => d.certification?.trim());
           if (any) return any.certification.trim();
         }
+        return '';
+      } catch {
+        return '';
       }
-      // Fallback: first certification found
-      for (const entry of results) {
-        const any = entry.release_dates.find((d: { certification: string }) => d.certification?.trim());
-        if (any) return any.certification.trim();
-      }
-      return '';
-    } catch {
-      return '';
-    }
+    });
   },
 
   async getReviews(id: number): Promise<{ author: string; content: string }[]> {
+    return withCache(`reviews:${id}`, async () => {
     try {
       const res = await fetch(
         `${BASE_URL}/movie/${id}/reviews?api_key=${API_KEY}&language=en-US&page=1`
@@ -264,6 +289,7 @@ export const tmdb = {
     } catch {
       return [];
     }
+    });
   },
 
   /**

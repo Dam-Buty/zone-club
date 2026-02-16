@@ -116,3 +116,46 @@ const intensity = Math.min(Math.max(1.3 / luminance, 1.3), 4.5);
 | Over-the-top | > 0.5 | > 0.6 | < 0.7 |
 
 **Note**: WebGPU TSL bloom is more aggressive than classic UnrealBloomPass. Keep strength 0.15-0.25 for realism.
+
+---
+
+## Real PBR Neon Illumination (Three.js WebGPU)
+
+Bloom alone is screen-space — it doesn't illuminate nearby surfaces. For realistic neon signs that light up the wall behind them:
+
+### 3-Layer Approach
+
+**Layer 1: RectAreaLight** — real PBR illumination
+```typescript
+// One per neon sign, facing backward toward the wall
+<rectAreaLight
+  width={signWidth * 0.9}
+  height={signHeight * 0.7}
+  intensity={compensatedIntensity} // luminance-compensated (same formula as emissive)
+  color={neonColor}
+  position={[0, 0, -0.04]}
+  rotation={[0, Math.PI, 0]}
+/>
+```
+
+**Layer 2: Soft glow plane** — atmospheric haze (fakes volumetric scattering)
+- Canvas radial gradient: 6 stops with fast falloff (`66 → 33 → 18 → 08 → 02 → 00`)
+- **Oversize the plane** (`width * 3, height * 4`) so gradient fades fully before mesh edge
+- `AdditiveBlending`, low opacity (0.15), `depthWrite={false}`
+
+**Layer 3: Emissive mesh + bloom** — screen-space glow on the sign itself
+
+### Glow Plane Edge Fix
+
+**Problem**: Even with a soft gradient texture, the plane mesh itself has hard rectangular edges → visible cutoff.
+
+**Solution**: Make the plane much larger than the sign (3-4x each dimension). The gradient reaches near-zero opacity well before the mesh boundary, so the edge is invisible.
+
+### WebGPU RectAreaLight Init
+```typescript
+import { RectAreaLightNode } from 'three/webgpu'
+import { RectAreaLightTexturesLib } from 'three/addons/lights/RectAreaLightTexturesLib.js'
+RectAreaLightTexturesLib.init()
+RectAreaLightNode.setLTC(RectAreaLightTexturesLib)
+// NOT the same as WebGL's RectAreaLightUniformsLib!
+```

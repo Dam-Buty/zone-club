@@ -126,12 +126,15 @@ export function ExteriorView({ onEnter }: ExteriorViewProps) {
       <div className={`${styles.container} ${isTransitioning ? styles.fadeOut : ''}`}>
         {/* Static storefront image — portrait, full-screen */}
         <div className={styles.mobileImageContainer}>
-          <img
-            src="/storefront-mobile.jpeg"
-            alt="Zone Club - Vidéoclub"
-            className={styles.mobileImage}
-            draggable={false}
-          />
+          <picture>
+            <source srcSet="/storefront-mobile.webp" type="image/webp" />
+            <img
+              src="/storefront-mobile.jpeg"
+              alt="Zone Club - Vidéoclub"
+              className={styles.mobileImage}
+              draggable={false}
+            />
+          </picture>
         </div>
 
         {/* PUSH indicator + door hotspot — positioned at door handle level */}

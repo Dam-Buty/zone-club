@@ -35,7 +35,7 @@ function apiFilmToFilm(f: ApiFilm): Film {
     backdrop_path: extractPath(f.backdrop_url),
     release_date: f.release_year ? `${f.release_year}-01-01` : '',
     runtime: f.runtime,
-    vote_average: 0,
+    vote_average: 0, // fetched from TMDB at runtime in fetchVHSCoverData
     genres: f.genres,
     is_available: f.is_available,
   };
