@@ -29,12 +29,12 @@ const PORTRAIT_QUAT = new THREE.Quaternion().setFromAxisAngle(
   new THREE.Vector3(0, 0, 1), Math.PI / 2
 )
 
-// Albedo dampening — base attenuation for scene lighting (ceiling RectAreaLight 10×8, 1.2)
+// Albedo dampening — base attenuation for scene lighting (IBL 0.7 + PointLights)
 // Per-fragment Y-gradient correction is applied via TSL colorNode (see texture apply useEffect)
 const ALBEDO_COLOR = new THREE.Color(0.50, 0.50, 0.50)
 
 // Animation constants
-const DISTANCE_FROM_CAMERA = 0.45 // meters in front of camera
+const DISTANCE_FROM_CAMERA = 0.4725 // meters in front of camera (+5%)
 const CASE_SCALE = 0.255          // model is ~2m tall → ~51cm
 const TILT_ANGLE = (3 * Math.PI) / 180 // 3° backward tilt — reduced from 10° to minimize ceiling light on top
 const MANUAL_ROTATE_SPEED = 2.5   // rad/s
@@ -82,9 +82,14 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
           // Deep-clone material so original GLB materials stay pristine
           const mat = origMat.clone()
           child.material = mat
-          // Fully matte VHS cardboard — roughness 1.0 eliminates all specular reflections
+          // Matte VHS cardboard — kill all IBL/env reflections
           mat.roughness = 1.0
           mat.metalness = 0
+          mat.envMap = null
+          mat.envMapIntensity = 0
+          // Kill clearcoat/sheen if GLB model has them
+          if ('clearcoat' in mat) (mat as any).clearcoat = 0
+          if ('sheen' in mat) (mat as any).sheen = 0
           mat.color.copy(ALBEDO_COLOR) // darken albedo to counter scene overhead lights
           if (mat.map) {
             // Only include cover surfaces (1024×1024 atlas), not tape/reel meshes
@@ -109,13 +114,15 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
     savedPitchRef.current = euler.x
     pitchCorrectedRef.current = false
 
-    // Dim overhead lights to reduce top glare on VHS case
+    // Dim scene lights + IBL to reduce glare on VHS case
     // Save original intensities to restore on close
     const savedLights: { light: THREE.Light; intensity: number }[] = []
+    const savedEnvIntensity = scene.environmentIntensity
+
     scene.traverse((child) => {
-      if (child instanceof THREE.RectAreaLight) {
+      if (child instanceof THREE.PointLight) {
         savedLights.push({ light: child, intensity: child.intensity })
-        child.intensity *= 0.35 // reduce ceiling panel to ~35% while viewing case
+        child.intensity *= 0.4
       } else if (child instanceof THREE.DirectionalLight) {
         savedLights.push({ light: child, intensity: child.intensity })
         child.intensity *= 0.4
@@ -124,6 +131,8 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
         child.intensity *= 0.5
       }
     })
+    // Dim IBL moderately — it's the primary fill now (was RectAreaLight before)
+    scene.environmentIntensity = savedEnvIntensity * 0.72
 
     return () => {
       setVHSCaseOpen(false)
@@ -136,6 +145,7 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
       for (const { light, intensity } of savedLights) {
         light.intensity = intensity
       }
+      scene.environmentIntensity = savedEnvIntensity
     }
   }, [setVHSCaseOpen, camera, scene])
 
@@ -160,19 +170,17 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
       // Don't dispose — LRU cache in VHSCoverGenerator manages texture lifecycle
       coverTextureRef.current = tex
 
-      // Apply texture via TSL colorNode with Y-based lighting correction.
-      // The ceiling RectAreaLight (10×8, 1.2) overexposes the top of the case.
-      // Instead of uniform ALBEDO_COLOR (darkens everything equally), we use a
-      // per-fragment gradient: darken albedo at top, brighten at bottom.
+      // Apply texture via TSL colorNode with subtle Y-based correction.
+      // With IBL-based lighting (no ceiling RectAreaLight), the gradient is flattened
+      // to avoid amplifying PointLight hotspots. Mild top darkening only.
       // positionLocal.x = model height axis (maps to visual vertical after portrait rotation)
       const bumpTex = tex.userData.bumpMap as THREE.CanvasTexture | undefined
       const texNode = texture(tex)
-      const albedoBase = float(0.5)  // matches ALBEDO_COLOR
+      const albedoBase = float(0.55)  // slightly brighter base for IBL-only scene
       // Normalize model height to 0(bottom)–1(top). Model is ~2m centered at origin.
       const normalizedHeight = tslClamp(positionLocal.x.add(1.0).div(2.0), 0.0, 1.0)
-      // Top (1): darken 36% to compensate ceiling overexposure
-      // Bottom (0): brighten 32% to compensate underexposure
-      const correction = mix(float(1.67), float(0.64), normalizedHeight)
+      // Flattened gradient: top=0.85, bottom=1.1 (subtle, avoids hotspot amplification)
+      const correction = mix(float(1.1), float(0.85), normalizedHeight)
       const correctedColor = texNode.mul(albedoBase).mul(correction)
 
       for (const mesh of meshesWithMap) {
@@ -449,24 +457,27 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
   return (
     <group ref={groupRef}>
       <primitive object={clonedScene} />
-      {/* Fill lights — gentle ambient fill, Y-gradient in colorNode handles balance */}
+      {/* Fill lights — very diffuse, low intensity to avoid hotspots */}
       <pointLight
-        intensity={0.10}
-        distance={1.5}
-        color="#ff88c0"
-        position={[0.15, 0, 0.4]}
+        intensity={0.25}
+        distance={4}
+        decay={0.5}
+        color="#ffe0f0"
+        position={[0.4, 0.3, 1.0]}
       />
       <pointLight
-        intensity={0.08}
-        distance={1.5}
-        color="#80ffee"
-        position={[-0.15, 0, 0.4]}
+        intensity={0.2}
+        distance={4}
+        decay={0.5}
+        color="#e0f0ff"
+        position={[-0.4, 0.3, 1.0]}
       />
       <pointLight
-        intensity={0.15}
-        distance={2.0}
-        color="#fff0e0"
-        position={[0, -0.25, 0.45]}
+        intensity={0.3}
+        distance={4.5}
+        decay={0.5}
+        color="#fff5e8"
+        position={[0, -0.5, 1.0]}
       />
     </group>
   )

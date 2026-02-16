@@ -84,26 +84,16 @@ function OptimizedLighting({ isMobile = false }: { isMobile?: boolean }) {
   return (
     <>
       {/* 1. Lumière ambiante - réduite pour ambiance sombre */}
-      <ambientLight intensity={0.25} color="#fff8f0" />
+      <ambientLight intensity={0.15} color="#fff8f0" />
 
       {/* 2. Hemisphere light - éclairage naturel subtil */}
       <hemisphereLight
         color="#fff8f0"
         groundColor="#4a4a5a"
-        intensity={0.2}
+        intensity={0.3}
       />
 
-      {/* 3. UNE SEULE RectAreaLight plafond (remplace 9) - intensité réduite */}
-      <rectAreaLight
-        width={10}
-        height={8}
-        intensity={1.2}
-        color="#fff5e6"
-        position={[0, 2.65, 0]}
-        rotation={[-Math.PI / 2, 0, 0]}
-      />
-
-      {/* 4. PointLight manager (accent) */}
+      {/* 3. PointLight manager (accent) */}
       <pointLight
         position={[3.5, 2.4, 2.8]}
         intensity={1}
@@ -121,35 +111,33 @@ function OptimizedLighting({ isMobile = false }: { isMobile?: boolean }) {
         decay={2}
       />
 
-      {/* 6. RectAreaLight vitrine - lumière urbaine nocturne */}
-      <rectAreaLight
-        width={4.5}
-        height={1.2}
+      {/* 6. PointLight vitrine - lumière urbaine nocturne (remplace RectAreaLight) */}
+      <pointLight
+        position={[1.0, 0.8, 4.0]}
         intensity={1.5}
         color="#5c6bc0"
-        position={[1.0, 0.8, 4.3]}
-        rotation={[0, 0, 0]}
+        distance={6}
+        decay={1.5}
       />
 
-      {/* 7. RectAreaLight porte - néon rose (aligned with transom) */}
-      <rectAreaLight
-        width={1.2}
-        height={0.4}
-        intensity={3}
+      {/* 7. PointLight porte - néon rose (remplace RectAreaLight) */}
+      <pointLight
+        position={[-3.7, 2.55, 4.0]}
+        intensity={2.5}
         color="#ff2d95"
-        position={[-3.7, 2.55, 4.3]}
-        rotation={[0, 0, 0]}
+        distance={4}
+        decay={2}
       />
 
-      {/* 8. RectAreaLight porte vitre principale (full door height) */}
-      <rectAreaLight
-        width={1.0}
-        height={2.0}
+      {/* 8. PointLight porte vitre principale (remplace RectAreaLight) */}
+      <pointLight
+        position={[-3.7, 1.15, 4.0]}
         intensity={1.5}
         color="#6a4c93"
-        position={[-3.7, 1.15, 4.3]}
-        rotation={[0, 0, 0]}
+        distance={5}
+        decay={1.5}
       />
+
 
       {/* 9. DirectionalLight pour les ombres — mobile: 512px shadow map, desktop: 1024px */}
       <directionalLight

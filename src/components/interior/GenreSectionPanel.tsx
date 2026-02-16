@@ -122,15 +122,7 @@ export function GenreSectionPanel({
   const neonIntensity = useMemo(() => {
     const c = new THREE.Color(color)
     const luminance = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b
-    return THREE.MathUtils.clamp(1.3 / luminance, 1.3, 4.5)
-  }, [color])
-
-  // RectAreaLight intensity — compensate for perceptual luminance like emissive
-  // Brighter colors (yellow) need less light intensity, darker ones (purple) need more
-  const rectLightIntensity = useMemo(() => {
-    const c = new THREE.Color(color)
-    const luminance = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b
-    return THREE.MathUtils.clamp(0.6 / luminance, 0.4, 1.5)
+    return THREE.MathUtils.clamp(1.17 / luminance, 1.17, 4.05)
   }, [color])
 
   // Matériau partagé pour les tubes du cadre
@@ -201,23 +193,12 @@ export function GenreSectionPanel({
           <meshBasicMaterial
             map={glowTexture}
             transparent
-            opacity={0.15}
+            opacity={0.20}
             toneMapped={false}
             depthWrite={false}
             blending={THREE.AdditiveBlending}
           />
         </mesh>
-
-        {/* RectAreaLight — real PBR illumination on the wall behind the sign */}
-        {/* Faces backward (-z in local space) toward the wall, sized to match the panel */}
-        <rectAreaLight
-          width={width * 0.9}
-          height={height * 0.7}
-          intensity={rectLightIntensity}
-          color={color}
-          position={[0, 0, -0.04]}
-          rotation={[0, Math.PI, 0]}
-        />
 
         {/* Cadre du panneau - plastique noir mat (matériau partagé) */}
         <mesh position={[0, 0, -depth / 2]} material={SHARED_FRAME_MAT}>

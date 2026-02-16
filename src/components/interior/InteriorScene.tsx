@@ -106,7 +106,7 @@ const SceneContent = memo(function SceneContent({
       <Environment
         files="/textures/env/indoor_night.hdr"
         background={false}
-        environmentIntensity={0.35}
+        environmentIntensity={0.7}
       />
       <Lighting isMobile={isMobile} />
       <Aisle films={films} maxTextureArrayLayers={maxTextureArrayLayers} />
