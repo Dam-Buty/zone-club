@@ -1,5 +1,4 @@
 import * as THREE from 'three/webgpu'
-import { RectAreaLightNode } from 'three/webgpu'
 import { Canvas, extend, type ThreeToJSXElements } from '@react-three/fiber'
 import { Suspense, useEffect, useMemo, useCallback, useRef, useState, memo, Component, type ReactNode, lazy } from 'react'
 import { useStore } from '../../store'
@@ -14,16 +13,13 @@ import type { MobileInput } from '../../types/mobile'
 // Lazy loading du composant Aisle (contient tous les modèles 3D)
 const Aisle = lazy(() => import('./Aisle').then(module => ({ default: module.Aisle })))
 import { VHSCaseViewer } from './VHSCaseViewer'
-import { RectAreaLightTexturesLib } from 'three/addons/lights/RectAreaLightTexturesLib.js'
 import { TVTerminal } from '../terminal/TVTerminal'
 import { MobileControls } from '../mobile/MobileControls'
 import { MobileOnboarding } from '../mobile/MobileOnboarding'
 import { BenchmarkSampler, BenchmarkOverlay } from './BenchmarkMode'
 
-// Initialiser les textures LTC AVANT tout rendu
-RectAreaLightTexturesLib.init()
-RectAreaLightNode.setLTC(RectAreaLightTexturesLib)
-console.log('[InteriorScene] LTC textures initialized')
+// LTC textures removed — no RectAreaLights in optimized lighting mode
+// If RectAreaLights are re-added, restore: RectAreaLightTexturesLib.init() + RectAreaLightNode.setLTC()
 
 // Error Boundary pour capturer les erreurs dans le canvas 3D
 interface ErrorBoundaryState {

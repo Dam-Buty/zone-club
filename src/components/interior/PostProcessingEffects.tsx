@@ -1,10 +1,13 @@
 import { useRef, useEffect } from 'react'
 import { useThree, useFrame } from '@react-three/fiber'
 import * as THREE from 'three/webgpu'
-import { pass, mrt, output, normalView, viewportUV, clamp, float } from 'three/tsl'
+import { pass, mrt, output, normalView, viewportUV, clamp, float, time, vec2, fract, sin, dot, uniform } from 'three/tsl'
 import { bloom } from 'three/addons/tsl/display/BloomNode.js'
 import { ao } from 'three/addons/tsl/display/GTAONode.js'
 import { fxaa } from 'three/addons/tsl/display/FXAANode.js'
+
+import { dof } from 'three/addons/tsl/display/DepthOfFieldNode.js'
+import { useStore } from '../../store'
 
 interface PostProcessingEffectsProps {
   isMobile?: boolean
@@ -13,6 +16,11 @@ interface PostProcessingEffectsProps {
 export function PostProcessingEffects({ isMobile = false }: PostProcessingEffectsProps) {
   const { gl: renderer, scene, camera } = useThree()
   const postProcessingRef = useRef<THREE.PostProcessing | null>(null)
+  // DoF bokeh scale uniform — 0 = no blur, >0 = active (smooth lerp in useFrame)
+  const bokehRef = useRef<{ value: number }>({ value: 0 })
+  // Subscribe to VHS case state — triggers pipeline rebuild with/without DoF
+  // PostProcessingEffects returns null so re-renders are free (no scene graph changes)
+  const isVHSCaseOpen = useStore(state => state.isVHSCaseOpen)
 
   useEffect(() => {
     const postProcessing = new THREE.PostProcessing(renderer as unknown as THREE.WebGPURenderer)
@@ -43,7 +51,10 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
 
       console.log('[PostProcessing] Pipeline: Bloom + Vignette (mobile)')
     } else {
-      // ===== DESKTOP PIPELINE: Scene MRT → GTAO → Bloom → Vignette → FXAA =====
+      // ===== DESKTOP PIPELINE =====
+      // Without DoF: Scene MRT → GTAO(0.5x) → Bloom → CA → Vignette → FXAA → Film Grain
+      // With DoF:    Scene MRT → GTAO(0.5x) → Bloom → CA → DoF → Vignette → FXAA → Film Grain
+      // DoF is only included when VHS case is open (5 extra passes → 0 cost when closed)
 
       // 1. Scene pass avec MRT (Multiple Render Targets) pour normales + depth
       const scenePass = pass(scene, camera)
@@ -72,14 +83,43 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
       const bloomPass = bloom(withAO, 0.19, 0.4, 0.9)
       const withBloom = withAO.add(bloomPass)
 
-      // 4. Vignette
-      const withVignette = applyVignette(withBloom)
+      // 4. Conditional DoF — only when VHS case viewer is open
+      // Pipeline is rebuilt when isVHSCaseOpen changes (useEffect dep)
+      // This avoids the 5-pass DoF cost (~23 FPS) when not needed
+      let postBloom = withBloom
 
-      // 5. FXAA
+      if (isVHSCaseOpen) {
+        // CRITICAL: dof() expects viewZ (negative view-space Z), NOT raw depth [0,1]
+        // getViewZNode() converts depth buffer → linearized viewZ via perspectiveDepthToViewZ()
+        const scenePassViewZ = scenePass.getViewZNode()
+        // Focus at 0.4725m = exact DISTANCE_FROM_CAMERA in VHSCaseViewer
+        // focalLength 1.0 = objects >1m from focus go fully out-of-focus
+        //   → entire case stays sharp during rotation (spine swings ±10cm max)
+        //   → background shelves (2m+) still fully blurred
+        const bokehScale = uniform(0)
+        bokehRef.current = bokehScale
+        postBloom = dof(withBloom, scenePassViewZ, 0.4725, 1.0, bokehScale)
+      }
+
+      // 5. Vignette
+      const withVignette = applyVignette(postBloom)
+
+      // 6. FXAA (smooths geometry aliasing)
       const withFXAA = fxaa(withVignette)
-      postProcessing.outputNode = withFXAA
 
-      console.log('[PostProcessing] Pipeline: GTAO(0.5x) + Bloom + Vignette + FXAA + ACES ToneMapping')
+      // 8. Film Grain — very subtle analog texture, animated per frame
+      const grainUV = viewportUV.add(time.mul(float(0.17)))
+      const grain = fract(sin(dot(grainUV, vec2(12.9898, 78.233))).mul(float(43758.5453)))
+        .sub(float(0.5)).mul(float(0.02))
+      const withGrain = withFXAA.add(grain)
+
+      postProcessing.outputNode = withGrain
+
+      if (isVHSCaseOpen) {
+        console.log('[PostProcessing] Pipeline: GTAO + Bloom + DoF(0.4725m) + Vignette + FXAA + Film Grain')
+      } else {
+        console.log('[PostProcessing] Pipeline: GTAO + Bloom + Vignette + FXAA + Film Grain')
+      }
     }
 
     postProcessingRef.current = postProcessing
@@ -88,11 +128,18 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
       postProcessing.dispose()
       postProcessingRef.current = null
     }
-  }, [renderer, scene, camera, isMobile])
+  }, [renderer, scene, camera, isMobile, isVHSCaseOpen])
 
   // renderPriority=1 tells R3F to skip its default renderer.render() call
-  useFrame(() => {
+  useFrame((_, delta) => {
     if (postProcessingRef.current) {
+      // Smooth DoF ramp-up when case is open (bokehScale: 0 → 4 over ~0.2s)
+      if (isVHSCaseOpen && bokehRef.current) {
+        const target = 4.0
+        const current = bokehRef.current.value
+        bokehRef.current.value += (target - current) * Math.min(delta * 8, 1)
+      }
+
       postProcessingRef.current.render()
     }
   }, 1)

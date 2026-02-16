@@ -190,7 +190,7 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
 
     // Load poster textures spread across frames (2 per frame to avoid GPU stalls)
     let cancelled = false
-    const POSTERS_PER_FRAME = 2
+    const POSTERS_PER_FRAME = 1
     const queue: { index: number; url: string }[] = []
     for (let i = 0; i < count; i++) {
       const inst = currentInstances[i]
@@ -296,7 +296,7 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
       }
     }
 
-    // Upload changed targets to GPU
+    // Upload changed targets to GPU — skip compute entirely when nothing changed
     if (tarHoverDirty) {
       targetHoverZBuffer.value.needsUpdate = true
     }
@@ -304,9 +304,10 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
       targetEmissiveBuffer.value.needsUpdate = true
     }
 
-    // Dispatch compute shader — GPU lerps current toward target
-    const renderer = gl as unknown as THREE.WebGPURenderer
-    renderer.compute(computeNode)
+    if (tarHoverDirty || tarEmissiveDirty) {
+      const renderer = gl as unknown as THREE.WebGPURenderer
+      renderer.compute(computeNode)
+    }
   })
 
   return (
