@@ -204,6 +204,16 @@ async function processJob(job: TranscodeJob): Promise<void> {
     // Check input exists
     await access(inputPath);
 
+    // Skip if already transcoded
+    try {
+      await access(outputPath);
+      console.log(`[transcoder] Skip ${job.type.toUpperCase()}: "${filmTitle}" (déjà transcodé)`);
+      setTranscodedPath(job.filmId, job.type, outputRelative);
+      updateJobState(job.filmId, job.type, 'done', 100);
+      checkAndEnableAvailability(job.filmId);
+      return;
+    } catch { /* output doesn't exist, proceed */ }
+
     // Probe
     updateJobState(job.filmId, job.type, 'probing');
     const probe = await probeFile(inputPath);
