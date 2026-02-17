@@ -388,15 +388,21 @@ export function Controls({
     // === Mobile camera look ===
     if (isMobile && mobileInputRef) {
       const input = mobileInputRef.current;
+      const vhsCaseOpen = useStore.getState().isVHSCaseOpen;
+
       if (input.cameraYawDelta !== 0 || input.cameraPitchDelta !== 0) {
-        _euler.setFromQuaternion(camera.quaternion, "YXZ");
-        _euler.y += input.cameraYawDelta;
-        _euler.x = THREE.MathUtils.clamp(
-          _euler.x + input.cameraPitchDelta,
-          -MAX_PITCH,
-          MAX_PITCH,
-        );
-        camera.quaternion.setFromEuler(_euler);
+        if (!vhsCaseOpen) {
+          // Apply camera rotation only when NOT inspecting a VHS case
+          _euler.setFromQuaternion(camera.quaternion, "YXZ");
+          _euler.y += input.cameraYawDelta;
+          _euler.x = THREE.MathUtils.clamp(
+            _euler.x + input.cameraPitchDelta,
+            -MAX_PITCH,
+            MAX_PITCH,
+          );
+          camera.quaternion.setFromEuler(_euler);
+        }
+        // Always consume deltas to prevent accumulation
         input.cameraYawDelta = 0;
         input.cameraPitchDelta = 0;
       }

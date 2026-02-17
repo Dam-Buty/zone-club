@@ -490,7 +490,7 @@ export const useStore = create<VideoClubState>()(
         rentalHistory: state.rentalHistory,
         lastBonusDate: state.lastBonusDate,
         hasSeenOnboarding: state.hasSeenOnboarding,
-        benchmarkEnabled: state.benchmarkEnabled,
+        // Ne pas persister benchmarkEnabled — use ?benchmark=1 URL param only
         // Ne pas persister authUser, les cookies de session gèrent ça
       }),
     }
