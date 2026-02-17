@@ -168,12 +168,12 @@ export function Controls({
   const targetedInteractiveRef = useRef<InteractiveTarget>(null);
 
   // Hystérésis pour sélection cassettes
-  const lastCassetteKeyRef = useRef<string | null>(null);
-  const lastFilmIdRef = useRef<number | null>(null);
-  const deselectTimerRef = useRef<number>(0);
-  const hitCountRef = useRef<number>(0);
-  const DESELECT_DELAY = 0.4;
-  const MIN_HITS_TO_CHANGE = 10; // ~0.5s at 20 raycasts/sec (RAYCAST_INTERVAL=3)
+  const lastCassetteKeyRef = useRef<string | null>(null)
+  const lastFilmIdRef = useRef<number | null>(null)
+  const deselectTimerRef = useRef<number>(0)
+  const hitCountRef = useRef<number>(0)
+  const DESELECT_DELAY = isMobile ? 0.25 : 0.4
+  const MIN_HITS_TO_CHANGE = isMobile ? 3 : 10 // Mobile: instant (3 hits ~0.15s), Desktop: ~0.5s
 
   // Throttle raycast
   const frameCountRef = useRef(0);

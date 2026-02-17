@@ -457,25 +457,25 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
   return (
     <group ref={groupRef}>
       <primitive object={clonedScene} />
-      {/* Fill lights — very diffuse, low intensity to avoid hotspots */}
+      {/* Fill lights — tight radius to only illuminate VHS case, not background */}
       <pointLight
-        intensity={0.25}
-        distance={4}
-        decay={0.5}
+        intensity={0.35}
+        distance={1.5}
+        decay={2}
         color="#ffe0f0"
         position={[0.4, 0.3, 1.0]}
       />
       <pointLight
-        intensity={0.2}
-        distance={4}
-        decay={0.5}
+        intensity={0.3}
+        distance={1.5}
+        decay={2}
         color="#e0f0ff"
         position={[-0.4, 0.3, 1.0]}
       />
       <pointLight
-        intensity={0.3}
-        distance={4.5}
-        decay={0.5}
+        intensity={0.4}
+        distance={1.5}
+        decay={2}
         color="#fff5e8"
         position={[0, -0.5, 1.0]}
       />

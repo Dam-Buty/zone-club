@@ -86,7 +86,7 @@ function NeonText3D({
         size={0.119}
         height={0.025}
         bevelEnabled={false}
-        curveSegments={10}
+        curveSegments={6}
         letterSpacing={0.02}
       >
         {text}
@@ -179,15 +179,8 @@ export function GenreSectionPanel({
           </>
         )}
 
-        {/* PointLight PBR — centré sur le texte pour que la lumière émane des lettres */}
-        {/* decay=1.0 : falloff linéaire → nappe de lumière douce et uniforme */}
-        <pointLight
-          position={[0, 0, 0.12]}
-          intensity={2.0}
-          color={color}
-          distance={3}
-          decay={1.0}
-        />
+        {/* PointLight retiré — 7 panel lights = 54% du coût per-fragment.
+            L'émissive + bloom suffit pour l'effet néon. Gain: ~5-10 FPS sur M1 Air */}
 
         {/* Cadre du panneau - plastique noir mat (matériau partagé) */}
         <mesh position={[0, 0, -depth / 2]} material={SHARED_FRAME_MAT} castShadow>

@@ -1,8 +1,8 @@
 import { useRef, useEffect, useCallback, type MutableRefObject } from 'react'
 import type { MobileInput } from '../../types/mobile'
 
-const OUTER_SIZE = 120
-const KNOB_SIZE = 44
+const OUTER_SIZE = 160
+const KNOB_SIZE = 60
 const MAX_OFFSET = (OUTER_SIZE - KNOB_SIZE) / 2
 const DEAD_ZONE = 0.15
 

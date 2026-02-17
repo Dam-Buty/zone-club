@@ -79,60 +79,54 @@ function NeonTubesInstanced() {
 
 // Version OPTIMISÉE: 7 lumières au lieu de 21
 function OptimizedLighting({ isMobile = false }: { isMobile?: boolean }) {
-  const shadowMapSize = isMobile ? 512 : 1024
+  const shadowMapSize = isMobile ? 256 : 1024
 
   return (
     <>
       {/* 1. Lumière ambiante - réduite pour ambiance sombre */}
-      <ambientLight intensity={0.15} color="#fff8f0" />
+      <ambientLight intensity={isMobile ? 0.25 : 0.15} color="#fff8f0" />
 
       {/* 2. Hemisphere light - éclairage naturel subtil */}
       <hemisphereLight
         color="#fff8f0"
         groundColor="#4a4a5a"
-        intensity={0.3}
+        intensity={isMobile ? 0.45 : 0.3}
       />
 
-      {/* 3. PointLight manager (accent) */}
-      <pointLight
-        position={[3.5, 2.4, 2.8]}
-        intensity={1}
-        color="#fff5e6"
-        distance={4}
-        decay={2}
-      />
+      {/* 3-7. PointLights d'accent — desktop only (4 PointLights = 4 évaluations/fragment) */}
+      {!isMobile && (
+        <>
+          {/* PointLight manager (accent) */}
+          <pointLight
+            position={[3.5, 2.4, 2.8]}
+            intensity={1}
+            color="#fff5e6"
+            distance={4}
+            decay={2}
+          />
 
-      {/* 5. PointLight îlot central */}
-      <pointLight
-        position={[-0.8, 2.4, 0]}
-        intensity={0.8}
-        color="#fff5e6"
-        distance={3}
-        decay={2}
-      />
+          {/* PointLight îlot central */}
+          <pointLight
+            position={[-0.8, 2.4, 0]}
+            intensity={0.8}
+            color="#fff5e6"
+            distance={3}
+            decay={2}
+          />
 
-      {/* 6. PointLight vitrine - lumière urbaine nocturne */}
-      {/* distance>0 + decay=2 : atténuation smooth jusqu'à zéro (pas de cutoff dur) + GPU culling */}
-      <pointLight
-        position={[1.0, 0.8, 4.0]}
-        intensity={1.5}
-        color="#5c6bc0"
-        distance={10}
-        decay={2}
-      />
+          {/* PointLight vitrine - lumière urbaine nocturne */}
+          <pointLight
+            position={[1.0, 0.8, 4.0]}
+            intensity={1.5}
+            color="#5c6bc0"
+            distance={10}
+            decay={2}
+          />
 
-      {/* 7. PointLight porte — rose/violet fusionné (2→1 lumière) */}
-      <pointLight
-        position={[-3.7, 1.8, 4.0]}
-        intensity={2.5}
-        color="#cc3d9e"
-        distance={8}
-        decay={1.5}
-      />
+        </>
+      )}
 
-
-      {/* 9. DirectionalLight pour les ombres */}
-      {/* Frustum serré sur la pièce (9×8.5m) → 2048px = ~227px/m (vs 85px/m avant) */}
+      {/* DirectionalLight pour les ombres */}
       <directionalLight
         position={[2, 2.7, 1]}
         intensity={0.3}

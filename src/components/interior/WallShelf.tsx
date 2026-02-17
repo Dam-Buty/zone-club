@@ -132,7 +132,7 @@ export function WallShelf({
       {/* Tilt group: pivot at shelf center height, ~5° backward lean */}
       <group position={[0, SHELF_PIVOT_Y, 0]} rotation={[-SHELF_TILT, 0, 0]}>
         {/* Structure principale — centered at tilt pivot */}
-        <mesh castShadow receiveShadow material={backMaterial}>
+        <mesh receiveShadow material={backMaterial}>
           <boxGeometry args={[length, SHELF_HEIGHT, SHELF_DEPTH]} />
         </mesh>
 
