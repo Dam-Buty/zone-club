@@ -149,7 +149,7 @@ async function resolveStudioLogoUrl(company: {
 
   // 3. TMDB logo_path from movie endpoint
   if (company.logo_path) {
-    return `https://image.tmdb.org/t/p/w200${company.logo_path}`;
+    return `https://image.tmdb.org/t/p/w500${company.logo_path}`;
   }
 
   // 4. Fallback: fetch from /company/{id}
@@ -1049,8 +1049,8 @@ function drawFrontFullBleed(
     );
   }
 
-  // --- Bottom text zone ---
-  let curY = h - 260;
+  // --- Bottom text zone (shifted down 5% for breathing room below poster) ---
+  let curY = h - 260 + Math.round(h * 0.05);
 
   // Awards badge
   const awards = getAwardsText(film);
@@ -1239,6 +1239,9 @@ function drawFrontCenteredPadded(
     );
     curY += fallH + 10;
   }
+
+  // Shift title block down 5% (same as full-bleed layout)
+  curY += Math.round(h * 0.05);
 
   // Awards badge
   const awards = getAwardsText(film);
@@ -1634,7 +1637,7 @@ function drawBackCover(
     // --- Production company logos ---
     disableShadow(tc);
     if (data.studioLogos.length > 0) {
-      const logoMaxH = 16;
+      const logoMaxH = 24;
       const logoGap = 10;
       const logoPad = 4;
       const logoSizes = data.studioLogos.map(({ img }) => {

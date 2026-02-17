@@ -1,6 +1,5 @@
 import { useEffect, useState, useCallback, useRef, lazy, Suspense } from 'react';
 import { useStore } from './store';
-import { useManagerTriggers } from './hooks/useManagerTriggers';
 import { VHSCaseOverlay } from './components/videoclub/VHSCaseOverlay';
 import { ManagerChat } from './components/manager/ManagerChat';
 import { VHSPlayer } from './components/player/VHSPlayer';
@@ -106,8 +105,6 @@ function App() {
   // Transition state
   const [isTransitioning, setIsTransitioning] = useState(false);
 
-  // Manager triggers hook
-  useManagerTriggers();
 
   // Restore auth session from cookie on mount
   const fetchMe = useStore(state => state.fetchMe);

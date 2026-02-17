@@ -271,13 +271,21 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
 
       // Hysteresis
       if (isTargetedRaw !== hs.stableTargeted) {
-        hs.targetedTimer += delta
-        const delay = isTargetedRaw ? HYSTERESIS_SELECT : HYSTERESIS_DESELECT
-        if (hs.targetedTimer >= delay) {
-          hs.stableTargeted = isTargetedRaw
+        // When another cassette is targeted, deselect immediately (no overlap)
+        // Delay only applies when moving away from ALL cassettes (targetedCassetteKey === null)
+        const isSwitch = !isTargetedRaw && targetedCassetteKey !== null
+        if (isSwitch) {
+          hs.stableTargeted = false
           hs.targetedTimer = 0
         } else {
-          anyHysteresisActive = true
+          hs.targetedTimer += delta
+          const delay = isTargetedRaw ? HYSTERESIS_SELECT : HYSTERESIS_DESELECT
+          if (hs.targetedTimer >= delay) {
+            hs.stableTargeted = isTargetedRaw
+            hs.targetedTimer = 0
+          } else {
+            anyHysteresisActive = true
+          }
         }
       } else {
         hs.targetedTimer = 0
