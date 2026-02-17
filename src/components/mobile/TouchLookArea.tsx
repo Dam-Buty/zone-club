@@ -57,6 +57,8 @@ export function TouchLookArea({ mobileInputRef }: TouchLookAreaProps) {
 
           if (dt < TAP_MAX_DURATION && dist < TAP_MAX_DISTANCE) {
             mobileInputRef.current.tapInteraction = true
+            mobileInputRef.current.tapScreenX = touch.clientX
+            mobileInputRef.current.tapScreenY = touch.clientY
           }
           break
         }

@@ -68,20 +68,20 @@ function mobilePillStyle(
     alignItems: "center",
     justifyContent: "center",
     gap: "6px",
-    padding: "10px 16px",
-    minHeight: "48px",
+    padding: "10px 14px",
+    minHeight: "44px",
     background: "rgba(0,0,0,0.7)",
     backdropFilter: "blur(8px)",
     border: `1px solid ${borderColor}`,
-    borderRadius: "24px",
+    borderRadius: "8px",
     color: textColor,
     fontFamily: "Orbitron, sans-serif",
-    fontSize: "0.7rem",
+    fontSize: "0.65rem",
     cursor: "pointer",
     transition: "all 0.2s",
     letterSpacing: "0.5px",
     whiteSpace: "nowrap",
-    flexShrink: 0,
+    flex: "1 1 auto",
     ...extra,
   };
 }
@@ -360,35 +360,34 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
               position: "fixed",
               top: "16px",
               right: "16px",
-              width: 48,
-              height: 48,
+              width: 56,
+              height: 56,
               borderRadius: "50%",
-              border: "2px solid #00ff88",
-              background: "rgba(0,0,0,0.7)",
-              color: "#00ff88",
+              border: "2px solid #ff2d44",
+              background: "rgba(180,20,40,0.35)",
+              color: "#ff4444",
               fontFamily: "Orbitron, sans-serif",
-              fontSize: "1.2rem",
+              fontSize: "1.5rem",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               cursor: "pointer",
               zIndex: 100,
-              boxShadow: "0 0 12px rgba(0,255,136,0.3)",
+              boxShadow: "0 0 14px rgba(255,45,68,0.4)",
             }}
           >
             X
           </button>
 
-          {/* Bottom bar — horizontal scrollable buttons */}
+          {/* Bottom bar — flex-wrap buttons */}
           <div
-            data-vhs-overlay
             style={{
               position: "fixed",
               bottom: 0,
               left: 0,
               right: 0,
               zIndex: 100,
-              pointerEvents: "auto",
+              pointerEvents: "none",
               background:
                 "linear-gradient(0deg, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.5) 70%, transparent 100%)",
               paddingBottom: `calc(12px + env(safe-area-inset-bottom, 0px))`,
@@ -397,9 +396,11 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
           >
             {/* Film title + meta */}
             <div
+              data-vhs-overlay
               style={{
                 textAlign: "center",
                 padding: "0 16px 10px",
+                pointerEvents: "auto",
               }}
             >
               <div
@@ -435,15 +436,16 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
               </div>
             </div>
 
-            {/* Scrollable button row */}
+            {/* Button row — flex-wrap to fit screen */}
             <div
+              data-vhs-overlay
               style={{
                 display: "flex",
+                flexWrap: "wrap",
                 gap: "8px",
-                overflowX: "auto",
                 padding: "0 16px",
-                WebkitOverflowScrolling: "touch",
-                scrollbarWidth: "none",
+                justifyContent: "center",
+                pointerEvents: "auto",
               }}
             >
               {/* Avis */}

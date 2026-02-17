@@ -119,12 +119,14 @@ function checkCollision(x: number, z: number, margin: number): boolean {
 
 // Static reusable objects (avoid per-frame allocation)
 const SCREEN_CENTER = new THREE.Vector2(0, 0);
+const _tapNDC = new THREE.Vector2();  // mobile tap raycast position
 const _euler = new THREE.Euler(0, 0, 0, "YXZ");
 const _forward = new THREE.Vector3();
 const _right = new THREE.Vector3();
 
-// Mobile pitch clamp (±60°)
-const MAX_PITCH = (60 * Math.PI) / 180;
+// Mobile pitch clamp — asymmetric: 45° up, 55° down
+const MAX_PITCH_UP = (45 * Math.PI) / 180;
+const MAX_PITCH_DOWN = (55 * Math.PI) / 180;
 // OPTIMISATION: Layers Three.js pour le raycaster
 export const RAYCAST_LAYER_CASSETTE = 1;
 export const RAYCAST_LAYER_INTERACTIVE = 2;
@@ -397,8 +399,8 @@ export function Controls({
           _euler.y += input.cameraYawDelta;
           _euler.x = THREE.MathUtils.clamp(
             _euler.x + input.cameraPitchDelta,
-            -MAX_PITCH,
-            MAX_PITCH,
+            -MAX_PITCH_UP,
+            MAX_PITCH_DOWN,
           );
           camera.quaternion.setFromEuler(_euler);
         }
@@ -407,103 +409,155 @@ export function Controls({
         input.cameraPitchDelta = 0;
       }
 
-      // Mobile tap interaction
+      // Mobile tap → direct raycast from tap position (no crosshair/hysteresis)
       if (input.tapInteraction) {
         input.tapInteraction = false;
-        handleInteractionRef.current();
+        if (!useStore.getState().isVHSCaseOpen) {
+          // Convert screen coords to NDC
+          const ndcX = (input.tapScreenX / window.innerWidth) * 2 - 1;
+          const ndcY = -(input.tapScreenY / window.innerHeight) * 2 + 1;
+          _tapNDC.set(ndcX, ndcY);
+
+          raycasterRef.current.setFromCamera(_tapNDC, camera);
+          raycasterRef.current.far = 6;
+          const intersects = raycasterRef.current.intersectObjects(
+            scene.children,
+            true,
+          );
+
+          for (const intersect of intersects) {
+            // Check InstancedMesh cassettes
+            if (
+              intersect.object.userData?.isCassetteInstances &&
+              intersect.instanceId !== undefined
+            ) {
+              const idToFilm = intersect.object.userData.instanceIdToFilmId as number[];
+              const idToKey = intersect.object.userData.instanceIdToKey as string[];
+              if (idToFilm && idToKey && intersect.instanceId < idToKey.length) {
+                setTargetedFilm(idToFilm[intersect.instanceId], idToKey[intersect.instanceId]);
+                onCassetteClick?.(idToFilm[intersect.instanceId]);
+                break;
+              }
+            }
+
+            // Check interactive objects (manager, bell, TV)
+            let obj: THREE.Object3D | null = intersect.object;
+            let handled = false;
+            while (obj) {
+              if (obj.userData?.isManager || obj.userData?.isServiceBell) {
+                showManager();
+                handled = true;
+                break;
+              }
+              if (obj.userData?.isTVScreen) {
+                openTerminal();
+                handled = true;
+                break;
+              }
+              if (obj.userData?.filmId && obj.userData?.cassetteKey) {
+                setTargetedFilm(obj.userData.filmId, obj.userData.cassetteKey);
+                onCassetteClick?.(obj.userData.filmId);
+                handled = true;
+                break;
+              }
+              obj = obj.parent;
+            }
+            if (handled) break;
+          }
+        }
       }
     }
 
-    // === Raycasting ===
-    const shouldRaycast = frameCountRef.current % RAYCAST_INTERVAL === 0;
+    // === Raycasting (desktop only — mobile uses tap-based selection) ===
+    if (!isMobile) {
+      const shouldRaycast = frameCountRef.current % RAYCAST_INTERVAL === 0;
 
-    if (isActive && shouldRaycast) {
-      raycasterRef.current.setFromCamera(SCREEN_CENTER, camera);
-      raycasterRef.current.far = 6;
-      const intersects = raycasterRef.current.intersectObjects(
-        scene.children,
-        true,
-      );
+      if (isActive && shouldRaycast) {
+        raycasterRef.current.setFromCamera(SCREEN_CENTER, camera);
+        raycasterRef.current.far = 6;
+        const intersects = raycasterRef.current.intersectObjects(
+          scene.children,
+          true,
+        );
 
-      let foundFilmId: number | null = null;
-      let foundCassetteKey: string | null = null;
-      let foundInteractive: InteractiveTarget = null;
+        let foundFilmId: number | null = null;
+        let foundCassetteKey: string | null = null;
+        let foundInteractive: InteractiveTarget = null;
 
-      for (const intersect of intersects) {
-        if (
-          intersect.object.userData?.isCassetteInstances &&
-          intersect.instanceId !== undefined
-        ) {
-          const idToKey = intersect.object.userData.instanceIdToKey as string[];
-          const idToFilm = intersect.object.userData
-            .instanceIdToFilmId as number[];
-          if (idToKey && idToFilm && intersect.instanceId < idToKey.length) {
-            foundFilmId = idToFilm[intersect.instanceId];
-            foundCassetteKey = idToKey[intersect.instanceId];
-            break;
+        for (const intersect of intersects) {
+          if (
+            intersect.object.userData?.isCassetteInstances &&
+            intersect.instanceId !== undefined
+          ) {
+            const idToKey = intersect.object.userData.instanceIdToKey as string[];
+            const idToFilm = intersect.object.userData
+              .instanceIdToFilmId as number[];
+            if (idToKey && idToFilm && intersect.instanceId < idToKey.length) {
+              foundFilmId = idToFilm[intersect.instanceId];
+              foundCassetteKey = idToKey[intersect.instanceId];
+              break;
+            }
           }
+
+          let obj: THREE.Object3D | null = intersect.object;
+          while (obj) {
+            if (obj.userData?.isManager) {
+              foundInteractive = "manager";
+              break;
+            }
+            if (obj.userData?.isServiceBell) {
+              foundInteractive = "bell";
+              break;
+            }
+            if (obj.userData?.isTVScreen) {
+              foundInteractive = "tv";
+              break;
+            }
+            if (obj.userData?.filmId && obj.userData?.cassetteKey) {
+              foundFilmId = obj.userData.filmId;
+              foundCassetteKey = obj.userData.cassetteKey;
+              break;
+            }
+            obj = obj.parent;
+          }
+          if (foundInteractive || foundFilmId !== null) break;
         }
 
-        let obj: THREE.Object3D | null = intersect.object;
-        while (obj) {
-          if (obj.userData?.isManager) {
-            foundInteractive = "manager";
-            break;
-          }
-          if (obj.userData?.isServiceBell) {
-            foundInteractive = "bell";
-            break;
-          }
-          if (obj.userData?.isTVScreen) {
-            foundInteractive = "tv";
-            break;
-          }
-          if (obj.userData?.filmId && obj.userData?.cassetteKey) {
-            foundFilmId = obj.userData.filmId;
-            foundCassetteKey = obj.userData.cassetteKey;
-            break;
-          }
-          obj = obj.parent;
-        }
-        if (foundInteractive || foundFilmId !== null) break;
-      }
+        targetedInteractiveRef.current = foundInteractive;
 
-      targetedInteractiveRef.current = foundInteractive;
+        // Hystérésis cassette selection
+        const currentCassetteKey = lastCassetteKeyRef.current;
 
-      // Hystérésis cassette selection
-      const currentCassetteKey = lastCassetteKeyRef.current;
-
-      if (foundCassetteKey) {
-        deselectTimerRef.current = 0;
-        if (foundCassetteKey === currentCassetteKey) {
-          hitCountRef.current = Math.min(hitCountRef.current + 1, 10);
-        } else if (currentCassetteKey === null) {
-          lastCassetteKeyRef.current = foundCassetteKey;
-          lastFilmIdRef.current = foundFilmId;
-          hitCountRef.current = 1;
-          setTargetedFilm(foundFilmId, foundCassetteKey);
-        } else {
-          hitCountRef.current++;
-          if (hitCountRef.current >= MIN_HITS_TO_CHANGE) {
+        if (foundCassetteKey) {
+          deselectTimerRef.current = 0;
+          if (foundCassetteKey === currentCassetteKey) {
+            hitCountRef.current = Math.min(hitCountRef.current + 1, 10);
+          } else if (currentCassetteKey === null) {
             lastCassetteKeyRef.current = foundCassetteKey;
             lastFilmIdRef.current = foundFilmId;
             hitCountRef.current = 1;
             setTargetedFilm(foundFilmId, foundCassetteKey);
+          } else {
+            hitCountRef.current++;
+            if (hitCountRef.current >= MIN_HITS_TO_CHANGE) {
+              lastCassetteKeyRef.current = foundCassetteKey;
+              lastFilmIdRef.current = foundFilmId;
+              hitCountRef.current = 1;
+              setTargetedFilm(foundFilmId, foundCassetteKey);
+            }
+          }
+        } else if (currentCassetteKey) {
+          hitCountRef.current = 0;
+          deselectTimerRef.current += delta;
+          if (deselectTimerRef.current >= DESELECT_DELAY) {
+            lastCassetteKeyRef.current = null;
+            lastFilmIdRef.current = null;
+            deselectTimerRef.current = 0;
+            setTargetedFilm(null, null);
           }
         }
-      } else if (currentCassetteKey) {
-        hitCountRef.current = 0;
-        deselectTimerRef.current += delta;
-        if (deselectTimerRef.current >= DESELECT_DELAY) {
-          lastCassetteKeyRef.current = null;
-          lastFilmIdRef.current = null;
-          deselectTimerRef.current = 0;
-          setTargetedFilm(null, null);
-        }
-      }
 
-      // Cursor (desktop only)
-      if (!isMobile) {
+        // Cursor (desktop only)
         if (foundInteractive || lastCassetteKeyRef.current !== null) {
           document.body.style.cursor = "pointer";
         } else {
@@ -531,7 +585,7 @@ export function Controls({
     if (!isActive) return;
     if (useStore.getState().isVHSCaseOpen) return;
 
-    const speed = isMobile ? 2.2 : 1.75; // faster on mobile — joystick rarely hits 100% deflection
+    const speed = isMobile ? 1.1 : 1.75; // slower on mobile for precision near shelves
     velocity.current.x -= velocity.current.x * 10.0 * delta;
     velocity.current.z -= velocity.current.z * 10.0 * delta;
 
