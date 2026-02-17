@@ -18,15 +18,65 @@ interface ProbeResult {
   duration: number;
 }
 
+interface JobState {
+  status: string;
+  progress: number;
+  error: string | null;
+}
+
 const queue: TranscodeJob[] = [];
-let processing = false;
+let activeJobs = 0;
+const MAX_CONCURRENT = 2;
+const THREADS_PER_JOB = 10;
+
+// Per-job progress tracking for combined reporting
+const jobStates = new Map<string, JobState>();
+
+function jobKey(filmId: number, type: string): string {
+  return `${filmId}-${type}`;
+}
 
 // --- DB helpers ---
 
-function updateTranscodeStatus(filmId: number, status: string, progress: number = 0, error: string | null = null): void {
+function syncFilmStatus(filmId: number): void {
+  const voState = jobStates.get(jobKey(filmId, 'vo'));
+  const vfState = jobStates.get(jobKey(filmId, 'vf'));
+
+  const states = [voState, vfState].filter(Boolean) as JobState[];
+  if (states.length === 0) return;
+
+  // Combined progress = average of all tracked jobs
+  const combinedProgress = states.reduce((sum, s) => sum + s.progress, 0) / states.length;
+
+  // Combined status: error > active > probing > pending > done
+  let combinedStatus: string;
+  let combinedError: string | null = null;
+
+  if (states.some(s => s.status === 'error')) {
+    combinedStatus = 'error';
+    combinedError = states.find(s => s.status === 'error')!.error;
+  } else if (states.some(s => s.status === 'transcoding' || s.status === 'remuxing')) {
+    combinedStatus = states.find(s => s.status === 'transcoding')?.status
+      || states.find(s => s.status === 'remuxing')!.status;
+  } else if (states.some(s => s.status === 'probing')) {
+    combinedStatus = 'probing';
+  } else if (states.every(s => s.status === 'done')) {
+    combinedStatus = 'done';
+    // Cleanup tracked states
+    jobStates.delete(jobKey(filmId, 'vo'));
+    jobStates.delete(jobKey(filmId, 'vf'));
+  } else {
+    combinedStatus = 'pending';
+  }
+
   db.prepare(
     'UPDATE films SET transcode_status = ?, transcode_progress = ?, transcode_error = ? WHERE id = ?'
-  ).run(status, progress, error, filmId);
+  ).run(combinedStatus, Math.min(combinedProgress, combinedStatus === 'done' ? 100 : 99.9), combinedError, filmId);
+}
+
+function updateJobState(filmId: number, type: string, status: string, progress: number = 0, error: string | null = null): void {
+  jobStates.set(jobKey(filmId, type), { status, progress, error });
+  syncFilmStatus(filmId);
 }
 
 function setTranscodedPath(filmId: number, type: 'vo' | 'vf', relativePath: string): void {
@@ -71,7 +121,8 @@ function transcodeFile(
   inputPath: string,
   outputPath: string,
   probe: ProbeResult,
-  filmId: number
+  filmId: number,
+  type: 'vo' | 'vf'
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const copyVideo = probe.videoCodec === 'h264';
@@ -79,13 +130,14 @@ function transcodeFile(
     const isRemux = copyVideo && copyAudio;
 
     const statusLabel = isRemux ? 'remuxing' : 'transcoding';
-    updateTranscodeStatus(filmId, statusLabel, 0);
+    updateJobState(filmId, type, statusLabel, 0);
 
     console.log(`[transcoder] ${statusLabel}: video=${copyVideo ? 'copy' : 'h264'} audio=${copyAudio ? 'copy' : 'aac'}`);
 
     let lastProgressUpdate = 0;
 
     const command = ffmpeg(inputPath)
+      .outputOptions('-threads', String(THREADS_PER_JOB))
       .outputOptions('-movflags', '+faststart')
       .output(outputPath);
 
@@ -114,7 +166,7 @@ function transcodeFile(
         const now = Date.now();
         if (now - lastProgressUpdate > 3000) {
           const pct = progress.percent ?? 0;
-          updateTranscodeStatus(filmId, statusLabel, Math.min(pct, 99.9));
+          updateJobState(filmId, type, statusLabel, Math.min(pct, 99.9));
           lastProgressUpdate = now;
         }
       })
@@ -130,55 +182,68 @@ function transcodeFile(
 
 // --- Queue processing ---
 
-async function processQueue(): Promise<void> {
-  if (processing || queue.length === 0) return;
-  processing = true;
+async function processJob(job: TranscodeJob): Promise<void> {
+  const basePath = job.type === 'vo' ? MEDIA_FILMS_VO_PATH : MEDIA_FILMS_VF_PATH;
+  const inputPath = join(basePath, job.inputRelativePath);
 
-  while (queue.length > 0) {
-    const job = queue.shift()!;
-    const basePath = job.type === 'vo' ? MEDIA_FILMS_VO_PATH : MEDIA_FILMS_VF_PATH;
-    const inputPath = join(basePath, job.inputRelativePath);
+  // Build output path: same dir, .web.mp4 extension
+  const dir = dirname(inputPath);
+  const name = basename(inputPath, extname(inputPath));
+  const outputPath = join(dir, `${name}.web.mp4`);
 
-    // Build output path: same dir, .web.mp4 extension
-    const dir = dirname(inputPath);
-    const name = basename(inputPath, extname(inputPath));
-    const outputPath = join(dir, `${name}.web.mp4`);
+  // Relative path for DB (strip base path)
+  const outputRelative = join(
+    dirname(job.inputRelativePath),
+    `${basename(job.inputRelativePath, extname(job.inputRelativePath))}.web.mp4`
+  );
 
-    // Relative path for DB (strip base path)
-    const outputRelative = join(
-      dirname(job.inputRelativePath),
-      `${basename(job.inputRelativePath, extname(job.inputRelativePath))}.web.mp4`
-    );
+  const filmTitle = (db.prepare('SELECT title FROM films WHERE id = ?').get(job.filmId) as any)?.title || `#${job.filmId}`;
+  console.log(`[transcoder] Début ${job.type.toUpperCase()}: "${filmTitle}"`);
 
-    const filmTitle = (db.prepare('SELECT title FROM films WHERE id = ?').get(job.filmId) as any)?.title || `#${job.filmId}`;
-    console.log(`[transcoder] Début ${job.type.toUpperCase()}: "${filmTitle}"`);
+  try {
+    // Check input exists
+    await access(inputPath);
 
+    // Skip if already transcoded
     try {
-      // Check input exists
-      await access(inputPath);
-
-      // Probe
-      updateTranscodeStatus(job.filmId, 'probing');
-      const probe = await probeFile(inputPath);
-      console.log(`[transcoder] Probe: video=${probe.videoCodec} audio=${probe.audioCodec} dur=${Math.round(probe.duration)}s`);
-
-      // Transcode
-      await transcodeFile(inputPath, outputPath, probe, job.filmId);
-
-      // Success
+      await access(outputPath);
+      console.log(`[transcoder] Skip ${job.type.toUpperCase()}: "${filmTitle}" (déjà transcodé)`);
       setTranscodedPath(job.filmId, job.type, outputRelative);
-      updateTranscodeStatus(job.filmId, 'done', 100);
+      updateJobState(job.filmId, job.type, 'done', 100);
       checkAndEnableAvailability(job.filmId);
+      return;
+    } catch { /* output doesn't exist, proceed */ }
 
-      console.log(`[transcoder] Terminé ${job.type.toUpperCase()}: "${filmTitle}"`);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error(`[transcoder] Erreur ${job.type.toUpperCase()} "${filmTitle}":`, msg);
-      updateTranscodeStatus(job.filmId, 'error', 0, msg);
-    }
+    // Probe
+    updateJobState(job.filmId, job.type, 'probing');
+    const probe = await probeFile(inputPath);
+    console.log(`[transcoder] Probe: video=${probe.videoCodec} audio=${probe.audioCodec} dur=${Math.round(probe.duration)}s`);
+
+    // Transcode
+    await transcodeFile(inputPath, outputPath, probe, job.filmId, job.type);
+
+    // Success
+    setTranscodedPath(job.filmId, job.type, outputRelative);
+    updateJobState(job.filmId, job.type, 'done', 100);
+    checkAndEnableAvailability(job.filmId);
+
+    console.log(`[transcoder] Terminé ${job.type.toUpperCase()}: "${filmTitle}"`);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[transcoder] Erreur ${job.type.toUpperCase()} "${filmTitle}":`, msg);
+    updateJobState(job.filmId, job.type, 'error', 0, msg);
+  } finally {
+    activeJobs--;
+    processQueue();
   }
+}
 
-  processing = false;
+function processQueue(): void {
+  while (activeJobs < MAX_CONCURRENT && queue.length > 0) {
+    const job = queue.shift()!;
+    activeJobs++;
+    processJob(job);
+  }
 }
 
 // --- Public API ---
@@ -188,7 +253,7 @@ export function enqueueTranscode(filmId: number, type: 'vo' | 'vf', inputRelativ
   const exists = queue.some(j => j.filmId === filmId && j.type === type);
   if (exists) return;
 
-  updateTranscodeStatus(filmId, 'pending');
+  updateJobState(filmId, type, 'pending');
   queue.push({ filmId, type, inputRelativePath });
   console.log(`[transcoder] Job ajouté: film #${filmId} ${type.toUpperCase()} (queue: ${queue.length})`);
 
@@ -200,5 +265,5 @@ export function getQueueLength(): number {
 }
 
 export function isProcessing(): boolean {
-  return processing;
+  return activeJobs > 0;
 }

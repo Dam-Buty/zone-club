@@ -110,10 +110,6 @@ export async function triggerDownload(filmId: number): Promise<Film> {
         throw new Error('Film introuvable');
     }
 
-    if (film.radarr_vo_id && film.radarr_vf_id) {
-        throw new Error('Le téléchargement est déjà en cours ou terminé');
-    }
-
     const { vo, vf } = await addToRadarr(film.tmdb_id, film.title);
     db.prepare('UPDATE films SET radarr_vo_id = ?, radarr_vf_id = ? WHERE id = ?').run(vo.id, vf.id, filmId);
 
