@@ -18,9 +18,11 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
   const postProcessingRef = useRef<THREE.PostProcessing | null>(null)
   // DoF bokeh scale uniform — 0 = no blur, >0 = active (smooth lerp in useFrame)
   const bokehRef = useRef<{ value: number }>({ value: 0 })
-  // Subscribe to VHS case state — triggers pipeline rebuild with/without DoF
+  // Subscribe to VHS case state — triggers pipeline rebuild with/without DoF (desktop only)
   // PostProcessingEffects returns null so re-renders are free (no scene graph changes)
   const isVHSCaseOpen = useStore(state => state.isVHSCaseOpen)
+  // Mobile pipeline has no DoF — don't rebuild pipeline on case open/close
+  const dofTrigger = isMobile ? false : isVHSCaseOpen
 
   useEffect(() => {
     const postProcessing = new THREE.PostProcessing(renderer as unknown as THREE.WebGPURenderer)
@@ -37,19 +39,15 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
     }
 
     if (isMobile) {
-      // ===== MOBILE PIPELINE: Scene → Bloom → Vignette =====
-      // No MRT needed (no GTAO), no FXAA (unnecessary at dpr ≤1.5 on small screens)
+      // ===== MOBILE PIPELINE: Scene → Vignette =====
+      // No MRT, no GTAO, no Bloom, no FXAA — maximum perf on mobile GPU
       const scenePass = pass(scene, camera)
       const scenePassColor = scenePass.getTextureNode('output')
 
-      // Bloom with slightly reduced strength on mobile
-      const bloomPass = bloom(scenePassColor, 0.15, 0.4, 0.9)
-      const withBloom = scenePassColor.add(bloomPass)
-
-      const withVignette = applyVignette(withBloom)
+      const withVignette = applyVignette(scenePassColor)
       postProcessing.outputNode = withVignette
 
-      console.log('[PostProcessing] Pipeline: Bloom + Vignette (mobile)')
+      console.log('[PostProcessing] Pipeline: Vignette only (mobile)')
     } else {
       // ===== DESKTOP PIPELINE =====
       // Without DoF: Scene MRT → GTAO(0.5x) → Bloom → CA → Vignette → FXAA → Film Grain
@@ -128,7 +126,7 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
       postProcessing.dispose()
       postProcessingRef.current = null
     }
-  }, [renderer, scene, camera, isMobile, isVHSCaseOpen])
+  }, [renderer, scene, camera, isMobile, dofTrigger])
 
   // renderPriority=1 tells R3F to skip its default renderer.render() call
   useFrame((_, delta) => {

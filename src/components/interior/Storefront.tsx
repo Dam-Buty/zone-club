@@ -45,33 +45,27 @@ const FRAME_MAT = new THREE.MeshStandardMaterial({
   metalness: 0.8,
 })
 
-// Vitrine glass — dark tinted, Fresnel reflections.
-// Neon signs are on the exterior side — their emissive glow bleeds through the dark glass.
-const GLASS_MAT = new THREE.MeshPhysicalMaterial({
-  color: '#1a2030',        // dark blue-grey tint (storefront.jpeg: glass is dark at night)
+// Vitrine glass — dark tinted with IBL reflections via metalness.
+// MeshStandardMaterial instead of Physical (no clearcoat = -50% fragment cost on glass).
+const GLASS_MAT = new THREE.MeshStandardMaterial({
+  color: '#1a2030',
   transparent: true,
-  opacity: 0.15,           // darker tint than before — neon glow visible through
-  roughness: 0.03,
-  metalness: 0.0,
-  reflectivity: 1.0,
-  envMapIntensity: 2.5,
-  clearcoat: 1.0,
-  clearcoatRoughness: 0.05,
+  opacity: 0.15,
+  roughness: 0.05,
+  metalness: 0.3,
+  envMapIntensity: 1.5,
   depthWrite: false,
   side: THREE.FrontSide,
 })
 
 // Door glass — same dark tint
-const DOOR_GLASS_MAT = new THREE.MeshPhysicalMaterial({
+const DOOR_GLASS_MAT = new THREE.MeshStandardMaterial({
   color: '#182028',
   transparent: true,
   opacity: 0.18,
-  roughness: 0.03,
-  metalness: 0.0,
-  reflectivity: 1.0,
-  envMapIntensity: 2.5,
-  clearcoat: 1.0,
-  clearcoatRoughness: 0.05,
+  roughness: 0.05,
+  metalness: 0.3,
+  envMapIntensity: 1.5,
   depthWrite: false,
   side: THREE.FrontSide,
 })

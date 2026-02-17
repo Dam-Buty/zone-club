@@ -242,7 +242,7 @@ function UIOverlays({ isMobile }: { isMobile: boolean }) {
         </div>
       )}
 
-      {/* Crosshair — desktop: cross shape, mobile: small dot */}
+      {/* Crosshair — desktop: cross shape, mobile: visible ring + dot */}
       {overlaysEnabled && isPointerLocked && (
         isMobile ? (
           <div
@@ -251,14 +251,36 @@ function UIOverlays({ isMobile }: { isMobile: boolean }) {
               top: '50%',
               left: '50%',
               transform: 'translate(-50%, -50%)',
-              width: '6px',
-              height: '6px',
-              borderRadius: '50%',
-              backgroundColor: 'rgba(255, 255, 255, 0.6)',
+              width: '28px',
+              height: '28px',
               pointerEvents: 'none',
               zIndex: 20,
             }}
-          />
+          >
+            {/* Outer ring */}
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                borderRadius: '50%',
+                border: '2px solid rgba(255, 45, 149, 0.7)',
+                boxShadow: '0 0 6px rgba(255, 45, 149, 0.4)',
+              }}
+            />
+            {/* Center dot */}
+            <div
+              style={{
+                position: 'absolute',
+                top: '50%',
+                left: '50%',
+                transform: 'translate(-50%, -50%)',
+                width: '4px',
+                height: '4px',
+                borderRadius: '50%',
+                backgroundColor: 'rgba(255, 255, 255, 0.9)',
+              }}
+            />
+          </div>
         ) : (
           <div
             style={{
@@ -426,7 +448,7 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
   return (
     <div style={{ position: 'fixed', inset: 0, touchAction: 'none' }}>
       <Canvas
-        dpr={isMobile ? Math.min(window.devicePixelRatio, 1.5) : Math.min(window.devicePixelRatio, 2)}
+        dpr={isMobile ? 1.0 : Math.min(window.devicePixelRatio, 1.5)}
         gl={(async (props: any) => {
           console.log('[Canvas] Initializing WebGPU renderer...')
           const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' })

@@ -232,6 +232,10 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
     hoverOffsetsRef.current = offsets
   }, [count])
 
+  // Track previous targeted key to skip 520-iteration loop when idle
+  const prevTargetedKeyRef = useRef<string | null>(null)
+  const hysteresisActiveRef = useRef(false)
+
   // Animation loop — CPU only handles hysteresis + target writes, GPU does lerp
   useFrame((_state, delta) => {
     const mesh = meshRef.current
@@ -245,6 +249,12 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
     const targetedCassetteKey = storeState.targetedCassetteKey
     const getRental = storeState.getRental
 
+    // Skip entire 520-iteration loop when nothing has changed and no hysteresis in progress
+    if (targetedCassetteKey === prevTargetedKeyRef.current && !hysteresisActiveRef.current) {
+      return
+    }
+    prevTargetedKeyRef.current = targetedCassetteKey
+
     // Get CPU-side typed arrays for target buffers
     const tarHoverArr = targetHoverZBuffer.value.array as Float32Array
     const tarEmissiveArr = targetEmissiveBuffer.value.array as Float32Array
@@ -252,6 +262,7 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
 
     let tarHoverDirty = false
     let tarEmissiveDirty = false
+    let anyHysteresisActive = false
 
     for (let i = 0; i < count; i++) {
       const hs = hysteresisStates[i]
@@ -265,6 +276,8 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
         if (hs.targetedTimer >= delay) {
           hs.stableTargeted = isTargetedRaw
           hs.targetedTimer = 0
+        } else {
+          anyHysteresisActive = true
         }
       } else {
         hs.targetedTimer = 0
@@ -295,6 +308,9 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
         tarEmissiveDirty = true
       }
     }
+
+    // Track hysteresis state for next-frame skip optimization
+    hysteresisActiveRef.current = anyHysteresisActive
 
     // Upload changed targets to GPU — skip compute entirely when nothing changed
     if (tarHoverDirty) {

@@ -95,8 +95,8 @@ export function Controls({ onCassetteClick, isMobile, mobileInputRef }: Controls
   const lastFilmIdRef = useRef<number | null>(null)
   const deselectTimerRef = useRef<number>(0)
   const hitCountRef = useRef<number>(0)
-  const DESELECT_DELAY = 0.4
-  const MIN_HITS_TO_CHANGE = 10 // ~0.5s at 20 raycasts/sec (RAYCAST_INTERVAL=3)
+  const DESELECT_DELAY = isMobile ? 0.25 : 0.4
+  const MIN_HITS_TO_CHANGE = isMobile ? 3 : 10 // Mobile: instant (3 hits ~0.15s), Desktop: ~0.5s
 
   // Throttle raycast
   const frameCountRef = useRef(0)
