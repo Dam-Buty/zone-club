@@ -183,7 +183,7 @@ export const tmdb = {
         );
         if (!res.ok) return null;
         const data = await res.json();
-        return data.logo_path ? `${IMAGE_BASE}/w200${data.logo_path}` : null;
+        return data.logo_path ? `${IMAGE_BASE}/w500${data.logo_path}` : null;
       } catch {
         return null;
       }

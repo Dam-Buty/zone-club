@@ -242,109 +242,45 @@ function UIOverlays({ isMobile }: { isMobile: boolean }) {
         </div>
       )}
 
-      {/* Crosshair — desktop: cross shape, mobile: visible ring + dot */}
-      {overlaysEnabled && isPointerLocked && (
-        isMobile ? (
-          <div
-            style={{
-              position: 'fixed',
-              top: '50%',
-              left: '50%',
-              transform: 'translate(-50%, -50%)',
-              width: '28px',
-              height: '28px',
-              pointerEvents: 'none',
-              zIndex: 20,
-            }}
-          >
-            {/* Outer ring */}
-            <div
-              style={{
-                position: 'absolute',
-                inset: 0,
-                borderRadius: '50%',
-                border: '2px solid rgba(255, 45, 149, 0.7)',
-                boxShadow: '0 0 6px rgba(255, 45, 149, 0.4)',
-              }}
-            />
-            {/* Center dot */}
-            <div
-              style={{
-                position: 'absolute',
-                top: '50%',
-                left: '50%',
-                transform: 'translate(-50%, -50%)',
-                width: '4px',
-                height: '4px',
-                borderRadius: '50%',
-                backgroundColor: 'rgba(255, 255, 255, 0.9)',
-              }}
-            />
-          </div>
-        ) : (
-          <div
-            style={{
-              position: 'fixed',
-              top: '50%',
-              left: '50%',
-              transform: 'translate(-50%, -50%)',
-              width: '20px',
-              height: '20px',
-              pointerEvents: 'none',
-              zIndex: 20,
-            }}
-          >
-            <div
-              style={{
-                position: 'absolute',
-                top: '50%',
-                left: '0',
-                width: '100%',
-                height: '2px',
-                backgroundColor: 'rgba(255, 255, 255, 0.7)',
-                transform: 'translateY(-50%)',
-              }}
-            />
-            <div
-              style={{
-                position: 'absolute',
-                top: '0',
-                left: '50%',
-                width: '2px',
-                height: '100%',
-                backgroundColor: 'rgba(255, 255, 255, 0.7)',
-                transform: 'translateX(-50%)',
-              }}
-            />
-          </div>
-        )
-      )}
-
-      {/* (#6) Mobile aim hint — "Visez une cassette" below crosshair */}
-      {overlaysEnabled && isMobile && showAimHint && isPointerLocked && (
+      {/* Crosshair — desktop only (mobile uses tap-to-select) */}
+      {overlaysEnabled && !isMobile && isPointerLocked && (
         <div
           style={{
             position: 'fixed',
-            top: 'calc(50% + 24px)',
+            top: '50%',
             left: '50%',
-            transform: 'translateX(-50%)',
-            padding: '0.4rem 0.8rem',
-            backgroundColor: 'rgba(0, 0, 0, 0.7)',
-            borderRadius: '6px',
-            color: 'rgba(255, 255, 255, 0.85)',
-            fontFamily: 'Orbitron, sans-serif',
-            fontSize: '0.65rem',
-            textAlign: 'center',
+            transform: 'translate(-50%, -50%)',
+            width: '20px',
+            height: '20px',
             pointerEvents: 'none',
             zIndex: 20,
-            animation: 'fadeInHint 0.5s ease-out',
-            opacity: aimHintFading ? 0 : 1,
-            transition: `opacity ${NAV_HELP_FADE_MS}ms ease`,
           }}
         >
-          Visez une cassette avec le point
+          <div
+            style={{
+              position: 'absolute',
+              top: '50%',
+              left: '0',
+              width: '100%',
+              height: '2px',
+              backgroundColor: 'rgba(255, 255, 255, 0.7)',
+              transform: 'translateY(-50%)',
+            }}
+          />
+          <div
+            style={{
+              position: 'absolute',
+              top: '0',
+              left: '50%',
+              width: '2px',
+              height: '100%',
+              backgroundColor: 'rgba(255, 255, 255, 0.7)',
+              transform: 'translateX(-50%)',
+            }}
+          />
         </div>
       )}
+
 
       {/* Scene indicator */}
       {overlaysEnabled && (

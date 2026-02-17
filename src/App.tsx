@@ -1,6 +1,5 @@
 import { useEffect, useState, useCallback, useRef, lazy, Suspense } from 'react';
 import { useStore } from './store';
-import { useManagerTriggers } from './hooks/useManagerTriggers';
 import { VHSCaseOverlay } from './components/videoclub/VHSCaseOverlay';
 import { ManagerChat } from './components/manager/ManagerChat';
 import { VHSPlayer } from './components/player/VHSPlayer';
@@ -11,7 +10,30 @@ import type { AisleType, Film } from './types';
 
 // Lazy-load WebGPU-dependent components so they don't crash browsers without support
 const ExteriorView = lazy(() => import('./components/exterior/ExteriorView').then(m => ({ default: m.ExteriorView })));
-const InteriorScene = lazy(() => import('./components/interior/InteriorScene').then(m => ({ default: m.InteriorScene })));
+const _interiorImport = import('./components/interior/InteriorScene');
+const InteriorScene = lazy(() => _interiorImport.then(m => ({ default: m.InteriorScene })));
+
+// Eagerly preload heavy interior assets (HDR, PBR textures, GLBs) while user is on exterior/onboarding.
+// These fire HTTP requests immediately — by the time the user enters, assets are in browser cache.
+_interiorImport.then(() => {
+  // Module loaded — useGLTF.preload calls inside submodules (VHSCaseViewer, Manager3D) are now active.
+  // Preload additional assets that drei hooks will request on mount:
+  const preloadUrls = [
+    '/textures/env/indoor_night.hdr',
+    '/textures/wall/color.jpg', '/textures/wall/normal.jpg', '/textures/wall/roughness.jpg', '/textures/wall/ao.jpg',
+    '/textures/wood/color.jpg', '/textures/wood/normal.jpg', '/textures/wood/roughness.jpg',
+    '/panneau-extincteur.png', '/exterior.webp',
+    // KTX2 variants (loaded if USE_KTX2 is true in Aisle.tsx)
+    '/textures/wall/color.ktx2', '/textures/wall/normal.ktx2', '/textures/wall/roughness.ktx2', '/textures/wall/ao.ktx2',
+    '/textures/wood/color.ktx2', '/textures/wood/normal.ktx2', '/textures/wood/roughness.ktx2',
+  ];
+  for (const url of preloadUrls) {
+    const link = document.createElement('link');
+    link.rel = 'prefetch';
+    link.href = url;
+    document.head.appendChild(link);
+  }
+});
 
 // ===== MODULE-LEVEL PREFETCH =====
 // Starts API fetches immediately when JS loads (before React mounts).
@@ -106,8 +128,6 @@ function App() {
   // Transition state
   const [isTransitioning, setIsTransitioning] = useState(false);
 
-  // Manager triggers hook
-  useManagerTriggers();
 
   // Restore auth session from cookie on mount
   const fetchMe = useStore(state => state.fetchMe);

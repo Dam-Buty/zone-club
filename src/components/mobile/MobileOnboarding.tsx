@@ -24,7 +24,7 @@ const MOBILE_STEPS: OnboardingStep[] = [
   },
   {
     title: 'COMMANDES MOBILE',
-    description: 'D\u00e9placez-vous avec le joystick (bas gauche), regardez en glissant sur l\'\u00e9cran, puis visez une cassette et touchez l\'\u00e9cran ou le bouton E pour interagir.',
+    description: 'D\u00e9placez-vous avec le joystick (bas gauche), regardez en glissant sur l\'\u00e9cran, puis touchez directement une cassette pour l\'inspecter.',
     icon: '\u{1F4F1}',
     animation: 'tapHint',
   },

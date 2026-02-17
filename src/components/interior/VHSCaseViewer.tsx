@@ -2,7 +2,7 @@ import { useRef, useEffect, useMemo } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import { useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
-import { bumpMap, texture, positionLocal, mix, float, clamp as tslClamp } from 'three/tsl'
+import { bumpMap, texture, positionLocal, mix, float, clamp as tslClamp, uniform, vec3 } from 'three/tsl'
 import { useStore } from '../../store'
 import { fetchVHSCoverData, generateVHSCoverTexture } from '../../utils/VHSCoverGenerator'
 import type { Film } from '../../types'
@@ -34,12 +34,13 @@ const PORTRAIT_QUAT = new THREE.Quaternion().setFromAxisAngle(
 const ALBEDO_COLOR = new THREE.Color(0.50, 0.50, 0.50)
 
 // Animation constants
-const DISTANCE_FROM_CAMERA = 0.4725 // meters in front of camera (+5%)
+const DISTANCE_FROM_CAMERA = 0.496  // meters in front of camera (+10%)
 const CASE_SCALE = 0.255          // model is ~2m tall → ~51cm
 const TILT_ANGLE = (3 * Math.PI) / 180 // 3° backward tilt — reduced from 10° to minimize ceiling light on top
 const MANUAL_ROTATE_SPEED = 2.5   // rad/s
 const ENTRY_DURATION = 0.3        // seconds
 const FLIP_DURATION = 0.4         // seconds for 180° flip animation
+const TEXTURE_FADE_DURATION = 0.3 // seconds for cover artwork fade-in
 
 interface VHSCaseViewerProps {
   film: Film
@@ -57,6 +58,8 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
   const timeRef = useRef(0)
   const isFlippedRef = useRef(false)
   const flipProgressRef = useRef(0)  // 0=front, 1=back
+  const fadeUniformRef = useRef<{ value: number } | null>(null) // TSL uniform for texture fade-in
+  const fadeProgressRef = useRef(0)  // 0=blank, 1=fully textured
   const savedPitchRef = useRef(0)    // camera pitch when VHS opened
   const pitchCorrectedRef = useRef(false)
 
@@ -153,15 +156,14 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
   useEffect(() => {
     let cancelled = false
 
-    // Hide immediately + reset animation — visible restored in useFrame when texture ready
+    // Reset animation state (case shown immediately as blank VHS)
     textureReadyRef.current = false
     entryProgressRef.current = 0
     manualRotationRef.current = 0
     isFlippedRef.current = false
     flipProgressRef.current = 0
-    if (groupRef.current) {
-      groupRef.current.visible = false
-    }
+    fadeProgressRef.current = 0
+    fadeUniformRef.current = null
 
     fetchVHSCoverData(film).then(data => {
       if (cancelled) return
@@ -183,13 +185,20 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
       const correction = mix(float(1.1), float(0.85), normalizedHeight)
       const correctedColor = texNode.mul(albedoBase).mul(correction)
 
+      // TSL uniform drives the fade from blank VHS → cover artwork in useFrame
+      const fadeU = uniform(0.0)
+      fadeUniformRef.current = fadeU
+      // Blank = neutral gray matching ALBEDO_COLOR (0.5)
+      const blankColor = vec3(0.5, 0.5, 0.5)
+      const fadedColor = mix(blankColor, correctedColor, fadeU)
+
       for (const mesh of meshesWithMap) {
         const mat = mesh.material as THREE.MeshStandardMaterial
         mat.map = null  // disable built-in map — colorNode handles sampling
-        ;(mat as any).colorNode = correctedColor
+        ;(mat as any).colorNode = fadedColor
         if (bumpTex) {
           // WebGPU renderer requires TSL normalNode (classic bumpMap property is ignored)
-          ;(mat as any).normalNode = bumpMap(texture(bumpTex), 1.5)
+          ;(mat as any).normalNode = bumpMap(texture(bumpTex), 1.2)
         }
         mat.needsUpdate = true
       }
@@ -361,11 +370,7 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
     if (!groupRef.current) return
     timeRef.current += delta
 
-    // Stay hidden until texture is ready
-    if (!textureReadyRef.current) {
-      groupRef.current.visible = false
-      return
-    }
+    // Show case immediately (blank VHS visible during texture load)
     if (!groupRef.current.visible) {
       groupRef.current.visible = true
       entryProgressRef.current = 0 // start entry animation fresh
@@ -376,6 +381,12 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
       entryProgressRef.current = Math.min(1, entryProgressRef.current + delta / ENTRY_DURATION)
     }
     groupRef.current.scale.setScalar(CASE_SCALE * easeOutCubic(entryProgressRef.current))
+
+    // Fade cover artwork in once texture is ready (blank → textured)
+    if (textureReadyRef.current && fadeUniformRef.current && fadeProgressRef.current < 1) {
+      fadeProgressRef.current = Math.min(1, fadeProgressRef.current + delta / TEXTURE_FADE_DURATION)
+      fadeUniformRef.current.value = easeOutCubic(fadeProgressRef.current)
+    }
 
     // Smoothly correct camera pitch to look at VHS case (center view)
     if (!pitchCorrectedRef.current) {
@@ -432,19 +443,21 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
     _targetPos.y = _cameraWorldPos.y // keep at eye level, ignore pitch
     groupRef.current.position.copy(_targetPos)
 
-    // Loading pulse effect (before texture is ready)
-    if (!textureReadyRef.current) {
+    // Loading pulse effect (before texture is ready) — fades out during texture fade-in
+    if (!textureReadyRef.current || fadeProgressRef.current < 1) {
       const pulse = 0.3 + Math.sin(timeRef.current * 4) * 0.15
+      // Fade emissive out as texture fades in
+      const emissiveScale = 1 - fadeProgressRef.current
       for (const mesh of meshesWithMap) {
         const mat = mesh.material as THREE.MeshStandardMaterial
         if (mat) {
           mat.emissive = mat.emissive || new THREE.Color()
-          mat.emissive.setRGB(pulse * 0.3, 0, pulse * 0.5)
+          mat.emissive.setRGB(pulse * 0.3 * emissiveScale, 0, pulse * 0.5 * emissiveScale)
           mat.emissiveIntensity = 1
         }
       }
     } else {
-      // Remove emissive once loaded
+      // Remove emissive once fully loaded
       for (const mesh of meshesWithMap) {
         const mat = mesh.material as THREE.MeshStandardMaterial
         if (mat && mat.emissiveIntensity > 0) {
