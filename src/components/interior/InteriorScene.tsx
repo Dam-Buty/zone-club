@@ -451,12 +451,9 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
         dpr={isMobile ? 1.0 : Math.min(window.devicePixelRatio, 1.5)}
         gl={(async (props: any) => {
           console.log('[Canvas] Initializing WebGPU renderer...')
-          const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' })
-            ?? await navigator.gpu.requestAdapter()
-          if (!adapter) {
-            throw new Error('Aucun adaptateur GPU WebGPU disponible sur cet appareil.')
-          }
 
+          // Let Three.js handle adapter creation internally — avoid redundant
+          // requestAdapter() calls that can interfere on some systems.
           const renderer = new THREE.WebGPURenderer({
             ...props as THREE.WebGPURendererParameters,
           })
@@ -467,7 +464,7 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const backend = (renderer as any).backend
           const device = backend?.device as GPUDevice | undefined
-          const detectedMaxLayers = device?.limits.maxTextureArrayLayers ?? adapter.limits.maxTextureArrayLayers ?? 256
+          const detectedMaxLayers = device?.limits.maxTextureArrayLayers ?? 256
           const debugForcedLayers = Number(new URLSearchParams(window.location.search).get('debugMaxTextureArrayLayers'))
           const effectiveMaxLayers = Number.isFinite(debugForcedLayers) && debugForcedLayers > 0
             ? Math.floor(debugForcedLayers)

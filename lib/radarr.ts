@@ -60,6 +60,14 @@ class RadarrClient {
     }
 
     async addMovie(tmdbId: number, title: string): Promise<RadarrMovie> {
+        // Check if movie already exists in Radarr
+        const existing = await this.getMovieByTmdbId(tmdbId);
+        if (existing) {
+            // Trigger a new search if needed
+            await this.searchMovie(existing.id);
+            return existing;
+        }
+
         const rootFolders = await this.getRootFolders();
         const rootFolder = rootFolders[0];
 
