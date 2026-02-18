@@ -260,6 +260,43 @@ export function enqueueTranscode(filmId: number, type: 'vo' | 'vf', inputRelativ
   processQueue();
 }
 
+export function recoverPendingTranscodes(): void {
+  interface UnfinishedFilm {
+    id: number;
+    title: string;
+    file_path_vo: string | null;
+    file_path_vf: string | null;
+    file_path_vo_transcoded: string | null;
+    file_path_vf_transcoded: string | null;
+  }
+
+  const films = db.prepare(`
+    SELECT id, title, file_path_vo, file_path_vf, file_path_vo_transcoded, file_path_vf_transcoded
+    FROM films
+    WHERE (file_path_vo IS NOT NULL AND file_path_vo_transcoded IS NULL)
+       OR (file_path_vf IS NOT NULL AND file_path_vf_transcoded IS NULL)
+  `).all() as UnfinishedFilm[];
+
+  if (films.length === 0) {
+    console.log('[transcoder] Recovery: aucun transcodage en attente');
+    return;
+  }
+
+  let count = 0;
+  for (const film of films) {
+    if (film.file_path_vo && !film.file_path_vo_transcoded) {
+      enqueueTranscode(film.id, 'vo', film.file_path_vo);
+      count++;
+    }
+    if (film.file_path_vf && !film.file_path_vf_transcoded) {
+      enqueueTranscode(film.id, 'vf', film.file_path_vf);
+      count++;
+    }
+  }
+
+  console.log(`[transcoder] Recovery: ${count} job(s) ré-enqueue pour ${films.length} film(s)`);
+}
+
 export function getQueueLength(): number {
   return queue.length;
 }

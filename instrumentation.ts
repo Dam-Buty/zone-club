@@ -4,5 +4,7 @@ export async function register() {
         startCleanupScheduler();
         const { startRadarrPoller } = await import('./lib/radarr-poller');
         startRadarrPoller();
+        const { recoverPendingTranscodes } = await import('./lib/transcoder');
+        recoverPendingTranscodes();
     }
 }
