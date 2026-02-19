@@ -8,8 +8,8 @@ services:
       - .:/app
       - node_modules:/app/node_modules
       - ./zone.db:/data/zone.db
-      - /data/zone-club/films-vo:/media/films-vo
-      - /data/zone-club/films-vf:/media/films-vf
+      - /data/phat-two/zone-club/films-vo:/media/films-vo
+      - /data/phat-two/zone-club/films-vf:/media/films-vf
       - media_public:/media/public:rw
     environment:
       - DATABASE_PATH=/data/zone.db
@@ -39,8 +39,8 @@ services:
     image: sebp/lighttpd
     container_name: zone-storage
     volumes:
-      - /data/zone-club/films-vo:/media/films-vo:ro
-      - /data/zone-club/films-vf:/media/films-vf:ro
+      - /data/phat-two/zone-club/films-vo:/media/films-vo:ro
+      - /data/phat-two/zone-club/films-vf:/media/films-vf:ro
       - media_public:/media/public:ro
       - ./lighttpd.conf:/etc/lighttpd/lighttpd.conf:ro
     labels:
@@ -60,7 +60,7 @@ services:
       - TZ=Europe/Paris
     volumes:
       - ./radarr-vo-config:/config
-      - /data/zone-club/films-vo:/movies
+      - /data/phat-two/zone-club/films-vo:/movies
       - ${SABNZBD_DOWNLOADS}:/downloads
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -81,7 +81,7 @@ services:
       - TZ=Europe/Paris
     volumes:
       - ./radarr-vf-config:/config
-      - /data/zone-club/films-vf:/movies
+      - /data/phat-two/zone-club/films-vf:/movies
       - ${SABNZBD_DOWNLOADS}:/downloads
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -102,8 +102,8 @@ services:
       - TZ=Europe/Paris
     volumes:
       - ./bazarr-config:/config
-      - /data/zone-club/films-vo:/movies-vo
-      - /data/zone-club/films-vf:/movies-vf
+      - /data/phat-two/zone-club/films-vo:/movies-vo
+      - /data/phat-two/zone-club/films-vf:/movies-vf
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.bazarr.rule=Host(`bazarr.${DOMAIN}`)"
