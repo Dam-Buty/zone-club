@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 import { getUserActiveRentals, getUserRentalHistory } from '@/lib/rentals';
 import { getUserReviews } from '@/lib/reviews';
 import { getUserFromSession } from '@/lib/session';
+import { canClaimWeeklyBonus } from '@/lib/bonus';
 
 export async function GET() {
     const cookieStore = await cookies();
@@ -15,6 +16,7 @@ export async function GET() {
     const activeRentals = getUserActiveRentals(user.id);
     const rentalHistory = getUserRentalHistory(user.id);
     const reviews = getUserReviews(user.id);
+    const weeklyBonus = canClaimWeeklyBonus(user.id);
 
     const response = NextResponse.json({
         user: {
@@ -26,7 +28,8 @@ export async function GET() {
         },
         activeRentals,
         rentalHistory,
-        reviews
+        reviews,
+        weeklyBonus
     });
     response.headers.set('Cache-Control', 'private, max-age=60');
     return response;
