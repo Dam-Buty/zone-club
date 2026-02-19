@@ -123,6 +123,15 @@ const _tapNDC = new THREE.Vector2();  // mobile tap raycast position
 const _euler = new THREE.Euler(0, 0, 0, "YXZ");
 const _forward = new THREE.Vector3();
 const _right = new THREE.Vector3();
+const _lookAtMatrix = new THREE.Matrix4();
+const _targetQuat = new THREE.Quaternion();
+const _up = new THREE.Vector3(0, 1, 0);
+
+// Seated camera position — world coordinates
+// Couch at world (2.8, 0, 1.2), seat surface ~0.35, eye height +0.55
+const SEATED_POSITION = new THREE.Vector3(2.8, 0.90, 1.2);
+const SEATED_LOOKAT = new THREE.Vector3(4.0, 1.05, 1.2);
+const SIT_TRANSITION_SPEED = 4.0; // lerp alpha multiplier (~0.25s to converge)
 
 // Mobile pitch clamp — asymmetric: 45° up, 55° down
 const MAX_PITCH_UP = (45 * Math.PI) / 180;
@@ -131,7 +140,7 @@ const MAX_PITCH_DOWN = (55 * Math.PI) / 180;
 export const RAYCAST_LAYER_CASSETTE = 1;
 export const RAYCAST_LAYER_INTERACTIVE = 2;
 
-type InteractiveTarget = "manager" | "bell" | "tv" | null;
+type InteractiveTarget = "manager" | "bell" | "tv" | "couch" | null;
 
 export function Controls({
   onCassetteClick,
@@ -168,6 +177,9 @@ export function Controls({
 
   // Cible interactive actuelle
   const targetedInteractiveRef = useRef<InteractiveTarget>(null);
+
+  // Sitting state tracking for standup animation
+  const wasSittingRef = useRef(false);
 
   // Hystérésis pour sélection cassettes
   const lastCassetteKeyRef = useRef<string | null>(null)
@@ -232,13 +244,32 @@ export function Controls({
     if (!isMobile && !controlsRef.current?.isLocked) return;
 
     const interactive = targetedInteractiveRef.current;
+
+    // Stand up if sitting and not targeting something specific
+    const { isSitting, setSitting } = useStore.getState();
+    if (isSitting && !interactive) {
+      setSitting(false);
+      return;
+    }
+
     if (interactive === "manager" || interactive === "bell") {
       showManager();
       return;
     }
     if (interactive === "tv") {
-      openTerminal();
-      if (!isMobile) requestPointerUnlock();
+      if (isSitting) {
+        // Seated: route to TV menu instead of terminal
+        useStore.getState().dispatchTVMenu('select');
+      } else {
+        openTerminal();
+        if (!isMobile) requestPointerUnlock();
+      }
+      return;
+    }
+    if (interactive === "couch") {
+      if (!isSitting) {
+        setSitting(true);
+      }
       return;
     }
 
@@ -311,6 +342,38 @@ export function Controls({
     handleKeyDownRef.current = (event: KeyboardEvent) => {
       const vhsOpen = useStore.getState().isVHSCaseOpen;
       if (vhsOpen) return;
+
+      // ESC while sitting → stand up
+      if (event.code === "Escape") {
+        const { isSitting, setSitting } = useStore.getState();
+        if (isSitting) {
+          event.preventDefault();
+          setSitting(false);
+          return;
+        }
+      }
+
+      // Seated TV menu navigation — intercept movement keys
+      const { isSitting: sittingNow } = useStore.getState();
+      if (sittingNow) {
+        if (event.code === "ArrowUp" || event.code === "KeyW") {
+          event.preventDefault();
+          useStore.getState().dispatchTVMenu('up');
+          return;
+        }
+        if (event.code === "ArrowDown" || event.code === "KeyS") {
+          event.preventDefault();
+          useStore.getState().dispatchTVMenu('down');
+          return;
+        }
+        if (event.code === "KeyE" || event.code === "Space") {
+          event.preventDefault();
+          handleInteractionRef.current();
+          return;
+        }
+        // Block all other movement keys while sitting
+        return;
+      }
 
       switch (event.code) {
         case "KeyW":
@@ -440,7 +503,7 @@ export function Controls({
               }
             }
 
-            // Check interactive objects (manager, bell, TV)
+            // Check interactive objects (manager, bell, TV, couch)
             let obj: THREE.Object3D | null = intersect.object;
             let handled = false;
             while (obj) {
@@ -449,8 +512,19 @@ export function Controls({
                 handled = true;
                 break;
               }
+              if (obj.userData?.isCouch) {
+                if (!useStore.getState().isSitting) {
+                  useStore.getState().setSitting(true);
+                }
+                handled = true;
+                break;
+              }
               if (obj.userData?.isTVScreen) {
-                openTerminal();
+                if (useStore.getState().isSitting) {
+                  useStore.getState().dispatchTVMenu('select');
+                } else {
+                  openTerminal();
+                }
                 handled = true;
                 break;
               }
@@ -509,6 +583,10 @@ export function Controls({
               foundInteractive = "bell";
               break;
             }
+            if (obj.userData?.isCouch) {
+              foundInteractive = "couch";
+              break;
+            }
             if (obj.userData?.isTVScreen) {
               foundInteractive = "tv";
               break;
@@ -524,6 +602,11 @@ export function Controls({
         }
 
         targetedInteractiveRef.current = foundInteractive;
+
+        // Sync to store (only on change to avoid re-renders)
+        if (foundInteractive !== useStore.getState().targetedInteractive) {
+          useStore.getState().setTargetedInteractive(foundInteractive);
+        }
 
         // Hystérésis cassette selection
         const currentCassetteKey = lastCassetteKeyRef.current;
@@ -569,6 +652,9 @@ export function Controls({
     // Reset targeting when not active
     if (!isActive) {
       targetedInteractiveRef.current = null;
+      if (useStore.getState().targetedInteractive !== null) {
+        useStore.getState().setTargetedInteractive(null);
+      }
       if (
         lastCassetteKeyRef.current !== null ||
         lastFilmIdRef.current !== null
@@ -579,6 +665,30 @@ export function Controls({
         setTargetedFilm(null, null);
       }
       if (!isMobile) document.body.style.cursor = "default";
+    }
+
+    // === Sitting on couch — smooth camera transition, skip movement ===
+    const isSittingNow = useStore.getState().isSitting;
+    if (isSittingNow) {
+      wasSittingRef.current = true;
+      const alpha = Math.min(1, SIT_TRANSITION_SPEED * delta);
+      camera.position.lerp(SEATED_POSITION, alpha);
+      // Compute target quaternion facing the TV
+      _lookAtMatrix.lookAt(camera.position, SEATED_LOOKAT, _up);
+      _targetQuat.setFromRotationMatrix(_lookAtMatrix);
+      camera.quaternion.slerp(_targetQuat, alpha);
+      return; // Skip FPS movement
+    }
+
+    // === Standup transition — smooth return to standing height ===
+    if (wasSittingRef.current) {
+      const standingY = 1.6;
+      camera.position.y = THREE.MathUtils.lerp(camera.position.y, standingY, Math.min(1, SIT_TRANSITION_SPEED * delta));
+      if (Math.abs(camera.position.y - standingY) < 0.01) {
+        camera.position.y = standingY;
+        wasSittingRef.current = false;
+      }
+      return; // Skip normal movement during standup
     }
 
     // === Movement ===

@@ -138,6 +138,8 @@ function UIOverlays({ isMobile }: { isMobile: boolean }) {
   const hasSeenOnboarding = useStore(state => state.hasSeenOnboarding)
   const closeTerminal = useStore(state => state.closeTerminal)
   const requestPointerLock = useStore(state => state.requestPointerLock)
+  const targetedInteractive = useStore(state => state.targetedInteractive)
+  const isSitting = useStore(state => state.isSitting)
   const overlaysEnabled = hasSeenOnboarding
 
   // Desktop controls hint (locked): show then fade out after 30s
@@ -280,6 +282,42 @@ function UIOverlays({ isMobile }: { isMobile: boolean }) {
           />
         </div>
       )}
+
+      {/* Interaction hint — below crosshair */}
+      {overlaysEnabled && !isMobile && isPointerLocked && (() => {
+        let hint = ''
+        if (isSitting) {
+          hint = '↑↓ Naviguer  ·  [E] Sélectionner  ·  [Échap] Se lever'
+        } else if (targetedInteractive === 'couch') {
+          hint = "S'asseoir [E]"
+        } else if (targetedInteractive === 'tv') {
+          hint = 'Terminal [E]'
+        } else if (targetedInteractive === 'manager' || targetedInteractive === 'bell') {
+          hint = 'Parler [E]'
+        }
+        if (!hint) return null
+        return (
+          <div
+            style={{
+              position: 'fixed',
+              top: isSitting ? 'calc(50% + 24px)' : 'calc(50% + 22px)',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              padding: '4px 10px',
+              backgroundColor: 'rgba(0, 0, 0, 0.65)',
+              borderRadius: '4px',
+              color: '#ffffff',
+              fontFamily: 'sans-serif',
+              fontSize: '13px',
+              whiteSpace: 'nowrap',
+              pointerEvents: 'none',
+              zIndex: 20,
+            }}
+          >
+            {hint}
+          </div>
+        )
+      })()}
 
 
       {/* Scene indicator */}

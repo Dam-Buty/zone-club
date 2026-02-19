@@ -128,6 +128,10 @@ interface VideoClubState {
   targetedCassetteKey: string | null;
   setTargetedFilm: (filmId: number | null, cassetteKey?: string | null) => void;
 
+  // Interactive target (manager, bell, tv, couch, null)
+  targetedInteractive: string | null;
+  setTargetedInteractive: (target: string | null) => void;
+
   // Pointer lock state
   isPointerLocked: boolean;
   setPointerLocked: (locked: boolean) => void;
@@ -154,6 +158,15 @@ interface VideoClubState {
   // VHS Case viewer
   isVHSCaseOpen: boolean;
   setVHSCaseOpen: (open: boolean) => void;
+
+  // Sitting on couch
+  isSitting: boolean;
+  setSitting: (sitting: boolean) => void;
+
+  // TV seated menu control (dispatched by Controls, consumed by InteractiveTVDisplay)
+  tvMenuAction: 'up' | 'down' | 'select' | null;
+  dispatchTVMenu: (action: 'up' | 'down' | 'select') => void;
+  clearTVMenuAction: () => void;
 
   // Onboarding
   hasSeenOnboarding: boolean;
@@ -444,6 +457,10 @@ export const useStore = create<VideoClubState>()(
         }
       },
 
+      // Interactive target
+      targetedInteractive: null,
+      setTargetedInteractive: (target) => set({ targetedInteractive: target }),
+
       // Pointer lock
       isPointerLocked: false,
       setPointerLocked: (locked) => set({ isPointerLocked: locked }),
@@ -474,6 +491,15 @@ export const useStore = create<VideoClubState>()(
       isVHSCaseOpen: false,
       setVHSCaseOpen: (open) => set({ isVHSCaseOpen: open }),
 
+      // Sitting on couch
+      isSitting: false,
+      setSitting: (sitting) => set({ isSitting: sitting }),
+
+      // TV seated menu control
+      tvMenuAction: null,
+      dispatchTVMenu: (action) => set({ tvMenuAction: action }),
+      clearTVMenuAction: () => set({ tvMenuAction: null }),
+
       // Onboarding
       hasSeenOnboarding: false,
       setHasSeenOnboarding: (seen) => set({ hasSeenOnboarding: seen }),
@@ -496,6 +522,7 @@ export const useStore = create<VideoClubState>()(
     }
   )
 );
+
 
 // Hook pour initialiser l'auth au démarrage
 export function useInitAuth() {

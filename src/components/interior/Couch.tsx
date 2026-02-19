@@ -1,6 +1,7 @@
-import { useRef, useMemo, useEffect } from 'react'
+import { useRef, useMemo, useEffect, useCallback } from 'react'
 import * as THREE from 'three'
 import { useTexture, RoundedBox } from '@react-three/drei'
+import { RAYCAST_LAYER_INTERACTIVE } from './Controls'
 
 interface CouchProps {
   position: [number, number, number]
@@ -45,6 +46,14 @@ export function Couch({ position, rotation = [0, 0, 0], onSit }: CouchProps) {
   const handleClick = () => {
     if (onSit) onSit()
   }
+
+  // Enable raycast layer + userData for FPS center-screen targeting
+  const enableCouchRaycast = useCallback((node: THREE.Mesh | null) => {
+    if (node) {
+      node.layers.enable(RAYCAST_LAYER_INTERACTIVE)
+      node.userData.isCouch = true
+    }
+  }, [])
 
   // OPTIMISATION: 3 matériaux partagés (au lieu de ~8 inline)
   // Matériau tissu — PAS de roughnessMap (ses valeurs gris moyen ~0.5 réduisent
@@ -98,6 +107,7 @@ export function Couch({ position, rotation = [0, 0, 0], onSit }: CouchProps) {
 
       {/* Assise (coussin principal) - tissu arrondi (matériau partagé) */}
       <RoundedBox
+        ref={enableCouchRaycast}
         args={[0.984, 0.168, 0.504]}
         radius={0.048}
         smoothness={2}
