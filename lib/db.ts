@@ -54,4 +54,34 @@ for (const sql of transcodeMigrations) {
   try { db.exec(sql); } catch {}
 }
 
+// Migrate: gamification system (watch tracking, extension, rewind, weekly bonus)
+const gamificationMigrations = [
+  'ALTER TABLE rentals ADD COLUMN watch_progress INTEGER DEFAULT 0',
+  'ALTER TABLE rentals ADD COLUMN watch_completed_at TEXT DEFAULT NULL',
+  'ALTER TABLE rentals ADD COLUMN extension_used INTEGER DEFAULT 0',
+  'ALTER TABLE rentals ADD COLUMN rewind_claimed INTEGER DEFAULT 0',
+  'ALTER TABLE rentals ADD COLUMN suggestion_film_id INTEGER DEFAULT NULL',
+  'ALTER TABLE rentals ADD COLUMN viewing_mode TEXT DEFAULT NULL',
+  'ALTER TABLE films ADD COLUMN sub_genre TEXT DEFAULT NULL',
+];
+
+for (const sql of gamificationMigrations) {
+  try { db.exec(sql); } catch {}
+}
+
+// Weekly bonuses table (safe with IF NOT EXISTS)
+try {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS weekly_bonuses (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      credits_awarded INTEGER NOT NULL,
+      week_number TEXT NOT NULL,
+      claimed_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+  `);
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_weekly_bonuses_user_week ON weekly_bonuses(user_id, week_number)');
+} catch {}
+
 export default db;
