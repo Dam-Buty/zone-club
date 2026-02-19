@@ -241,6 +241,8 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
   // Q/E manual rotation + click/tap to flip + drag/touch to rotate
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName
+      if (tag === 'TEXTAREA' || tag === 'INPUT') return
       if (e.code === 'KeyQ') {
         manualRotationRef.current -= MANUAL_ROTATE_SPEED * (e.repeat ? 0.03 : 0.05)
       } else if (e.code === 'KeyE') {

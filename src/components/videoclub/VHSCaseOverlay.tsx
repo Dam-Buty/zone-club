@@ -754,6 +754,10 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
               gap: "12px",
               zIndex: 100,
               pointerEvents: "auto",
+              background: "rgba(0, 0, 0, 0.45)",
+              backdropFilter: "blur(6px)",
+              padding: "14px",
+              borderRadius: "10px",
             }}
           >
             <button
@@ -807,6 +811,10 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
               gap: "12px",
               zIndex: 100,
               pointerEvents: "auto",
+              background: "rgba(0, 0, 0, 0.45)",
+              backdropFilter: "blur(6px)",
+              padding: "14px",
+              borderRadius: "10px",
             }}
           >
             <button

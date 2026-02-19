@@ -3,9 +3,11 @@ import { useStore } from '../../store';
 import { VHSEffects } from './VHSEffects';
 import { VHSControls } from './VHSControls';
 import { RentalTimer } from '../ui/RentalTimer';
-import api from '../../api';
+import api, { type ReviewsResponse } from '../../api';
 import type { PlayerState } from '../../types';
 import styles from './VHSPlayer.module.css';
+
+const MIN_CONTENT_LENGTH = 500;
 
 export type AudioTrack = 'vf' | 'vo';
 
@@ -13,7 +15,7 @@ export type AudioTrack = 'vf' | 'vo';
 type RewindPhase = 'none' | 'prompt' | 'rewinding' | 'complete';
 
 export function VHSPlayer() {
-  const { isPlayerOpen, currentPlayingFilm, closePlayer, getRental, films, fetchMe } = useStore();
+  const { isPlayerOpen, currentPlayingFilm, closePlayer, getRental, films, fetchMe, isAuthenticated, addCredits } = useStore();
   const videoRef = useRef<HTMLVideoElement>(null);
   const [playerState, setPlayerState] = useState<PlayerState>('paused');
   const [audioTrack, setAudioTrack] = useState<AudioTrack>('vf');
@@ -31,6 +33,22 @@ export function VHSPlayer() {
   const [rewindProgress, setRewindProgress] = useState(0);
   const rewindStartRef = useRef(0);
   const rewindRafRef = useRef<number | null>(null);
+
+  // Inline review state (during rewind)
+  const [reviewContent, setReviewContentState] = useState('');
+  const reviewContentRef = useRef('');
+  const setReviewContent = useCallback((v: string) => {
+    reviewContentRef.current = v;
+    setReviewContentState(v);
+  }, []);
+  const [ratingDirection, setRatingDirection] = useState(3);
+  const [ratingScreenplay, setRatingScreenplay] = useState(3);
+  const [ratingActing, setRatingActing] = useState(3);
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  const [reviewSuccess, setReviewSuccess] = useState(false);
+  const [reviewData, setReviewData] = useState<ReviewsResponse | null>(null);
+  const [reviewLoading, setReviewLoading] = useState(false);
 
   const rental = currentPlayingFilm ? getRental(currentPlayingFilm) : null;
   const streamingUrls = rental?.streamingUrls;
@@ -182,6 +200,9 @@ export function VHSPlayer() {
     if (!isPlayerOpen) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'TEXTAREA' || tag === 'INPUT') return;
+
       const video = videoRef.current;
       if (!video) return;
 
@@ -302,6 +323,11 @@ export function VHSPlayer() {
       setRewindProgress(progress);
 
       if (progress >= 100) {
+        // Don't transition to complete if user is writing a review
+        if (reviewContentRef.current.length > 0) {
+          setRewindProgress(100);
+          return;
+        }
         setRewindPhase('complete');
         // Claim rewind credit
         if (currentPlayingFilm) {
@@ -318,6 +344,61 @@ export function VHSPlayer() {
     rewindRafRef.current = requestAnimationFrame(animate);
   }, [currentPlayingFilm, fetchMe]);
 
+  // Load review eligibility when rewind starts
+  useEffect(() => {
+    if (rewindPhase === 'rewinding' && currentPlayingFilm && isAuthenticated) {
+      setReviewLoading(true);
+      api.reviews.getByFilm(currentPlayingFilm).then((data) => {
+        setReviewData(data);
+        setReviewLoading(false);
+      }).catch(() => {
+        setReviewLoading(false);
+      });
+    }
+  }, [rewindPhase, currentPlayingFilm, isAuthenticated]);
+
+  // Submit review during rewind
+  const handleReviewSubmit = useCallback(async () => {
+    if (!currentPlayingFilm || !isAuthenticated) return;
+    if (reviewContent.length < MIN_CONTENT_LENGTH) {
+      setReviewError(`Minimum ${MIN_CONTENT_LENGTH} caractères (${reviewContent.length}/${MIN_CONTENT_LENGTH})`);
+      return;
+    }
+    setReviewSubmitting(true);
+    setReviewError(null);
+    try {
+      await api.reviews.create(currentPlayingFilm, {
+        content: reviewContent,
+        rating_direction: ratingDirection,
+        rating_screenplay: ratingScreenplay,
+        rating_acting: ratingActing,
+      });
+      setReviewSuccess(true);
+      addCredits(1);
+    } catch (err) {
+      setReviewError(err instanceof Error ? err.message : 'Erreur lors de la publication');
+    } finally {
+      setReviewSubmitting(false);
+    }
+  }, [currentPlayingFilm, isAuthenticated, reviewContent, ratingDirection, ratingScreenplay, ratingActing, addCredits]);
+
+  // Transition to complete when rewind done + review finished or cleared
+  useEffect(() => {
+    if (rewindPhase !== 'rewinding' || rewindProgress < 100) return;
+    if (reviewContent.length > 0 && !reviewSuccess) return;
+    // Small delay after success so user sees the confirmation
+    const delay = reviewSuccess ? 2000 : 0;
+    const timer = setTimeout(() => {
+      setRewindPhase('complete');
+      if (currentPlayingFilm) {
+        api.rentals.claimRewind(currentPlayingFilm)
+          .then(() => { fetchMe(); })
+          .catch(() => {});
+      }
+    }, delay);
+    return () => clearTimeout(timer);
+  }, [rewindPhase, rewindProgress, reviewContent, reviewSuccess, currentPlayingFilm, fetchMe]);
+
   // Reset state when player closes/opens
   useEffect(() => {
     if (!isPlayerOpen) {
@@ -327,6 +408,14 @@ export function VHSPlayer() {
       setShowBlueScreen(false);
       setRewindPhase('none');
       setRewindProgress(0);
+      // Reset review state
+      setReviewContent('');
+      setRatingDirection(3);
+      setRatingScreenplay(3);
+      setRatingActing(3);
+      setReviewError(null);
+      setReviewSuccess(false);
+      setReviewData(null);
     }
   }, [isPlayerOpen, stopRW]);
 
@@ -401,16 +490,121 @@ export function VHSPlayer() {
         </div>
       )}
 
-      {/* ===== Rewind Animation ===== */}
+      {/* ===== Rewind Animation + Review ===== */}
       {rewindPhase === 'rewinding' && (
-        <div className={styles.rewindOverlay}>
-          <div className={styles.rewindTapeCounter}>
+        <div className={styles.rewindOverlay} style={{ justifyContent: 'flex-start', paddingTop: '3vh' }}>
+          {/* VHS Reel Animation */}
+          <div className={styles.reelContainer}>
+            <svg viewBox="0 0 200 80" className={styles.reelSvg}>
+              {/* Left reel (growing) */}
+              <circle
+                cx="50" cy="40"
+                r={8 + (rewindProgress / 100) * 22}
+                fill="none"
+                stroke="#00fff7"
+                strokeWidth="2"
+                opacity="0.9"
+              />
+              <circle cx="50" cy="40" r="5" fill="#00fff7" opacity="0.3" />
+              {/* Right reel (shrinking) */}
+              <circle
+                cx="150" cy="40"
+                r={30 - (rewindProgress / 100) * 22}
+                fill="none"
+                stroke="#00fff7"
+                strokeWidth="2"
+                opacity="0.9"
+              />
+              <circle cx="150" cy="40" r="5" fill="#00fff7" opacity="0.3" />
+              {/* Tape line */}
+              <line
+                x1={50 + 8 + (rewindProgress / 100) * 22}
+                y1="40"
+                x2={150 - 30 + (rewindProgress / 100) * 22}
+                y2="40"
+                stroke="#00fff7"
+                strokeWidth="1"
+                opacity="0.4"
+              />
+            </svg>
+          </div>
+
+          {/* Time counter + progress */}
+          <div className={styles.rewindTapeCounter} style={{ fontSize: '1.8rem' }}>
             {String(Math.floor((100 - rewindProgress) * 72)).padStart(4, '0')}
           </div>
           <div className={styles.rewindBarContainer}>
             <div className={styles.rewindBarFill} style={{ width: `${rewindProgress}%` }} />
           </div>
           <div className={styles.rewindLabel}>REMBOBINAGE EN COURS...</div>
+
+          {/* Review form */}
+          <div className={styles.rewindReviewSection}>
+            {!isAuthenticated ? (
+              <div className={styles.rewindReviewHint}>
+                Connectez-vous pour critiquer ce film pendant le rembobinage
+              </div>
+            ) : reviewLoading ? (
+              <div className={styles.rewindReviewHint}>CHARGEMENT...</div>
+            ) : reviewSuccess ? (
+              <div className={styles.rewindReviewSuccess}>
+                <span>✓</span> CRITIQUE PUBLIEE ! <span className={styles.rewindCreditBonus}>+1 CREDIT</span>
+              </div>
+            ) : reviewData && !reviewData.canReview.allowed ? (
+              <div className={styles.rewindReviewHint}>
+                {reviewData.canReview.reason || 'Vous ne pouvez pas critiquer ce film.'}
+              </div>
+            ) : (
+              <>
+                <div className={styles.rewindReviewTitle}>CRITIQUER CE FILM</div>
+                {/* Ratings row */}
+                <div className={styles.rewindRatingsRow}>
+                  {[
+                    { label: 'RÉAL', value: ratingDirection, setter: setRatingDirection },
+                    { label: 'SCÉN', value: ratingScreenplay, setter: setRatingScreenplay },
+                    { label: 'JEU', value: ratingActing, setter: setRatingActing },
+                  ].map(({ label, value, setter }) => (
+                    <div key={label} className={styles.rewindRatingGroup}>
+                      <span className={styles.rewindRatingLabel}>{label}</span>
+                      <div className={styles.rewindStars}>
+                        {[1, 2, 3, 4, 5].map((n) => (
+                          <button
+                            key={n}
+                            type="button"
+                            className={`${styles.rewindStar} ${n <= value ? styles.rewindStarActive : ''}`}
+                            onClick={() => setter(n)}
+                          >
+                            ★
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {/* Textarea */}
+                <div className={styles.rewindTextareaWrap}>
+                  <textarea
+                    className={styles.rewindTextarea}
+                    value={reviewContent}
+                    onChange={(e) => setReviewContent(e.target.value)}
+                    placeholder="Votre critique (min. 500 caractères)..."
+                    rows={4}
+                  />
+                  <span className={`${styles.rewindCharCount} ${reviewContent.length >= MIN_CONTENT_LENGTH ? styles.rewindCharValid : ''}`}>
+                    {reviewContent.length}/{MIN_CONTENT_LENGTH}
+                  </span>
+                </div>
+                {reviewError && <div className={styles.rewindReviewError}>{reviewError}</div>}
+                <button
+                  className={styles.rewindSubmitBtn}
+                  onClick={handleReviewSubmit}
+                  disabled={reviewSubmitting || reviewContent.length < MIN_CONTENT_LENGTH}
+                >
+                  {reviewSubmitting ? 'PUBLICATION...' : 'PUBLIER (+1 CREDIT)'}
+                </button>
+              </>
+            )}
+          </div>
         </div>
       )}
 

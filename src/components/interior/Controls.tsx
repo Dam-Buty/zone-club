@@ -309,6 +309,8 @@ export function Controls({
     };
 
     handleKeyDownRef.current = (event: KeyboardEvent) => {
+      const tag = (event.target as HTMLElement)?.tagName;
+      if (tag === 'TEXTAREA' || tag === 'INPUT') return;
       const vhsOpen = useStore.getState().isVHSCaseOpen;
       if (vhsOpen) return;
 
