@@ -23,7 +23,7 @@ export interface Genre {
   name: string;
 }
 
-export type AisleType = 'nouveautes' | 'action' | 'horreur' | 'sf' | 'comedie' | 'classiques' | 'bizarre';
+export type AisleType = 'nouveautes' | 'action' | 'horreur' | 'comedie' | 'drame' | 'thriller' | 'policier' | 'sf' | 'animation' | 'classiques';
 
 // Streaming URLs from backend
 export interface StreamingUrls {
@@ -33,12 +33,20 @@ export interface StreamingUrls {
 }
 
 // Rental types
+export type ViewingMode = 'sur_place' | 'emporter';
+
 export interface Rental {
   filmId: number;
   rentedAt: number; // timestamp
   expiresAt: number; // timestamp
   videoUrl: string;
   streamingUrls?: StreamingUrls;
+  // Gamification fields
+  watchProgress: number;             // 0-100
+  watchCompletedAt: number | null;   // timestamp when 80%+ reached
+  extensionUsed: boolean;
+  rewindClaimed: boolean;
+  viewingMode: ViewingMode | null;
 }
 
 export type RentalTier = 'standard' | 'nouveaute' | 'classique';
