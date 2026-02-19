@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS films (
     transcode_error TEXT DEFAULT NULL,
     file_path_vo_transcoded TEXT DEFAULT NULL,
     file_path_vf_transcoded TEXT DEFAULT NULL,
+    sub_genre TEXT DEFAULT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -65,6 +66,12 @@ CREATE TABLE IF NOT EXISTS rentals (
     rented_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     expires_at DATETIME NOT NULL,
     is_active BOOLEAN DEFAULT TRUE,
+    watch_progress INTEGER DEFAULT 0,
+    watch_completed_at TEXT DEFAULT NULL,
+    extension_used INTEGER DEFAULT 0,
+    rewind_claimed INTEGER DEFAULT 0,
+    suggestion_film_id INTEGER DEFAULT NULL,
+    viewing_mode TEXT DEFAULT NULL,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (film_id) REFERENCES films(id) ON DELETE CASCADE
 );
@@ -97,6 +104,17 @@ CREATE TABLE IF NOT EXISTS film_requests (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     UNIQUE(tmdb_id)
 );
+
+-- Weekly bonus tracking
+CREATE TABLE IF NOT EXISTS weekly_bonuses (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    credits_awarded INTEGER NOT NULL,
+    week_number TEXT NOT NULL,
+    claimed_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_weekly_bonuses_user_week ON weekly_bonuses(user_id, week_number);
 
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_rentals_user ON rentals(user_id);

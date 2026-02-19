@@ -1,6 +1,7 @@
 import { db } from './db';
 import { fetchFullMovieData } from './tmdb';
 import { addMovie as addToRadarr } from './radarr';
+import { RENTAL_COSTS, RENTAL_DURATIONS, type RentalTier } from '../src/types';
 
 export interface Film {
     id: number;
@@ -56,6 +57,12 @@ function parseFilm(row: any): Film {
         is_nouveaute: !!row.is_nouveaute,
         is_available: !!row.is_available
     };
+}
+
+export function getFilmTier(film: Film): RentalTier {
+    if (film.is_nouveaute) return 'nouveaute';
+    if (film.aisle === 'classiques') return 'classique';
+    return 'standard';
 }
 
 export async function addFilmFromTmdb(tmdbId: number): Promise<Film> {

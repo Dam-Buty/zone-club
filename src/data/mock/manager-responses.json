@@ -42,8 +42,11 @@
     "horreur": "Un amateur de sensations fortes. Respect. L'horreur c'est un art, pas juste des jump scares.",
     "sf": "La SF, c'est pas que des lasers et des vaisseaux. C'est de la philosophie avec des effets spéciaux. Les vrais savent.",
     "comedie": "La comédie, c'est le plus dur à réussir. Faire rire, vraiment rire, c'est un talent rare.",
-    "classiques": "Ah, les classiques. Là on parle. Le VRAI cinéma. Respect.",
-    "bizarre": "Le Coin Bizarre... Tu t'aventures en territoire inconnu. J'aime ça. T'es prêt pour l'étrange ?"
+    "drame": "Le drame. L'émotion brute. C'est là que les acteurs montrent ce qu'ils ont dans le ventre. Prépare les mouchoirs.",
+    "thriller": "Le thriller, c'est l'art du suspense. Chaque scène te tient en haleine. Tu vas pas pouvoir appuyer sur pause.",
+    "policier": "Le polar. Les enquêtes, les flics, les truands. Y'a rien de mieux qu'un bon polar bien ficelé avec un twist final.",
+    "animation": "L'animation, c'est pas que pour les gosses. Y'a des chefs-d'œuvre là-dedans qui mettent la claque à n'importe quel film live.",
+    "classiques": "Ah, les classiques. Là on parle. Le VRAI cinéma. Respect."
   },
   "rentalReactions": {
     "positive": [

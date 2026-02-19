@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getFilmsByAisle, getNouveautes } from '@/lib/films';
 
-const VALID_AISLES = ['action', 'horreur', 'sf', 'comedie', 'classiques', 'bizarre'];
+const VALID_AISLES = ['action', 'horreur', 'sf', 'comedie', 'classiques', 'bizarre', 'drame', 'thriller', 'policier', 'animation'];
 
 export async function GET(
     _request: NextRequest,

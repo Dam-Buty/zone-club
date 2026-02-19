@@ -784,10 +784,13 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
                         <option value="">--</option>
                         <option value="action">ACTION</option>
                         <option value="horreur">HORREUR</option>
-                        <option value="sf">SF</option>
                         <option value="comedie">COMEDIE</option>
+                        <option value="drame">DRAME</option>
+                        <option value="thriller">THRILLER</option>
+                        <option value="policier">POLICIER</option>
+                        <option value="sf">SF</option>
+                        <option value="animation">ANIMATION</option>
                         <option value="classiques">CLASSIQUES</option>
-                        <option value="bizarre">BIZARRE</option>
                       </select>
                       <button
                         className={`${styles.adminToggleBtn} ${film.is_nouveaute ? styles.adminToggleNew : styles.adminToggleOff}`}

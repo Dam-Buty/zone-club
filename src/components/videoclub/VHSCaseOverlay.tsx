@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useStore } from "../../store";
 import { tmdb, type TMDBVideo } from "../../services/tmdb";
 import { AuthModal } from "../auth/AuthModal";
@@ -29,6 +29,16 @@ function formatDuration(ms: number): string {
   const hours = ms / (1000 * 60 * 60);
   if (hours >= 24) return `${Math.floor(hours / 24)} jours`;
   return `${hours}h`;
+}
+
+function formatCountdown(expiresAt: number): string {
+  const remaining = expiresAt - Date.now();
+  if (remaining <= 0) return "EXPIR\u00c9";
+  const h = Math.floor(remaining / 3600000);
+  const m = Math.floor((remaining % 3600000) / 60000);
+  const s = Math.floor((remaining % 60000) / 1000);
+  if (h > 0) return `${h}h ${String(m).padStart(2, "0")}m`;
+  return `${m}m ${String(s).padStart(2, "0")}s`;
 }
 
 // Shared button style factory
@@ -91,7 +101,9 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
   const isAuthenticated = useStore((state) => state.isAuthenticated);
   const getCredits = useStore((state) => state.getCredits);
   const getRental = useStore((state) => state.getRental);
-  const rentFilm = useStore((state) => state.rentFilm);
+  const storeRentFilm = useStore((state) => state.rentFilm);
+  const storeSetViewingMode = useStore((state) => state.setViewingMode);
+  const openPlayer = useStore((state) => state.openPlayer);
   const showManager = useStore((state) => state.showManager);
   const addChatMessage = useStore((state) => state.addChatMessage);
 
@@ -102,8 +114,33 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
   const [loadingTrailer, setLoadingTrailer] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showReviewModal, setShowReviewModal] = useState(false);
+  const [settingMode, setSettingMode] = useState(false);
+
+  // Live countdown timer
+  const [countdown, setCountdown] = useState("");
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const credits = getCredits();
+  const rental = film ? getRental(film.id) : undefined;
+  const isRented = !!rental;
+
+  // Update countdown every second when rented
+  useEffect(() => {
+    if (countdownRef.current) {
+      clearInterval(countdownRef.current);
+      countdownRef.current = null;
+    }
+    if (!isOpen || !rental) {
+      setCountdown("");
+      return;
+    }
+    const update = () => setCountdown(formatCountdown(rental.expiresAt));
+    update();
+    countdownRef.current = setInterval(update, 1000);
+    return () => {
+      if (countdownRef.current) clearInterval(countdownRef.current);
+    };
+  }, [isOpen, rental]);
 
   // Reset states when overlay closes
   useEffect(() => {
@@ -114,6 +151,7 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
       setIsRenting(false);
       setShowAuthModal(false);
       setShowReviewModal(false);
+      setSettingMode(false);
     }
   }, [isOpen]);
 
@@ -191,24 +229,42 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
 
     const tier = getRentalTier(film);
     const cost = RENTAL_COSTS[tier];
-    const isRented = !!getRental(film.id);
+    const alreadyRented = !!getRental(film.id);
     const canAfford = credits >= cost;
 
-    if (!canAfford || isRented || isRenting) return;
+    if (!canAfford || alreadyRented || isRenting) return;
     setIsRenting(true);
 
-    const rental = await rentFilm(film.id);
-    if (rental) {
+    const result = await storeRentFilm(film.id);
+    if (result) {
       setRentSuccess(true);
+      // Show success briefly, then transition to viewing mode choice
       setTimeout(() => {
         setRentSuccess(false);
         setIsRenting(false);
-        onClose();
       }, 1500);
     } else {
       setIsRenting(false);
     }
-  }, [film, isAuthenticated, credits, isRenting, getRental, rentFilm, onClose]);
+  }, [film, isAuthenticated, credits, isRenting, getRental, storeRentFilm]);
+
+  const handleSetViewingMode = useCallback(async (mode: 'sur_place' | 'emporter') => {
+    if (!film || settingMode) return;
+    setSettingMode(true);
+    await storeSetViewingMode(film.id, mode);
+    setSettingMode(false);
+    if (mode === 'sur_place') {
+      // Open player immediately
+      onClose();
+      openPlayer(film.id);
+    }
+  }, [film, settingMode, storeSetViewingMode, onClose, openPlayer]);
+
+  const handleSitDown = useCallback(() => {
+    if (!film) return;
+    onClose();
+    openPlayer(film.id);
+  }, [film, onClose, openPlayer]);
 
   const handleAuthSuccess = useCallback(() => {
     setShowAuthModal(false);
@@ -220,10 +276,9 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
   const tier = getRentalTier(film);
   const cost = RENTAL_COSTS[tier];
   const duration = RENTAL_DURATIONS[tier];
-  const isRented = !!getRental(film.id);
   const canAfford = credits >= cost;
 
-  // Rent button colors (shared)
+  // Rent button colors
   const rentBorderColor = !isAuthenticated
     ? "#00ff00"
     : canAfford
@@ -249,6 +304,198 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
       : canAfford
         ? `LOUER (${cost} cr.)`
         : "PAS ASSEZ";
+
+  // ===== Rental section rendering helpers =====
+
+  // Desktop rental buttons
+  function renderDesktopRentalSection() {
+    if (isRented && rental) {
+      // Countdown timer
+      const timerEl = (
+        <div
+          style={sideButtonStyle("#ffaa00", "#ffaa00", {
+            background: "rgba(255,170,0,0.08)",
+            cursor: "default",
+            flexDirection: "column",
+            alignItems: "flex-start",
+            gap: "2px",
+          })}
+        >
+          <span style={{ fontSize: "0.65rem", opacity: 0.7 }}>Expire dans</span>
+          <span style={{ fontVariantNumeric: "tabular-nums" }}>{countdown}</span>
+        </div>
+      );
+
+      // No viewing mode chosen yet
+      if (!rental.viewingMode) {
+        return (
+          <>
+            {timerEl}
+            <button
+              onClick={() => handleSetViewingMode('sur_place')}
+              disabled={settingMode}
+              style={sideButtonStyle("#00fff7", "#00fff7", {
+                background: "linear-gradient(135deg, rgba(0,255,247,0.2), rgba(0,170,255,0.2))",
+                boxShadow: "0 0 12px rgba(0,255,247,0.25)",
+              })}
+            >
+              {"\ud83d\udcfa"} REGARDER SUR PLACE
+            </button>
+            <button
+              onClick={() => handleSetViewingMode('emporter')}
+              disabled={settingMode}
+              style={sideButtonStyle("#ff9900", "#ff9900", {
+                background: "linear-gradient(135deg, rgba(255,153,0,0.2), rgba(255,100,0,0.2))",
+                boxShadow: "0 0 12px rgba(255,153,0,0.2)",
+              })}
+            >
+              {"\ud83d\udcfc"} {"\u00c0"} EMPORTER
+            </button>
+          </>
+        );
+      }
+
+      // Mode = sur_place → sit down button
+      if (rental.viewingMode === 'sur_place') {
+        return (
+          <>
+            {timerEl}
+            <button
+              onClick={handleSitDown}
+              style={sideButtonStyle("#00fff7", "#ffffff", {
+                background: "linear-gradient(135deg, rgba(0,255,247,0.3), rgba(0,200,255,0.3))",
+                boxShadow: "0 0 16px rgba(0,255,247,0.35)",
+                fontSize: "0.85rem",
+              })}
+            >
+              {"\ud83d\udecb\ufe0f"} S'INSTALLER ET REGARDER
+            </button>
+          </>
+        );
+      }
+
+      // Mode = emporter → badge
+      return (
+        <>
+          {timerEl}
+          <div
+            style={sideButtonStyle("#ff9900", "#ff9900", {
+              background: "rgba(255,153,0,0.08)",
+              cursor: "default",
+            })}
+          >
+            {"\ud83d\udcfc"} {"\u00c0"} EMPORTER {"\u2713"}
+          </div>
+        </>
+      );
+    }
+
+    // Not rented — show rent button
+    return (
+      <button
+        onClick={handleRent}
+        disabled={isAuthenticated && (!canAfford || isRenting)}
+        style={sideButtonStyle(rentBorderColor, rentTextColor, {
+          background: rentBg,
+          cursor: rentCursor,
+          boxShadow: rentShadow,
+        })}
+      >
+        {rentLabel}
+      </button>
+    );
+  }
+
+  // Mobile rental buttons
+  function renderMobileRentalSection() {
+    if (isRented && rental) {
+      // Countdown pill
+      const timerEl = (
+        <div
+          style={mobilePillStyle("#ffaa00", "#ffaa00", {
+            background: "rgba(255,170,0,0.08)",
+            cursor: "default",
+          })}
+        >
+          {"\u23f1"} {countdown}
+        </div>
+      );
+
+      if (!rental.viewingMode) {
+        return (
+          <>
+            {timerEl}
+            <button
+              onClick={() => handleSetViewingMode('sur_place')}
+              disabled={settingMode}
+              style={mobilePillStyle("#00fff7", "#00fff7", {
+                background: "rgba(0,255,247,0.12)",
+                boxShadow: "0 0 8px rgba(0,255,247,0.2)",
+              })}
+            >
+              {"\ud83d\udcfa"} SUR PLACE
+            </button>
+            <button
+              onClick={() => handleSetViewingMode('emporter')}
+              disabled={settingMode}
+              style={mobilePillStyle("#ff9900", "#ff9900", {
+                background: "rgba(255,153,0,0.12)",
+                boxShadow: "0 0 8px rgba(255,153,0,0.15)",
+              })}
+            >
+              {"\ud83d\udcfc"} EMPORTER
+            </button>
+          </>
+        );
+      }
+
+      if (rental.viewingMode === 'sur_place') {
+        return (
+          <>
+            {timerEl}
+            <button
+              onClick={handleSitDown}
+              style={mobilePillStyle("#00fff7", "#ffffff", {
+                background: "rgba(0,255,247,0.2)",
+                boxShadow: "0 0 10px rgba(0,255,247,0.3)",
+              })}
+            >
+              {"\ud83d\udecb\ufe0f"} S'INSTALLER
+            </button>
+          </>
+        );
+      }
+
+      return (
+        <>
+          {timerEl}
+          <div
+            style={mobilePillStyle("#ff9900", "#ff9900", {
+              background: "rgba(255,153,0,0.08)",
+              cursor: "default",
+            })}
+          >
+            {"\ud83d\udcfc"} EMPORTER {"\u2713"}
+          </div>
+        </>
+      );
+    }
+
+    // Not rented
+    return (
+      <button
+        onClick={handleRent}
+        disabled={isAuthenticated && (!canAfford || isRenting)}
+        style={mobilePillStyle(rentBorderColor, rentTextColor, {
+          background: rentBg,
+          cursor: rentCursor,
+          boxShadow: rentShadow,
+        })}
+      >
+        {rentLabel}
+      </button>
+    );
+  }
 
   return (
     <>
@@ -468,7 +715,7 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
                 {"\u25b6"} TRAILER
               </button>
 
-              {/* Gérant */}
+              {/* G\u00e9rant */}
               <button
                 onClick={handleAskManager}
                 style={mobilePillStyle("#00fff7", "#00fff7")}
@@ -486,34 +733,13 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
                 </button>
               )}
 
-              {/* Rent / Status */}
-              {isRented ? (
-                <div
-                  style={mobilePillStyle("#00ff00", "#00ff00", {
-                    background: "rgba(0,255,0,0.08)",
-                    cursor: "default",
-                  })}
-                >
-                  {"\u2713"} LOU{"\u00c9"}
-                </div>
-              ) : (
-                <button
-                  onClick={handleRent}
-                  disabled={isAuthenticated && (!canAfford || isRenting)}
-                  style={mobilePillStyle(rentBorderColor, rentTextColor, {
-                    background: rentBg,
-                    cursor: rentCursor,
-                    boxShadow: rentShadow,
-                  })}
-                >
-                  {rentLabel}
-                </button>
-              )}
+              {/* Rental section */}
+              {renderMobileRentalSection()}
             </div>
           </div>
         </>
       ) : (
-        /* ===== DESKTOP LAYOUT (unchanged) ===== */
+        /* ===== DESKTOP LAYOUT ===== */
         <>
           {/* LEFT SIDE */}
           <div
@@ -564,28 +790,8 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
               </button>
             )}
 
-            {isRented ? (
-              <div
-                style={sideButtonStyle("#00ff00", "#00ff00", {
-                  background: "rgba(0,255,0,0.08)",
-                  cursor: "default",
-                })}
-              >
-                {"\u2713"} LOU{"\u00c9"}
-              </div>
-            ) : (
-              <button
-                onClick={handleRent}
-                disabled={isAuthenticated && (!canAfford || isRenting)}
-                style={sideButtonStyle(rentBorderColor, rentTextColor, {
-                  background: rentBg,
-                  cursor: rentCursor,
-                  boxShadow: rentShadow,
-                })}
-              >
-                {rentLabel}
-              </button>
-            )}
+            {/* Rental section — rent button or timer + viewing mode */}
+            {renderDesktopRentalSection()}
           </div>
 
           {/* RIGHT SIDE */}

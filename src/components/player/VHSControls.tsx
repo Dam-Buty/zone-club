@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import type { PlayerState } from '../../types';
 import type { AudioTrack } from './VHSPlayer';
 import styles from './VHSControls.module.css';
@@ -8,6 +8,12 @@ interface VHSControlsProps {
   playerState: PlayerState;
   onStateChange: (state: PlayerState) => void;
   onClose: () => void;
+  onStop: () => void;
+  onEject: () => void;
+  // FF/RW
+  ffSpeed: number; // 0=off, 2=x2, 4=x4
+  onFFCycle: () => void;
+  onRWCycle: () => void;
   // Audio track props
   audioTrack: AudioTrack;
   onAudioTrackChange: (track: AudioTrack) => void;
@@ -28,11 +34,23 @@ function formatTime(seconds: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
+// VHS tape counter style (0000–9999)
+function formatTapeCounter(currentTime: number, duration: number): string {
+  if (duration <= 0) return '0000';
+  const ratio = currentTime / duration;
+  return String(Math.floor(ratio * 9999)).padStart(4, '0');
+}
+
 export function VHSControls({
   videoRef,
   playerState,
   onStateChange,
   onClose,
+  onStop,
+  onEject,
+  ffSpeed,
+  onFFCycle,
+  onRWCycle,
   audioTrack,
   onAudioTrackChange,
   showSubtitles,
@@ -45,7 +63,6 @@ export function VHSControls({
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
-  const progressRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -69,9 +86,12 @@ export function VHSControls({
     };
   }, [videoRef]);
 
-  const togglePlay = () => {
+  const togglePlay = useCallback(() => {
     const video = videoRef.current;
     if (!video) return;
+
+    // Reset playback rate when pressing play
+    video.playbackRate = 1;
 
     if (playerState === 'playing') {
       video.pause();
@@ -80,143 +100,138 @@ export function VHSControls({
       video.play();
       onStateChange('playing');
     }
-  };
+  }, [videoRef, playerState, onStateChange]);
 
-  const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
-    const video = videoRef.current;
-    const progress = progressRef.current;
-    if (!video || !progress) return;
-
-    const rect = progress.getBoundingClientRect();
-    const percent = (e.clientX - rect.left) / rect.width;
-    video.currentTime = percent * duration;
-    onStateChange('seeking');
-    setTimeout(() => onStateChange(video.paused ? 'paused' : 'playing'), 300);
-  };
-
-  const skip = (seconds: number) => {
-    const video = videoRef.current;
-    if (!video) return;
-    video.currentTime = Math.max(0, Math.min(duration, video.currentTime + seconds));
-  };
-
-  const toggleMute = () => {
+  const toggleMute = useCallback(() => {
     const video = videoRef.current;
     if (!video) return;
     video.muted = !video.muted;
-  };
+  }, [videoRef]);
 
-  const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleVolumeChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const video = videoRef.current;
     if (video) {
       video.volume = parseFloat(e.target.value);
     }
-  };
+  }, [videoRef]);
 
-  const toggleFullscreen = () => {
+  const toggleFullscreen = useCallback(() => {
     if (document.fullscreenElement) {
       document.exitFullscreen();
     } else {
       document.documentElement.requestFullscreen();
     }
-  };
+  }, []);
 
-  const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
+  // State indicator text
+  const stateLabel = (() => {
+    if (playerState === 'fastforwarding') return `FF x${ffSpeed}`;
+    if (playerState === 'rewinding') return `REW x${ffSpeed}`;
+    if (playerState === 'paused') return 'PAUSE';
+    if (playerState === 'playing') return 'PLAY';
+    return '';
+  })();
 
   return (
     <div className={styles.controls}>
-      <div className={styles.progress} ref={progressRef} onClick={handleSeek}>
-        <div className={styles.progressFill} style={{ width: `${progress}%` }} />
-        <div className={styles.progressHead} style={{ left: `${progress}%` }} />
-      </div>
+      {/* VCR transport buttons — inspired by Toshiba W602 layout */}
+      <div className={styles.vcrPanel}>
+        {/* Left: brand + tape counter */}
+        <div className={styles.vcrLeft}>
+          <div className={styles.tapeCounter}>
+            <span className={styles.tapeCounterLabel}>COUNTER</span>
+            <span className={styles.tapeCounterValue}>{formatTapeCounter(currentTime, duration)}</span>
+          </div>
+          <div className={styles.timeDisplay}>
+            {formatTime(currentTime)} / {formatTime(duration)}
+          </div>
+        </div>
 
-      <div className={styles.buttons}>
-        <div className={styles.left}>
-          <button onClick={() => skip(-10)} className={styles.btn} title="Reculer 10s">
-            <span className={styles.btnIcon}>&#x23EE;</span>
+        {/* Center: VCR transport buttons */}
+        <div className={styles.vcrTransport}>
+          <button onClick={onRWCycle} className={`${styles.vcrBtn} ${playerState === 'rewinding' ? styles.vcrBtnActive : ''}`} title="Rembobiner [←]">
+            <span className={styles.vcrIcon}>◀◀</span>
+            <span className={styles.vcrLabel}>REW</span>
           </button>
-          <button
-            onClick={() => { onStateChange('rewinding'); skip(-30); }}
-            className={styles.btn}
-            title="Reculer 30s"
-          >
-            <span className={styles.btnIcon}>&#x25C0;&#x25C0;</span>
+          <button onClick={togglePlay} className={`${styles.vcrBtn} ${styles.vcrPlayBtn} ${playerState === 'playing' ? styles.vcrBtnActive : ''}`} title="Lecture [Espace]">
+            <span className={styles.vcrIcon}>▶</span>
+            <span className={styles.vcrLabel}>PLAY</span>
           </button>
-          <button onClick={togglePlay} className={`${styles.btn} ${styles.playBtn}`}>
-            <span className={styles.btnIcon}>
-              {playerState === 'playing' ? '\u23F8' : '\u25B6'}
-            </span>
+          <button onClick={onFFCycle} className={`${styles.vcrBtn} ${playerState === 'fastforwarding' ? styles.vcrBtnActive : ''}`} title="Avance rapide [→]">
+            <span className={styles.vcrIcon}>▶▶</span>
+            <span className={styles.vcrLabel}>FF</span>
           </button>
-          <button
-            onClick={() => { onStateChange('fastforwarding'); skip(30); }}
-            className={styles.btn}
-            title="Avancer 30s"
-          >
-            <span className={styles.btnIcon}>&#x25B6;&#x25B6;</span>
+          <button onClick={onStop} className={styles.vcrBtn} title="Stop [S]">
+            <span className={styles.vcrIcon}>■</span>
+            <span className={styles.vcrLabel}>STOP</span>
           </button>
-          <button onClick={() => skip(10)} className={styles.btn} title="Avancer 10s">
-            <span className={styles.btnIcon}>&#x23ED;</span>
+          <button onClick={onEject} className={`${styles.vcrBtn} ${styles.vcrEjectBtn}`} title="Éjecter [E / ESC]">
+            <span className={styles.vcrIcon}>⏏</span>
+            <span className={styles.vcrLabel}>EJECT</span>
           </button>
         </div>
 
-        <div className={styles.time}>
-          {formatTime(currentTime)} / {formatTime(duration)}
-        </div>
-
-        <div className={styles.center}>
-          {/* Audio track selector */}
-          {(hasVF || hasVO) && (
-            <div className={styles.trackSelector}>
-              <button
-                onClick={() => onAudioTrackChange('vf')}
-                className={`${styles.trackBtn} ${audioTrack === 'vf' ? styles.trackActive : ''}`}
-                disabled={!hasVF}
-                title="Version Française [V]"
-              >
-                VF
-              </button>
-              <button
-                onClick={() => onAudioTrackChange('vo')}
-                className={`${styles.trackBtn} ${audioTrack === 'vo' ? styles.trackActive : ''}`}
-                disabled={!hasVO}
-                title="Version Originale [V]"
-              >
-                VO
-              </button>
+        {/* Right: state + volume + options */}
+        <div className={styles.vcrRight}>
+          {/* State indicator */}
+          {stateLabel && (
+            <div className={`${styles.stateIndicator} ${(playerState === 'fastforwarding' || playerState === 'rewinding') ? styles.stateFF : ''}`}>
+              {stateLabel}
             </div>
           )}
 
-          {/* Subtitles toggle */}
-          {hasSubtitles && (
-            <button
-              onClick={onSubtitlesToggle}
-              className={`${styles.trackBtn} ${showSubtitles ? styles.trackActive : ''}`}
-              title="Sous-titres français [S]"
-            >
-              STFR
-            </button>
-          )}
-        </div>
+          {/* Track selector */}
+          <div className={styles.trackControls}>
+            {(hasVF || hasVO) && (
+              <div className={styles.trackSelector}>
+                <button
+                  onClick={() => onAudioTrackChange('vf')}
+                  className={`${styles.trackBtn} ${audioTrack === 'vf' ? styles.trackActive : ''}`}
+                  disabled={!hasVF}
+                  title="Version Française [V]"
+                >
+                  VF
+                </button>
+                <button
+                  onClick={() => onAudioTrackChange('vo')}
+                  className={`${styles.trackBtn} ${audioTrack === 'vo' ? styles.trackActive : ''}`}
+                  disabled={!hasVO}
+                  title="Version Originale [V]"
+                >
+                  VO
+                </button>
+              </div>
+            )}
+            {hasSubtitles && (
+              <button
+                onClick={onSubtitlesToggle}
+                className={`${styles.trackBtn} ${showSubtitles ? styles.trackActive : ''}`}
+                title="Sous-titres français [T]"
+              >
+                STFR
+              </button>
+            )}
+          </div>
 
-        <div className={styles.right}>
-          <button onClick={toggleMute} className={styles.btn} title={isMuted ? 'Activer son' : 'Couper son'}>
-            <span className={styles.btnIcon}>{isMuted ? '\uD83D\uDD07' : '\uD83D\uDD0A'}</span>
-          </button>
-          <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.1"
-            value={isMuted ? 0 : volume}
-            onChange={handleVolumeChange}
-            className={styles.volumeSlider}
-            aria-label="Volume"
-          />
-          <button onClick={toggleFullscreen} className={styles.btn} title="Plein écran [F]">
-            <span className={styles.btnIcon}>&#x26F6;</span>
-          </button>
-          <button onClick={onClose} className={styles.btn} title="Fermer [ESC]">
-            <span className={styles.btnIcon}>&#x2715;</span>
+          {/* Volume */}
+          <div className={styles.volumeGroup}>
+            <button onClick={toggleMute} className={styles.vcrSmallBtn} title={isMuted ? 'Activer son' : 'Couper son [M]'}>
+              {isMuted ? '🔇' : '🔊'}
+            </button>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.1"
+              value={isMuted ? 0 : volume}
+              onChange={handleVolumeChange}
+              className={styles.volumeSlider}
+              aria-label="Volume"
+            />
+          </div>
+
+          <button onClick={toggleFullscreen} className={styles.vcrSmallBtn} title="Plein écran [F]">
+            ⛶
           </button>
         </div>
       </div>

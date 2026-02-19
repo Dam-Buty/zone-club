@@ -22,7 +22,7 @@ export function VHSEffects({ playerState, intensity = 1 }: VHSEffectsProps) {
     const render = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // Scanlines
+      // Scanlines (always present)
       ctx.fillStyle = `rgba(0, 0, 0, ${0.03 * intensity})`;
       for (let y = 0; y < canvas.height; y += 2) {
         ctx.fillRect(0, y, canvas.width, 1);
@@ -50,13 +50,30 @@ export function VHSEffects({ playerState, intensity = 1 }: VHSEffectsProps) {
         }
       }
 
-      // Distortion (on rewind/ff)
+      // Enhanced distortion for FF/RW — thick horizontal bars + color fringing
       if (playerState === 'rewinding' || playerState === 'fastforwarding') {
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.05)';
-        for (let i = 0; i < 10; i++) {
+        const time = Date.now() / 50;
+
+        // Thick horizontal tracking bars (VHS tracking artifact)
+        for (let i = 0; i < 20; i++) {
+          const y = ((time * 80 + i * 50) % canvas.height);
+          ctx.fillStyle = `rgba(255, 255, 255, ${0.05 + Math.random() * 0.1})`;
+          ctx.fillRect(0, y, canvas.width, 2 + Math.random() * 8);
+        }
+
+        // Color fringing (horizontal cyan/magenta shift)
+        ctx.fillStyle = 'rgba(0, 255, 255, 0.03)';
+        ctx.fillRect(Math.random() * 20, 0, canvas.width, canvas.height);
+        ctx.fillStyle = 'rgba(255, 0, 255, 0.02)';
+        ctx.fillRect(-(Math.random() * 15), 0, canvas.width, canvas.height);
+
+        // Horizontal displacement bars (sections of image shifted)
+        for (let i = 0; i < 5; i++) {
           const y = Math.random() * canvas.height;
-          const h = 2 + Math.random() * 5;
-          ctx.fillRect(0, y, canvas.width, h);
+          const h = 1 + Math.random() * 4;
+          const shift = (Math.random() - 0.5) * 20;
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.04)';
+          ctx.fillRect(shift, y, canvas.width, h);
         }
       }
 

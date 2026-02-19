@@ -45,6 +45,11 @@ function apiRentalToRental(apiRental: ApiRentalWithFilm): Rental {
     expiresAt: new Date(apiRental.expires_at).getTime(),
     videoUrl: apiRental.streaming_urls.vf || apiRental.streaming_urls.vo || '',
     streamingUrls: apiRental.streaming_urls,
+    watchProgress: apiRental.watch_progress ?? 0,
+    watchCompletedAt: apiRental.watch_completed_at ? new Date(apiRental.watch_completed_at).getTime() : null,
+    extensionUsed: !!apiRental.extension_used,
+    rewindClaimed: !!apiRental.rewind_claimed,
+    viewingMode: (apiRental.viewing_mode as 'sur_place' | 'emporter') ?? null,
   };
 }
 
@@ -93,6 +98,8 @@ interface VideoClubState {
   removeRental: (filmId: number) => void;
   getRental: (filmId: number) => Rental | undefined;
   rentFilm: (filmId: number) => Promise<Rental | null>;
+  setViewingMode: (filmId: number, mode: 'sur_place' | 'emporter') => Promise<Rental | null>;
+  extendRental: (filmId: number) => Promise<Rental | null>;
 
   // Scene
   currentScene: SceneType;
@@ -324,7 +331,6 @@ export const useStore = create<VideoClubState>()(
         const { isAuthenticated } = get();
 
         if (!isAuthenticated) {
-          // Mode local (pas connecté) - utiliser le système existant
           return null;
         }
 
@@ -332,17 +338,53 @@ export const useStore = create<VideoClubState>()(
           const { rental } = await api.rentals.rent(filmId);
           const frontendRental = apiRentalToRental(rental);
 
+          // Refresh credits from /api/me instead of hardcoded -1
           set((state) => ({
             rentals: [...state.rentals.filter(r => r.filmId !== filmId), frontendRental],
-            authUser: state.authUser ? {
-              ...state.authUser,
-              credits: state.authUser.credits - 1
-            } : null,
           }));
+
+          // Refresh user data to get updated credits
+          try {
+            const meData = await api.me.get();
+            set({ authUser: { id: meData.user.id, username: meData.user.username, credits: meData.user.credits, is_admin: meData.user.is_admin } });
+          } catch { /* credits will be stale until next refresh */ }
 
           return frontendRental;
         } catch (error) {
           console.error('Erreur location:', error);
+          return null;
+        }
+      },
+
+      setViewingMode: async (filmId, mode) => {
+        try {
+          const { rental } = await api.rentals.setViewingMode(filmId, mode);
+          const frontendRental = apiRentalToRental(rental);
+          set((state) => ({
+            rentals: [...state.rentals.filter(r => r.filmId !== filmId), frontendRental],
+          }));
+          return frontendRental;
+        } catch (error) {
+          console.error('Erreur mode visionnage:', error);
+          return null;
+        }
+      },
+
+      extendRental: async (filmId) => {
+        try {
+          const { rental } = await api.rentals.extend(filmId);
+          const frontendRental = apiRentalToRental(rental);
+          set((state) => ({
+            rentals: [...state.rentals.filter(r => r.filmId !== filmId), frontendRental],
+          }));
+          // Refresh credits
+          try {
+            const meData = await api.me.get();
+            set({ authUser: { id: meData.user.id, username: meData.user.username, credits: meData.user.credits, is_admin: meData.user.is_admin } });
+          } catch { /* stale */ }
+          return frontendRental;
+        } catch (error) {
+          console.error('Erreur prolongation:', error);
           return null;
         }
       },
@@ -369,10 +411,13 @@ export const useStore = create<VideoClubState>()(
         nouveautes: [],
         action: [],
         horreur: [],
-        sf: [],
         comedie: [],
+        drame: [],
+        thriller: [],
+        policier: [],
+        sf: [],
+        animation: [],
         classiques: [],
-        bizarre: [],
       },
       setFilmsForAisle: (aisle, films) =>
         set((state) => ({
@@ -380,13 +425,13 @@ export const useStore = create<VideoClubState>()(
         })),
 
       loadFilmsFromApi: async () => {
-        const aisles: AisleType[] = ['nouveautes', 'action', 'horreur', 'sf', 'comedie', 'classiques', 'bizarre'];
+        const aisles: AisleType[] = ['nouveautes', 'action', 'horreur', 'comedie', 'drame', 'thriller', 'policier', 'sf', 'animation', 'classiques'];
         try {
           const results = await Promise.all(
             aisles.map(aisle => api.films.getByAisle(aisle).catch(() => ({ aisle, films: [] })))
           );
           const filmsMap: Record<AisleType, Film[]> = {
-            nouveautes: [], action: [], horreur: [], sf: [], comedie: [], classiques: [], bizarre: [],
+            nouveautes: [], action: [], horreur: [], comedie: [], drame: [], thriller: [], policier: [], sf: [], animation: [], classiques: [],
           };
           for (const { aisle, films: aisleFilms } of results) {
             filmsMap[aisle as AisleType] = (aisleFilms as ApiFilm[]).map(apiFilmToFilm);

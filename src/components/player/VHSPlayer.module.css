@@ -58,11 +58,46 @@
   z-index: 10;
 }
 
-.endMessage {
+/* ===== Blue Screen (Stop) ===== */
+.blueScreen {
   position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
+  inset: 0;
+  background: #0000aa;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 5;
+}
+
+.blueScreenText {
+  font-family: 'Courier New', monospace;
+  font-size: 2rem;
+  color: rgba(255, 255, 255, 0.4);
+  letter-spacing: 0.3em;
+  animation: staticFlicker 2s infinite;
+}
+
+@keyframes staticFlicker {
+  0%, 95%, 100% { opacity: 0.4; }
+  96% { opacity: 0.2; }
+  97% { opacity: 0.5; }
+}
+
+/* ===== Rewind Overlay ===== */
+.rewindOverlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.92);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  z-index: 20;
+}
+
+/* Rewind prompt: BE KIND REWIND */
+.rewindPromptText {
   font-family: var(--font-display);
   font-size: 4rem;
   color: var(--color-neon-cyan);
@@ -70,7 +105,107 @@
   text-align: center;
   letter-spacing: 0.2em;
   animation: flicker 0.5s infinite;
-  z-index: 20;
+  line-height: 1.2;
+}
+
+.rewindButtons {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  align-items: center;
+  margin-top: 1rem;
+}
+
+.rewindBtn {
+  font-family: var(--font-display);
+  font-size: 1rem;
+  color: var(--color-neon-cyan);
+  background: rgba(0, 255, 247, 0.08);
+  border: 2px solid var(--color-neon-cyan);
+  border-radius: 6px;
+  padding: 14px 36px;
+  cursor: pointer;
+  letter-spacing: 0.15em;
+  transition: all 200ms ease;
+  text-shadow: var(--glow-cyan);
+}
+
+.rewindBtn:hover {
+  background: rgba(0, 255, 247, 0.2);
+  box-shadow: 0 0 20px rgba(0, 255, 247, 0.4);
+}
+
+.ejectRewindBtn {
+  font-family: var(--font-display);
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.5);
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  padding: 10px 24px;
+  cursor: pointer;
+  letter-spacing: 0.1em;
+  transition: all 200ms ease;
+}
+
+.ejectRewindBtn:hover {
+  color: var(--color-neon-pink);
+  border-color: var(--color-neon-pink);
+}
+
+/* Rewind animation */
+.rewindTapeCounter {
+  font-family: 'Courier New', monospace;
+  font-size: 4rem;
+  color: #00ff88;
+  text-shadow: 0 0 20px rgba(0, 255, 136, 0.6);
+  letter-spacing: 0.2em;
+  font-weight: bold;
+}
+
+.rewindBarContainer {
+  width: 300px;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.rewindBarFill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--color-neon-cyan), #00ff88);
+  border-radius: 4px;
+  box-shadow: 0 0 8px rgba(0, 255, 247, 0.5);
+  transition: width 100ms linear;
+}
+
+.rewindLabel {
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.5);
+  letter-spacing: 0.15em;
+  animation: blink 1s infinite;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* Rewind complete */
+.rewindCompleteIcon {
+  font-size: 5rem;
+  color: #00ff88;
+  text-shadow: 0 0 30px rgba(0, 255, 136, 0.6);
+}
+
+.creditMessage {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  color: #ffd700;
+  text-shadow: 0 0 20px rgba(255, 215, 0, 0.5);
+  letter-spacing: 0.15em;
 }
 
 @keyframes flicker {

@@ -52,6 +52,12 @@ export interface ApiRentalWithFilm extends ApiRental {
     subtitles: string | null;
   };
   time_remaining: number; // minutes
+  // Gamification fields
+  watch_progress: number;
+  watch_completed_at: string | null;
+  extension_used: boolean;
+  rewind_claimed: boolean;
+  viewing_mode: string | null;
 }
 
 export interface ApiReview {
@@ -156,6 +162,28 @@ export const rentals = {
   async rent(filmId: number): Promise<{ rental: ApiRentalWithFilm }> {
     // filmId ici est l'ID interne du film (pas tmdb_id)
     return request(`/api/rentals/${filmId}`, { method: 'POST' });
+  },
+
+  async updateProgress(filmId: number, progress: number): Promise<{ ok: boolean }> {
+    return request(`/api/rentals/${filmId}/progress`, {
+      method: 'PATCH',
+      body: JSON.stringify({ progress }),
+    });
+  },
+
+  async extend(filmId: number): Promise<{ rental: ApiRentalWithFilm }> {
+    return request(`/api/rentals/${filmId}/extend`, { method: 'PATCH' });
+  },
+
+  async claimRewind(filmId: number): Promise<{ ok: boolean; credits: number }> {
+    return request(`/api/rentals/${filmId}/rewind`, { method: 'POST' });
+  },
+
+  async setViewingMode(filmId: number, mode: 'sur_place' | 'emporter'): Promise<{ rental: ApiRentalWithFilm }> {
+    return request(`/api/rentals/${filmId}/viewing-mode`, {
+      method: 'PATCH',
+      body: JSON.stringify({ mode }),
+    });
   },
 };
 
@@ -277,16 +305,31 @@ export const genres = {
 
 // ============ USER / ME ============
 
+export interface WeeklyBonusStatus {
+  canClaim: boolean;
+  amount: number;
+  reason?: string;
+}
+
 export interface MeResponse {
   user: ApiUser;
   activeRentals: ApiRentalWithFilm[];
   rentalHistory: ApiRental[];
   reviews: ReviewWithUser[];
+  weeklyBonus: WeeklyBonusStatus;
 }
 
 export const me = {
   async get(): Promise<MeResponse> {
     return request('/api/me');
+  },
+
+  async getWeeklyBonusStatus(): Promise<WeeklyBonusStatus> {
+    return request('/api/me/weekly-bonus');
+  },
+
+  async claimWeeklyBonus(): Promise<{ credits_awarded: number; new_balance: number }> {
+    return request('/api/me/weekly-bonus', { method: 'POST' });
   },
 };
 
