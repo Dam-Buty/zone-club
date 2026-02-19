@@ -3,168 +3,165 @@
   bottom: 0;
   left: 0;
   right: 0;
-  background: linear-gradient(transparent, rgba(0, 0, 0, 0.9));
-  padding: 1.5rem;
-  padding-top: 3rem;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.95));
+  padding: 2rem 1.5rem 1rem;
+  z-index: 10;
 }
 
-.progress {
-  height: 6px;
-  background: rgba(255, 255, 255, 0.2);
-  border-radius: 3px;
-  cursor: pointer;
-  position: relative;
-  margin-bottom: 1rem;
-}
-
-.progress:hover {
-  height: 8px;
-}
-
-.progressFill {
-  height: 100%;
-  background: var(--color-neon-pink);
-  border-radius: 3px;
-  box-shadow: var(--glow-pink);
-  transition: width 100ms linear;
-}
-
-.progressHead {
-  position: absolute;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  width: 14px;
-  height: 14px;
-  background: var(--color-neon-pink);
-  border-radius: 50%;
-  box-shadow: var(--glow-pink);
-  opacity: 0;
-  transition: opacity 150ms ease;
-}
-
-.progress:hover .progressHead {
-  opacity: 1;
-}
-
-.buttons {
+/* ===== VCR Panel ===== */
+.vcrPanel {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 1rem;
 }
 
-.left,
-.right {
+/* Left: tape counter + time */
+.vcrLeft {
   display: flex;
-  align-items: center;
-  gap: 0.5rem;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 120px;
 }
 
-.btn {
-  background: none;
-  border: none;
-  color: white;
-  font-size: 1.25rem;
-  cursor: pointer;
-  padding: 0.5rem;
-  transition: transform 150ms ease, color 150ms ease;
+.tapeCounter {
   display: flex;
-  align-items: center;
-  justify-content: center;
+  align-items: baseline;
+  gap: 6px;
 }
 
-.btn:hover {
-  transform: scale(1.1);
-  color: var(--color-neon-cyan);
-}
-
-.btn:active {
-  transform: scale(0.95);
-}
-
-.btnIcon {
-  display: inline-block;
-  line-height: 1;
-}
-
-.playBtn {
-  font-size: 1.5rem;
-  background: var(--color-neon-pink);
-  border-radius: 50%;
-  width: 50px;
-  height: 50px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: var(--glow-pink);
-  margin: 0 0.5rem;
-}
-
-.playBtn:hover {
-  color: white;
-  background: var(--color-neon-cyan);
-  box-shadow: var(--glow-cyan);
-}
-
-.time {
+.tapeCounterLabel {
   font-family: var(--font-display);
-  font-size: 0.875rem;
+  font-size: 0.55rem;
+  color: rgba(255, 255, 255, 0.35);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+
+.tapeCounterValue {
+  font-family: 'Courier New', monospace;
+  font-size: 1.1rem;
+  color: #00ff88;
+  text-shadow: 0 0 8px rgba(0, 255, 136, 0.6);
+  letter-spacing: 0.15em;
+  font-weight: bold;
+}
+
+.timeDisplay {
+  font-family: var(--font-display);
+  font-size: 0.75rem;
   color: var(--color-neon-cyan);
   letter-spacing: 0.05em;
   text-shadow: var(--glow-cyan);
 }
 
-.volumeSlider {
-  width: 80px;
-  height: 4px;
-  appearance: none;
-  background: rgba(255, 255, 255, 0.2);
-  border-radius: 2px;
+/* Center: VCR transport buttons */
+.vcrTransport {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.vcrBtn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  background: rgba(40, 40, 50, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  color: rgba(255, 255, 255, 0.7);
+  padding: 8px 14px;
   cursor: pointer;
+  transition: all 150ms ease;
+  min-width: 52px;
 }
 
-.volumeSlider::-webkit-slider-thumb {
-  appearance: none;
-  width: 12px;
-  height: 12px;
-  background: var(--color-neon-cyan);
-  border-radius: 50%;
-  box-shadow: var(--glow-cyan);
-  cursor: pointer;
+.vcrBtn:hover {
+  background: rgba(60, 60, 80, 0.95);
+  border-color: rgba(255, 255, 255, 0.3);
+  color: white;
 }
 
-.volumeSlider::-moz-range-thumb {
-  width: 12px;
-  height: 12px;
-  background: var(--color-neon-cyan);
-  border-radius: 50%;
-  box-shadow: var(--glow-cyan);
-  cursor: pointer;
-  border: none;
+.vcrBtn:active {
+  transform: scale(0.95);
+  background: rgba(30, 30, 40, 0.95);
 }
 
-.volumeSlider::-webkit-slider-runnable-track {
-  height: 4px;
-  background: linear-gradient(
-    to right,
-    var(--color-neon-cyan) 0%,
-    var(--color-neon-cyan) var(--volume-percent, 100%),
-    rgba(255, 255, 255, 0.2) var(--volume-percent, 100%),
-    rgba(255, 255, 255, 0.2) 100%
-  );
-  border-radius: 2px;
+.vcrBtnActive {
+  border-color: var(--color-neon-cyan);
+  color: var(--color-neon-cyan);
+  box-shadow: 0 0 8px rgba(0, 255, 247, 0.3);
+  background: rgba(0, 255, 247, 0.08);
 }
 
-.volumeSlider::-moz-range-track {
-  height: 4px;
-  background: rgba(255, 255, 255, 0.2);
-  border-radius: 2px;
+.vcrPlayBtn {
+  padding: 8px 18px;
 }
 
-/* Center section for track controls */
-.center {
+.vcrPlayBtn.vcrBtnActive {
+  border-color: #00ff88;
+  color: #00ff88;
+  box-shadow: 0 0 8px rgba(0, 255, 136, 0.3);
+  background: rgba(0, 255, 136, 0.08);
+}
+
+.vcrEjectBtn:hover {
+  border-color: var(--color-neon-pink);
+  color: var(--color-neon-pink);
+}
+
+.vcrIcon {
+  font-size: 1rem;
+  line-height: 1;
+  letter-spacing: -2px;
+}
+
+.vcrLabel {
+  font-family: var(--font-display);
+  font-size: 0.55rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+/* Right: state + tracks + volume */
+.vcrRight {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+}
+
+.stateIndicator {
+  font-family: var(--font-display);
+  font-size: 0.7rem;
+  color: #00ff88;
+  text-shadow: 0 0 8px rgba(0, 255, 136, 0.6);
+  letter-spacing: 0.1em;
+  padding: 4px 10px;
+  border: 1px solid rgba(0, 255, 136, 0.3);
+  border-radius: 3px;
+  background: rgba(0, 255, 136, 0.05);
+}
+
+.stateFF {
+  color: #ffaa00;
+  text-shadow: 0 0 8px rgba(255, 170, 0, 0.6);
+  border-color: rgba(255, 170, 0, 0.3);
+  background: rgba(255, 170, 0, 0.05);
+  animation: blink 0.5s infinite;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* Track controls */
+.trackControls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .trackSelector {
@@ -181,10 +178,10 @@
   border: none;
   color: rgba(255, 255, 255, 0.5);
   font-family: var(--font-display);
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   font-weight: bold;
   letter-spacing: 0.05em;
-  padding: 0.4rem 0.75rem;
+  padding: 0.35rem 0.6rem;
   cursor: pointer;
   border-radius: 3px;
   transition: all 150ms ease;
@@ -207,6 +204,52 @@
   box-shadow: 0 0 10px var(--color-neon-pink);
 }
 
-.trackBtn.trackActive:hover {
-  background: var(--color-neon-pink);
+/* Volume */
+.volumeGroup {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.vcrSmallBtn {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 4px;
+  transition: color 150ms ease;
+}
+
+.vcrSmallBtn:hover {
+  color: var(--color-neon-cyan);
+}
+
+.volumeSlider {
+  width: 70px;
+  height: 4px;
+  appearance: none;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.volumeSlider::-webkit-slider-thumb {
+  appearance: none;
+  width: 10px;
+  height: 10px;
+  background: var(--color-neon-cyan);
+  border-radius: 50%;
+  box-shadow: var(--glow-cyan);
+  cursor: pointer;
+}
+
+.volumeSlider::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  background: var(--color-neon-cyan);
+  border-radius: 50%;
+  box-shadow: var(--glow-cyan);
+  cursor: pointer;
+  border: none;
 }
