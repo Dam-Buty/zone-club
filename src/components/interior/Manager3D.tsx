@@ -86,10 +86,8 @@ export function Manager3D({ position, rotation = [0, 0, 0], onInteract }: Manage
       onInteract()
     } else {
       const state = useStore.getState()
+      state.pushEvent('Le client s\'approche du manager et lui parle.')
       state.showManager()
-      if (!state.managerVisible) {
-        state.addChatMessage('manager', "Ouais ? Qu'est-ce que je peux faire pour toi ?")
-      }
     }
   }, [onInteract])
 
