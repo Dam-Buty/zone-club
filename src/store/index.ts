@@ -165,6 +165,8 @@ interface VideoClubState {
   // VHS Case viewer
   isVHSCaseOpen: boolean;
   setVHSCaseOpen: (open: boolean) => void;
+  vhsCaseAnimating: boolean;
+  setVHSCaseAnimating: (animating: boolean) => void;
 
   // Sitting on couch
   isSitting: boolean;
@@ -535,6 +537,10 @@ export const useStore = create<VideoClubState>()(
       // VHS Case viewer
       isVHSCaseOpen: false,
       setVHSCaseOpen: (open) => set({ isVHSCaseOpen: open }),
+      vhsCaseAnimating: false,
+      setVHSCaseAnimating: (animating) => {
+        if (get().vhsCaseAnimating !== animating) set({ vhsCaseAnimating: animating });
+      },
 
       // Sitting on couch
       isSitting: false,
