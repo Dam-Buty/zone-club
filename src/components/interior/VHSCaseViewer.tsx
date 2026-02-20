@@ -62,6 +62,8 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
   const fadeProgressRef = useRef(0)  // 0=blank, 1=fully textured
   const savedPitchRef = useRef(0)    // camera pitch when VHS opened
   const pitchCorrectedRef = useRef(false)
+  const prevAnimatingRef = useRef(true) // track animation state changes for store
+  const prevManualRotRef = useRef(0) // track Q/E rotation changes for idle detection
 
   // Store actions (stable refs)
   const setVHSCaseOpen = useStore(state => state.setVHSCaseOpen)
@@ -85,7 +87,7 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
           // Deep-clone material so original GLB materials stay pristine
           const mat = origMat.clone()
           child.material = mat
-          // Matte VHS cardboard — kill all IBL/env reflections
+          // Matte VHS cardboard — no IBL sampling (perf: PMREM cubemap per-fragment is expensive)
           mat.roughness = 1.0
           mat.metalness = 0
           mat.envMap = null
@@ -93,7 +95,7 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
           // Kill clearcoat/sheen if GLB model has them
           if ('clearcoat' in mat) (mat as any).clearcoat = 0
           if ('sheen' in mat) (mat as any).sheen = 0
-          mat.color.copy(ALBEDO_COLOR) // darken albedo to counter scene overhead lights
+          mat.color.copy(ALBEDO_COLOR)
           if (mat.map) {
             // Only include cover surfaces (1024×1024 atlas), not tape/reel meshes
             const mapImg = mat.map.image as { width?: number; height?: number } | null
@@ -111,6 +113,7 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
   // Signal VHS case is open + save camera pitch + dim scene overhead lights
   useEffect(() => {
     setVHSCaseOpen(true)
+    useStore.getState().setVHSCaseAnimating(true) // entry animation starts
     // Save current camera pitch to restore on close
     const euler = new THREE.Euler()
     euler.setFromQuaternion(camera.quaternion, 'YXZ')
@@ -125,17 +128,17 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
     scene.traverse((child) => {
       if (child instanceof THREE.PointLight) {
         savedLights.push({ light: child, intensity: child.intensity })
-        child.intensity *= 0.4
+        child.intensity *= 0.7
       } else if (child instanceof THREE.DirectionalLight) {
         savedLights.push({ light: child, intensity: child.intensity })
-        child.intensity *= 0.4
+        child.intensity *= 0.6
       } else if (child instanceof THREE.HemisphereLight) {
         savedLights.push({ light: child, intensity: child.intensity })
-        child.intensity *= 0.5
+        child.intensity *= 0.75
       }
     })
-    // Dim IBL moderately — it's the primary fill now (was RectAreaLight before)
-    scene.environmentIntensity = savedEnvIntensity * 0.72
+    // Mild IBL dim for background focus — case receives full scene lighting
+    scene.environmentIntensity = savedEnvIntensity * 0.85
 
     return () => {
       setVHSCaseOpen(false)
@@ -181,8 +184,8 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
       const albedoBase = float(1.0)  // full brightness jacket artwork
       // Normalize model height to 0(bottom)–1(top). Model is ~2m centered at origin.
       const normalizedHeight = tslClamp(positionLocal.x.add(1.0).div(2.0), 0.0, 1.0)
-      // Flattened gradient: top=0.85, bottom=1.1 (subtle, avoids hotspot amplification)
-      const correction = mix(float(1.1), float(0.85), normalizedHeight)
+      // Minimal gradient: scene IBL + lights provide natural variation, just subtle compensation
+      const correction = mix(float(1.03), float(0.97), normalizedHeight)
       const correctedColor = texNode.mul(albedoBase).mul(correction)
 
       // TSL uniform drives the fade from blank VHS → cover artwork in useFrame
@@ -467,33 +470,28 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
         }
       }
     }
+
+    // Signal idle state to PostProcessing for frame throttling
+    // Idle = all animations done, no user interaction
+    const flipTarget2 = isFlippedRef.current ? 1 : 0
+    const manualRotChanged = Math.abs(manualRotationRef.current - prevManualRotRef.current) > 0.0001
+    prevManualRotRef.current = manualRotationRef.current
+    const isAnimating = entryProgressRef.current < 1 ||
+      fadeProgressRef.current < 1 ||
+      Math.abs(flipProgressRef.current - flipTarget2) > 0.001 ||
+      isDraggingRef.current ||
+      !pitchCorrectedRef.current ||
+      manualRotChanged
+    if (isAnimating !== prevAnimatingRef.current) {
+      prevAnimatingRef.current = isAnimating
+      useStore.getState().setVHSCaseAnimating(isAnimating)
+    }
   })
 
   return (
     <group ref={groupRef}>
       <primitive object={clonedScene} />
-      {/* Fill lights — tight radius to only illuminate VHS case, not background */}
-      <pointLight
-        intensity={0.35}
-        distance={1.5}
-        decay={2}
-        color="#ffe0f0"
-        position={[0.4, 0.3, 1.0]}
-      />
-      <pointLight
-        intensity={0.3}
-        distance={1.5}
-        decay={2}
-        color="#e0f0ff"
-        position={[-0.4, 0.3, 1.0]}
-      />
-      <pointLight
-        intensity={0.4}
-        distance={1.5}
-        decay={2}
-        color="#fff5e8"
-        position={[0, -0.5, 1.0]}
-      />
+      {/* No fill lights — case is lit by actual scene lights (IBL + PointLights + neons) */}
     </group>
   )
 }

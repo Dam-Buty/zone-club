@@ -255,7 +255,7 @@ export const GENRE_CONFIG = {
   thriller: {
     id: 53,
     color: '#ff6600', // Orange suspense
-    altIds: [9648], // Mystery
+    altIds: [9648, 80], // Mystery, Crime (includes policier)
   },
   action: {
     id: 28,
@@ -271,6 +271,26 @@ export const GENRE_CONFIG = {
     id: 18,
     color: '#8844ff', // Violet dramatique
     altIds: [10749], // Romance
+  },
+  sf: {
+    id: 878,
+    color: '#00ccff', // Bleu néon sci-fi
+    altIds: [14], // Fantasy
+  },
+  classiques: {
+    id: 18,
+    color: '#d4af37', // Or classique
+    altIds: [36, 10752], // History, War
+  },
+  bizarre: {
+    id: 27,
+    color: '#ff00ff', // Magenta cult
+    altIds: [53, 9648, 878], // Thriller, Mystery, SF — films multi-genre niche
+  },
+  animation: {
+    id: 16,
+    color: '#ff8800', // Orange cartoon
+    altIds: [10751], // Family
   },
 } as const
 

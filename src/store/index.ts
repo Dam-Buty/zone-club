@@ -135,6 +135,10 @@ interface VideoClubState {
   targetedCassetteKey: string | null;
   setTargetedFilm: (filmId: number | null, cassetteKey?: string | null) => void;
 
+  // Interactive target (manager, bell, tv, couch, null)
+  targetedInteractive: string | null;
+  setTargetedInteractive: (target: string | null) => void;
+
   // Pointer lock state
   isPointerLocked: boolean;
   setPointerLocked: (locked: boolean) => void;
@@ -161,6 +165,35 @@ interface VideoClubState {
   // VHS Case viewer
   isVHSCaseOpen: boolean;
   setVHSCaseOpen: (open: boolean) => void;
+  vhsCaseAnimating: boolean;
+  setVHSCaseAnimating: (animating: boolean) => void;
+
+  // Sitting on couch
+  isSitting: boolean;
+  setSitting: (sitting: boolean) => void;
+
+  // Standing TV interaction (click TV while standing → 2-option menu)
+  isInteractingWithTV: boolean;
+  setInteractingWithTV: (val: boolean) => void;
+
+  // TV seated menu control (dispatched by Controls, consumed by InteractiveTVDisplay)
+  tvMenuAction: 'up' | 'down' | 'select' | 'back' | null;
+  dispatchTVMenu: (action: 'up' | 'down' | 'select' | 'back') => void;
+  clearTVMenuAction: () => void;
+
+  // LaZone CRT interaction
+  isInteractingWithLaZone: boolean;
+  setInteractingWithLaZone: (val: boolean) => void;
+  isWatchingLaZone: boolean;
+  setWatchingLaZone: (val: boolean) => void;
+  laZoneMenuAction: 'left' | 'right' | 'select' | 'back' | null;
+  dispatchLaZoneMenu: (action: 'left' | 'right' | 'select' | 'back') => void;
+  clearLaZoneMenuAction: () => void;
+  laZoneSoundOn: boolean;
+  setLaZoneSoundOn: (val: boolean) => void;
+  laZoneChannelAction: 'next' | 'prev' | null;
+  dispatchLaZoneChannel: (action: 'next' | 'prev') => void;
+  clearLaZoneChannelAction: () => void;
 
   // Onboarding
   hasSeenOnboarding: boolean;
@@ -489,6 +522,10 @@ export const useStore = create<VideoClubState>()(
         }
       },
 
+      // Interactive target
+      targetedInteractive: null,
+      setTargetedInteractive: (target) => set({ targetedInteractive: target }),
+
       // Pointer lock
       isPointerLocked: false,
       setPointerLocked: (locked) => set({ isPointerLocked: locked }),
@@ -518,6 +555,37 @@ export const useStore = create<VideoClubState>()(
       // VHS Case viewer
       isVHSCaseOpen: false,
       setVHSCaseOpen: (open) => set({ isVHSCaseOpen: open }),
+      vhsCaseAnimating: false,
+      setVHSCaseAnimating: (animating) => {
+        if (get().vhsCaseAnimating !== animating) set({ vhsCaseAnimating: animating });
+      },
+
+      // Sitting on couch
+      isSitting: false,
+      setSitting: (sitting) => set({ isSitting: sitting }),
+
+      // Standing TV interaction
+      isInteractingWithTV: false,
+      setInteractingWithTV: (val) => set({ isInteractingWithTV: val }),
+
+      // TV seated menu control
+      tvMenuAction: null,
+      dispatchTVMenu: (action) => set({ tvMenuAction: action }),
+      clearTVMenuAction: () => set({ tvMenuAction: null }),
+
+      // LaZone CRT interaction
+      isInteractingWithLaZone: false,
+      setInteractingWithLaZone: (val) => set({ isInteractingWithLaZone: val }),
+      isWatchingLaZone: false,
+      setWatchingLaZone: (val) => set({ isWatchingLaZone: val }),
+      laZoneMenuAction: null,
+      dispatchLaZoneMenu: (action) => set({ laZoneMenuAction: action }),
+      clearLaZoneMenuAction: () => set({ laZoneMenuAction: null }),
+      laZoneSoundOn: false,
+      setLaZoneSoundOn: (val) => set({ laZoneSoundOn: val }),
+      laZoneChannelAction: null,
+      dispatchLaZoneChannel: (action) => set({ laZoneChannelAction: action }),
+      clearLaZoneChannelAction: () => set({ laZoneChannelAction: null }),
 
       // Onboarding
       hasSeenOnboarding: false,
@@ -541,6 +609,7 @@ export const useStore = create<VideoClubState>()(
     }
   )
 );
+
 
 // Hook pour initialiser l'auth au démarrage
 export function useInitAuth() {

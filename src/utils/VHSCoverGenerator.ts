@@ -5,6 +5,7 @@ import { preloadPosterImage } from "./CassetteTextureArray";
 
 // ---- Canvas & UV Layout Constants ----
 const TEX_SIZE = 1024;
+const RENDER_SCALE = 1.5; // 1.5x resolution: 1536px — balance between sharpness and CPU/GPU cost
 
 // ---- Reusable canvases (separate responsibilities to avoid draw-state corruption) ----
 const _blitCanvas = document.createElement("canvas");
@@ -14,14 +15,16 @@ const _logoSampleCtx = _logoSampleCanvas.getContext("2d", {
   willReadFrequently: true,
 })!;
 
-// ---- Cache for isLogoBright results (avoids repeated GPU→CPU readbacks) ----
+// ---- Caches for logo analysis (avoids repeated GPU→CPU readbacks) ----
 const _logoBrightnessCache = new Map<string, boolean>();
+const _logoMonochromeCache = new Map<string, boolean>();
+const _invertedLogoCache = new Map<string, HTMLCanvasElement>();
 
 // ---- VHS Cover caches (avoid re-fetching TMDB data + re-rendering canvas) ----
 const VHS_DATA_CACHE = new Map<number, VHSCoverData>();
 const VHS_TEXTURE_CACHE = new Map<number, THREE.CanvasTexture>();
 const VHS_TEXTURE_LRU: number[] = []; // oldest first
-const VHS_TEXTURE_MAX = 20; // ~80MB VRAM max (20 × 4MB per 1024² RGBA)
+const VHS_TEXTURE_MAX = 12; // ~108MB VRAM max (12 × 9MB per 1536² RGBA)
 
 // Face regions in canvas pixel coordinates { x, y, w, h }
 const FRONT = { x: 614, y: 117, w: 395, h: 712 };
@@ -33,7 +36,11 @@ const BOTTOM_EDGE = { x: 117, y: 829, w: 395, h: 102 };
 
 // Notch safe zone — top center of front face where tape is visible through jacket cutout
 // Content drawn here is hidden by the physical notch, so skip important elements
-const NOTCH_BOTTOM = 22;
+const NOTCH_BOTTOM = 24; // matches NOTCH_RADIUS_Y
+// Notch semi-ellipse dimensions (tape-grab cutout in paper jacket)
+// Sized to match the physical cutout visible on the GLB model
+const NOTCH_RADIUS_X = 36; // horizontal radius — matches model's semi-circle width
+const NOTCH_RADIUS_Y = 24; // vertical radius — matches model's semi-circle depth
 
 // ---- Studio name → canonical TMDB company ID (for entries without logo_path) ----
 const STUDIO_ALIASES: Record<string, number> = {
@@ -91,42 +98,115 @@ const STUDIO_ALIASES: Record<string, number> = {
   gaumont: 9,
   pathé: 130,
   studiocanal: 694,
-  europacorp: 109,
+  europacorp: 6896,
+  // --- Streaming / Modern ---
+  netflix: 178464,
+  "amazon studios": 20580,
+  "amazon mgm studios": 20580,
+  "apple studios": 194232,
+  "apple tv+": 194232,
+  "apple original films": 194232,
+  hulu: 140361,
+  neon: 90733,
+  // --- Production companies ---
+  "sony pictures": 34,
+  "sony pictures entertainment": 34,
+  "sony pictures animation": 34,
+  "annapurna pictures": 13184,
+  annapurna: 13184,
+  "regency enterprises": 508,
+  "new regency pictures": 508,
+  "new regency": 508,
+  "plan b entertainment": 82819,
+  "plan b": 82819,
+  participant: 10163,
+  "participant media": 10163,
+  "studio ghibli": 10342,
+  "film4": 6705,
+  "film4 productions": 6705,
+  "filmfour": 6705,
+  "bbc films": 288,
+  "bbc film": 288,
+  "relativity media": 7295,
+  "eone films": 8147,
+  "entertainment one": 8147,
+  "filmnation entertainment": 7493,
+  filmnation: 7493,
+  "tsg entertainment": 22213,
+  "skydance media": 82819,
+  skydance: 82819,
+  "original film": 333,
+  "spyglass media group": 143790,
+  "spyglass entertainment": 143790,
+  "bron studios": 13240,
+  "bron creative": 13240,
+  "constantin film": 47,
+  "monkeypaw productions": 88934,
 };
 
 // ---- Local color studio logos (TMDB company ID → local file) ----
-// These IDs have color logos in public/studio-logos/{id}.png
+// These IDs have logos in public/studio-logos/{id}.png
 const LOCAL_STUDIO_LOGOS = new Set([
-  25, // 20th Century Fox
-  174, // Warner Bros.
-  33, // Universal Pictures
-  4, // Paramount Pictures
-  5, // Columbia Pictures
-  2, // Walt Disney Pictures
-  8411, // MGM
-  12, // New Line Cinema
-  1632, // Lionsgate
-  14, // Miramax
-  7, // DreamWorks
-  521, // DreamWorks Animation
-  9195, // Touchstone Pictures
-  559, // TriStar Pictures
-  41, // Orion Pictures
-  60, // United Artists
-  56, // Amblin Entertainment
-  923, // Legendary Pictures
-  1, // Lucasfilm
-  3, // Pixar
-  420, // Marvel Studios
-  128064, // DC Studios
-  41077, // A24
-  3172, // Blumhouse Productions
-  10146, // Focus Features
-  43, // Searchlight Pictures
-  104, // Canal+
-  9, // Gaumont
-  130, // Pathé
-  694, // StudioCanal
+  // --- Majors ---
+  25, // 20th Century Studios (color)
+  174, // Warner Bros. (color)
+  33, // Universal Pictures (color)
+  4, // Paramount Pictures (B&W)
+  5, // Columbia Pictures (B&W)
+  2, // Walt Disney Pictures (B&W)
+  8411, // MGM (color)
+  34, // Sony Pictures (color)
+  // --- Mini-majors ---
+  12, // New Line Cinema (B&W)
+  1632, // Lionsgate (B&W)
+  14, // Miramax (B&W)
+  7, // DreamWorks (color)
+  521, // DreamWorks Animation (color)
+  9195, // Touchstone Pictures (color)
+  559, // TriStar Pictures (B&W)
+  41, // Orion Pictures (B&W)
+  60, // United Artists (B&W)
+  56, // Amblin Entertainment (color)
+  923, // Legendary Pictures (B&W)
+  // --- Franchise / Genre ---
+  1, // Lucasfilm (B&W)
+  3, // Pixar (B&W)
+  420, // Marvel Studios (color)
+  128064, // DC Studios (color)
+  41077, // A24 (B&W)
+  3172, // Blumhouse Productions (B&W)
+  // --- Distributors ---
+  10146, // Focus Features (B&W)
+  43, // Searchlight Pictures (color)
+  104, // Canal+ (B&W)
+  9, // Gaumont (color)
+  130, // Pathé (color)
+  694, // StudioCanal (B&W)
+  6896, // EuropaCorp (B&W)
+  // --- Streaming / Modern ---
+  178464, // Netflix (color — red)
+  20580, // Amazon Studios (B&W)
+  194232, // Apple Studios (B&W)
+  140361, // Hulu (color — green)
+  90733, // Neon (B&W)
+  13184, // Annapurna Pictures (B&W)
+  // --- Production companies ---
+  508, // Regency Enterprises (B&W)
+  333, // Original Film (B&W)
+  82819, // Skydance (B&W)
+  10163, // Participant (B&W)
+  10342, // Studio Ghibli (B&W)
+  6705, // FilmFour (B&W)
+  288, // BBC Films (B&W)
+  7295, // Relativity Media (B&W)
+  8147, // eOne Films (B&W)
+  7493, // FilmNation Entertainment (B&W)
+  22213, // TSG Entertainment (B&W)
+  143790, // Spyglass Media (B&W)
+  13240, // BRON Studios (B&W)
+  47, // Constantin Film (B&W)
+  88934, // Monkeypaw Productions (B&W)
+  429, // Babelsberg Film (color)
 ]);
 
 /** Get the best logo URL for a production company: local color → TMDB → company endpoint */
@@ -260,6 +340,23 @@ const TEMPLATES: VHSTemplate[] = [
 ];
 
 // ---- Helpers ----
+
+/** Check if a gradient array (template bg) is dark.
+ *  Parses the middle stop hex color and tests luminance < 128. */
+function isTemplateBgDark(bgStops: string[]): boolean {
+  const hex = bgStops[Math.floor(bgStops.length / 2)] || bgStops[0];
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b < 128;
+}
+
+/** Pre-analyze a logo image: populate monochrome + brightness caches.
+ *  Called at load time (async context) so texture generation gets instant cache hits. */
+function preAnalyzeLogo(img: HTMLImageElement): void {
+  isMonochromeLogo(img);
+  isLogoBright(img);
+}
 
 function wrapText(
   ctx: CanvasRenderingContext2D,
@@ -429,6 +526,61 @@ function drawVHSBadge(
   ctx.fillText("VHS", x + badgeW / 2, y + 14);
 }
 
+/** Draw the classic VHS Hi-Fi Stereo logo block.
+ *  Layout: VHS → double bar → ⌈hi-fi⌉ boxed → STEREO
+ *  Used on spine (color) and spine bump map (white). */
+function drawVHSHiFiBlock(
+  tc: CanvasRenderingContext2D,
+  cx: number,
+  baseY: number,
+  color: string,
+  maxW: number,
+) {
+  tc.fillStyle = color;
+  tc.textAlign = "center";
+  tc.textBaseline = "middle";
+
+  // 1. "VHS" inside a bordered box — bold, dominant
+  tc.font = "bold 18px sans-serif";
+  const vhsTextW = tc.measureText("VHS").width;
+  const boxPadX = 6;
+  const boxPadY = 4;
+  const boxW = vhsTextW + boxPadX * 2;
+  const boxH = 20 + boxPadY * 2;
+  tc.strokeStyle = color;
+  tc.lineWidth = 1.5;
+  tc.strokeRect(cx - boxW / 2, baseY - boxH / 2, boxW, boxH);
+  tc.fillText("VHS", cx, baseY);
+
+  // 2. Single horizontal bar
+  const barW = maxW * 0.52;
+  const barX = cx - barW / 2;
+  const barY1 = baseY + boxH / 2 + 3;
+  tc.fillRect(barX, barY1, barW, 2);
+
+  // 3. "hi-fi"
+  tc.font = "bold 12px sans-serif";
+  const hifiY = barY1 + 14;
+  tc.fillText("hi-fi", cx, hifiY);
+
+  // 4. "STEREO" — smaller, spaced
+  tc.font = "bold 9px sans-serif";
+  const stereoY = hifiY + boxH / 2 + 10;
+  // Manual letter spacing via character-by-character drawing
+  const stereo = "STEREO";
+  const spacing = 2.5;
+  const charWidths = stereo.split("").map((c) => tc.measureText(c).width);
+  const totalStereoW =
+    charWidths.reduce((s, w) => s + w, 0) + spacing * (stereo.length - 1);
+  let sx = cx - totalStereoW / 2;
+  tc.textAlign = "left";
+  for (let i = 0; i < stereo.length; i++) {
+    tc.fillText(stereo[i], sx, stereoY);
+    sx += charWidths[i] + spacing;
+  }
+  tc.textAlign = "center"; // restore
+}
+
 /** Rounded rect helper (Canvas2D path) */
 function roundRect(
   ctx: CanvasRenderingContext2D,
@@ -571,6 +723,97 @@ function isLogoBright(img: HTMLImageElement): boolean {
   const result = opaqueCount > 0 && brightCount / opaqueCount > 0.5;
   _logoBrightnessCache.set(img.src, result);
   return result;
+}
+
+/** Check if a logo is monochrome (grayscale — R≈G≈B for all opaque pixels).
+ *  Monochrome logos get adaptive contrast inversion; color logos are drawn as-is. */
+function isMonochromeLogo(img: HTMLImageElement): boolean {
+  const cached = _logoMonochromeCache.get(img.src);
+  if (cached !== undefined) return cached;
+
+  const size = 48;
+  _logoSampleCanvas.width = size;
+  _logoSampleCanvas.height = size;
+  _logoSampleCtx.clearRect(0, 0, size, size);
+  _logoSampleCtx.drawImage(img, 0, 0, size, size);
+  const pixels = _logoSampleCtx.getImageData(0, 0, size, size).data;
+
+  let opaqueCount = 0;
+  let colorCount = 0;
+  for (let i = 0; i < pixels.length; i += 4) {
+    if (pixels[i + 3] < 50) continue;
+    opaqueCount++;
+    const maxC = Math.max(pixels[i], pixels[i + 1], pixels[i + 2]);
+    const minC = Math.min(pixels[i], pixels[i + 1], pixels[i + 2]);
+    if (maxC - minC > 30) colorCount++;
+  }
+  // <10% colored pixels = monochrome
+  const result = opaqueCount > 0 && colorCount / opaqueCount < 0.1;
+  _logoMonochromeCache.set(img.src, result);
+  return result;
+}
+
+/** Get an inverted version of a logo image (white↔black, cached). */
+function getInvertedLogo(
+  img: HTMLImageElement,
+  w: number,
+  h: number,
+): HTMLCanvasElement {
+  const key = `${img.src}_${w}_${h}`;
+  const cached = _invertedLogoCache.get(key);
+  if (cached) return cached;
+
+  const canvas = document.createElement("canvas");
+  const pw = Math.round(w * RENDER_SCALE);
+  const ph = Math.round(h * RENDER_SCALE);
+  canvas.width = pw;
+  canvas.height = ph;
+  const tctx = canvas.getContext("2d")!;
+  tctx.drawImage(img, 0, 0, pw, ph);
+  const imgData = tctx.getImageData(0, 0, pw, ph);
+  const pixels = imgData.data;
+  for (let i = 0; i < pixels.length; i += 4) {
+    if (pixels[i + 3] > 0) {
+      pixels[i] = 255 - pixels[i];
+      pixels[i + 1] = 255 - pixels[i + 1];
+      pixels[i + 2] = 255 - pixels[i + 2];
+    }
+  }
+  tctx.putImageData(imgData, 0, 0);
+  _invertedLogoCache.set(key, canvas);
+  return canvas;
+}
+
+/** Draw a studio logo with adaptive contrast for monochrome logos.
+ *  Color logos are drawn as-is. Monochrome logos are inverted when
+ *  they would be invisible against the background (dark-on-dark or light-on-light).
+ *  `bgIsDark` is derived from the template color — avoids expensive getImageData sampling. */
+function drawLogoAdaptive(
+  ctx: CanvasRenderingContext2D,
+  img: HTMLImageElement,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  bgIsDark: boolean = true,
+): void {
+  if (!isMonochromeLogo(img)) {
+    ctx.drawImage(img, x, y, w, h);
+    return;
+  }
+
+  const logoBright = isLogoBright(img);
+
+  // Invert when: dark logo on dark bg, or bright logo on bright bg
+  const needsInvert =
+    (bgIsDark && !logoBright) || (!bgIsDark && logoBright);
+
+  if (needsInvert) {
+    const inverted = getInvertedLogo(img, w, h);
+    ctx.drawImage(inverted, 0, 0, inverted.width, inverted.height, x, y, w, h);
+  } else {
+    ctx.drawImage(img, x, y, w, h);
+  }
 }
 
 /** Awards badge based on vote_average (proxy for critical acclaim) */
@@ -773,6 +1016,10 @@ export async function fetchVHSCoverData(film: Film): Promise<VHSCoverData> {
                 (e): e is { img: HTMLImageElement; companyId: number } =>
                   e !== null,
               );
+            // Pre-analyze logos now (async context) so texture generation gets instant cache hits
+            for (const { img } of data.studioLogos) {
+              preAnalyzeLogo(img);
+            }
           }
         })
         .catch(() => {}),
@@ -843,9 +1090,10 @@ export function generateVHSCoverTexture(
   if (cachedTex) return cachedTex;
 
   const canvas = document.createElement("canvas");
-  canvas.width = TEX_SIZE;
-  canvas.height = TEX_SIZE;
+  canvas.width = TEX_SIZE * RENDER_SCALE;
+  canvas.height = TEX_SIZE * RENDER_SCALE;
   const ctx = canvas.getContext("2d")!;
+  ctx.scale(RENDER_SCALE, RENDER_SCALE);
 
   const template = getTemplate(data.film);
 
@@ -853,6 +1101,9 @@ export function generateVHSCoverTexture(
   ctx.fillRect(0, 0, TEX_SIZE, TEX_SIZE);
 
   const frontTitleInfo = drawFrontCover(ctx, data, template);
+  // Paint notch cutout — black semi-ellipse at top center of front cover
+  // Represents the paper jacket cutout where VHS tape is visible through black plastic
+  drawNotchCutout(ctx, FRONT);
   const backTextOps = drawBackCover(ctx, data, template);
   drawSpine(ctx, SPINE1, data, template);
   drawSpine(ctx, SPINE2, data, template);
@@ -861,9 +1112,10 @@ export function generateVHSCoverTexture(
 
   // Generate bump map for text/logo relief (light-reactive emboss on all surfaces)
   const bumpCanvas = document.createElement("canvas");
-  bumpCanvas.width = TEX_SIZE;
-  bumpCanvas.height = TEX_SIZE;
+  bumpCanvas.width = TEX_SIZE * RENDER_SCALE;
+  bumpCanvas.height = TEX_SIZE * RENDER_SCALE;
   const bCtx = bumpCanvas.getContext("2d")!;
+  bCtx.scale(RENDER_SCALE, RENDER_SCALE);
   bCtx.fillStyle = "#000000";
   bCtx.fillRect(0, 0, TEX_SIZE, TEX_SIZE);
   drawSpineBump(bCtx, SPINE1, data, template);
@@ -873,10 +1125,12 @@ export function generateVHSCoverTexture(
 
   const bumpTexture = new THREE.CanvasTexture(bumpCanvas);
   bumpTexture.flipY = false;
+  bumpTexture.anisotropy = 16;
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.flipY = false;
+  texture.anisotropy = 16;
   texture.userData.bumpMap = bumpTexture;
 
   // LRU cache: evict oldest if at capacity
@@ -895,6 +1149,23 @@ export function generateVHSCoverTexture(
   return texture;
 }
 
+// ---- Notch cutout (tape-grab semi-ellipse at top center of front cover) ----
+
+function drawNotchCutout(
+  ctx: CanvasRenderingContext2D,
+  region: { x: number; y: number; w: number; h: number },
+  fillColor = "#0a0a0a", // default: VHS black plastic
+) {
+  const cx = region.x + region.w / 2;
+  const cy = region.y; // top edge of the cover face
+  ctx.save();
+  ctx.fillStyle = fillColor;
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, NOTCH_RADIUS_X, NOTCH_RADIUS_Y, 0, 0, Math.PI);
+  ctx.fill();
+  ctx.restore();
+}
+
 // ---- Blit helper ----
 
 function blitFlipped(
@@ -902,15 +1173,16 @@ function blitFlipped(
   region: { x: number; y: number; w: number; h: number },
   drawFn: (tc: CanvasRenderingContext2D, w: number, h: number) => void,
 ) {
-  // Reuse blit canvas only for region rendering
-  _blitCanvas.width = region.w;
-  _blitCanvas.height = region.h;
+  // Reuse blit canvas at high-DPI for sharp text & logos
+  _blitCanvas.width = region.w * RENDER_SCALE;
+  _blitCanvas.height = region.h * RENDER_SCALE;
+  _blitCtx.scale(RENDER_SCALE, RENDER_SCALE);
   _blitCtx.clearRect(0, 0, region.w, region.h);
   drawFn(_blitCtx, region.w, region.h);
   ctx.save();
   ctx.translate(region.x + region.w, region.y);
   ctx.scale(-1, 1);
-  ctx.drawImage(_blitCanvas, 0, 0);
+  ctx.drawImage(_blitCanvas, 0, 0, region.w, region.h);
   ctx.restore();
 }
 
@@ -1587,18 +1859,18 @@ function drawBackCover(
     tc.fillText("SYNOPSIS", pad, curY + 12);
     curY += 18;
 
-    tc.font = "12px sans-serif";
+    tc.font = "15px sans-serif";
     tc.fillStyle = "#ffffff";
     const synText = film.overview || "Aucun synopsis disponible.";
     // Calculate available space for synopsis
     const creditsHeight = estimateCreditsHeight(data);
     const bottomReserved = 62 + creditsHeight; // barcode + branding + credits
     const maxSynY = h - bottomReserved;
-    const availableSynLines = Math.max(3, Math.floor((maxSynY - curY) / 13));
+    const availableSynLines = Math.max(3, Math.floor((maxSynY - curY) / 16));
     const synLines = wrapText(tc, synText, w - pad * 2, availableSynLines);
     for (const line of synLines) {
-      tc.fillText(line, pad, curY + 10);
-      curY += 13;
+      tc.fillText(line, pad, curY + 13);
+      curY += 16;
     }
     curY += 6;
 
@@ -1634,7 +1906,7 @@ function drawBackCover(
       curY += 12;
     }
 
-    // --- Production company logos ---
+    // --- Production company logos (adaptive contrast — no pills) ---
     disableShadow(tc);
     if (data.studioLogos.length > 0) {
       const logoMaxH = 24;
@@ -1649,24 +1921,18 @@ function drawBackCover(
         logoGap * (logoSizes.length - 1);
       let lx = (w - totalW) / 2;
       const ly = h - 72;
+      const backBgDark = isTemplateBgDark(template.backBg);
       for (let i = 0; i < data.studioLogos.length; i++) {
         const { img: logoImg } = data.studioLogos[i];
-        const bright = isLogoBright(logoImg);
-        // Background pill: dark for bright/white logos, white for dark logos
-        tc.fillStyle = bright
-          ? "rgba(20,20,30,0.92)"
-          : "rgba(255,255,255,0.88)";
-        tc.beginPath();
-        roundRect(
+        drawLogoAdaptive(
           tc,
-          lx,
-          ly - logoPad,
-          logoSizes[i].w + logoPad * 2,
-          logoSizes[i].h + logoPad * 2,
-          3,
+          logoImg,
+          lx + logoPad,
+          ly,
+          logoSizes[i].w,
+          logoSizes[i].h,
+          backBgDark,
         );
-        tc.fill();
-        tc.drawImage(logoImg, lx + logoPad, ly, logoSizes[i].w, logoSizes[i].h);
         lx += logoSizes[i].w + logoPad * 2 + logoGap;
       }
     }
@@ -1688,14 +1954,14 @@ function drawBackCover(
 
 function estimateCreditsHeight(data: VHSCoverData): number {
   let h = 0;
-  if (data.actors.length > 0) h += 24; // Starring + actors
-  if (data.secondaryActors.length > 0) h += 14;
-  if (data.directors.length > 0) h += 13;
-  if (data.producers.length > 0) h += 13;
-  if (data.writers.length > 0) h += 13;
-  if (data.composer) h += 13;
-  if (data.studioName) h += 13;
-  if (data.productionStudioName) h += 13;
+  if (data.actors.length > 0) h += 26; // Starring + actors
+  if (data.secondaryActors.length > 0) h += 15;
+  if (data.directors.length > 0) h += 14;
+  if (data.producers.length > 0) h += 14;
+  if (data.writers.length > 0) h += 14;
+  if (data.composer) h += 14;
+  if (data.studioName) h += 14;
+  if (data.productionStudioName) h += 14;
   return h + 8;
 }
 
@@ -1714,20 +1980,20 @@ function drawCreditsBlock(
 
   function creditLine(label: string, value: string) {
     if (!value) return;
-    tc.font = "bold 9px sans-serif";
+    tc.font = "bold 10px sans-serif";
     tc.fillStyle = labelColor;
     tc.textAlign = "left";
-    tc.fillText(label, pad, curY + 9);
+    tc.fillText(label, pad, curY + 10);
     const labelW = tc.measureText(label).width + 4;
-    tc.font = "9px sans-serif";
+    tc.font = "10px sans-serif";
     tc.fillStyle = textColor;
     // Wrap value if too long
     const valLines = wrapText(tc, value, maxW - labelW, 2);
-    tc.fillText(valLines[0], pad + labelW, curY + 9);
-    curY += 12;
+    tc.fillText(valLines[0], pad + labelW, curY + 10);
+    curY += 13;
     if (valLines.length > 1) {
-      tc.fillText(valLines[1], pad + labelW, curY + 9);
-      curY += 12;
+      tc.fillText(valLines[1], pad + labelW, curY + 10);
+      curY += 13;
     }
   }
 
@@ -1775,11 +2041,11 @@ function drawCreditsBlock(
     : "";
   if (yearCr && data.studioName) {
     curY += 2;
-    tc.font = "bold 9px sans-serif";
+    tc.font = "bold 10px sans-serif";
     tc.fillStyle = "rgba(255,255,255,0.5)";
     tc.textAlign = "left";
-    tc.fillText(`\u00a9 ${yearCr} ${data.studioName}`, pad, curY + 9);
-    curY += 12;
+    tc.fillText(`\u00a9 ${yearCr} ${data.studioName}`, pad, curY + 10);
+    curY += 13;
   }
 
   return curY;
@@ -2099,14 +2365,8 @@ function drawSpine(
         lH = maxLH;
         lW = lH * aspect;
       }
-      // Dark logos need a subtle light pill on dark spine background
-      if (!isLogoBright(studioLogo)) {
-        tc.fillStyle = "rgba(255,255,255,0.18)";
-        tc.beginPath();
-        roundRect(tc, -lW / 2 - 3, -lH / 2 - 3, lW + 6, lH + 6, 3);
-        tc.fill();
-      }
-      tc.drawImage(studioLogo, -lW / 2, -lH / 2, lW, lH);
+      // Adaptive contrast: inverts monochrome logos when invisible on dark spine
+      drawLogoAdaptive(tc, studioLogo, -lW / 2, -lH / 2, lW, lH, isTemplateBgDark(template.spineBg));
       enableTextShadow(tc);
       tc.restore();
     } else if (data.studioName) {
@@ -2123,6 +2383,7 @@ function drawSpine(
     }
 
     // Title (center of spine — logo if available, adaptive text fallback)
+    // 20px margin from studio logo zone (top ~95px) and VHS block zone (bottom ~h-117)
     enableLightTextShadow(tc);
     if (data.logoImg) {
       // Draw official movie logo rotated on spine
@@ -2130,7 +2391,7 @@ function drawSpine(
       tc.translate(w / 2, h / 2);
       tc.rotate(Math.PI / 2);
       const logoAspect = data.logoImg.width / data.logoImg.height;
-      const maxLogoW = h - 160;
+      const maxLogoW = h - 212;
       const maxLogoH = w - 16;
       let logoW = maxLogoW;
       let logoH = logoW / logoAspect;
@@ -2148,7 +2409,7 @@ function drawSpine(
       tc.textAlign = "center";
       tc.textBaseline = "middle";
       const spineTitle = film.title.toUpperCase();
-      const maxTitleWidth = h - 160;
+      const maxTitleWidth = h - 212;
       const MIN_SPINE_FONT = 14;
       const MAX_SPINE_FONT = 38;
       let spineFontSize = MAX_SPINE_FONT;
@@ -2167,41 +2428,24 @@ function drawSpine(
       tc.fillText(spineTitle, 1.5, 1.5);
 
       // Highlight pass (catch light on raised edge)
-      tc.fillStyle = "rgba(255,255,255,0.25)";
+      tc.fillStyle = "rgba(255,255,255,0.12)";
       tc.fillText(spineTitle, -1, -1);
 
-      // Main text
-      tc.fillStyle = "#ffffff";
+      // Main text — off-white to prevent bloom blowout under fill lights
+      tc.fillStyle = "#d8d8d8";
       tc.fillText(spineTitle, 0, 0);
       tc.restore();
     }
 
     enableTextShadow(tc);
 
-    // Certification (below title)
-    if (data.certification) {
-      tc.save();
-      tc.translate(w / 2, h - 80);
-      tc.rotate(Math.PI / 2);
-      tc.font = "bold 12px sans-serif";
-      tc.fillStyle = "rgba(255,255,255,0.6)";
-      tc.textAlign = "center";
-      tc.textBaseline = "middle";
-      tc.fillText(data.certification, 0, 0);
-      tc.restore();
-    }
-
-    // VHS label (bottom, horizontal — rotated 90° right from title)
-    tc.font = "bold 24px sans-serif";
-    tc.fillStyle = template.spineAccent;
-    tc.textAlign = "center";
-    tc.textBaseline = "middle";
-    tc.fillText("VHS", w / 2, h - 35);
+    // VHS Hi-Fi Stereo logo (bottom of spine)
+    drawVHSHiFiBlock(tc, w / 2, h - 72, template.spineAccent, w);
   });
 }
 
 // ---- BUMP MAP generators (white = raised, black = flat) ----
-
+// NOTE: Spine bump is captured during drawSpine() via blitFlipped's bumpCtx parameter
 function drawSpineBump(
   ctx: CanvasRenderingContext2D,
   region: { x: number; y: number; w: number; h: number },
@@ -2209,19 +2453,18 @@ function drawSpineBump(
   _template: VHSTemplate,
 ) {
   blitFlipped(ctx, region, (tc, w, h) => {
-    // Draw on TRANSPARENT canvas first (blitFlipped clears for us)
+    // Draw on TRANSPARENT canvas (blitFlipped clears for us)
     // Then convert all content to white silhouette for consistent bump height
 
     const { film } = data;
 
-    // Title (center of spine) — use SAME asset as color version
+    // Title (center of spine) — same coords as drawSpine()
     if (data.logoImg) {
-      // Official movie logo from TMDB API — exact same coords as drawSpine()
       tc.save();
       tc.translate(w / 2, h / 2);
       tc.rotate(Math.PI / 2);
       const logoAspect = data.logoImg.width / data.logoImg.height;
-      const maxLogoW = h - 160;
+      const maxLogoW = h - 212;
       const maxLogoH = w - 16;
       let logoW = maxLogoW;
       let logoH = logoW / logoAspect;
@@ -2232,7 +2475,6 @@ function drawSpineBump(
       tc.drawImage(data.logoImg, -logoW / 2, -logoH / 2, logoW, logoH);
       tc.restore();
     } else {
-      // Text fallback — same font sizing as drawSpine()
       tc.save();
       tc.translate(w / 2, h / 2);
       tc.rotate(Math.PI / 2);
@@ -2240,7 +2482,7 @@ function drawSpineBump(
       tc.textAlign = "center";
       tc.textBaseline = "middle";
       const spineTitle = film.title.toUpperCase();
-      const maxTitleWidth = h - 160;
+      const maxTitleWidth = h - 212;
       const MIN_SPINE_FONT = 14;
       const MAX_SPINE_FONT = 38;
       let spineFontSize = MAX_SPINE_FONT;
@@ -2256,12 +2498,8 @@ function drawSpineBump(
       tc.restore();
     }
 
-    // VHS label (bottom) — same coords as drawSpine()
-    tc.font = "bold 24px sans-serif";
-    tc.fillStyle = "#ffffff";
-    tc.textAlign = "center";
-    tc.textBaseline = "middle";
-    tc.fillText("VHS", w / 2, h - 35);
+    // VHS Hi-Fi Stereo logo (bottom) — same coords as drawSpine()
+    drawVHSHiFiBlock(tc, w / 2, h - 72, "#ffffff", w);
 
     // Studio logo or text (top) — same coords as drawSpine()
     if (data.studioLogos.length > 0) {

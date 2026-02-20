@@ -77,9 +77,9 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
       const aoValue = aoTexture.x
       const withAO = scenePassColor.mul(aoValue)
 
-      // 3. Bloom
-      const bloomPass = bloom(withAO, 0.19, 0.4, 0.9)
-      const withBloom = withAO.add(bloomPass)
+      // 3. Bloom — skip entirely when VHS case is open (no neons visible, avoids white text blowout)
+      const bloomPass = isVHSCaseOpen ? null : bloom(withAO, 0.19, 0.4, 0.9)
+      const withBloom = bloomPass ? withAO.add(bloomPass) : withAO
 
       // 4. Conditional DoF — only when VHS case viewer is open
       // Pipeline is rebuilt when isVHSCaseOpen changes (useEffect dep)
@@ -108,13 +108,13 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
       // 8. Film Grain — very subtle analog texture, animated per frame
       const grainUV = viewportUV.add(time.mul(float(0.17)))
       const grain = fract(sin(dot(grainUV, vec2(12.9898, 78.233))).mul(float(43758.5453)))
-        .sub(float(0.5)).mul(float(0.02))
+        .sub(float(0.5)).mul(float(0.016))
       const withGrain = withFXAA.add(grain)
 
       postProcessing.outputNode = withGrain
 
       if (isVHSCaseOpen) {
-        console.log('[PostProcessing] Pipeline: GTAO + Bloom + DoF(0.4725m) + Vignette + FXAA + Film Grain')
+        console.log('[PostProcessing] Pipeline: GTAO + DoF(0.4725m) + Vignette + FXAA + Film Grain (no bloom)')
       } else {
         console.log('[PostProcessing] Pipeline: GTAO + Bloom + Vignette + FXAA + Film Grain')
       }
@@ -128,6 +128,10 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
     }
   }, [renderer, scene, camera, isMobile, dofTrigger])
 
+  // Frame throttling when VHS case is open and idle (no animation/interaction)
+  // Renders at ~15 FPS instead of 120 → saves ~87% GPU work on static scene
+  const frameSkipRef = useRef(0)
+
   // renderPriority=1 tells R3F to skip its default renderer.render() call
   useFrame((_, delta) => {
     if (postProcessingRef.current) {
@@ -136,6 +140,18 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
         const target = 4.0
         const current = bokehRef.current.value
         bokehRef.current.value += (target - current) * Math.min(delta * 8, 1)
+      }
+
+      // Throttle rendering when VHS case is open and idle
+      // Skip 7 out of 8 frames → ~15 FPS effective (plenty for static scene)
+      if (isVHSCaseOpen) {
+        const { vhsCaseAnimating } = useStore.getState()
+        if (!vhsCaseAnimating) {
+          frameSkipRef.current++
+          if (frameSkipRef.current % 8 !== 0) return
+        } else {
+          frameSkipRef.current = 0 // reset counter when animating
+        }
       }
 
       postProcessingRef.current.render()
