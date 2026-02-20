@@ -128,10 +128,10 @@ const _targetQuat = new THREE.Quaternion();
 const _up = new THREE.Vector3(0, 1, 0);
 
 // Seated camera position — world coordinates
-// Couch at world (2.8, 0, 1.2), seat surface ~0.35, eye height +0.55
-const SEATED_POSITION = new THREE.Vector3(2.8, 0.90, 1.2);
-const SEATED_LOOKAT = new THREE.Vector3(4.0, 1.05, 1.2);
-const SIT_TRANSITION_SPEED = 4.0; // lerp alpha multiplier (~0.25s to converge)
+// Couch at world x=2.5 (reculé 30cm), 40% zoom towards TV (x=4.0): distance 1.5*0.6=0.90
+const SEATED_POSITION = new THREE.Vector3(3.10, 0.711, 1.2);
+const SEATED_LOOKAT = new THREE.Vector3(4.0, 0.681, 1.2);
+const SIT_TRANSITION_SPEED = 5.0; // lerp alpha — ~95% converged at 600ms
 
 // Mobile pitch clamp — asymmetric: 45° up, 55° down
 const MAX_PITCH_UP = (45 * Math.PI) / 180;
@@ -180,6 +180,7 @@ export function Controls({
 
   // Sitting state tracking for standup animation
   const wasSittingRef = useRef(false);
+  const preSitPosRef = useRef(new THREE.Vector3());
 
   // Hystérésis pour sélection cassettes
   const lastCassetteKeyRef = useRef<string | null>(null)
@@ -195,13 +196,15 @@ export function Controls({
 
   // Configurer la caméra
   useEffect(() => {
-    camera.position.set(-3.0, 1.6, 3);
+    camera.position.set(-3.0, 1.52, 3);
     camera.near = 0.1;
     camera.far = 15;
     if (camera instanceof THREE.PerspectiveCamera) {
       camera.fov = isMobile ? 80 : 70; // wider FOV on mobile for spatial awareness on small screens
       camera.updateProjectionMatrix();
     }
+    // DEBUG: expose camera for Playwright screenshots (REMOVE AFTER)
+    (window as any).__r3fCamera = camera;
   }, [camera, isMobile]);
 
   // Vérifier si un overlay est ouvert
@@ -240,8 +243,9 @@ export function Controls({
 
   // Interaction handler (shared between desktop click/key and mobile tap)
   const handleInteraction = useCallback(() => {
-    // On desktop, require pointer lock. On mobile, always active.
-    if (!isMobile && !controlsRef.current?.isLocked) return;
+    // On desktop, require pointer lock (unless sitting — seated nav works without it).
+    const { isSitting: sittingNow } = useStore.getState();
+    if (!isMobile && !sittingNow && !controlsRef.current?.isLocked) return;
 
     const interactive = targetedInteractiveRef.current;
 
@@ -343,12 +347,13 @@ export function Controls({
       const vhsOpen = useStore.getState().isVHSCaseOpen;
       if (vhsOpen) return;
 
-      // ESC while sitting → stand up
+      // ESC while sitting → hierarchical back (playing→menu, menu→seated, seated→stand)
       if (event.code === "Escape") {
-        const { isSitting, setSitting } = useStore.getState();
-        if (isSitting) {
+        const { isSitting, isTerminalOpen } = useStore.getState();
+        if (isSitting && !isTerminalOpen) {
           event.preventDefault();
-          setSitting(false);
+          event.stopPropagation();
+          useStore.getState().dispatchTVMenu('back');
           return;
         }
       }
@@ -670,6 +675,10 @@ export function Controls({
     // === Sitting on couch — smooth camera transition, skip movement ===
     const isSittingNow = useStore.getState().isSitting;
     if (isSittingNow) {
+      if (!wasSittingRef.current) {
+        // Save pre-sit position for safe standup
+        preSitPosRef.current.copy(camera.position);
+      }
       wasSittingRef.current = true;
       const alpha = Math.min(1, SIT_TRANSITION_SPEED * delta);
       camera.position.lerp(SEATED_POSITION, alpha);
@@ -680,13 +689,20 @@ export function Controls({
       return; // Skip FPS movement
     }
 
-    // === Standup transition — smooth return to standing height ===
+    // === Standup transition — smooth return to pre-sit position ===
     if (wasSittingRef.current) {
-      const standingY = 1.6;
-      camera.position.y = THREE.MathUtils.lerp(camera.position.y, standingY, Math.min(1, SIT_TRANSITION_SPEED * delta));
+      const standingY = 1.52;
+      const targetX = preSitPosRef.current.x;
+      const targetZ = preSitPosRef.current.z;
+      const alpha = Math.min(1, SIT_TRANSITION_SPEED * delta);
+      camera.position.x = THREE.MathUtils.lerp(camera.position.x, targetX, alpha);
+      camera.position.y = THREE.MathUtils.lerp(camera.position.y, standingY, alpha);
+      camera.position.z = THREE.MathUtils.lerp(camera.position.z, targetZ, alpha);
       if (Math.abs(camera.position.y - standingY) < 0.01) {
-        camera.position.y = standingY;
+        camera.position.set(targetX, standingY, targetZ);
         wasSittingRef.current = false;
+        // Re-acquire pointer lock so movement resumes (desktop only)
+        if (!isMobile) useStore.getState().requestPointerLock();
       }
       return; // Skip normal movement during standup
     }
@@ -764,7 +780,7 @@ export function Controls({
 
     camera.position.x = newX;
     camera.position.z = newZ;
-    camera.position.y = 1.6;
+    camera.position.y = 1.52;
   });
 
   return null;

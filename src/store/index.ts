@@ -164,8 +164,8 @@ interface VideoClubState {
   setSitting: (sitting: boolean) => void;
 
   // TV seated menu control (dispatched by Controls, consumed by InteractiveTVDisplay)
-  tvMenuAction: 'up' | 'down' | 'select' | null;
-  dispatchTVMenu: (action: 'up' | 'down' | 'select') => void;
+  tvMenuAction: 'up' | 'down' | 'select' | 'back' | null;
+  dispatchTVMenu: (action: 'up' | 'down' | 'select' | 'back') => void;
   clearTVMenuAction: () => void;
 
   // Onboarding
