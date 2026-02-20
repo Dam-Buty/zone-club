@@ -122,6 +122,305 @@ const SceneContent = memo(function SceneContent({
   )
 })
 
+// LaZone CRT interaction overlay — left/right choice, tappable on mobile
+function LaZoneOverlay() {
+  const isInteracting = useStore(s => s.isInteractingWithLaZone)
+  const isWatching = useStore(s => s.isWatchingLaZone)
+  const laZoneMenuAction = useStore(s => s.laZoneMenuAction)
+  const soundOn = useStore(s => s.laZoneSoundOn)
+  const [menuIndex, setMenuIndex] = useState(0)
+  const isMobile = useIsMobile()
+
+  // Direct action handler (used by both keyboard dispatch and touch tap)
+  const selectOption = useCallback((index: number) => {
+    if (index === 0) {
+      useStore.getState().setLaZoneSoundOn(!useStore.getState().laZoneSoundOn)
+    } else if (index === 1) {
+      useStore.getState().setWatchingLaZone(true)
+    }
+  }, [])
+
+  const closeMenu = useCallback(() => {
+    useStore.getState().setInteractingWithLaZone(false)
+  }, [])
+
+  // React to keyboard dispatches from Controls (desktop)
+  useEffect(() => {
+    if (!laZoneMenuAction) return
+    const clear = useStore.getState().clearLaZoneMenuAction
+
+    if (laZoneMenuAction === 'left') {
+      setMenuIndex(0)
+    } else if (laZoneMenuAction === 'right') {
+      setMenuIndex(1)
+    } else if (laZoneMenuAction === 'select') {
+      selectOption(menuIndex)
+    } else if (laZoneMenuAction === 'back') {
+      closeMenu()
+    }
+
+    clear()
+  }, [laZoneMenuAction, menuIndex, selectOption, closeMenu])
+
+  // Reset menu index when opening
+  useEffect(() => {
+    if (isInteracting) setMenuIndex(0)
+  }, [isInteracting])
+
+  if (!isInteracting || isWatching) return null
+
+  const options = [
+    { label: soundOn ? 'Couper le son' : 'Monter le son', icon: soundOn ? '🔇' : '🔊' },
+    { label: 'Regarder la TV', icon: '📺' },
+  ]
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        width: '100vw',
+        height: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: isMobile ? '1rem' : '4rem',
+        pointerEvents: 'none',
+        zIndex: 25,
+      }}
+    >
+      {options.map((opt, i) => {
+        const selected = !isMobile && i === menuIndex
+        return (
+          <div
+            key={i}
+            onClick={(e) => {
+              e.stopPropagation()
+              if (isMobile) {
+                selectOption(i)
+              }
+            }}
+            style={{
+              padding: isMobile ? '1.2rem 1.5rem' : '2rem 3rem',
+              backgroundColor: selected ? 'rgba(0, 255, 247, 0.15)' : 'rgba(0, 0, 0, 0.75)',
+              border: selected ? '2px solid #00fff7' : '2px solid rgba(255,255,255,0.3)',
+              borderRadius: '12px',
+              color: selected ? '#00fff7' : '#ffffff',
+              fontFamily: "'Courier New', monospace",
+              fontSize: isMobile ? '1.1rem' : '1.8rem',
+              fontWeight: 'bold',
+              textAlign: 'center',
+              textShadow: selected ? '0 0 20px #00fff7' : 'none',
+              boxShadow: selected ? '0 0 30px rgba(0, 255, 247, 0.3)' : 'none',
+              transition: 'all 0.15s ease',
+              minWidth: isMobile ? '140px' : '280px',
+              pointerEvents: isMobile ? 'auto' : 'none',
+              cursor: isMobile ? 'pointer' : 'default',
+              WebkitTapHighlightColor: 'transparent',
+            }}
+          >
+            <div style={{ fontSize: isMobile ? '1.8rem' : '2.5rem', marginBottom: '0.5rem' }}>{opt.icon}</div>
+            <div>{opt.label}</div>
+          </div>
+        )
+      })}
+
+      {/* Close button — mobile only */}
+      {isMobile && (
+        <div
+          onClick={(e) => { e.stopPropagation(); closeMenu() }}
+          style={{
+            position: 'absolute',
+            top: 'calc(env(safe-area-inset-top, 0px) + 1rem)',
+            right: '1rem',
+            width: '44px',
+            height: '44px',
+            borderRadius: '50%',
+            backgroundColor: 'rgba(0,0,0,0.7)',
+            border: '1px solid rgba(255,255,255,0.3)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: '#fff',
+            fontSize: '1.4rem',
+            pointerEvents: 'auto',
+            cursor: 'pointer',
+            WebkitTapHighlightColor: 'transparent',
+          }}
+        >
+          ✕
+        </div>
+      )}
+
+      {/* Navigation hint — desktop only */}
+      {!isMobile && (
+        <div
+          style={{
+            position: 'absolute',
+            bottom: '15%',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            color: 'rgba(255,255,255,0.5)',
+            fontFamily: 'sans-serif',
+            fontSize: '0.9rem',
+          }}
+        >
+          ← → Choisir · <strong>E</strong> Valider · <strong>Échap</strong> Fermer
+        </div>
+      )}
+    </div>
+  )
+}
+
+// LaZone watching overlay — channel zapping + exit, touch-interactive on mobile
+function LaZoneWatchingOverlay() {
+  const isWatching = useStore(s => s.isWatchingLaZone)
+  const channelAction = useStore(s => s.laZoneChannelAction)
+  const [flash, setFlash] = useState<'up' | 'down' | null>(null)
+  const isMobile = useIsMobile()
+
+  // Brief flash on channel change
+  useEffect(() => {
+    if (!channelAction) return
+    setFlash(channelAction === 'prev' ? 'up' : 'down')
+    const timer = setTimeout(() => setFlash(null), 600)
+    return () => clearTimeout(timer)
+  }, [channelAction])
+
+  if (!isWatching) return null
+
+  const handleChannelUp = (e: React.MouseEvent | React.TouchEvent) => {
+    e.stopPropagation()
+    useStore.getState().dispatchLaZoneChannel('prev')
+  }
+  const handleChannelDown = (e: React.MouseEvent | React.TouchEvent) => {
+    e.stopPropagation()
+    useStore.getState().dispatchLaZoneChannel('next')
+  }
+  const handleExit = (e: React.MouseEvent | React.TouchEvent) => {
+    e.stopPropagation()
+    useStore.getState().setWatchingLaZone(false)
+    useStore.getState().setInteractingWithLaZone(false)
+  }
+
+  const btnBase: React.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'column',
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    border: '1px solid rgba(255,255,255,0.2)',
+    borderRadius: isMobile ? '12px' : '8px',
+    pointerEvents: 'auto',
+    cursor: 'pointer',
+    WebkitTapHighlightColor: 'transparent',
+    transition: 'all 0.15s ease',
+  }
+
+  const chBtnSize = isMobile
+    ? { width: '56px', height: '56px' }
+    : { width: '54px', height: '54px' }
+
+  const arrowColor = (active: boolean) => active ? '#00fff7' : 'rgba(255,255,255,0.5)'
+  const arrowShadow = (active: boolean) => active ? '0 0 15px #00fff7' : 'none'
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        width: '100vw',
+        height: '100vh',
+        pointerEvents: 'none',
+        zIndex: 25,
+      }}
+    >
+      {/* Channel buttons — desktop: right side vertical, mobile: below TV horizontal */}
+      <div
+        style={isMobile ? {
+          position: 'absolute',
+          bottom: '14%',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          display: 'flex',
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: '2rem',
+        } : {
+          position: 'absolute',
+          right: '3rem',
+          top: '50%',
+          transform: 'translateY(-50%)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: '1.5rem',
+        }}
+      >
+        <div
+          onClick={handleChannelUp}
+          style={{
+            ...btnBase,
+            ...chBtnSize,
+            borderColor: flash === 'up' ? '#00fff7' : 'rgba(255,255,255,0.2)',
+            backgroundColor: flash === 'up' ? 'rgba(0, 255, 247, 0.15)' : 'rgba(0,0,0,0.6)',
+          }}
+        >
+          <span style={{ color: arrowColor(flash === 'up'), fontSize: isMobile ? '1.5rem' : '1.6rem', textShadow: arrowShadow(flash === 'up') }}>▲</span>
+          <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: isMobile ? '0.55rem' : '0.65rem', marginTop: '2px' }}>CH+</span>
+        </div>
+        <div
+          onClick={handleChannelDown}
+          style={{
+            ...btnBase,
+            ...chBtnSize,
+            borderColor: flash === 'down' ? '#00fff7' : 'rgba(255,255,255,0.2)',
+            backgroundColor: flash === 'down' ? 'rgba(0, 255, 247, 0.15)' : 'rgba(0,0,0,0.6)',
+          }}
+        >
+          <span style={{ color: arrowColor(flash === 'down'), fontSize: isMobile ? '1.5rem' : '1.6rem', textShadow: arrowShadow(flash === 'down') }}>▼</span>
+          <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: isMobile ? '0.55rem' : '0.65rem', marginTop: '2px' }}>CH-</span>
+        </div>
+      </div>
+
+      {/* Exit button */}
+      <div
+        onClick={handleExit}
+        style={{
+          ...btnBase,
+          position: 'absolute',
+          top: isMobile ? 'calc(env(safe-area-inset-top, 0px) + 1rem)' : '1.5rem',
+          right: isMobile ? '1rem' : '2rem',
+          width: isMobile ? '44px' : '36px',
+          height: isMobile ? '44px' : '36px',
+          borderRadius: '50%',
+          color: '#fff',
+          fontSize: isMobile ? '1.2rem' : '1rem',
+        }}
+      >
+        ✕
+      </div>
+
+      {/* Bottom hint */}
+      <div
+        style={{
+          position: 'absolute',
+          bottom: isMobile ? 'calc(env(safe-area-inset-bottom, 0px) + 1rem)' : '1.5rem',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          color: 'rgba(255,255,255,0.3)',
+          fontFamily: 'sans-serif',
+          fontSize: isMobile ? '0.75rem' : '0.8rem',
+        }}
+      >
+        {isMobile ? 'Toucher ▲▼ pour zapper' : '↑↓ Zapper · Clic pour quitter'}
+      </div>
+    </div>
+  )
+}
+
 // Navigation hints auto-hide policy
 const NAV_HELP_DURATION = 30000
 const NAV_HELP_FADE_MS = 800
@@ -140,6 +439,7 @@ function UIOverlays({ isMobile }: { isMobile: boolean }) {
   const requestPointerLock = useStore(state => state.requestPointerLock)
   const targetedInteractive = useStore(state => state.targetedInteractive)
   const isSitting = useStore(state => state.isSitting)
+  const isWatchingLaZone = useStore(state => state.isWatchingLaZone)
   const overlaysEnabled = hasSeenOnboarding
 
   // Desktop controls hint (locked): show then fade out after 30s
@@ -244,8 +544,8 @@ function UIOverlays({ isMobile }: { isMobile: boolean }) {
         </div>
       )}
 
-      {/* Crosshair — desktop only (mobile uses tap-to-select) */}
-      {overlaysEnabled && !isMobile && isPointerLocked && (
+      {/* Crosshair — desktop only, hidden while watching LaZone */}
+      {overlaysEnabled && !isMobile && isPointerLocked && !isWatchingLaZone && (
         <div
           style={{
             position: 'fixed',
@@ -283,8 +583,8 @@ function UIOverlays({ isMobile }: { isMobile: boolean }) {
         </div>
       )}
 
-      {/* Interaction hint — below crosshair */}
-      {overlaysEnabled && !isMobile && isPointerLocked && (() => {
+      {/* Interaction hint — below crosshair, hidden while watching LaZone */}
+      {overlaysEnabled && !isMobile && isPointerLocked && !isWatchingLaZone && (() => {
         let hint = ''
         if (isSitting) {
           hint = '↑↓ Naviguer  ·  [E] Sélectionner  ·  [Échap] Se lever'
@@ -294,6 +594,8 @@ function UIOverlays({ isMobile }: { isMobile: boolean }) {
           hint = 'Terminal [E]'
         } else if (targetedInteractive === 'manager' || targetedInteractive === 'bell') {
           hint = 'Parler [E]'
+        } else if (targetedInteractive === 'lazone') {
+          hint = 'La Zone [E]'
         }
         if (!hint) return null
         return (
@@ -369,6 +671,10 @@ function UIOverlays({ isMobile }: { isMobile: boolean }) {
         </div>
       )}
 
+      {/* LaZone CRT interaction overlay */}
+      <LaZoneOverlay />
+      <LaZoneWatchingOverlay />
+
       {/* Terminal TV */}
       <TVTerminal isOpen={isTerminalOpen} onClose={handleCloseTerminal} />
     </>
@@ -386,6 +692,7 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
   const selectedFilmId = useStore(state => state.selectedFilmId)
   const hasSeenOnboarding = useStore(state => state.hasSeenOnboarding)
   const benchmarkEnabled = useStore(state => state.benchmarkEnabled)
+  const laZoneActive = useStore(state => state.isInteractingWithLaZone || state.isWatchingLaZone)
   const benchmarkMode = benchmarkEnabled || URL_BENCHMARK_MODE
 
   useEffect(() => {
@@ -520,8 +827,8 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
 
       <UIOverlays isMobile={isMobile} />
 
-      {/* Mobile controls (joystick + touch look + interact button) */}
-      {isMobile && <MobileControls mobileInputRef={mobileInputRef} />}
+      {/* Mobile controls (joystick + touch look + interact button) — hidden during LaZone interaction */}
+      {isMobile && !laZoneActive && <MobileControls mobileInputRef={mobileInputRef} />}
 
       {/* Onboarding — first launch only */}
       {!hasSeenOnboarding && <MobileOnboarding isMobile={isMobile} />}

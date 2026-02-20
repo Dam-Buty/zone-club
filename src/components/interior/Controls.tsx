@@ -29,8 +29,8 @@ const COLLISION_ZONES: {
   {
     minX: ROOM_WIDTH / 2 - 2.3 - 1.5 - 0.3,
     maxX: ROOM_WIDTH / 2 - 2.3 + 1.5 + 0.3,
-    minZ: ROOM_DEPTH / 2 - 1.5 - 0.5,
-    maxZ: ROOM_DEPTH / 2 - 1.5 + 0.5,
+    minZ: ROOM_DEPTH / 2 - 1.425 - 0.5,
+    maxZ: ROOM_DEPTH / 2 - 1.425 + 0.5,
     name: "comptoir",
   },
   {
@@ -129,9 +129,17 @@ const _up = new THREE.Vector3(0, 1, 0);
 
 // Seated camera position — world coordinates
 // Couch at world x=2.5 (reculé 30cm), 40% zoom towards TV (x=4.0): distance 1.5*0.6=0.90
-const SEATED_POSITION = new THREE.Vector3(3.10, 0.711, 1.2);
-const SEATED_LOOKAT = new THREE.Vector3(4.0, 0.681, 1.2);
+const SEATED_POSITION = new THREE.Vector3(3.452, 0.683, 1.2);
+const SEATED_LOOKAT = new THREE.Vector3(4.225, 0.654, 1.2);
 const SIT_TRANSITION_SPEED = 5.0; // lerp alpha — ~95% converged at 600ms
+
+// LaZone CRT watch position — perpendicular to screen surface
+// CRT origin: [4.2, 1.8, 3.95], Y-rot 65°, tilt -10°
+// Screen world normal: (-0.893, -0.174, -0.417)
+// Camera placed 0.3m along normal for face-on view (no trapezoid)
+const LAZONE_WATCH_POSITION = new THREE.Vector3(3.92, 2.00, 3.83);
+const LAZONE_WATCH_POSITION_MOBILE = new THREE.Vector3(3.78, 1.975, 3.77); // 50% further back
+const LAZONE_WATCH_LOOKAT = new THREE.Vector3(4.2, 2.05, 3.95);
 
 // Mobile pitch clamp — asymmetric: 45° up, 55° down
 const MAX_PITCH_UP = (45 * Math.PI) / 180;
@@ -140,7 +148,7 @@ const MAX_PITCH_DOWN = (55 * Math.PI) / 180;
 export const RAYCAST_LAYER_CASSETTE = 1;
 export const RAYCAST_LAYER_INTERACTIVE = 2;
 
-type InteractiveTarget = "manager" | "bell" | "tv" | "couch" | null;
+type InteractiveTarget = "manager" | "bell" | "tv" | "couch" | "lazone" | null;
 
 export function Controls({
   onCassetteClick,
@@ -182,6 +190,11 @@ export function Controls({
   const wasSittingRef = useRef(false);
   const preSitPosRef = useRef(new THREE.Vector3());
 
+  // LaZone CRT watch tracking
+  const wasWatchingLaZoneRef = useRef(false);
+  const preWatchPosRef = useRef(new THREE.Vector3());
+  const preWatchQuatRef = useRef(new THREE.Quaternion());
+
   // Hystérésis pour sélection cassettes
   const lastCassetteKeyRef = useRef<string | null>(null)
   const lastFilmIdRef = useRef<number | null>(null)
@@ -203,8 +216,6 @@ export function Controls({
       camera.fov = isMobile ? 80 : 70; // wider FOV on mobile for spatial awareness on small screens
       camera.updateProjectionMatrix();
     }
-    // DEBUG: expose camera for Playwright screenshots (REMOVE AFTER)
-    (window as any).__r3fCamera = camera;
   }, [camera, isMobile]);
 
   // Vérifier si un overlay est ouvert
@@ -243,9 +254,9 @@ export function Controls({
 
   // Interaction handler (shared between desktop click/key and mobile tap)
   const handleInteraction = useCallback(() => {
-    // On desktop, require pointer lock (unless sitting — seated nav works without it).
-    const { isSitting: sittingNow } = useStore.getState();
-    if (!isMobile && !sittingNow && !controlsRef.current?.isLocked) return;
+    // On desktop, require pointer lock (unless sitting or interacting with TV/LaZone).
+    const { isSitting: sittingNow, isInteractingWithTV, isInteractingWithLaZone } = useStore.getState();
+    if (!isMobile && !sittingNow && !isInteractingWithTV && !isInteractingWithLaZone && !controlsRef.current?.isLocked) return;
 
     const interactive = targetedInteractiveRef.current;
 
@@ -253,6 +264,17 @@ export function Controls({
     const { isSitting, setSitting } = useStore.getState();
     if (isSitting && !interactive) {
       setSitting(false);
+      return;
+    }
+
+    // Standing TV interaction: forward select to TV menu
+    if (isInteractingWithTV && !isSitting) {
+      useStore.getState().dispatchTVMenu('select');
+      return;
+    }
+    // Standing LaZone interaction: forward select to LaZone menu
+    if (isInteractingWithLaZone && !isSitting) {
+      useStore.getState().dispatchLaZoneMenu('select');
       return;
     }
 
@@ -265,14 +287,24 @@ export function Controls({
         // Seated: route to TV menu instead of terminal
         useStore.getState().dispatchTVMenu('select');
       } else {
-        openTerminal();
-        if (!isMobile) requestPointerUnlock();
+        // Standing: show 2-option TV menu instead of terminal
+        useStore.getState().setInteractingWithTV(true);
       }
       return;
     }
     if (interactive === "couch") {
       if (!isSitting) {
         setSitting(true);
+      }
+      return;
+    }
+    if (interactive === "lazone") {
+      const { isInteractingWithLaZone, isWatchingLaZone } = useStore.getState();
+      if (isWatchingLaZone) return; // Already watching — ESC to exit
+      if (isInteractingWithLaZone) {
+        useStore.getState().dispatchLaZoneMenu('select');
+      } else {
+        useStore.getState().setInteractingWithLaZone(true);
       }
       return;
     }
@@ -286,7 +318,6 @@ export function Controls({
     isMobile,
     onCassetteClick,
     showManager,
-    openTerminal,
     requestPointerUnlock,
   ]);
 
@@ -324,14 +355,38 @@ export function Controls({
     controlsRef.current = controls;
 
     const handleLock = () => setPointerLocked(true);
-    const handleUnlock = () => setPointerLocked(false);
+    const handleUnlock = () => {
+      setPointerLocked(false);
+      // Browser swallows ESC to exit pointer lock — clear LaZone states on unlock
+      const { isWatchingLaZone, isInteractingWithLaZone } = useStore.getState();
+      if (isWatchingLaZone) useStore.getState().setWatchingLaZone(false);
+      if (isInteractingWithLaZone) useStore.getState().setInteractingWithLaZone(false);
+    };
     controls.addEventListener("lock", handleLock);
     controls.addEventListener("unlock", handleUnlock);
 
     handleClickRef.current = () => {
       if (controls.isLocked) {
+        // Click while watching LaZone → exit fully (watching + interacting)
+        const { isWatchingLaZone } = useStore.getState();
+        if (isWatchingLaZone) {
+          useStore.getState().setWatchingLaZone(false);
+          useStore.getState().setInteractingWithLaZone(false);
+          return;
+        }
         handleInteractionRef.current();
       } else {
+        // Click without pointer lock — exit LaZone if active, otherwise re-lock
+        const { isWatchingLaZone, isInteractingWithLaZone } = useStore.getState();
+        if (isWatchingLaZone) {
+          useStore.getState().setWatchingLaZone(false);
+          useStore.getState().setInteractingWithLaZone(false);
+          return;
+        }
+        if (isInteractingWithLaZone) {
+          useStore.getState().setInteractingWithLaZone(false);
+          return;
+        }
         const state = useStore.getState();
         const hasOverlayOpen =
           state.managerVisible ||
@@ -349,15 +404,94 @@ export function Controls({
       const vhsOpen = useStore.getState().isVHSCaseOpen;
       if (vhsOpen) return;
 
-      // ESC while sitting → hierarchical back (playing→menu, menu→seated, seated→stand)
+      // ESC handling: LaZone watching → LaZone menu → TV menu → sitting → default
       if (event.code === "Escape") {
-        const { isSitting, isTerminalOpen } = useStore.getState();
+        const { isWatchingLaZone, isInteractingWithLaZone: laZoneMenu } = useStore.getState();
+        if (isWatchingLaZone) {
+          event.preventDefault();
+          event.stopPropagation();
+          useStore.getState().setWatchingLaZone(false);
+          useStore.getState().setInteractingWithLaZone(false);
+          return;
+        }
+        if (laZoneMenu) {
+          event.preventDefault();
+          event.stopPropagation();
+          useStore.getState().setInteractingWithLaZone(false);
+          return;
+        }
+        const { isSitting, isTerminalOpen, isInteractingWithTV } = useStore.getState();
+        if (isInteractingWithTV && !isSitting) {
+          event.preventDefault();
+          event.stopPropagation();
+          useStore.getState().setInteractingWithTV(false);
+          return;
+        }
         if (isSitting && !isTerminalOpen) {
           event.preventDefault();
           event.stopPropagation();
           useStore.getState().dispatchTVMenu('back');
           return;
         }
+      }
+
+      // Watching LaZone — channel zapping with up/down
+      const { isWatchingLaZone: watchingLZ } = useStore.getState();
+      if (watchingLZ) {
+        if (event.code === "ArrowUp" || event.code === "KeyW") {
+          event.preventDefault();
+          useStore.getState().dispatchLaZoneChannel('prev');
+          return;
+        }
+        if (event.code === "ArrowDown" || event.code === "KeyS") {
+          event.preventDefault();
+          useStore.getState().dispatchLaZoneChannel('next');
+          return;
+        }
+        return; // Block all other keys while watching
+      }
+
+      // Standing LaZone interaction — intercept keys for menu navigation (left/right)
+      const { isInteractingWithLaZone: laZoneInteracting } = useStore.getState();
+      if (laZoneInteracting && !useStore.getState().isWatchingLaZone) {
+        if (event.code === "ArrowLeft" || event.code === "KeyA") {
+          event.preventDefault();
+          useStore.getState().dispatchLaZoneMenu('left');
+          return;
+        }
+        if (event.code === "ArrowRight" || event.code === "KeyD") {
+          event.preventDefault();
+          useStore.getState().dispatchLaZoneMenu('right');
+          return;
+        }
+        if (event.code === "KeyE" || event.code === "Space" || event.code === "Enter") {
+          event.preventDefault();
+          handleInteractionRef.current();
+          return;
+        }
+        return; // Block movement while interacting with LaZone
+      }
+
+      // Standing TV interaction — intercept keys for menu navigation
+      const { isInteractingWithTV: interactingTV } = useStore.getState();
+      if (interactingTV && !useStore.getState().isSitting) {
+        if (event.code === "ArrowUp" || event.code === "KeyW") {
+          event.preventDefault();
+          useStore.getState().dispatchTVMenu('up');
+          return;
+        }
+        if (event.code === "ArrowDown" || event.code === "KeyS") {
+          event.preventDefault();
+          useStore.getState().dispatchTVMenu('down');
+          return;
+        }
+        if (event.code === "KeyE" || event.code === "Space" || event.code === "Enter") {
+          event.preventDefault();
+          handleInteractionRef.current();
+          return;
+        }
+        // Block movement while interacting with TV
+        return;
       }
 
       // Seated TV menu navigation — intercept movement keys
@@ -373,7 +507,7 @@ export function Controls({
           useStore.getState().dispatchTVMenu('down');
           return;
         }
-        if (event.code === "KeyE" || event.code === "Space") {
+        if (event.code === "KeyE" || event.code === "Space" || event.code === "Enter") {
           event.preventDefault();
           handleInteractionRef.current();
           return;
@@ -463,8 +597,9 @@ export function Controls({
       const vhsCaseOpen = useStore.getState().isVHSCaseOpen;
 
       if (input.cameraYawDelta !== 0 || input.cameraPitchDelta !== 0) {
-        if (!vhsCaseOpen) {
-          // Apply camera rotation only when NOT inspecting a VHS case
+        const laZoneBusy = useStore.getState().isInteractingWithLaZone || useStore.getState().isWatchingLaZone;
+        if (!vhsCaseOpen && !laZoneBusy) {
+          // Apply camera rotation only when NOT inspecting a VHS case or LaZone
           _euler.setFromQuaternion(camera.quaternion, "YXZ");
           _euler.y += input.cameraYawDelta;
           _euler.x = THREE.MathUtils.clamp(
@@ -519,6 +654,16 @@ export function Controls({
                 handled = true;
                 break;
               }
+              if (obj.userData?.isLaZoneCRT) {
+                const { isInteractingWithLaZone, isWatchingLaZone } = useStore.getState();
+                if (isWatchingLaZone || isInteractingWithLaZone) {
+                  // Menu/watching handled by HTML overlay (touch buttons)
+                } else {
+                  useStore.getState().setInteractingWithLaZone(true);
+                }
+                handled = true;
+                break;
+              }
               if (obj.userData?.isCouch) {
                 if (!useStore.getState().isSitting) {
                   useStore.getState().setSitting(true);
@@ -530,7 +675,7 @@ export function Controls({
                 if (useStore.getState().isSitting) {
                   useStore.getState().dispatchTVMenu('select');
                 } else {
-                  openTerminal();
+                  useStore.getState().setInteractingWithTV(true);
                 }
                 handled = true;
                 break;
@@ -588,6 +733,10 @@ export function Controls({
             }
             if (obj.userData?.isServiceBell) {
               foundInteractive = "bell";
+              break;
+            }
+            if (obj.userData?.isLaZoneCRT) {
+              foundInteractive = "lazone";
               break;
             }
             if (obj.userData?.isCouch) {
@@ -674,6 +823,38 @@ export function Controls({
       if (!isMobile) document.body.style.cursor = "default";
     }
 
+    // === Watching LaZone CRT — zoom camera to fill 95% of screen ===
+    const isWatchingLZ = useStore.getState().isWatchingLaZone;
+    if (isWatchingLZ) {
+      if (!wasWatchingLaZoneRef.current) {
+        preWatchPosRef.current.copy(camera.position);
+        preWatchQuatRef.current.copy(camera.quaternion);
+      }
+      wasWatchingLaZoneRef.current = true;
+      const alpha = Math.min(1, SIT_TRANSITION_SPEED * delta);
+      camera.position.lerp(isMobile ? LAZONE_WATCH_POSITION_MOBILE : LAZONE_WATCH_POSITION, alpha);
+      _lookAtMatrix.lookAt(camera.position, LAZONE_WATCH_LOOKAT, _up);
+      _targetQuat.setFromRotationMatrix(_lookAtMatrix);
+      camera.quaternion.slerp(_targetQuat, alpha);
+      return; // Skip movement
+    }
+    // === Return from LaZone zoom ===
+    if (wasWatchingLaZoneRef.current) {
+      const alpha = Math.min(1, SIT_TRANSITION_SPEED * delta);
+      camera.position.lerp(preWatchPosRef.current, alpha);
+      camera.quaternion.slerp(preWatchQuatRef.current, alpha);
+      if (camera.position.distanceTo(preWatchPosRef.current) < 0.01) {
+        camera.position.copy(preWatchPosRef.current);
+        camera.quaternion.copy(preWatchQuatRef.current);
+        wasWatchingLaZoneRef.current = false;
+        // Safety: ensure interaction state is fully cleared after return
+        if (useStore.getState().isInteractingWithLaZone) {
+          useStore.getState().setInteractingWithLaZone(false);
+        }
+      }
+      return;
+    }
+
     // === Sitting on couch — smooth camera transition, skip movement ===
     const isSittingNow = useStore.getState().isSitting;
     if (isSittingNow) {
@@ -694,7 +875,9 @@ export function Controls({
     // === Standup transition — smooth return to pre-sit position ===
     if (wasSittingRef.current) {
       const standingY = 1.52;
-      const targetX = preSitPosRef.current.x;
+      // Clamp standup position outside TV collision zone (minX=3.3) to avoid getting stuck
+      const tvMinX = ROOM_WIDTH / 2 - 1.2;
+      const targetX = Math.min(preSitPosRef.current.x, tvMinX - COLLISION_MARGIN * 3);
       const targetZ = preSitPosRef.current.z;
       const alpha = Math.min(1, SIT_TRANSITION_SPEED * delta);
       camera.position.x = THREE.MathUtils.lerp(camera.position.x, targetX, alpha);
@@ -712,6 +895,8 @@ export function Controls({
     // === Movement ===
     if (!isActive) return;
     if (useStore.getState().isVHSCaseOpen) return;
+    if (useStore.getState().isInteractingWithTV) return; // Block movement during standing TV menu
+    if (useStore.getState().isInteractingWithLaZone) return; // Block movement during LaZone menu
 
     const speed = isMobile ? 1.1 : 1.75; // slower on mobile for precision near shelves
     velocity.current.x -= velocity.current.x * 10.0 * delta;
