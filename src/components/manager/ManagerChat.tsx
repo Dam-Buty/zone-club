@@ -124,12 +124,20 @@ export function ManagerChat() {
       'comédie': 'comedie',
       'comedie': 'comedie',
       'drôle': 'comedie',
+      'drame': 'drame',
+      'émotion': 'drame',
+      'dramatique': 'drame',
+      'thriller': 'thriller',
+      'suspense': 'thriller',
+      'policier': 'policier',
+      'polar': 'policier',
+      'enquête': 'policier',
+      'animation': 'animation',
+      'animé': 'animation',
+      'dessin': 'animation',
       'classique': 'classiques',
       'vieux': 'classiques',
       'ancien': 'classiques',
-      'bizarre': 'bizarre',
-      'étrange': 'bizarre',
-      'weird': 'bizarre',
     };
 
     for (const [keyword, aisle] of Object.entries(aisleKeywords)) {

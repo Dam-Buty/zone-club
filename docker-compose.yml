@@ -1,12 +1,11 @@
 services:
   app:
-    build: .
+    image: node:22-slim
     container_name: zone-app
     working_dir: /app
     command: /app/scripts/docker-entrypoint.sh
     volumes:
       - .:/app
-      - node_modules:/app/node_modules
       - ./zone.db:/data/zone.db
       - /data/phat-two/zone-club/films-vo:/media/films-vo
       - /data/phat-two/zone-club/films-vf:/media/films-vf
@@ -113,5 +112,4 @@ services:
 
 
 volumes:
-  node_modules:
   media_public:

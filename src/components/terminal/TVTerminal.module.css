@@ -249,6 +249,26 @@
   box-shadow: 0 0 15px rgba(255, 45, 149, 0.5);
 }
 
+.reviewButton {
+  background: rgba(255, 215, 0, 0.15);
+  border: 1px solid #ffd700;
+  color: #ffd700;
+  padding: 8px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: 'Courier New', monospace;
+  font-size: 0.75rem;
+  font-weight: bold;
+  transition: all 0.2s;
+  text-shadow: 0 0 6px rgba(255, 215, 0, 0.5);
+  flex-shrink: 0;
+}
+
+.reviewButton:hover {
+  background: rgba(255, 215, 0, 0.3);
+  box-shadow: 0 0 12px rgba(255, 215, 0, 0.4);
+}
+
 /* Auth menu item */
 .authItem {
   color: #00fff7 !important;

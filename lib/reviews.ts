@@ -1,5 +1,4 @@
 import { db } from './db';
-import { hasUserRentedFilm } from './rentals';
 
 const MIN_REVIEW_LENGTH = 500;
 
@@ -79,28 +78,67 @@ export function getUserReviews(userId: number): ReviewWithUser[] {
 }
 
 export function canUserReview(userId: number, filmId: number): { allowed: boolean; reason?: string } {
-    if (!hasUserRentedFilm(userId, filmId)) {
-        return { allowed: false, reason: 'Vous devez d\'abord louer ce film pour pouvoir le critiquer' };
-    }
-
+    // 1. Already reviewed this film?
     const existingReview = getUserReview(userId, filmId);
     if (existingReview) {
         return { allowed: false, reason: 'Vous avez déjà critiqué ce film' };
     }
 
-    const recentRental = db.prepare(`
+    // 2. Has user rented this film?
+    const rental = db.prepare(`
         SELECT * FROM rentals
         WHERE user_id = ? AND film_id = ?
-        AND datetime(rented_at, '+1 hour') > datetime('now')
         ORDER BY rented_at DESC
         LIMIT 1
-    `).get(userId, filmId);
+    `).get(userId, filmId) as any;
 
-    if (!recentRental) {
-        return { allowed: false, reason: 'Vous ne pouvez critiquer un film que dans l\'heure suivant sa location' };
+    if (!rental) {
+        // Not rented — allow 1 non-rented review per week
+        const weekStart = getISOWeekStart();
+        const weeklyNonRentedReview = db.prepare(`
+            SELECT COUNT(*) as cnt FROM reviews
+            WHERE user_id = ? AND created_at >= ?
+            AND film_id NOT IN (SELECT film_id FROM rentals WHERE user_id = ?)
+        `).get(userId, weekStart, userId) as { cnt: number };
+
+        if (weeklyNonRentedReview.cnt >= 1) {
+            return { allowed: false, reason: 'Limite d\'une critique par semaine pour les films non loués' };
+        }
+
+        return { allowed: true };
+    }
+
+    // 3. Rented — must have watched 80%+
+    if ((rental.watch_progress ?? 0) < 80) {
+        return { allowed: false, reason: 'Vous devez regarder au moins 80% du film' };
+    }
+
+    // 4. Time window check (1h)
+    const now = new Date();
+    if (rental.viewing_mode === 'sur_place' && rental.watch_completed_at) {
+        const completedAt = new Date(rental.watch_completed_at + 'Z');
+        const deadline = new Date(completedAt.getTime() + 60 * 60 * 1000);
+        if (now > deadline) {
+            return { allowed: false, reason: 'Délai d\'une heure après le visionnage dépassé' };
+        }
+    } else {
+        const rentedAt = new Date(rental.rented_at + 'Z');
+        const deadline = new Date(rentedAt.getTime() + 60 * 60 * 1000);
+        if (now > deadline) {
+            return { allowed: false, reason: 'Délai d\'une heure après la location dépassé' };
+        }
     }
 
     return { allowed: true };
+}
+
+// Helper: get ISO week start (Monday 00:00 UTC)
+function getISOWeekStart(): string {
+    const now = new Date();
+    const day = now.getUTCDay();
+    const diff = now.getUTCDate() - day + (day === 0 ? -6 : 1);
+    const monday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), diff));
+    return monday.toISOString().replace('T', ' ').replace('Z', '');
 }
 
 export function createReview(

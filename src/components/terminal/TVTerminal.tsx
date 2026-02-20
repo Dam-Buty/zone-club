@@ -3,7 +3,9 @@ import { createPortal } from 'react-dom';
 import { useStore } from '../../store';
 import { AuthModal } from '../auth/AuthModal';
 import { SearchModal } from '../search/SearchModal';
+import { ReviewModal } from '../review/ReviewModal';
 import api, { type AdminStats, type FilmRequestWithUser, type ApiFilm, type TranscodeStatus } from '../../api';
+import type { Film } from '../../types';
 import styles from './TVTerminal.module.css';
 
 interface TVTerminalProps {
@@ -60,6 +62,10 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
   const [adminUnlocked, setAdminUnlocked] = useState(false);
   const [filmSearchQuery, setFilmSearchQuery] = useState('');
   const [transcodeStatuses, setTranscodeStatuses] = useState<Map<number, TranscodeStatus>>(new Map());
+
+  // Review modal state
+  const [reviewFilm, setReviewFilm] = useState<Film | null>(null);
+  const [canReviewMap, setCanReviewMap] = useState<Map<number, boolean>>(new Map());
 
   const {
     isAuthenticated,
@@ -187,6 +193,26 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
     const interval = setInterval(poll, 5000);
     return () => { active = false; clearInterval(interval); };
   }, [currentSection, adminUnlocked]);
+
+  // Check review eligibility for active rentals when entering rentals section
+  useEffect(() => {
+    if (currentSection !== 'rentals' || !isAuthenticated || rentals.length === 0) return;
+    let active = true;
+    const checkAll = async () => {
+      const map = new Map<number, boolean>();
+      for (const rental of rentals) {
+        try {
+          const data = await api.reviews.getByFilm(rental.filmId);
+          if (active) map.set(rental.filmId, data.canReview.allowed);
+        } catch {
+          if (active) map.set(rental.filmId, false);
+        }
+      }
+      if (active) setCanReviewMap(map);
+    };
+    checkAll();
+    return () => { active = false; };
+  }, [currentSection, isAuthenticated, rentals]);
 
   const handleMenuClick = useCallback((section: MenuSection) => {
     setCurrentSection(section);
@@ -451,15 +477,28 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
                           Loué le {formatDate(rental.rentedAt)} - {formatTimeRemaining(rental.expiresAt)}
                         </div>
                       </div>
-                      <button
-                        className={styles.playButton}
-                        onClick={() => {
-                          closeTerminal();
-                          openPlayer(rental.filmId);
-                        }}
-                      >
-                        ▶ LIRE
-                      </button>
+                      <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+                        {canReviewMap.get(rental.filmId) && (
+                          <button
+                            className={styles.reviewButton}
+                            onClick={() => {
+                              const film = allFilms.find(f => f.id === rental.filmId);
+                              if (film) setReviewFilm(film);
+                            }}
+                          >
+                            ★ CRITIQUER
+                          </button>
+                        )}
+                        <button
+                          className={styles.playButton}
+                          onClick={() => {
+                            closeTerminal();
+                            openPlayer(rental.filmId);
+                          }}
+                        >
+                          ▶ LIRE
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))
@@ -784,10 +823,13 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
                         <option value="">--</option>
                         <option value="action">ACTION</option>
                         <option value="horreur">HORREUR</option>
-                        <option value="sf">SF</option>
                         <option value="comedie">COMEDIE</option>
+                        <option value="drame">DRAME</option>
+                        <option value="thriller">THRILLER</option>
+                        <option value="policier">POLICIER</option>
+                        <option value="sf">SF</option>
+                        <option value="animation">ANIMATION</option>
                         <option value="classiques">CLASSIQUES</option>
-                        <option value="bizarre">BIZARRE</option>
                       </select>
                       <button
                         className={`${styles.adminToggleBtn} ${film.is_nouveaute ? styles.adminToggleNew : styles.adminToggleOff}`}
@@ -915,6 +957,15 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
       <SearchModal
         isOpen={showSearchModal}
         onClose={() => setShowSearchModal(false)}
+      />
+      <ReviewModal
+        isOpen={!!reviewFilm}
+        onClose={() => {
+          setReviewFilm(null);
+          // Refresh canReview after closing (review may have been submitted)
+          setCanReviewMap(new Map());
+        }}
+        film={reviewFilm}
       />
     </>
   );

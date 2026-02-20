@@ -1,8 +1,7 @@
 import { db } from './db';
 import { createRentalSymlinks, deleteRentalSymlinks, getStreamingUrl } from './symlinks';
-import { getFilmById, type Film } from './films';
-
-const RENTAL_DURATION_HOURS = 24;
+import { getFilmById, getFilmTier, type Film } from './films';
+import { RENTAL_COSTS, RENTAL_DURATIONS } from '../src/types';
 
 export interface Rental {
     id: number;
@@ -12,6 +11,12 @@ export interface Rental {
     rented_at: string;
     expires_at: string;
     is_active: boolean;
+    watch_progress: number;
+    watch_completed_at: string | null;
+    extension_used: number; // SQLite boolean (0/1)
+    rewind_claimed: number; // SQLite boolean (0/1)
+    suggestion_film_id: number | null;
+    viewing_mode: string | null;
 }
 
 export interface RentalWithFilm extends Rental {
@@ -117,9 +122,11 @@ export async function rentFilm(userId: number, filmId: number): Promise<RentalWi
         return enrichRental(existingRental)!;
     }
 
+    const tier = getFilmTier(film);
+    const cost = RENTAL_COSTS[tier];
     const user = db.prepare('SELECT credits FROM users WHERE id = ?').get(userId) as { credits: number };
-    if (user.credits < 1) {
-        throw new Error('Crédits insuffisants');
+    if (user.credits < cost) {
+        throw new Error(`Crédits insuffisants (${cost} requis, ${user.credits} disponibles)`);
     }
 
     const symlinks = await createRentalSymlinks(film.tmdb_id, {
@@ -128,7 +135,8 @@ export async function rentFilm(userId: number, filmId: number): Promise<RentalWi
         subtitles: film.subtitle_path
     });
 
-    const expiresAt = new Date(Date.now() + RENTAL_DURATION_HOURS * 60 * 60 * 1000)
+    const durationMs = RENTAL_DURATIONS[tier];
+    const expiresAt = new Date(Date.now() + durationMs)
         .toISOString()
         .replace('T', ' ')
         .replace('Z', '');
@@ -139,7 +147,7 @@ export async function rentFilm(userId: number, filmId: number): Promise<RentalWi
             VALUES (?, ?, ?, ?)
         `).run(userId, filmId, symlinks.uuid, expiresAt);
 
-        db.prepare('UPDATE users SET credits = credits - 1 WHERE id = ?').run(userId);
+        db.prepare('UPDATE users SET credits = credits - ? WHERE id = ?').run(cost, userId);
     })();
 
     const rental = db.prepare(`
@@ -147,6 +155,89 @@ export async function rentFilm(userId: number, filmId: number): Promise<RentalWi
     `).get(userId, filmId) as Rental;
 
     return enrichRental(rental)!;
+}
+
+export function updateWatchProgress(userId: number, filmId: number, progress: number): void {
+    const clampedProgress = Math.max(0, Math.min(100, Math.round(progress)));
+
+    const rental = db.prepare(`
+        SELECT * FROM rentals
+        WHERE user_id = ? AND film_id = ? AND is_active = 1 AND expires_at > datetime('now')
+    `).get(userId, filmId) as Rental | null;
+
+    if (!rental) throw new Error('Location active non trouvée');
+
+    // Only update if progress increased (no going backward)
+    if (clampedProgress <= rental.watch_progress) return;
+
+    db.prepare(`
+        UPDATE rentals SET watch_progress = ? WHERE id = ?
+    `).run(clampedProgress, rental.id);
+
+    // Mark as completed when reaching 80%
+    if (clampedProgress >= 80 && !rental.watch_completed_at) {
+        db.prepare(`
+            UPDATE rentals SET watch_completed_at = datetime('now') WHERE id = ?
+        `).run(rental.id);
+    }
+}
+
+const EXTENSION_HOURS = 48;
+const EXTENSION_COST = 1;
+
+export function extendRental(userId: number, filmId: number): RentalWithFilm {
+    const rental = db.prepare(`
+        SELECT * FROM rentals
+        WHERE user_id = ? AND film_id = ? AND is_active = 1 AND expires_at > datetime('now')
+    `).get(userId, filmId) as Rental | null;
+
+    if (!rental) throw new Error('Location active non trouvée');
+    if (rental.extension_used) throw new Error('Prolongation déjà utilisée');
+
+    const user = db.prepare('SELECT credits FROM users WHERE id = ?').get(userId) as { credits: number };
+    if (user.credits < EXTENSION_COST) throw new Error('Crédits insuffisants');
+
+    const currentExpiry = new Date(rental.expires_at + 'Z');
+    const newExpiry = new Date(currentExpiry.getTime() + EXTENSION_HOURS * 60 * 60 * 1000)
+        .toISOString().replace('T', ' ').replace('Z', '');
+
+    db.transaction(() => {
+        db.prepare('UPDATE rentals SET expires_at = ?, extension_used = 1 WHERE id = ?')
+            .run(newExpiry, rental.id);
+        db.prepare('UPDATE users SET credits = credits - ? WHERE id = ?')
+            .run(EXTENSION_COST, userId);
+    })();
+
+    return enrichRental(db.prepare('SELECT * FROM rentals WHERE id = ?').get(rental.id) as Rental)!;
+}
+
+export function claimRewindCredit(userId: number, filmId: number): void {
+    const rental = db.prepare(`
+        SELECT * FROM rentals
+        WHERE user_id = ? AND film_id = ? AND is_active = 1
+    `).get(userId, filmId) as Rental | null;
+
+    if (!rental) throw new Error('Location non trouvée');
+    if (rental.watch_progress < 80) throw new Error('Film non visionné (80% requis)');
+    if (rental.rewind_claimed) throw new Error('Crédit rembobinage déjà réclamé');
+
+    db.transaction(() => {
+        db.prepare('UPDATE rentals SET rewind_claimed = 1 WHERE id = ?').run(rental.id);
+        db.prepare('UPDATE users SET credits = credits + 1 WHERE id = ?').run(userId);
+    })();
+}
+
+export function setViewingMode(userId: number, filmId: number, mode: 'sur_place' | 'emporter'): RentalWithFilm {
+    const rental = db.prepare(`
+        SELECT * FROM rentals
+        WHERE user_id = ? AND film_id = ? AND is_active = 1 AND expires_at > datetime('now')
+    `).get(userId, filmId) as Rental | null;
+
+    if (!rental) throw new Error('Location active non trouvée');
+
+    db.prepare('UPDATE rentals SET viewing_mode = ? WHERE id = ?').run(mode, rental.id);
+
+    return enrichRental(db.prepare('SELECT * FROM rentals WHERE id = ?').get(rental.id) as Rental)!;
 }
 
 export async function cleanupExpiredRentals(): Promise<number> {

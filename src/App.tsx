@@ -39,7 +39,7 @@ _interiorImport.then(() => {
 // Starts API fetches immediately when JS loads (before React mounts).
 // Once data arrives, preloads all poster images into the shared cache.
 // By the time the user clicks "enter store", both data AND images are ready.
-const AISLES: AisleType[] = ['nouveautes', 'action', 'horreur', 'sf', 'comedie', 'classiques', 'bizarre'];
+const AISLES: AisleType[] = ['nouveautes', 'action', 'horreur', 'comedie', 'drame', 'thriller', 'policier', 'sf', 'animation', 'classiques'];
 
 function apiFilmToFilm(f: ApiFilm): Film {
   const extractPath = (url: string | null) => {
