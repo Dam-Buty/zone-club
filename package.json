@@ -16,11 +16,14 @@
     "test:phase:full": "npm run test:phase && npm run build"
   },
   "dependencies": {
+    "@ai-sdk/openai": "^3.0.30",
+    "@ai-sdk/react": "^3.0.99",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.5.0",
     "@react-three/postprocessing": "^3.0.4",
     "@tanstack/react-query": "^5.90.20",
     "@types/three": "^0.182.0",
+    "ai": "^6.0.97",
     "bcrypt": "^6.0.0",
     "better-sqlite3": "^12.6.2",
     "cookie-signature": "^1.2.2",

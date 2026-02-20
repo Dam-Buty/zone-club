@@ -35,6 +35,12 @@ export interface TmdbImages {
         file_path: string;
         iso_639_1: string | null;
     }[];
+    backdrops: {
+        file_path: string;
+        width: number;
+        height: number;
+        iso_639_1: string | null;
+    }[];
 }
 
 async function tmdbFetch<T>(endpoint: string, params: Record<string, string> = {}): Promise<T> {
@@ -77,6 +83,17 @@ export function getPosterUrl(path: string | null, size: 'w185' | 'w342' | 'w500'
 export function getBackdropUrl(path: string | null, size: 'w780' | 'w1280' | 'original' = 'w1280'): string | null {
     if (!path) return null;
     return `${TMDB_IMAGE_BASE}/${size}${path}`;
+}
+
+export async function getMovieBackdrops(tmdbId: number): Promise<{ file_path: string; width: number; height: number }[]> {
+    const images = await tmdbFetch<TmdbImages>(`/movie/${tmdbId}/images`, {
+        include_image_language: 'null'
+    });
+    return (images.backdrops || []).map(b => ({
+        file_path: b.file_path,
+        width: b.width,
+        height: b.height,
+    }));
 }
 
 export async function fetchFullMovieData(tmdbId: number) {

@@ -114,15 +114,17 @@ interface VideoClubState {
   setFilmsForAisle: (aisle: AisleType, films: Film[]) => void;
   loadFilmsFromApi: () => Promise<void>;
 
-  // Manager
+  // Manager IA
   managerVisible: boolean;
-  chatHistory: { role: 'manager' | 'user'; text: string }[];
-  lastBonusDate: string | null;
+  chatBackdropUrl: string | null;
+  chatSessionId: number | null;
+  eventQueue: string[];
   showManager: () => void;
   hideManager: () => void;
-  addChatMessage: (role: 'manager' | 'user', text: string) => void;
-  clearChat: () => void;
-  claimDailyBonus: () => boolean;
+  setChatBackdrop: (url: string | null) => void;
+  setChatSessionId: (id: number | null) => void;
+  pushEvent: (event: string) => void;
+  drainEvents: () => string[];
 
   // Player
   isPlayerOpen: boolean;
@@ -257,6 +259,10 @@ export const useStore = create<VideoClubState>()(
       },
 
       logout: async () => {
+        // Close chat session if open
+        if (get().managerVisible) {
+          try { await fetch('/api/chat/close', { method: 'POST', credentials: 'include' }); } catch {}
+        }
         try {
           await api.auth.logout();
         } catch {
@@ -267,6 +273,9 @@ export const useStore = create<VideoClubState>()(
           authUser: null,
           rentals: [],
           rentalHistory: [],
+          managerVisible: false,
+          chatBackdropUrl: null,
+          chatSessionId: null,
         });
       },
 
@@ -475,31 +484,32 @@ export const useStore = create<VideoClubState>()(
         }
       },
 
-      // Manager
+      // Manager IA
       managerVisible: false,
-      chatHistory: [],
-      lastBonusDate: null,
+      chatBackdropUrl: null,
+      chatSessionId: null,
+      eventQueue: [],
       showManager: () => set({ managerVisible: true }),
-      hideManager: () => set({ managerVisible: false }),
-      addChatMessage: (role, text) =>
-        set((state) => ({
-          chatHistory: [...state.chatHistory, { role, text }],
-        })),
-      clearChat: () => set({ chatHistory: [] }),
-      claimDailyBonus: () => {
-        const today = new Date().toDateString();
-        const { lastBonusDate, chatHistory, addCredits } = get();
-        if (lastBonusDate === today) return false;
-        if (chatHistory.length < 6) return false;
-        addCredits(1);
-        set({ lastBonusDate: today });
-        return true;
+      hideManager: () => set({ managerVisible: false, chatBackdropUrl: null }),
+      setChatBackdrop: (url) => set({ chatBackdropUrl: url }),
+      setChatSessionId: (id) => set({ chatSessionId: id }),
+      pushEvent: (event) => set((state) => ({ eventQueue: [...state.eventQueue, event] })),
+      drainEvents: () => {
+        const events = get().eventQueue;
+        set({ eventQueue: [] });
+        return events;
       },
 
       // Player
       isPlayerOpen: false,
       currentPlayingFilm: null,
-      openPlayer: (filmId) => set({ isPlayerOpen: true, currentPlayingFilm: filmId }),
+      openPlayer: (filmId) => {
+        // Close chat session if open
+        if (get().managerVisible) {
+          fetch('/api/chat/close', { method: 'POST', credentials: 'include' }).catch(() => {});
+        }
+        set({ isPlayerOpen: true, currentPlayingFilm: filmId, managerVisible: false, chatBackdropUrl: null, chatSessionId: null });
+      },
       closePlayer: () => set({ isPlayerOpen: false, currentPlayingFilm: null }),
 
       // Targeting
@@ -601,7 +611,6 @@ export const useStore = create<VideoClubState>()(
       partialize: (state) => ({
         localUser: state.localUser,
         rentalHistory: state.rentalHistory,
-        lastBonusDate: state.lastBonusDate,
         hasSeenOnboarding: state.hasSeenOnboarding,
         // Ne pas persister benchmarkEnabled — use ?benchmark=1 URL param only
         // Ne pas persister authUser, les cookies de session gèrent ça

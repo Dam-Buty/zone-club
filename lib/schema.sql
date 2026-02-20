@@ -116,6 +116,18 @@ CREATE TABLE IF NOT EXISTS weekly_bonuses (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_weekly_bonuses_user_week ON weekly_bonuses(user_id, week_number);
 
+-- Chat sessions (LLM manager conversations)
+CREATE TABLE IF NOT EXISTS chat_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    raw_messages TEXT NOT NULL DEFAULT '[]',
+    summary TEXT DEFAULT NULL,
+    started_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    ended_at TEXT DEFAULT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_chat_sessions_user ON chat_sessions(user_id);
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_rentals_user ON rentals(user_id);
 CREATE INDEX IF NOT EXISTS idx_rentals_film ON rentals(film_id);

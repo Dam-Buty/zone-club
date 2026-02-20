@@ -138,17 +138,8 @@ export function ServiceBell({ position, rotation = [0, 0, 0] }: ServiceBellProps
 
     // Appeler le manager — use getState() to avoid subscribing to store changes
     const state = useStore.getState()
+    state.pushEvent('Le client a sonne la clochette du comptoir.')
     state.showManager()
-    if (!state.managerVisible) {
-      const greetings = [
-        "Ouais ? Qu'est-ce que je peux faire pour toi ?",
-        "*ding ding* ... Ah, un client ! Qu'est-ce qui te ferait plaisir ?",
-        "Tu cherches quelque chose de précis ou tu veux juste discuter ciné ?",
-        "Bienvenue ! T'as l'air de quelqu'un qui sait ce qu'il veut.",
-      ]
-      const greeting = greetings[Math.floor(Math.random() * greetings.length)]
-      state.addChatMessage('manager', greeting)
-    }
   }
 
   return (
