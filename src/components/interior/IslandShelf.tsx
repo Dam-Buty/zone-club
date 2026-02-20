@@ -11,7 +11,7 @@ interface IslandShelfProps {
 // Dimensions de l'îlot (30% plus bas que les étagères murales)
 const ROWS = 4
 const ROW_HEIGHT = CASSETTE_DIMENSIONS.height + 0.08
-const ISLAND_HEIGHT = 1.6
+const ISLAND_HEIGHT = 1.4
 const ISLAND_LENGTH = 2.4
 const BASE_WIDTH = 0.55
 const TOP_WIDTH = 0.35

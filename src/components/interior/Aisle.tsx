@@ -3,6 +3,7 @@ import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { useGLTF, useTexture } from '@react-three/drei'
 import { generateKentTileTextures } from '../../utils/KentTileTexture'
+import { LaZoneCRT } from './LaZoneCRT'
 
 // Composant pour chargement async des modèles 3D
 function AsyncModel({ url, position, scale = 1, rotation = [0, 0, 0] }: {
@@ -38,7 +39,6 @@ import { IslandShelf } from './IslandShelf'
 import { CassetteInstances } from './CassetteInstances'
 import { CASSETTE_DIMENSIONS } from './Cassette'
 import { GenreSectionPanel, GenrePanelAnimator, GENRE_CONFIG, filterFilmsByGenre } from './GenreSectionPanel'
-import { GameRack } from './GameBox'
 import { PosterWall } from './Poster'
 import { Storefront } from './Storefront'
 import { InteractiveTVDisplay } from './InteractiveTVDisplay'
@@ -194,104 +194,6 @@ function MergedWalls({ wallTextures, roomWidth, roomDepth, roomHeight }: {
 const DESK_VHS_GEO = new THREE.BoxGeometry(0.168, 0.03, 0.228)
 const DESK_VHS_MAT = new THREE.MeshStandardMaterial({ color: '#1a1a1a', roughness: 0.4 })
 
-// Module-level shared materials for VHS storage cabinet (3 draw calls total)
-const CABINET_OAK_MAT = new THREE.MeshStandardMaterial({ color: '#b5873a', roughness: 0.7 })
-const CABINET_BACK_MAT = new THREE.MeshStandardMaterial({ color: '#5a4020', roughness: 0.8 })
-
-function VHSStorageCabinet({ position }: { position: [number, number, number] }) {
-  const { frameGeo, backGeo, vhsGeo } = useMemo(() => {
-    const W = 0.7, H = 1.7, D = 0.22
-    const PANEL_T = 0.02    // side panel thickness
-    const SHELF_T = 0.012   // shelf plank thickness
-    const DIV_T = 0.012     // central divider thickness
-    const BACK_T = 0.008    // back panel thickness
-    const NUM_INNER = 10    // inner shelves (12 total with top/bottom)
-    const TOTAL_SHELVES = NUM_INNER + 2
-    const innerW = W - 2 * PANEL_T
-
-    const frameParts: THREE.BufferGeometry[] = []
-
-    // Side panels
-    const sideL = new THREE.BoxGeometry(PANEL_T, H, D)
-    sideL.translate(-W / 2 + PANEL_T / 2, H / 2, 0)
-    frameParts.push(sideL)
-    const sideR = new THREE.BoxGeometry(PANEL_T, H, D)
-    sideR.translate(W / 2 - PANEL_T / 2, H / 2, 0)
-    frameParts.push(sideR)
-
-    // Central vertical divider
-    const div = new THREE.BoxGeometry(DIV_T, H, D)
-    div.translate(0, H / 2, 0)
-    frameParts.push(div)
-
-    // Horizontal shelves (top + bottom + 10 inner)
-    for (let i = 0; i < TOTAL_SHELVES; i++) {
-      const y = i * (H / (TOTAL_SHELVES - 1))
-      const shelf = new THREE.BoxGeometry(innerW, SHELF_T, D)
-      shelf.translate(0, y, 0)
-      frameParts.push(shelf)
-    }
-
-    // Feet — two flat traverses extending forward for stability
-    const FOOT_W = 0.28, FOOT_H = 0.025, FOOT_D = D + 0.08
-    const footL = new THREE.BoxGeometry(FOOT_W, FOOT_H, FOOT_D)
-    footL.translate(-W / 4, FOOT_H / 2, 0.02)
-    frameParts.push(footL)
-    const footR = new THREE.BoxGeometry(FOOT_W, FOOT_H, FOOT_D)
-    footR.translate(W / 4, FOOT_H / 2, 0.02)
-    frameParts.push(footR)
-
-    const frameGeo = mergeGeometries(frameParts)!
-
-    // Back panel
-    const backGeo = new THREE.BoxGeometry(innerW, H, BACK_T)
-    backGeo.translate(0, H / 2, -D / 2 + BACK_T / 2)
-
-    // VHS tapes — lying flat (stacked) in each cell, spine-out
-    const vhsParts: THREE.BufferGeometry[] = []
-    const VHS_W = 0.14, VHS_T = 0.025, VHS_D = 0.18, VHS_GAP = 0.003
-    const colW = (innerW - DIV_T) / 2
-    const cellH = H / (TOTAL_SHELVES - 1) - SHELF_T
-    const maxTapes = Math.floor(cellH / (VHS_T + VHS_GAP))
-
-    for (let row = 0; row < NUM_INNER; row++) {
-      const shelfTopY = row * (H / (TOTAL_SHELVES - 1)) + SHELF_T / 2
-      for (let col = 0; col < 2; col++) {
-        const cx = col === 0 ? -(colW / 2 + DIV_T / 2) : (colW / 2 + DIV_T / 2)
-        const count = maxTapes - ((row + col) % 2)  // vary slightly per cell
-        for (let t = 0; t < count; t++) {
-          const vhs = new THREE.BoxGeometry(VHS_W, VHS_T, VHS_D)
-          vhs.translate(
-            cx + ((t % 3) - 1) * 0.003,
-            shelfTopY + VHS_T / 2 + t * (VHS_T + VHS_GAP),
-            0.01
-          )
-          vhsParts.push(vhs)
-        }
-      }
-    }
-
-    const vhsGeo = vhsParts.length > 0 ? mergeGeometries(vhsParts)! : new THREE.BufferGeometry()
-    return { frameGeo, backGeo, vhsGeo }
-  }, [])
-
-  useEffect(() => {
-    return () => {
-      frameGeo.dispose()
-      backGeo.dispose()
-      vhsGeo.dispose()
-    }
-  }, [frameGeo, backGeo, vhsGeo])
-
-  return (
-    <group position={position} rotation={[0, -Math.PI / 2, 0]}>
-      <mesh geometry={frameGeo} material={CABINET_OAK_MAT} receiveShadow />
-      <mesh geometry={backGeo} material={CABINET_BACK_MAT} />
-      <mesh geometry={vhsGeo} material={DESK_VHS_MAT} />
-    </group>
-  )
-}
-
 // ===== CASSETTE POSITION PRE-COMPUTATION =====
 // Pure functions that compute cassette instance data synchronously in useMemo,
 // eliminating the 2-frame delay from the previous shelf callback cascade
@@ -310,7 +212,7 @@ const _tiltQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(-SHELF_TIL
 const ISLAND_ROWS = 4
 const ISLAND_CASSETTES_PER_ROW = 12
 const ISLAND_ROW_HEIGHT = CASSETTE_DIMENSIONS.height + 0.08
-const ISLAND_HEIGHT_CONST = 1.6
+const ISLAND_HEIGHT_CONST = 1.4
 const ISLAND_BASE_WIDTH = 0.55
 const ISLAND_TOP_WIDTH = 0.35
 const ISLAND_CASSETTE_TILT = 0.15
@@ -386,7 +288,8 @@ function computeIslandShelfCassettes(
   position: [number, number, number],
   rotation: [number, number, number],
   filmsLeft: Film[],
-  filmsRight: Film[]
+  filmsRight: Film[],
+  keyPrefix = 'island'
 ): CassetteInstanceData[] {
   if (filmsLeft.length === 0 && filmsRight.length === 0) return []
 
@@ -434,7 +337,7 @@ function computeIslandShelfCassettes(
       worldPos.applyQuaternion(parentQuat)
       worldPos.add(parentPos)
 
-      const cassetteKey = `island-${side}-${row}-${col}`
+      const cassetteKey = `${keyPrefix}-${side}-${row}-${col}`
       const posterUrl = film.poster_path
         ? `https://image.tmdb.org/t/p/w200${film.poster_path}`
         : null
@@ -600,8 +503,14 @@ export function Aisle({ films, maxTextureArrayLayers = 256 }: AisleProps) {
     const action = filterFilmsByGenre(films, 'action')
     const comedie = filterFilmsByGenre(films, 'comedie')
     const drame = filterFilmsByGenre(films, 'drame')
+    const sf = filterFilmsByGenre(films, 'sf')
+    const classiques = filterFilmsByGenre(films, 'classiques')
+      .filter(f => {
+        if (!f.release_date) return false
+        return new Date(f.release_date).getFullYear() < 1990
+      })
 
-    return { horreur, thriller, action, comedie, drame }
+    return { horreur, thriller, action, comedie, drame, sf, classiques }
   }, [films])
 
   // Memoize sliced film arrays to prevent new refs each render (avoids infinite useEffect loops)
@@ -610,6 +519,16 @@ export function Aisle({ films, maxTextureArrayLayers = 256 }: AisleProps) {
   const actionSlice = useMemo(() => filmsByGenre.action.slice(0, 30), [filmsByGenre.action])
   const drameSlice = useMemo(() => filmsByGenre.drame.slice(0, 22), [filmsByGenre.drame])
   const comedieSlice = useMemo(() => filmsByGenre.comedie.slice(0, 28), [filmsByGenre.comedie])
+  const sfSlice = useMemo(() => filmsByGenre.sf.slice(0, 24), [filmsByGenre.sf])
+  const classiquesSlice = useMemo(() => filmsByGenre.classiques.slice(0, 24), [filmsByGenre.classiques])
+  // Island 2: SF (left side) + Classiques (right side)
+  const sfIslandLeft = useMemo(() => {
+    const half = Math.ceil(sfSlice.length / 2)
+    return sfSlice.slice(0, half)
+  }, [sfSlice])
+  const classiquesIslandRight = useMemo(() => {
+    return classiquesSlice
+  }, [classiquesSlice])
   const nouveautesLeft = useMemo(() => {
     const half = Math.ceil(nouveautesFilms.length / 2)
     return nouveautesFilms.slice(0, half)
@@ -670,12 +589,16 @@ export function Aisle({ films, maxTextureArrayLayers = 256 }: AisleProps) {
     ))
     // IslandShelf: Nouveautés
     all.push(...computeIslandShelfCassettes(
-      [-0.8, 0, 0], [0, 0, 0], nouveautesLeft, nouveautesRight
+      [-1.6, 0, 0], [0, 0, 0], nouveautesLeft, nouveautesRight
+    ))
+    // IslandShelf 2: SF (left) + Classiques (right)
+    all.push(...computeIslandShelfCassettes(
+      [0.5, 0, -0.3], [0, 0, 0], sfIslandLeft, classiquesIslandRight, 'island2'
     ))
 
     return all
   // ROOM_WIDTH & ROOM_DEPTH in deps: ensures recomputation when room dimensions change (HMR cache fix)
-  }, [horreurSlice, thrillerSlice, actionSlice, drameSlice, comedieSlice, nouveautesLeft, nouveautesRight, ROOM_WIDTH, ROOM_DEPTH])
+  }, [horreurSlice, thrillerSlice, actionSlice, drameSlice, comedieSlice, nouveautesLeft, nouveautesRight, sfIslandLeft, classiquesIslandRight, ROOM_WIDTH, ROOM_DEPTH])
 
   return (
     <group>
@@ -857,14 +780,14 @@ export function Aisle({ films, maxTextureArrayLayers = 256 }: AisleProps) {
       {/* ===== ÎLOT CENTRAL - NOUVEAUTÉS (MEILLEURS FILMS TMDB) ===== */}
       {/* Top films TMDB des 10 dernières années par note (fallback: catalogue local) */}
       <IslandShelf
-        position={[-0.8, 0, 0]}
+        position={[-1.6, 0, 0]}
       />
 
-      {/* Panneau NOUVEAUTÉS double face au-dessus de l'îlot central (aligné avec le meuble) */}
+      {/* Panneau NOUVEAUTÉS double face — fixé au plafond au-dessus de l'îlot */}
       {/* Face visible depuis la droite (+X) */}
       <GenreSectionPanel
         genre="NOUVEAUTÉS"
-        position={[-0.78, 1.9, 0]}
+        position={[-1.58, 2.07, 0]}
         rotation={[0, Math.PI / 2, 0]}
         color="#ff00ff"
         width={1.6}
@@ -873,16 +796,39 @@ export function Aisle({ films, maxTextureArrayLayers = 256 }: AisleProps) {
       {/* Face visible depuis la gauche (-X) */}
       <GenreSectionPanel
         genre="NOUVEAUTÉS"
-        position={[-0.82, 1.9, 0]}
+        position={[-1.62, 2.07, 0]}
         rotation={[0, -Math.PI / 2, 0]}
         color="#ff00ff"
         width={1.6}
-        hanging={false}
+        hanging={true}
+      />
+
+      {/* ===== ÎLOT 2 - SF + CLASSIQUES ===== */}
+      <IslandShelf
+        position={[0.5, 0, -0.3]}
+      />
+      {/* Panneau SF — fixé au plafond */}
+      <GenreSectionPanel
+        genre="SF"
+        position={[0.48, 2.07, -0.3]}
+        rotation={[0, -Math.PI / 2, 0]}
+        color="#00ccff"
+        width={1.6}
+        hanging={true}
+      />
+      {/* Panneau CLASSIQUES — fixé au plafond */}
+      <GenreSectionPanel
+        genre="CLASSIQUES"
+        position={[0.52, 2.07, -0.3]}
+        rotation={[0, Math.PI / 2, 0]}
+        color="#d4af37"
+        width={1.6}
+        hanging={true}
       />
 
 
       {/* ===== COMPTOIR MANAGER ===== */}
-      <group position={[ROOM_WIDTH / 2 - 2.3, 0, ROOM_DEPTH / 2 - 1.5]}>
+      <group position={[ROOM_WIDTH / 2 - 2.3, 0, ROOM_DEPTH / 2 - 1.425]}>
         {/* Comptoir simple */}
         <mesh position={[0, 0.5, 0]} castShadow receiveShadow>
           <boxGeometry args={[3, 1, 0.6]} />
@@ -948,13 +894,46 @@ export function Aisle({ films, maxTextureArrayLayers = 256 }: AisleProps) {
         <Manager3D position={[0, 0, 0.8]} rotation={[0, Math.PI, 0]} />
       </group>
 
-      {/* ===== SECTION GAMES ===== */}
-      <group position={[ROOM_WIDTH / 2 - 0.4, 0, 2.2]}>
-        <GameRack position={[-0.15, 0, 0]} rotation={[0, -Math.PI / 2, 0]} />
+      {/* ===== ÉTAGÈRE CONTRE MUR FAÇADE ===== */}
+      <group position={[ROOM_WIDTH / 2 - 0.15, 0, ROOM_DEPTH / 2 - 0.05]} rotation={[0, -Math.PI / 2, 0]}>
+        <AsyncModel url="/models/shelf.glb" position={[0, 0, 0]} scale={1} />
       </group>
 
-      {/* ===== MEUBLE RANGEMENT VHS EN CHÊNE — 3 merged meshes ===== */}
-      <VHSStorageCabinet position={[ROOM_WIDTH / 2 - 0.15, 0, 3.5]} />
+      {/* ===== LABEL "La Zone TV" au-dessus de la CRT ===== */}
+      <mesh position={[ROOM_WIDTH / 2 - 0.3, 2.42, ROOM_DEPTH / 2 - 0.3]} rotation={[0, (65 + 180) * Math.PI / 180, 0]}>
+        <planeGeometry args={[0.6, 0.18]} />
+        <meshBasicMaterial transparent toneMapped={false} depthWrite={false} side={THREE.DoubleSide}>
+          <canvasTexture
+            attach="map"
+            image={(() => {
+              const canvas = document.createElement('canvas')
+              canvas.width = 512
+              canvas.height = 128
+              const ctx = canvas.getContext('2d')!
+              ctx.font = 'bold 48px monospace'
+              ctx.textAlign = 'center'
+              ctx.textBaseline = 'middle'
+              ctx.shadowColor = '#00ffcc'
+              ctx.shadowBlur = 4
+              ctx.fillStyle = '#00ffcc'
+              ctx.fillText('La Zone TV', 256, 44)
+              ctx.font = 'bold 52px monospace'
+              ctx.shadowColor = '#ff44aa'
+              ctx.shadowBlur = 4
+              ctx.fillStyle = '#ff44aa'
+              ctx.fillText('▼', 256, 100)
+              return canvas
+            })()}
+          />
+        </meshBasicMaterial>
+      </mesh>
+
+      {/* ===== CRT TV La Zone TV — coin façade/droite ===== */}
+      <LaZoneCRT
+        position={[ROOM_WIDTH / 2 - 0.3, 1.8, ROOM_DEPTH / 2 - 0.3]}
+        rotation={[0, 65 * Math.PI / 180, 0]}
+        tilt={-10}
+      />
 
       {/* ===== PORTE PRIVÉE ===== */}
       <group position={[ROOM_WIDTH / 2 - 1.05, 0, -ROOM_DEPTH / 2 + 0.08]}>
@@ -989,9 +968,10 @@ export function Aisle({ films, maxTextureArrayLayers = 256 }: AisleProps) {
         spacing={0.55}
       />
 
+
       {/* ===== TV DISPLAY INTERACTIVE ===== */}
       <InteractiveTVDisplay
-        position={[ROOM_WIDTH / 2 - 0.5, 0, 1.2]}
+        position={[ROOM_WIDTH / 2 - 0.275, 0, 1.2]}
         rotation={[0, -Math.PI / 2, 0]}
       />
 

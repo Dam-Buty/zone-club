@@ -34,11 +34,18 @@ const COLLISION_ZONES: {
     name: "comptoir",
   },
   {
-    minX: -0.8 - 0.756,
-    maxX: -0.8 + 0.756,
+    minX: -1.6 - 0.756,
+    maxX: -1.6 + 0.756,
     minZ: -1.134,
     maxZ: 1.134,
     name: "ilot",
+  },
+  {
+    minX: 0.5 - 0.756,
+    maxX: 0.5 + 0.756,
+    minZ: -0.3 - 1.134,
+    maxZ: -0.3 + 1.134,
+    name: "ilot2",
   },
   {
     minX: ROOM_WIDTH / 2 - 1.2,
@@ -130,7 +137,7 @@ const _up = new THREE.Vector3(0, 1, 0);
 // Seated camera position — world coordinates
 // Couch at world x=2.5 (reculé 30cm), 40% zoom towards TV (x=4.0): distance 1.5*0.6=0.90
 const SEATED_POSITION = new THREE.Vector3(3.452, 0.683, 1.2);
-const SEATED_LOOKAT = new THREE.Vector3(4.225, 0.654, 1.2);
+const SEATED_LOOKAT = new THREE.Vector3(4.225, 0.684, 1.2);
 const SIT_TRANSITION_SPEED = 5.0; // lerp alpha — ~95% converged at 600ms
 
 // LaZone CRT watch position — perpendicular to screen surface

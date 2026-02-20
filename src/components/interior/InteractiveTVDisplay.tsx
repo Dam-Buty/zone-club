@@ -209,8 +209,8 @@ tvBezelShape.lineTo(-_bfw + _tvR, _bfh)
 tvBezelShape.quadraticCurveTo(-_bfw, _bfh, -_bfw, _bfh - _tvR)
 tvBezelShape.lineTo(-_bfw, -_bfh + _tvR)
 tvBezelShape.quadraticCurveTo(-_bfw, -_bfh, -_bfw + _tvR, -_bfh)
-// Screen cutout (CW for hole) — 0.51×0.38, center (0, 0.005)
-const _scw = 0.51 / 2, _sch = 0.38 / 2, _sccy = 0.005
+// Screen cutout (CW for hole) — 0.517×0.386, center (0, 0.005) — bezel thinned 10%
+const _scw = 0.517 / 2, _sch = 0.386 / 2, _sccy = 0.005
 const tvScreenHole = new THREE.Path()
 tvScreenHole.moveTo(-_scw, _sccy - _sch)
 tvScreenHole.lineTo(-_scw, _sccy + _sch)
@@ -219,6 +219,25 @@ tvScreenHole.lineTo(_scw, _sccy - _sch)
 tvScreenHole.lineTo(-_scw, _sccy - _sch)
 tvBezelShape.holes.push(tvScreenHole)
 const tvBezelGeo = new THREE.ExtrudeGeometry(tvBezelShape, { depth: 0.08, bevelEnabled: false })
+
+// Inner bezel recess frame — continuous ring around screen opening (no corner gaps)
+// Outer rect = cutout dimensions, inner rect = cutout shrunk by recess thickness (0.008)
+const _ibt = 0.008 // inner bezel thickness
+const _ibtTop = 0.0036 // top edge thinner (45% of normal) — less visible shadow
+const tvInnerBezelShape = new THREE.Shape()
+tvInnerBezelShape.moveTo(-_scw, _sccy - _sch)
+tvInnerBezelShape.lineTo(-_scw, _sccy + _sch)
+tvInnerBezelShape.lineTo(_scw, _sccy + _sch)
+tvInnerBezelShape.lineTo(_scw, _sccy - _sch)
+tvInnerBezelShape.lineTo(-_scw, _sccy - _sch)
+const tvInnerBezelHole = new THREE.Path()
+tvInnerBezelHole.moveTo(-_scw + _ibt, _sccy - _sch + _ibt)
+tvInnerBezelHole.lineTo(-_scw + _ibt, _sccy + _sch - _ibtTop)
+tvInnerBezelHole.lineTo(_scw - _ibt, _sccy + _sch - _ibtTop)
+tvInnerBezelHole.lineTo(_scw - _ibt, _sccy - _sch + _ibt)
+tvInnerBezelHole.lineTo(-_scw + _ibt, _sccy - _sch + _ibt)
+tvInnerBezelShape.holes.push(tvInnerBezelHole)
+const tvInnerBezelGeo = new THREE.ExtrudeGeometry(tvInnerBezelShape, { depth: 0.005, bevelEnabled: false })
 
 // Rear CRT housing: rounded rect 0.54×0.40, depth 0.30
 const tvRearShape = new THREE.Shape()
@@ -269,7 +288,7 @@ interface InteractiveTVDisplayProps {
   rotation?: [number, number, number]
 }
 
-type TVMode = 'idle' | 'seated-menu' | 'menu' | 'playing'
+type TVMode = 'idle' | 'standing-menu' | 'seated-menu' | 'menu' | 'playing'
 
 // Créer une texture de texte via Canvas 2D (compatible WebGPU)
 function createTextTexture(
@@ -437,7 +456,7 @@ function createTVFrontTexture(): THREE.CanvasTexture {
   // Transparent background
 
   // --- Top-left: "Trinitron" (silver, italic) — aligned with screen left edge ---
-  ctx.font = 'italic 14px Arial, sans-serif'
+  ctx.font = 'italic 13px Arial, sans-serif'
   ctx.textAlign = 'left'
   ctx.textBaseline = 'middle'
   ctx.fillStyle = '#c0c0c8'
@@ -453,7 +472,9 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const [tvMode, setTvMode] = useState<TVMode>('idle')
   const [selectedIndex, setSelectedIndex] = useState(0)
+
   const [seatedMenuIndex, setSeatedMenuIndex] = useState(0)
+  const [standingMenuIndex, setStandingMenuIndex] = useState(0)
   const [isHovered, setIsHovered] = useState(false)
 
   // Refs pour les textures dynamiques
@@ -468,6 +489,8 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
   const requestPointerUnlock = useStore(state => state.requestPointerUnlock)
   const setSitting = useStore(state => state.setSitting)
   const isSitting = useStore(state => state.isSitting)
+  const isInteractingWithTV = useStore(state => state.isInteractingWithTV)
+  const setInteractingWithTV = useStore(state => state.setInteractingWithTV)
   const tvMenuAction = useStore(state => state.tvMenuAction)
   const clearTVMenuAction = useStore(state => state.clearTVMenuAction)
 
@@ -533,29 +556,53 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
 
   // Uniform CRT font for all menus
   const CRT_FONT = '"Courier New", Courier, monospace'
+  const LX = 20 // left margin for all menus
 
-  // Créer/mettre à jour la texture idle (with CRT scanlines)
+  // Post-process: scanlines + Trinitron aperture grille (pixel-level, no blur)
+  // Period 3: 1px per RGB stripe, every 3rd row darkened
+  function applyCRT(ctx: CanvasRenderingContext2D, w: number, h: number) {
+    const imageData = ctx.getImageData(0, 0, w, h)
+    const d = imageData.data
+    for (let y = 0; y < h; y++) {
+      const scanWeight = (y % 3 === 2) ? 0.3 : 1.0
+      const row = y * w * 4
+      for (let x = 0; x < w; x++) {
+        const i = row + x * 4
+        if (d[i + 3] === 0) continue
+        const col = x % 3
+        let r = d[i] * scanWeight
+        let g = d[i + 1] * scanWeight
+        let b = d[i + 2] * scanWeight
+        if (col === 0) { g *= 0.25; b *= 0.25 }
+        else if (col === 1) { r *= 0.25; b *= 0.25 }
+        else { r *= 0.25; g *= 0.25 }
+        d[i] = r | 0
+        d[i + 1] = g | 0
+        d[i + 2] = b | 0
+      }
+    }
+    ctx.putImageData(imageData, 0, 0)
+  }
+
+  // Créer/mettre à jour la texture idle (3x canvas for CRT dot density)
   const idleTexture = useMemo(() => {
-    const w = 512
-    const h = 256
+    const w = 1536
+    const h = 768
     const canvas = document.createElement('canvas')
     canvas.width = w
     canvas.height = h
     const ctx = canvas.getContext('2d')!
 
-    // CRT scanline pattern
-    for (let y = 0; y < h; y += 3) {
-      ctx.fillStyle = 'rgba(0, 60, 55, 0.15)'
-      ctx.fillRect(0, y, w, 1)
-    }
-
-    // Text
-    ctx.font = `bold 44px ${CRT_FONT}`
-    ctx.textAlign = 'center'
+    ctx.font = `bold 102px ${CRT_FONT}`
+    ctx.textAlign = 'left'
     ctx.textBaseline = 'middle'
+    ctx.shadowColor = '#00ffff'
+    ctx.shadowBlur = 6
     ctx.fillStyle = '#00ffff'
-    ctx.fillText('CLICK POUR', w / 2, h / 2 - 30)
-    ctx.fillText('OUVRIR LE MENU', w / 2, h / 2 + 30)
+    ctx.fillText('CLICK POUR', LX * 3, h / 2 - 90)
+    ctx.fillText('OUVRIR LE MENU', LX * 3, h / 2 + 90)
+    ctx.shadowBlur = 0
+    applyCRT(ctx, w, h)
 
     const texture = new THREE.CanvasTexture(canvas)
     texture.needsUpdate = true
@@ -564,42 +611,43 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
 
   // Créer/mettre à jour la texture menu (film list + back option)
   const menuTexture = useMemo(() => {
-    const w = 512
-    const h = 340
+    const w = 1536
+    const h = 1020
     const canvas = document.createElement('canvas')
     canvas.width = w
     canvas.height = h
     const ctx = canvas.getContext('2d')!
 
-    // CRT scanline pattern
-    for (let y = 0; y < h; y += 3) {
-      ctx.fillStyle = 'rgba(0, 60, 55, 0.15)'
-      ctx.fillRect(0, y, w, 1)
-    }
-
     // Title
-    ctx.font = `bold 28px ${CRT_FONT}`
-    ctx.textAlign = 'center'
+    ctx.font = `bold 52px ${CRT_FONT}`
+    ctx.textAlign = 'left'
     ctx.textBaseline = 'middle'
+    ctx.shadowColor = '#00ffff'
+    ctx.shadowBlur = 6
     ctx.fillStyle = '#00ffff'
-    ctx.fillText('MES LOCATIONS', w / 2, 30)
+    ctx.fillText('MES LOCATIONS', LX * 3, 90)
 
     // Film list
-    const totalItems = rentedFilms.length + 1 // +1 for back
-    ctx.font = `bold 22px ${CRT_FONT}`
+    ctx.font = `bold 40px ${CRT_FONT}`
     rentedFilms.slice(0, 4).forEach((item, i) => {
       const isSelected = i === selectedIndex
       const prefix = isSelected ? '▶ ' : '  '
       const title = item.film?.title.substring(0, 16) || 'Film inconnu'
-      ctx.fillStyle = isSelected ? '#00ffff' : '#008888'
-      ctx.fillText(`${prefix}${title}`, w / 2, 80 + i * 40)
+      ctx.shadowColor = isSelected ? '#00ffff' : '#009999'
+      ctx.shadowBlur = isSelected ? 6 : 4
+      ctx.fillStyle = isSelected ? '#00ffff' : '#009999'
+      ctx.fillText(`${prefix}${title}`, LX * 3, 240 + i * 120)
     })
 
     // Back option (always last)
     const backIdx = rentedFilms.slice(0, 4).length
     const backSelected = selectedIndex === backIdx
-    ctx.fillStyle = backSelected ? '#00ffff' : '#666666'
-    ctx.fillText(backSelected ? '▶ ← Retour' : '  ← Retour', w / 2, 80 + backIdx * 40 + 20)
+    ctx.shadowColor = backSelected ? '#00ffff' : '#667777'
+    ctx.shadowBlur = backSelected ? 6 : 4
+    ctx.fillStyle = backSelected ? '#00ffff' : '#667777'
+    ctx.fillText(backSelected ? '▶ ← Retour' : '  ← Retour', LX * 3, 240 + backIdx * 120 + 60)
+    ctx.shadowBlur = 0
+    applyCRT(ctx, w, h)
 
     const texture = new THREE.CanvasTexture(canvas)
     texture.needsUpdate = true
@@ -608,52 +656,86 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
 
   // Texture for seated main menu (Regarder un film / Paramètres / Se lever)
   const seatedMenuTexture = useMemo(() => {
-    const w = 512
-    const h = 256
+    const w = 1536
+    const h = 768
     const canvas = document.createElement('canvas')
     canvas.width = w
     canvas.height = h
     const ctx = canvas.getContext('2d')!
 
-    // CRT scanline pattern (same as idle)
-    for (let y = 0; y < h; y += 3) {
-      ctx.fillStyle = 'rgba(0, 60, 55, 0.15)'
-      ctx.fillRect(0, y, w, 1)
-    }
-
     const options = ['Regarder un film', 'Paramètres', '← Se lever']
-    ctx.font = `bold 32px ${CRT_FONT}`
-    ctx.textAlign = 'center'
+    ctx.font = `bold 58px ${CRT_FONT}`
+    ctx.textAlign = 'left'
     ctx.textBaseline = 'middle'
 
     options.forEach((opt, i) => {
       const isSelected = i === seatedMenuIndex
       const prefix = isSelected ? '▶ ' : '  '
-      ctx.fillStyle = isSelected ? '#00ffff' : (i === 2 ? '#666666' : '#008888')
-      ctx.fillText(`${prefix}${opt}`, w / 2, 60 + i * 55)
+      ctx.shadowColor = isSelected ? '#00ffff' : '#009999'
+      ctx.shadowBlur = isSelected ? 6 : 4
+      ctx.fillStyle = isSelected ? '#00ffff' : '#009999'
+      ctx.fillText(`${prefix}${opt}`, LX * 3, 180 + i * 165)
     })
+    ctx.shadowBlur = 0
+    applyCRT(ctx, w, h)
 
     const texture = new THREE.CanvasTexture(canvas)
     texture.needsUpdate = true
     return texture
   }, [seatedMenuIndex])
 
-  // Floating label above couch
-  const couchLabelTexture = useMemo(() => {
-    const w = 512
-    const h = 64
+  // Texture for standing TV menu (S'asseoir / Paramètres)
+  const standingMenuTexture = useMemo(() => {
+    const w = 1536
+    const h = 768
     const canvas = document.createElement('canvas')
     canvas.width = w
     canvas.height = h
     const ctx = canvas.getContext('2d')!
 
-    ctx.font = `bold 22px ${CRT_FONT}`
+    const options = ['S\'asseoir pour regarder', 'Paramètres']
+    ctx.font = `bold 58px ${CRT_FONT}`
+    ctx.textAlign = 'left'
+    ctx.textBaseline = 'middle'
+
+    options.forEach((opt, i) => {
+      const isSelected = i === standingMenuIndex
+      const prefix = isSelected ? '▶ ' : '  '
+      ctx.shadowColor = isSelected ? '#00ffff' : '#009999'
+      ctx.shadowBlur = isSelected ? 6 : 4
+      ctx.fillStyle = isSelected ? '#00ffff' : '#009999'
+      ctx.fillText(`${prefix}${opt}`, LX * 3, 260 + i * 165)
+    })
+    ctx.shadowBlur = 0
+    applyCRT(ctx, w, h)
+
+    const texture = new THREE.CanvasTexture(canvas)
+    texture.needsUpdate = true
+    return texture
+  }, [standingMenuIndex])
+
+  // Floating label above couch (text + downward arrow indicator)
+  const couchLabelTexture = useMemo(() => {
+    const w = 512
+    const h = 128
+    const canvas = document.createElement('canvas')
+    canvas.width = w
+    canvas.height = h
+    const ctx = canvas.getContext('2d')!
+
+    // Text
+    ctx.font = `bold 19px ${CRT_FONT}`
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
     ctx.shadowColor = '#00ffff'
     ctx.shadowBlur = 8
     ctx.fillStyle = '#00ffff'
-    ctx.fillText('Installez-vous dans le canapé', w / 2, h / 2)
+    ctx.fillText('Installez-vous dans le canapé', w / 2, 30)
+
+    // Downward arrow (▼) below text
+    ctx.font = `bold 27px ${CRT_FONT}`
+    ctx.shadowBlur = 10
+    ctx.fillText('▼', w / 2, 80)
 
     const texture = new THREE.CanvasTexture(canvas)
     texture.needsUpdate = true
@@ -662,14 +744,22 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
 
   // Texture pour le mode playing (with back indicator)
   const playingTexture = useMemo(() => {
-    return createTextTexture('← Retour', {
-      fontSize: 14,
-      fontFamily: CRT_FONT,
-      color: '#ff4444',
-      glowColor: '#ff0000',
-      width: 200,
-      height: 40,
-    })
+    const canvas = document.createElement('canvas')
+    canvas.width = 600
+    canvas.height = 120
+    const ctx = canvas.getContext('2d')!
+    ctx.font = `bold 32px ${CRT_FONT}`
+    ctx.textAlign = 'left'
+    ctx.textBaseline = 'middle'
+    ctx.shadowColor = '#ff4444'
+    ctx.shadowBlur = 4
+    ctx.fillStyle = '#ff4444'
+    ctx.fillText('← Retour', 30, 60)
+    ctx.shadowBlur = 0
+    applyCRT(ctx, 600, 120)
+    const texture = new THREE.CanvasTexture(canvas)
+    texture.needsUpdate = true
+    return texture
   }, [])
 
   // Texture indicateur films disponibles
@@ -677,7 +767,7 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
     if (rentedFilms.length === 0) return null
     const text = `${rentedFilms.length} FILM${rentedFilms.length > 1 ? 'S' : ''} DISPONIBLE${rentedFilms.length > 1 ? 'S' : ''}`
     return createTextTexture(text, {
-      fontSize: 24,
+      fontSize: 20,
       color: '#00ff00',
       glowColor: '#00ff00',
       width: 300,
@@ -685,68 +775,6 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
     })
   }, [rentedFilms.length])
 
-  // CRT reflection texture — baked fake reflections of shop neons + "NOUVEAUTÉS" reversed
-  const crtReflectionTex = useMemo(() => {
-    const w = 256
-    const h = 192
-    const canvas = document.createElement('canvas')
-    canvas.width = w
-    canvas.height = h
-    const ctx = canvas.getContext('2d')!
-    // Canvas starts fully transparent
-
-    // Draw each glow as a small circle, NOT filling full canvas
-    // Cyan neon glow — top-left area
-    const g1 = ctx.createRadialGradient(55, 40, 0, 55, 40, 60)
-    g1.addColorStop(0, 'rgba(0, 220, 220, 0.18)')
-    g1.addColorStop(0.5, 'rgba(0, 220, 220, 0.04)')
-    g1.addColorStop(1, 'rgba(0, 220, 220, 0)')
-    ctx.fillStyle = g1
-    ctx.beginPath()
-    ctx.arc(55, 40, 60, 0, Math.PI * 2)
-    ctx.fill()
-
-    // Pink neon glow — top-right
-    const g2 = ctx.createRadialGradient(200, 35, 0, 200, 35, 50)
-    g2.addColorStop(0, 'rgba(255, 80, 180, 0.12)')
-    g2.addColorStop(0.5, 'rgba(255, 80, 180, 0.03)')
-    g2.addColorStop(1, 'rgba(255, 80, 180, 0)')
-    ctx.fillStyle = g2
-    ctx.beginPath()
-    ctx.arc(200, 35, 50, 0, Math.PI * 2)
-    ctx.fill()
-
-    // Warm yellow — center-left
-    const g3 = ctx.createRadialGradient(40, 110, 0, 40, 110, 40)
-    g3.addColorStop(0, 'rgba(255, 200, 80, 0.10)')
-    g3.addColorStop(0.5, 'rgba(255, 200, 80, 0.02)')
-    g3.addColorStop(1, 'rgba(255, 200, 80, 0)')
-    ctx.fillStyle = g3
-    ctx.beginPath()
-    ctx.arc(40, 110, 40, 0, Math.PI * 2)
-    ctx.fill()
-
-    // "NOUVEAUTÉS" reversed (mirrored text) — soft red
-    ctx.save()
-    ctx.translate(w / 2 + 20, h * 0.45)
-    ctx.scale(-1, 1)
-    ctx.font = `bold 14px ${CRT_FONT}`
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
-    ctx.fillStyle = 'rgba(255, 40, 40, 0.12)'
-    ctx.fillText('NOUVEAUTÉS', 0, 0)
-    ctx.restore()
-
-    // Thin fluorescent tube streaks
-    ctx.fillStyle = 'rgba(180, 200, 255, 0.06)'
-    ctx.fillRect(20, 75, 210, 1)
-    ctx.fillStyle = 'rgba(180, 200, 255, 0.04)'
-    ctx.fillRect(30, 130, 190, 1)
-
-    const texture = new THREE.CanvasTexture(canvas)
-    texture.needsUpdate = true
-    return texture
-  }, [])
 
   // VCR Toshiba W602 front-face texture (all text labels)
   const vcrFrontTexture = useMemo(() => createVCRFrontTexture(), [])
@@ -809,13 +837,13 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
       idleTexture?.dispose()
       menuTexture?.dispose()
       seatedMenuTexture?.dispose()
+      standingMenuTexture?.dispose()
       couchLabelTexture?.dispose()
       playingTexture?.dispose()
       indicatorTexture?.dispose()
       vcrFrontTexture?.dispose()
       tvFrontTexture?.dispose()
       sonyColorTex?.dispose()
-      crtReflectionTex?.dispose()
       videoTexture?.dispose()
       tvStandWoodMat?.dispose()
     }
@@ -840,35 +868,78 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
 
     if (tvMode === 'idle') {
       material.emissiveIntensity = 0.6 + Math.sin(timeRef.current * 10) * 0.1
-    } else if (tvMode === 'seated-menu' || tvMode === 'menu') {
+    } else if (tvMode === 'standing-menu' || tvMode === 'seated-menu' || tvMode === 'menu') {
       material.emissiveIntensity = 0.8
     } else if (tvMode === 'playing') {
       material.emissiveIntensity = 1.0
-      // VideoTexture auto-updates from HTMLVideoElement — no manual needsUpdate needed
     }
   })
 
-  // Jouer une vidéo
+  // Jouer une vidéo (user-initiated, e.g. rented film)
   const playVideo = useCallback((videoUrl: string) => {
     if (videoRef.current) {
       videoRef.current.src = videoUrl
+      videoRef.current.muted = false
       videoRef.current.play().catch(console.error)
       setTvMode('playing')
     }
   }, [])
 
-  // Arrêter la vidéo
+  // Arrêter la vidéo (user-initiated film)
   const stopVideo = useCallback(() => {
     if (videoRef.current) {
       videoRef.current.pause()
       videoRef.current.currentTime = 0
     }
-    setTvMode(isSitting ? 'seated-menu' : 'menu')
+    if (isSitting) {
+      setTvMode('seated-menu')
+    } else {
+      setTvMode('idle')
+    }
   }, [isSitting])
+
+  // Show/hide standing menu when isInteractingWithTV changes
+  useEffect(() => {
+    if (isInteractingWithTV && !isSitting) {
+      setStandingMenuIndex(0)
+      setTvMode('standing-menu')
+    } else if (!isInteractingWithTV && tvMode === 'standing-menu') {
+      setTvMode('idle')
+    }
+  }, [isInteractingWithTV, isSitting]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // React to TV menu actions dispatched by Controls via store
   useEffect(() => {
-    if (!tvMenuAction || !isSitting) return
+    if (!tvMenuAction) return
+
+    // Standing menu actions (not sitting)
+    if (tvMode === 'standing-menu' && isInteractingWithTV) {
+      if (tvMenuAction === 'up' || tvMenuAction === 'down') {
+        setStandingMenuIndex(prev =>
+          tvMenuAction === 'up' ? Math.max(0, prev - 1) : Math.min(1, prev + 1)
+        )
+      } else if (tvMenuAction === 'select') {
+        if (standingMenuIndex === 0) {
+          // "S'asseoir pour regarder" → sit + go directly to film list
+          setInteractingWithTV(false)
+          setSitting(true)
+          setTvMode('menu')
+          setSelectedIndex(0)
+        } else if (standingMenuIndex === 1) {
+          // "Paramètres" → open terminal
+          setInteractingWithTV(false)
+          setTvMode('idle')
+          openTerminal()
+          requestPointerUnlock()
+        }
+      } else if (tvMenuAction === 'back') {
+        setInteractingWithTV(false)
+      }
+      clearTVMenuAction()
+      return
+    }
+
+    if (!isSitting) { clearTVMenuAction(); return }
 
     if (tvMenuAction === 'up' || tvMenuAction === 'down') {
       if (tvMode === 'seated-menu') {
@@ -924,7 +995,7 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
     }
 
     clearTVMenuAction()
-  }, [tvMenuAction, isSitting, tvMode, seatedMenuIndex, selectedIndex, rentedFilms, playVideo, stopVideo, openTerminal, requestPointerUnlock, clearTVMenuAction, setSitting])
+  }, [tvMenuAction, isSitting, isInteractingWithTV, tvMode, seatedMenuIndex, selectedIndex, standingMenuIndex, rentedFilms, playVideo, stopVideo, openTerminal, requestPointerUnlock, clearTVMenuAction, setSitting, setInteractingWithTV])
 
   // Auto-show menu when sitting down with rented films
   const prevSittingRef = useRef(false)
@@ -936,15 +1007,15 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
         setTvMode('seated-menu')
       }
     } else if (!isSitting && prevSittingRef.current) {
-      // Standing up → back to idle (stop video if playing)
-      if (videoRef.current) {
+      // Standing up → stop user video, go idle
+      if (tvMode === 'playing' && videoRef.current) {
         videoRef.current.pause()
         videoRef.current.currentTime = 0
       }
       setTvMode('idle')
     }
     prevSittingRef.current = isSitting
-  }, [isSitting, tvMode, rentedFilms.length])
+  }, [isSitting, tvMode, rentedFilms.length]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Couleur de l'écran selon le mode — greenish-teal like real Trinitron phosphor
   const screenColor = tvMode === 'playing' ? '#000000' : '#0e3a35'
@@ -990,37 +1061,17 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
       </mesh>
 
       {/* ====== Sony Trinitron CRT TV (4:3 aspect) ====== */}
-      <group position={[0, 0.713, 0.155]} scale={1.15}>
+      <group position={[0, 0.743, 0.155]} scale={1.348}>
         {/* Rear CRT housing (deep tube, rounded corners) — castShadow for shelf shadow */}
         <mesh position={[0, 0, -0.30]} material={tvBodyMat} geometry={tvRearGeo} castShadow />
 
         {/* Front bezel frame — rounded outer corners, sharp screen cutout */}
         <mesh position={[0, 0, -0.02]} material={tvBodyMat} geometry={tvBezelGeo} castShadow />
 
-        {/* Top edge highlight — subtle light catch on top surface */}
-        <mesh position={[0, 0.22, -0.05]} material={tvTopEdgeMat}>
-          <boxGeometry args={[0.58, 0.004, 0.18]} />
-        </mesh>
+        {/* Inner bezel shadow recess — continuous dark frame around screen opening */}
+        <mesh position={[0, 0, 0.055]} material={tvInnerBezelMat} geometry={tvInnerBezelGeo} />
 
-        {/* Inner bezel shadow recess — dark ring around screen opening */}
-        {/* Top inner edge */}
-        <mesh position={[0, 0.19, 0.055]} material={tvInnerBezelMat}>
-          <boxGeometry args={[0.51, 0.01, 0.005]} />
-        </mesh>
-        {/* Bottom inner edge */}
-        <mesh position={[0, -0.18, 0.055]} material={tvInnerBezelMat}>
-          <boxGeometry args={[0.51, 0.01, 0.005]} />
-        </mesh>
-        {/* Left inner edge */}
-        <mesh position={[-0.25, 0.005, 0.055]} material={tvInnerBezelMat}>
-          <boxGeometry args={[0.01, 0.36, 0.005]} />
-        </mesh>
-        {/* Right inner edge */}
-        <mesh position={[0.25, 0.005, 0.055]} material={tvInnerBezelMat}>
-          <boxGeometry args={[0.01, 0.36, 0.005]} />
-        </mesh>
-
-        {/* CRT screen — slightly convex phosphor surface (4:3, radius 0.8 for flatter curve) */}
+        {/* CRT screen — convex phosphor surface, radius sized to fit inside bezel */}
         <mesh
           ref={useCallback((node: THREE.Mesh | null) => {
             if (node) node.layers.enable(RAYCAST_LAYER_INTERACTIVE)
@@ -1029,7 +1080,7 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
           position={[0, 0.005, 0.055]}
           userData={{ isTVScreen: true }}
         >
-          <sphereGeometry args={[0.8, 20, 16, Math.PI - 0.325, 0.65, Math.PI / 2 - 0.24, 0.48]} />
+          <sphereGeometry args={[1.6, 20, 16, Math.PI - 0.155, 0.31, Math.PI / 2 - 0.115, 0.23]} />
           <meshStandardMaterial
             color={screenColor}
             emissive={screenColor}
@@ -1042,55 +1093,48 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
         {/* Screen content overlays (wider for 4:3) */}
         {tvMode === 'idle' && (
           <mesh position={[0, 0.005, 0.07]} userData={{ isTVScreen: true }} ref={enableRaycastLayer}>
-            <planeGeometry args={[0.38, 0.19]} />
+            <planeGeometry args={[0.447, 0.239]} />
             <meshBasicMaterial map={idleTexture} transparent toneMapped={false} />
           </mesh>
         )}
+        {tvMode === 'standing-menu' && (
+          <mesh position={[0, -0.003, 0.07]} userData={{ isTVScreen: true }} ref={enableRaycastLayer}>
+            <planeGeometry args={[0.461, 0.337]} />
+            <meshBasicMaterial map={standingMenuTexture} transparent toneMapped={false} />
+          </mesh>
+        )}
         {tvMode === 'seated-menu' && (
-          <mesh position={[0, 0.005, 0.07]} userData={{ isTVScreen: true }} ref={enableRaycastLayer}>
-            <planeGeometry args={[0.38, 0.25]} />
+          <mesh position={[0, -0.003, 0.07]} userData={{ isTVScreen: true }} ref={enableRaycastLayer}>
+            <planeGeometry args={[0.461, 0.337]} />
             <meshBasicMaterial map={seatedMenuTexture} transparent toneMapped={false} />
           </mesh>
         )}
         {tvMode === 'menu' && (
-          <mesh position={[0, 0.005, 0.07]} userData={{ isTVScreen: true }} ref={enableRaycastLayer}>
-            <planeGeometry args={[0.38, 0.25]} />
+          <mesh position={[0, -0.003, 0.07]} userData={{ isTVScreen: true }} ref={enableRaycastLayer}>
+            <planeGeometry args={[0.461, 0.337]} />
             <meshBasicMaterial map={menuTexture} transparent toneMapped={false} />
           </mesh>
         )}
         {tvMode === 'playing' && (
           <mesh position={[0, -0.1, 0.07]} userData={{ isTVScreen: true }} ref={enableRaycastLayer}>
-            <planeGeometry args={[0.24, 0.04]} />
+            <planeGeometry args={[0.282, 0.050]} />
             <meshBasicMaterial map={playingTexture} transparent toneMapped={false} />
           </mesh>
         )}
 
-        {/* CRT glass overlay — tinted glass layer */}
+        {/* CRT glass overlay — tinted glass, reflects HDR environment (indoor_night.hdr) */}
         <mesh
           position={[0, 0.005, 0.063]}
           userData={{ isTVScreen: true }}
           ref={enableRaycastLayer}
         >
-          <sphereGeometry args={[0.8, 20, 16, Math.PI - 0.325, 0.65, Math.PI / 2 - 0.24, 0.48]} />
+          <sphereGeometry args={[1.6, 20, 16, Math.PI - 0.155, 0.31, Math.PI / 2 - 0.115, 0.23]} />
           <meshStandardMaterial
-            color="#a0b8b0"
+            color="#c0d0cc"
             transparent
-            opacity={isHovered ? 0.18 : 0.12}
-            roughness={0.12}
-            metalness={0.35}
-          />
-        </mesh>
-
-        {/* Baked reflections — neon lights + "NOUVEAUTÉS" reversed, screen only */}
-        <mesh position={[0, 0.005, 0.067]} renderOrder={3}>
-          <planeGeometry args={[0.34, 0.22]} />
-          <meshBasicMaterial
-            map={crtReflectionTex}
-            transparent
-            opacity={1.0}
-            blending={THREE.AdditiveBlending}
-            depthWrite={false}
-            toneMapped={false}
+            opacity={isHovered ? 0.28 : 0.22}
+            roughness={0.18}
+            metalness={0.55}
           />
         </mesh>
 
@@ -1122,7 +1166,7 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
         {/* Sony logo — embossed silver PNG on bottom bezel, centered vertically */}
         {sonyColorTex && (
           <mesh position={[0, -0.20, 0.062]} renderOrder={2}>
-            <planeGeometry args={[0.09, 0.035]} />
+            <planeGeometry args={[0.081, 0.0315]} />
             <meshStandardMaterial
               map={sonyColorTex}
               transparent
@@ -1265,15 +1309,15 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
 
       {/* Mini canapé devant la TV (face à l'écran) — reculé de 30cm */}
       <Couch
-        position={[0, 0, 1.5]}
+        position={[0, 0, 1.34]}
         rotation={[0, Math.PI, 0]}
         onSit={() => useStore.getState().setSitting(true)}
       />
 
-      {/* Floating label above couch — always visible */}
+      {/* Floating label above couch — always visible, with arrow pointing down */}
       {!isSitting && couchLabelTexture && (
-        <mesh position={[0, 1.0, 1.5]}>
-          <planeGeometry args={[0.8, 0.1]} />
+        <mesh position={[0, 1.2, 1.34]}>
+          <planeGeometry args={[0.8, 0.2]} />
           <meshBasicMaterial map={couchLabelTexture} transparent toneMapped={false} depthWrite={false} />
         </mesh>
       )}
