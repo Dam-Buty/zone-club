@@ -239,6 +239,22 @@ tvInnerBezelHole.lineTo(-_scw + _ibt, _sccy - _sch + _ibt)
 tvInnerBezelShape.holes.push(tvInnerBezelHole)
 const tvInnerBezelGeo = new THREE.ExtrudeGeometry(tvInnerBezelShape, { depth: 0.005, bevelEnabled: false })
 
+// CRT screen — curved plane geometry (replaces SphereGeometry radius 1.6 which extended ~2m beyond TV body)
+// Gentle parabolic dome: 15mm bulge at center, zero at edges — matches real CRT curvature
+const CRT_SCREEN_SEGS = 16
+const CRT_BULGE = 0.015
+const crtScreenGeo = new THREE.PlaneGeometry(_scw * 2, _sch * 2, CRT_SCREEN_SEGS, CRT_SCREEN_SEGS)
+{
+  const pos = crtScreenGeo.attributes.position
+  for (let i = 0; i < pos.count; i++) {
+    const nx = pos.getX(i) / _scw  // -1..1
+    const ny = pos.getY(i) / _sch
+    pos.setZ(i, CRT_BULGE * (1 - nx * nx) * (1 - ny * ny))
+  }
+  pos.needsUpdate = true
+  crtScreenGeo.computeVertexNormals()
+}
+
 // Rear CRT housing: rounded rect 0.54×0.40, depth 0.30
 const tvRearShape = new THREE.Shape()
 const _rrw = 0.54 / 2, _rrh = 0.40 / 2
@@ -564,7 +580,7 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
     const imageData = ctx.getImageData(0, 0, w, h)
     const d = imageData.data
     for (let y = 0; y < h; y++) {
-      const scanWeight = (y % 3 === 2) ? 0.3 : 1.0
+      const scanWeight = (y % 3 === 2) ? 0.6 : 1.0
       const row = y * w * 4
       for (let x = 0; x < w; x++) {
         const i = row + x * 4
@@ -573,9 +589,9 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
         let r = d[i] * scanWeight
         let g = d[i + 1] * scanWeight
         let b = d[i + 2] * scanWeight
-        if (col === 0) { g *= 0.25; b *= 0.25 }
-        else if (col === 1) { r *= 0.25; b *= 0.25 }
-        else { r *= 0.25; g *= 0.25 }
+        if (col === 0) { g *= 0.45; b *= 0.45 }
+        else if (col === 1) { r *= 0.45; b *= 0.45 }
+        else { r *= 0.45; g *= 0.45 }
         d[i] = r | 0
         d[i + 1] = g | 0
         d[i + 2] = b | 0
@@ -597,7 +613,7 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
     ctx.textAlign = 'left'
     ctx.textBaseline = 'middle'
     ctx.shadowColor = '#00ffff'
-    ctx.shadowBlur = 6
+    ctx.shadowBlur = 3
     ctx.fillStyle = '#00ffff'
     ctx.fillText('CLICK POUR', LX * 3, h / 2 - 90)
     ctx.fillText('OUVRIR LE MENU', LX * 3, h / 2 + 90)
@@ -623,7 +639,7 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
     ctx.textAlign = 'left'
     ctx.textBaseline = 'middle'
     ctx.shadowColor = '#00ffff'
-    ctx.shadowBlur = 6
+    ctx.shadowBlur = 3
     ctx.fillStyle = '#00ffff'
     ctx.fillText('MES LOCATIONS', LX * 3, 90)
 
@@ -634,7 +650,7 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
       const prefix = isSelected ? '▶ ' : '  '
       const title = item.film?.title.substring(0, 16) || 'Film inconnu'
       ctx.shadowColor = isSelected ? '#00ffff' : '#009999'
-      ctx.shadowBlur = isSelected ? 6 : 4
+      ctx.shadowBlur = isSelected ? 3 : 2
       ctx.fillStyle = isSelected ? '#00ffff' : '#009999'
       ctx.fillText(`${prefix}${title}`, LX * 3, 240 + i * 120)
     })
@@ -672,7 +688,7 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
       const isSelected = i === seatedMenuIndex
       const prefix = isSelected ? '▶ ' : '  '
       ctx.shadowColor = isSelected ? '#00ffff' : '#009999'
-      ctx.shadowBlur = isSelected ? 6 : 4
+      ctx.shadowBlur = isSelected ? 3 : 2
       ctx.fillStyle = isSelected ? '#00ffff' : '#009999'
       ctx.fillText(`${prefix}${opt}`, LX * 3, 180 + i * 165)
     })
@@ -702,7 +718,7 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
       const isSelected = i === standingMenuIndex
       const prefix = isSelected ? '▶ ' : '  '
       ctx.shadowColor = isSelected ? '#00ffff' : '#009999'
-      ctx.shadowBlur = isSelected ? 6 : 4
+      ctx.shadowBlur = isSelected ? 3 : 2
       ctx.fillStyle = isSelected ? '#00ffff' : '#009999'
       ctx.fillText(`${prefix}${opt}`, LX * 3, 260 + i * 165)
     })
@@ -1018,7 +1034,7 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
   }, [isSitting, tvMode, rentedFilms.length]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Couleur de l'écran selon le mode — greenish-teal like real Trinitron phosphor
-  const screenColor = tvMode === 'playing' ? '#000000' : '#0e3a35'
+  const screenColor = tvMode === 'playing' ? '#000000' : '#1a2e2b'
 
   return (
     <group position={position} rotation={rotation}>
@@ -1061,7 +1077,7 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
       </mesh>
 
       {/* ====== Sony Trinitron CRT TV (4:3 aspect) ====== */}
-      <group position={[0, 0.743, 0.155]} scale={1.348}>
+      <group position={[0, 0.758, 0.155]} scale={1.348}>
         {/* Rear CRT housing (deep tube, rounded corners) — castShadow for shelf shadow */}
         <mesh position={[0, 0, -0.30]} material={tvBodyMat} geometry={tvRearGeo} castShadow />
 
@@ -1071,7 +1087,7 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
         {/* Inner bezel shadow recess — continuous dark frame around screen opening */}
         <mesh position={[0, 0, 0.055]} material={tvInnerBezelMat} geometry={tvInnerBezelGeo} />
 
-        {/* CRT screen — convex phosphor surface, radius sized to fit inside bezel */}
+        {/* CRT screen — convex phosphor surface, curved plane matching bezel cutout */}
         <mesh
           ref={useCallback((node: THREE.Mesh | null) => {
             if (node) node.layers.enable(RAYCAST_LAYER_INTERACTIVE)
@@ -1079,64 +1095,52 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
           }, [])}
           position={[0, 0.005, 0.055]}
           userData={{ isTVScreen: true }}
+          geometry={crtScreenGeo}
         >
-          <sphereGeometry args={[1.6, 20, 16, Math.PI - 0.155, 0.31, Math.PI / 2 - 0.115, 0.23]} />
           <meshStandardMaterial
             color={screenColor}
             emissive={screenColor}
             emissiveIntensity={1.0}
             map={tvMode === 'playing' ? videoTexture : null}
             toneMapped={false}
+            transparent
+            opacity={0.4}
           />
         </mesh>
 
-        {/* Screen content overlays (wider for 4:3) */}
+        {/* Screen content overlays — Z=0.085 to clear curved screen (0.070) and glass (0.078) */}
         {tvMode === 'idle' && (
-          <mesh position={[0, 0.005, 0.07]} userData={{ isTVScreen: true }} ref={enableRaycastLayer}>
+          <mesh position={[0, 0.005, 0.085]} userData={{ isTVScreen: true }} ref={enableRaycastLayer}>
             <planeGeometry args={[0.447, 0.239]} />
             <meshBasicMaterial map={idleTexture} transparent toneMapped={false} />
           </mesh>
         )}
         {tvMode === 'standing-menu' && (
-          <mesh position={[0, -0.003, 0.07]} userData={{ isTVScreen: true }} ref={enableRaycastLayer}>
+          <mesh position={[0, -0.003, 0.085]} userData={{ isTVScreen: true }} ref={enableRaycastLayer}>
             <planeGeometry args={[0.461, 0.337]} />
             <meshBasicMaterial map={standingMenuTexture} transparent toneMapped={false} />
           </mesh>
         )}
         {tvMode === 'seated-menu' && (
-          <mesh position={[0, -0.003, 0.07]} userData={{ isTVScreen: true }} ref={enableRaycastLayer}>
+          <mesh position={[0, -0.003, 0.085]} userData={{ isTVScreen: true }} ref={enableRaycastLayer}>
             <planeGeometry args={[0.461, 0.337]} />
             <meshBasicMaterial map={seatedMenuTexture} transparent toneMapped={false} />
           </mesh>
         )}
         {tvMode === 'menu' && (
-          <mesh position={[0, -0.003, 0.07]} userData={{ isTVScreen: true }} ref={enableRaycastLayer}>
+          <mesh position={[0, -0.003, 0.085]} userData={{ isTVScreen: true }} ref={enableRaycastLayer}>
             <planeGeometry args={[0.461, 0.337]} />
             <meshBasicMaterial map={menuTexture} transparent toneMapped={false} />
           </mesh>
         )}
         {tvMode === 'playing' && (
-          <mesh position={[0, -0.1, 0.07]} userData={{ isTVScreen: true }} ref={enableRaycastLayer}>
+          <mesh position={[0, -0.1, 0.085]} userData={{ isTVScreen: true }} ref={enableRaycastLayer}>
             <planeGeometry args={[0.282, 0.050]} />
             <meshBasicMaterial map={playingTexture} transparent toneMapped={false} />
           </mesh>
         )}
 
-        {/* CRT glass overlay — tinted glass, reflects HDR environment (indoor_night.hdr) */}
-        <mesh
-          position={[0, 0.005, 0.063]}
-          userData={{ isTVScreen: true }}
-          ref={enableRaycastLayer}
-        >
-          <sphereGeometry args={[1.6, 20, 16, Math.PI - 0.155, 0.31, Math.PI / 2 - 0.115, 0.23]} />
-          <meshStandardMaterial
-            color="#c0d0cc"
-            transparent
-            opacity={isHovered ? 0.28 : 0.22}
-            roughness={0.18}
-            metalness={0.55}
-          />
-        </mesh>
+        {/* CRT glass overlay removed — was causing Z-fighting with curved screen geometry */}
 
         {/* Front text overlay — "Trinitron" top-left + "SONY" below screen */}
         <mesh position={[0, 0, 0.0605]} renderOrder={1}>

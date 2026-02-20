@@ -137,7 +137,7 @@ const _up = new THREE.Vector3(0, 1, 0);
 // Seated camera position — world coordinates
 // Couch at world x=2.5 (reculé 30cm), 40% zoom towards TV (x=4.0): distance 1.5*0.6=0.90
 const SEATED_POSITION = new THREE.Vector3(3.452, 0.683, 1.2);
-const SEATED_LOOKAT = new THREE.Vector3(4.225, 0.684, 1.2);
+const SEATED_LOOKAT = new THREE.Vector3(4.225, 0.699, 1.2);
 const SIT_TRANSITION_SPEED = 5.0; // lerp alpha — ~95% converged at 600ms
 
 // LaZone CRT watch position — perpendicular to screen surface
@@ -879,13 +879,11 @@ export function Controls({
       return; // Skip FPS movement
     }
 
-    // === Standup transition — smooth return to pre-sit position ===
+    // === Standup transition — land behind the couch (couch at world X≈2.88) ===
     if (wasSittingRef.current) {
       const standingY = 1.52;
-      // Clamp standup position outside TV collision zone (minX=3.3) to avoid getting stuck
-      const tvMinX = ROOM_WIDTH / 2 - 1.2;
-      const targetX = Math.min(preSitPosRef.current.x, tvMinX - COLLISION_MARGIN * 3);
-      const targetZ = preSitPosRef.current.z;
+      const targetX = 2.4; // ~50cm behind couch, well outside TV collision zone
+      const targetZ = 1.2; // same Z as couch/TV
       const alpha = Math.min(1, SIT_TRANSITION_SPEED * delta);
       camera.position.x = THREE.MathUtils.lerp(camera.position.x, targetX, alpha);
       camera.position.y = THREE.MathUtils.lerp(camera.position.y, standingY, alpha);

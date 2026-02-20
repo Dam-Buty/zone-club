@@ -93,18 +93,9 @@ function OptimizedLighting({ isMobile = false }: { isMobile?: boolean }) {
         intensity={isMobile ? 0.45 : 0.3}
       />
 
-      {/* 3-7. PointLights d'accent — desktop only (4 PointLights = 4 évaluations/fragment) */}
+      {/* PointLights d'accent — desktop only */}
       {!isMobile && (
         <>
-          {/* PointLight manager (accent) */}
-          <pointLight
-            position={[3.5, 2.4, 2.8]}
-            intensity={1}
-            color="#fff5e6"
-            distance={4}
-            decay={2}
-          />
-
           {/* PointLight îlot central */}
           <pointLight
             position={[-0.8, 2.4, 0]}
