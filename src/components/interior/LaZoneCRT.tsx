@@ -188,8 +188,8 @@ export function LaZoneCRT({ position, rotation = [0, 0, 0], tilt = -10 }: LaZone
   // --- Channel zapping (up/down while watching) ---
   useEffect(() => {
     if (!channelAction) return
-    if (channelAction === 'next') playNext()
-    else if (channelAction === 'prev') playPrev()
+    if (channelAction.type === 'next') playNext()
+    else if (channelAction.type === 'prev') playPrev()
     useStore.getState().clearLaZoneChannelAction()
   }, [channelAction, playNext, playPrev])
 

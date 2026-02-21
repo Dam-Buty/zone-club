@@ -191,7 +191,7 @@ interface VideoClubState {
   clearLaZoneMenuAction: () => void;
   laZoneSoundOn: boolean;
   setLaZoneSoundOn: (val: boolean) => void;
-  laZoneChannelAction: 'next' | 'prev' | null;
+  laZoneChannelAction: { type: 'next' | 'prev' } | null;
   dispatchLaZoneChannel: (action: 'next' | 'prev') => void;
   clearLaZoneChannelAction: () => void;
 
@@ -584,7 +584,7 @@ export const useStore = create<VideoClubState>()(
       laZoneSoundOn: false,
       setLaZoneSoundOn: (val) => set({ laZoneSoundOn: val }),
       laZoneChannelAction: null,
-      dispatchLaZoneChannel: (action) => set({ laZoneChannelAction: action }),
+      dispatchLaZoneChannel: (action) => set({ laZoneChannelAction: { type: action } }),
       clearLaZoneChannelAction: () => set({ laZoneChannelAction: null }),
 
       // Onboarding

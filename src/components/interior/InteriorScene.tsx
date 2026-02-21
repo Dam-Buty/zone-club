@@ -283,7 +283,7 @@ function LaZoneWatchingOverlay() {
   // Brief flash on channel change
   useEffect(() => {
     if (!channelAction) return
-    setFlash(channelAction === 'prev' ? 'up' : 'down')
+    setFlash(channelAction.type === 'prev' ? 'up' : 'down')
     const timer = setTimeout(() => setFlash(null), 600)
     return () => clearTimeout(timer)
   }, [channelAction])
