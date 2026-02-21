@@ -46,8 +46,16 @@ export async function POST(req: Request) {
     content: `[EVENEMENT] ${event}`,
   }));
 
+  // Strip reasoning parts from assistant messages (OpenRouter doesn't support Responses API format)
+  const cleanedMessages = messages.map((msg: any) => {
+    if (msg.role === 'assistant' && Array.isArray(msg.parts)) {
+      return { ...msg, parts: msg.parts.filter((p: any) => p.type !== 'reasoning') };
+    }
+    return msg;
+  });
+
   // Convert UI messages to model messages for streamText
-  const modelMessages = await convertToModelMessages(messages);
+  const modelMessages = await convertToModelMessages(cleanedMessages);
 
   // Prepend event messages
   const allMessages = [...eventMessages, ...modelMessages];
@@ -55,7 +63,7 @@ export async function POST(req: Request) {
   const tools = createChatTools(user.id);
 
   const result = streamText({
-    model: openrouter(CHAT_MODEL),
+    model: openrouter.chat(CHAT_MODEL),
     maxOutputTokens: 800,
     system: systemPrompt,
     messages: allMessages,

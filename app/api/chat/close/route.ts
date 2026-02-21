@@ -33,7 +33,7 @@ export async function POST(req: Request) {
   let summary: string;
   try {
     const result = await generateText({
-      model: openrouter(CHAT_MODEL),
+      model: openrouter.chat(CHAT_MODEL),
       system: 'Resume cette conversation de videoclub en 2-3 phrases concises en francais. Mentionne les films discutes, les locations effectuees, et les sujets abordes. Pas de mise en forme, juste du texte brut.',
       messages: [
         {
