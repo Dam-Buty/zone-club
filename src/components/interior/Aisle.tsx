@@ -593,7 +593,7 @@ export function Aisle({ films, maxTextureArrayLayers = 256 }: AisleProps) {
     ))
     // IslandShelf 2: SF (left) + Classiques (right)
     all.push(...computeIslandShelfCassettes(
-      [0.5, 0, -0.3], [0, 0, 0], sfIslandLeft, classiquesIslandRight, 'island2'
+      [0.65, 0, -0.3], [0, 0, 0], sfIslandLeft, classiquesIslandRight, 'island2'
     ))
 
     return all
@@ -805,12 +805,12 @@ export function Aisle({ films, maxTextureArrayLayers = 256 }: AisleProps) {
 
       {/* ===== ÎLOT 2 - SF + CLASSIQUES ===== */}
       <IslandShelf
-        position={[0.5, 0, -0.3]}
+        position={[0.65, 0, -0.3]}
       />
       {/* Panneau SF — fixé au plafond */}
       <GenreSectionPanel
         genre="SF"
-        position={[0.48, 2.07, -0.3]}
+        position={[0.63, 2.07, -0.3]}
         rotation={[0, -Math.PI / 2, 0]}
         color="#00ccff"
         width={1.6}
@@ -819,7 +819,7 @@ export function Aisle({ films, maxTextureArrayLayers = 256 }: AisleProps) {
       {/* Panneau CLASSIQUES — fixé au plafond */}
       <GenreSectionPanel
         genre="CLASSIQUES"
-        position={[0.52, 2.07, -0.3]}
+        position={[0.67, 2.07, -0.3]}
         rotation={[0, Math.PI / 2, 0]}
         color="#d4af37"
         width={1.6}
@@ -828,10 +828,10 @@ export function Aisle({ films, maxTextureArrayLayers = 256 }: AisleProps) {
 
 
       {/* ===== COMPTOIR MANAGER ===== */}
-      <group position={[ROOM_WIDTH / 2 - 2.3, 0, ROOM_DEPTH / 2 - 1.425]}>
-        {/* Comptoir simple */}
+      <group position={[ROOM_WIDTH / 2 - 2.3, 0, ROOM_DEPTH / 2 - 1.28]}>
+        {/* Comptoir simple — longueur 2.7m, largeur 0.49m */}
         <mesh position={[0, 0.5, 0]} castShadow receiveShadow>
-          <boxGeometry args={[3, 1, 0.6]} />
+          <boxGeometry args={[2.7, 1, 0.49]} />
           <meshStandardMaterial
             map={woodTextures.map}
             normalMap={woodTextures.normalMap}
@@ -841,7 +841,7 @@ export function Aisle({ films, maxTextureArrayLayers = 256 }: AisleProps) {
           />
         </mesh>
         <mesh position={[0, 1.05, 0]} castShadow receiveShadow>
-          <boxGeometry args={[3, 0.05, 0.7]} />
+          <boxGeometry args={[2.7, 0.05, 0.63]} />
           <meshStandardMaterial
             map={woodTextures.map}
             normalMap={woodTextures.normalMap}

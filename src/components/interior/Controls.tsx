@@ -15,8 +15,8 @@ interface ControlsProps {
 const ROOM_WIDTH = 9;
 const ROOM_DEPTH = 8.5;
 
-// Marge de collision (7% de distance minimum)
-const COLLISION_MARGIN = 0.07;
+// Marge de collision — rayon de protection ~0.25m
+const COLLISION_MARGIN = 0.05;
 
 // Définir les zones de collision (AABB: minX, maxX, minZ, maxZ)
 const COLLISION_ZONES: {
@@ -27,10 +27,10 @@ const COLLISION_ZONES: {
   name: string;
 }[] = [
   {
-    minX: ROOM_WIDTH / 2 - 2.3 - 1.5 - 0.3,
-    maxX: ROOM_WIDTH / 2 - 2.3 + 1.5 + 0.3,
-    minZ: ROOM_DEPTH / 2 - 1.425 - 0.5,
-    maxZ: ROOM_DEPTH / 2 - 1.425 + 0.5,
+    minX: ROOM_WIDTH / 2 - 2.3 - 1.35 - 0.3,
+    maxX: ROOM_WIDTH / 2 - 2.3 + 1.35 + 0.3,
+    minZ: ROOM_DEPTH / 2 - 1.28 - 0.5,
+    maxZ: ROOM_DEPTH / 2 - 1.28 + 0.5,
     name: "comptoir",
   },
   {
@@ -41,8 +41,8 @@ const COLLISION_ZONES: {
     name: "ilot",
   },
   {
-    minX: 0.5 - 0.756,
-    maxX: 0.5 + 0.756,
+    minX: 0.65 - 0.756,
+    maxX: 0.65 + 0.756,
     minZ: -0.3 - 1.134,
     maxZ: -0.3 + 1.134,
     name: "ilot2",

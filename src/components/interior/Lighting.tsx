@@ -105,14 +105,6 @@ function OptimizedLighting({ isMobile = false }: { isMobile?: boolean }) {
             decay={2}
           />
 
-          {/* PointLight vitrine - lumière urbaine nocturne */}
-          <pointLight
-            position={[1.0, 0.8, 4.0]}
-            intensity={1.5}
-            color="#5c6bc0"
-            distance={10}
-            decay={2}
-          />
 
         </>
       )}
