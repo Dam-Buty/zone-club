@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useStore } from '../../store';
+import { useIsMobile } from '../../hooks/useIsMobile';
 import { AuthModal } from '../auth/AuthModal';
 import { SearchModal } from '../search/SearchModal';
 import { ReviewModal } from '../review/ReviewModal';
@@ -45,6 +46,8 @@ function getLevelProgress(totalRentals: number): { current: string; next: string
 }
 
 export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
+  const isMobile = useIsMobile();
+  const secretInputRef = useRef<HTMLInputElement>(null);
   const [currentSection, setCurrentSection] = useState<MenuSection>('main');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [showAuthModal, setShowAuthModal] = useState(false);
@@ -145,16 +148,34 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
         }
       }
       if (e.key === 'ArrowUp') {
+        e.preventDefault();
         setSelectedIndex(i => Math.max(0, i - 1));
       }
       if (e.key === 'ArrowDown') {
+        e.preventDefault();
         setSelectedIndex(i => i + 1);
       }
-      if (e.key === 'Enter' && currentSection === 'main') {
-        const sections: MenuSection[] = ['rentals', 'history', 'reviews', 'credits', 'account'];
-        if (selectedIndex < sections.length) {
-          setCurrentSection(sections[selectedIndex]);
-          setSelectedIndex(0);
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (currentSection === 'main') {
+          const sections: MenuSection[] = ['rentals', 'history', 'reviews', 'credits', 'account'];
+          if (selectedIndex < sections.length) {
+            setCurrentSection(sections[selectedIndex]);
+            setSelectedIndex(0);
+          }
+        } else if (currentSection === 'admin') {
+          const adminSections: MenuSection[] = ['admin-add-film', 'admin-films', 'admin-requests'];
+          if (selectedIndex < adminSections.length) {
+            const target = adminSections[selectedIndex];
+            setCurrentSection(target);
+            setSelectedIndex(0);
+            if (target === 'admin-films') { setFilmSearchQuery(''); loadAdminFilms(); }
+            if (target === 'admin-requests') { loadAdminRequests(); }
+            if (target === 'admin-add-film') { setAddFilmInput(''); setAddFilmError(null); }
+          }
+        } else {
+          // In sub-sections, Enter goes back
+          handleBack();
         }
       }
     };
@@ -940,7 +961,58 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
         </div>
 
         <div className={styles.footer}>
-          [ESC] {currentSection === 'main' ? 'Fermer' : 'Retour'} | [↑↓] Naviguer | [ENTER] Sélectionner
+          {isMobile ? (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', width: '100%' }}>
+              <span>[↑↓] Naviguer</span>
+              {isAuthenticated && authUser?.is_admin && !adminUnlocked && (
+                <button
+                  onClick={() => secretInputRef.current?.focus()}
+                  style={{
+                    background: 'rgba(255, 68, 68, 0.2)',
+                    border: '1px solid rgba(255, 68, 68, 0.5)',
+                    color: '#ff4444',
+                    padding: '4px 10px',
+                    borderRadius: '4px',
+                    fontFamily: "'Courier New', monospace",
+                    fontSize: '0.75rem',
+                    cursor: 'pointer',
+                  }}
+                >
+                  ⌨ Code
+                </button>
+              )}
+            </div>
+          ) : (
+            <>[ESC] {currentSection === 'main' ? 'Fermer' : 'Retour'} | [↑↓] Naviguer | [ENTER] Sélectionner</>
+          )}
+          {/* Hidden input for mobile admin secret code */}
+          {isMobile && isAuthenticated && authUser?.is_admin && !adminUnlocked && (
+            <input
+              ref={secretInputRef}
+              type="text"
+              autoComplete="off"
+              autoCapitalize="off"
+              autoCorrect="off"
+              style={{
+                position: 'absolute',
+                opacity: 0,
+                width: '1px',
+                height: '1px',
+                pointerEvents: 'none',
+              }}
+              onInput={(e) => {
+                const val = (e.target as HTMLInputElement).value.toLowerCase();
+                if (val.endsWith('admin')) {
+                  setAdminUnlocked(true);
+                  setCurrentSection('admin');
+                  setSecretCode('');
+                  loadAdminStats();
+                  (e.target as HTMLInputElement).value = '';
+                  (e.target as HTMLInputElement).blur();
+                }
+              }}
+            />
+          )}
         </div>
       </div>
     </div>
