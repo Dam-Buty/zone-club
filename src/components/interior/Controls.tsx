@@ -15,16 +15,18 @@ interface ControlsProps {
 const ROOM_WIDTH = 9;
 const ROOM_DEPTH = 8.5;
 
-// Marge de collision — rayon de protection ~0.25m
-const COLLISION_MARGIN = 0.05;
+// Marge de collision — rayon de protection ~0.35m
+const COLLISION_MARGIN = 0.07;
 
 // Définir les zones de collision (AABB: minX, maxX, minZ, maxZ)
+// cornerRadius > 0 → rounded corners that guide the player around instead of blocking
 const COLLISION_ZONES: {
   minX: number;
   maxX: number;
   minZ: number;
   maxZ: number;
   name: string;
+  cornerRadius?: number;
 }[] = [
   {
     minX: ROOM_WIDTH / 2 - 2.3 - 1.35 - 0.3,
@@ -32,20 +34,25 @@ const COLLISION_ZONES: {
     minZ: ROOM_DEPTH / 2 - 1.28 - 0.5,
     maxZ: ROOM_DEPTH / 2 - 1.28 + 0.5,
     name: "comptoir",
+    cornerRadius: 0.3,
   },
   {
-    minX: -1.6 - 0.756,
-    maxX: -1.6 + 0.756,
-    minZ: -1.134,
-    maxZ: 1.134,
+    // Ilot 1 — reduced 10%: 0.756*0.9=0.68, 1.134*0.9=1.02
+    minX: -1.6 - 0.68,
+    maxX: -1.6 + 0.68,
+    minZ: -1.02,
+    maxZ: 1.02,
     name: "ilot",
+    cornerRadius: 0.65,
   },
   {
-    minX: 0.65 - 0.756,
-    maxX: 0.65 + 0.756,
-    minZ: -0.3 - 1.134,
-    maxZ: -0.3 + 1.134,
+    // Ilot 2 — reduced 10%: 0.756*0.9=0.68, 1.134*0.9=1.02
+    minX: 0.65 - 0.68,
+    maxX: 0.65 + 0.68,
+    minZ: -0.3 - 1.02,
+    maxZ: -0.3 + 1.02,
     name: "ilot2",
+    cornerRadius: 0.65,
   },
   {
     minX: ROOM_WIDTH / 2 - 1.2,
@@ -112,14 +119,33 @@ function checkCollision(x: number, z: number, margin: number): boolean {
     const expandedMinZ = zone.minZ - margin;
     const expandedMaxZ = zone.maxZ + margin;
 
-    if (
-      x >= expandedMinX &&
-      x <= expandedMaxX &&
-      z >= expandedMinZ &&
-      z <= expandedMaxZ
-    ) {
-      return true;
+    // Quick AABB reject
+    if (x < expandedMinX || x > expandedMaxX || z < expandedMinZ || z > expandedMaxZ) {
+      continue;
     }
+
+    // Rounded corners: check if point is in a corner region, then use circle test
+    const r = zone.cornerRadius ?? 0;
+    if (r > 0) {
+      const innerMinX = expandedMinX + r;
+      const innerMaxX = expandedMaxX - r;
+      const innerMinZ = expandedMinZ + r;
+      const innerMaxZ = expandedMaxZ - r;
+
+      // Only test if in a corner quadrant (outside the inner cross)
+      if ((x < innerMinX || x > innerMaxX) && (z < innerMinZ || z > innerMaxZ)) {
+        // Find nearest corner center
+        const cx = x < innerMinX ? innerMinX : innerMaxX;
+        const cz = z < innerMinZ ? innerMinZ : innerMaxZ;
+        const dx = x - cx;
+        const dz = z - cz;
+        if (dx * dx + dz * dz > r * r) {
+          continue; // Outside rounded corner — no collision
+        }
+      }
+    }
+
+    return true;
   }
   return false;
 }
@@ -267,10 +293,10 @@ export function Controls({
 
     const interactive = targetedInteractiveRef.current;
 
-    // Stand up if sitting and not targeting something specific
+    // When sitting, always route select to TV menu (never stand up via Enter)
     const { isSitting, setSitting } = useStore.getState();
-    if (isSitting && !interactive) {
-      setSitting(false);
+    if (isSitting) {
+      useStore.getState().dispatchTVMenu('select');
       return;
     }
 
@@ -957,16 +983,45 @@ export function Controls({
       Math.min(ROOM_DEPTH / 2 - WALL_MARGIN, camera.position.z),
     );
 
-    // Collision check
+    // Collision check with wall sliding
     const collisionDist = 0.5 * COLLISION_MARGIN * 10;
     if (checkCollision(newX, newZ, collisionDist)) {
-      if (!checkCollision(newX, oldZ, collisionDist)) {
+      // Try each axis independently — keep whichever slides freely
+      const canSlideX = !checkCollision(newX, oldZ, collisionDist);
+      const canSlideZ = !checkCollision(oldX, newZ, collisionDist);
+
+      if (canSlideX && canSlideZ) {
+        // Both axes free individually — pick the dominant movement axis
+        const dx = Math.abs(newX - oldX);
+        const dz = Math.abs(newZ - oldZ);
+        if (dx > dz) { newZ = oldZ; } else { newX = oldX; }
+      } else if (canSlideX) {
         newZ = oldZ;
-      } else if (!checkCollision(oldX, newZ, collisionDist)) {
+      } else if (canSlideZ) {
         newX = oldX;
       } else {
-        newX = oldX;
-        newZ = oldZ;
+        // Both axes blocked — try nudging away from the nearest collision zone edge
+        // This prevents getting "stuck" when exactly on the boundary
+        const nudge = 0.01;
+        for (const zone of COLLISION_ZONES) {
+          const eMinX = zone.minX - collisionDist;
+          const eMaxX = zone.maxX + collisionDist;
+          const eMinZ = zone.minZ - collisionDist;
+          const eMaxZ = zone.maxZ + collisionDist;
+          if (oldX >= eMinX && oldX <= eMaxX && oldZ >= eMinZ && oldZ <= eMaxZ) {
+            // Find closest edge and nudge outward
+            const dLeft = oldX - eMinX;
+            const dRight = eMaxX - oldX;
+            const dTop = oldZ - eMinZ;
+            const dBottom = eMaxZ - oldZ;
+            const minD = Math.min(dLeft, dRight, dTop, dBottom);
+            if (minD === dLeft) newX = eMinX - nudge;
+            else if (minD === dRight) newX = eMaxX + nudge;
+            else if (minD === dTop) newZ = eMinZ - nudge;
+            else newZ = eMaxZ + nudge;
+            break;
+          }
+        }
       }
     }
 
