@@ -43,6 +43,8 @@ export interface RentalDownloadSource {
 }
 
 const SYMLINKS_PATH = process.env.SYMLINKS_PATH || '/media/public/symlinks';
+const FORCED_RENTAL_VIDEO_URL = process.env.FORCED_RENTAL_VIDEO_URL || null;
+const FORCED_RENTAL_FILE_PATH = process.env.FORCED_RENTAL_FILE_PATH || null;
 
 export function getActiveRentalForFilm(filmId: number): Rental | null {
     return db.prepare(`
@@ -100,14 +102,22 @@ function enrichRental(rental: Rental): RentalWithFilm | null {
     const now = new Date();
     const timeRemaining = Math.max(0, Math.floor((expiresAt.getTime() - now.getTime()) / 60000));
 
-    return {
-        ...rental,
-        film,
-        streaming_urls: {
+    const streamingUrls = FORCED_RENTAL_VIDEO_URL
+        ? {
+            vf: FORCED_RENTAL_VIDEO_URL,
+            vo: FORCED_RENTAL_VIDEO_URL,
+            subtitles: null
+        }
+        : {
             vf: film.file_path_vf_transcoded ? getStreamingUrl(rental.symlink_uuid, 'film_vf.mp4') : null,
             vo: film.file_path_vo_transcoded ? getStreamingUrl(rental.symlink_uuid, 'film_vo.mp4') : null,
             subtitles: film.subtitle_path ? getStreamingUrl(rental.symlink_uuid, 'subs_fr.vtt') : null
-        },
+        };
+
+    return {
+        ...rental,
+        film,
+        streaming_urls: streamingUrls,
         time_remaining: timeRemaining
     };
 }
@@ -268,6 +278,18 @@ export async function getRentalDownloadSource(userId: number, filmId: number): P
 
     const film = getFilmById(filmId);
     if (!film) throw new Error('Film non trouvé');
+
+    if (FORCED_RENTAL_FILE_PATH) {
+        try {
+            await access(FORCED_RENTAL_FILE_PATH);
+        } catch {
+            throw new Error('FORCED_RENTAL_FILE_PATH est configuré mais le fichier est introuvable');
+        }
+        return {
+            absolutePath: FORCED_RENTAL_FILE_PATH,
+            filename: `${sanitizeDownloadName(film.title)}-FORCED.mp4`
+        };
+    }
 
     const vfPath = join(SYMLINKS_PATH, rental.symlink_uuid, 'film_vf.mp4');
     const voPath = join(SYMLINKS_PATH, rental.symlink_uuid, 'film_vo.mp4');
