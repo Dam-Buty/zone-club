@@ -47,25 +47,47 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
   instancesRef.current = instances
 
   // Create texture array, lookup tables, and GPU storage buffers
+  // Poster layers are DEDUPLICATED: ~50 unique posters share layers instead of 520 copies.
   const {
     texArray, instanceIdToKey, instanceIdToFilmId,
+    instanceLayerMap, urlToLayer,
     hysteresisStates,
     targetHoverZBuffer, targetEmissiveBuffer,
     currentHoverZBuffer, currentEmissiveBuffer,
     computeNode,
   } = useMemo(() => {
     const currentInstances = instancesRef.current
-    const ta = new CassetteTextureArray(count)
     const idToKey: string[] = new Array(count)
     const idToFilm: number[] = new Array(count)
     const hStates: InstanceHysteresisState[] = new Array(count)
+
+    // Deduplicate poster URLs → shared texture layers
+    // Layer 0 = fallback (no poster), then 1 layer per unique posterUrl
+    const _urlToLayer = new Map<string, number>()
+    const _instanceLayerMap = new Float32Array(count)
+    const FALLBACK_LAYER = 0
+    let nextLayer = 1
 
     for (let i = 0; i < count; i++) {
       const inst = currentInstances[i]
       idToKey[i] = inst.cassetteKey
       idToFilm[i] = inst.filmId
       hStates[i] = { stableTargeted: false, targetedTimer: 0 }
+
+      if (!inst.posterUrl) {
+        _instanceLayerMap[i] = FALLBACK_LAYER
+      } else {
+        let layer = _urlToLayer.get(inst.posterUrl)
+        if (layer === undefined) {
+          layer = nextLayer++
+          _urlToLayer.set(inst.posterUrl, layer)
+        }
+        _instanceLayerMap[i] = layer
+      }
     }
+
+    const uniqueLayerCount = nextLayer
+    const ta = new CassetteTextureArray(uniqueLayerCount)
 
     // GPU storage buffers for animation (instancedArray = StorageInstancedBufferAttribute)
     const curHoverZ = instancedArray(count, 'float')    // current hover Z (GPU lerps)
@@ -100,6 +122,8 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
       texArray: ta,
       instanceIdToKey: idToKey,
       instanceIdToFilmId: idToFilm,
+      instanceLayerMap: _instanceLayerMap,
+      urlToLayer: _urlToLayer,
       hysteresisStates: hStates,
       targetHoverZBuffer: tarHoverZ,
       targetEmissiveBuffer: tarEmissive,
@@ -110,16 +134,13 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
   }, [count])
 
   // Each chunk gets its own geometry copy to avoid layerIndex attribute collisions.
+  // layerIndex maps each instance to its DEDUPLICATED texture layer (many instances → same layer).
   const geometry = useMemo(() => {
     const chunkGeometry = SHARED_CASSETTE_GEOMETRY.clone()
-    const layerData = new Float32Array(count)
-    for (let i = 0; i < count; i++) {
-      layerData[i] = i
-    }
-    const layerIndexAttr = new THREE.InstancedBufferAttribute(layerData, 1)
+    const layerIndexAttr = new THREE.InstancedBufferAttribute(instanceLayerMap, 1)
     chunkGeometry.setAttribute('layerIndex', layerIndexAttr)
     return chunkGeometry
-  }, [count])
+  }, [instanceLayerMap])
 
   // Create custom TSL material with DataArrayTexture + compute-driven animation
   const material = useMemo(() => {
@@ -188,15 +209,12 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
     const renderer = gl as unknown as THREE.WebGPURenderer
     texArray.setRenderer(renderer)
 
-    // Load poster textures spread across frames (2 per frame to avoid GPU stalls)
+    // Load UNIQUE poster textures spread across frames (4 per frame — only ~50 unique posters)
     let cancelled = false
-    const POSTERS_PER_FRAME = 1
+    const POSTERS_PER_FRAME = 4
     const queue: { index: number; url: string }[] = []
-    for (let i = 0; i < count; i++) {
-      const inst = currentInstances[i]
-      if (inst.posterUrl) {
-        queue.push({ index: i, url: inst.posterUrl })
-      }
+    for (const [url, layerIndex] of urlToLayer) {
+      queue.push({ index: layerIndex, url })
     }
 
     let queueIdx = 0
@@ -219,7 +237,7 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
       geometry.dispose()
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [texArray, material, geometry, count, instanceIdToKey, instanceIdToFilmId, gl])
+  }, [texArray, material, geometry, count, instanceIdToKey, instanceIdToFilmId, urlToLayer, gl])
 
   // Ref to store hoverOffsetZ per instance (avoids reading instancesRef in hot loop)
   const hoverOffsetsRef = useRef<Float32Array>(new Float32Array(0))
@@ -346,11 +364,22 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
 }
 
 export function CassetteInstances({ instances, maxTextureArrayLayers = 2048 }: CassetteInstancesProps) {
+  // With deduplicated layers, unique poster count is what matters — not instance count.
+  // ~50 unique posters for ~520 instances means chunking rarely triggers.
   const safeLayerBudget = Math.max(1, Math.floor(maxTextureArrayLayers))
 
   const chunks = useMemo(() => {
-    if (instances.length <= safeLayerBudget) return [instances]
+    // Count unique poster URLs to check against layer budget
+    const uniqueUrls = new Set<string>()
+    for (const inst of instances) {
+      if (inst.posterUrl) uniqueUrls.add(inst.posterUrl)
+    }
+    // +1 for fallback layer (no poster)
+    const uniqueLayerCount = uniqueUrls.size + 1
 
+    if (uniqueLayerCount <= safeLayerBudget) return [instances]
+
+    // Rare: more unique posters than layer budget — split instances into groups
     const grouped: CassetteInstanceData[][] = []
     for (let i = 0; i < instances.length; i += safeLayerBudget) {
       grouped.push(instances.slice(i, i + safeLayerBudget))
