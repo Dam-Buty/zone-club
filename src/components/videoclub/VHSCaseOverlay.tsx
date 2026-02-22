@@ -105,7 +105,7 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
   const storeSetViewingMode = useStore((state) => state.setViewingMode);
   const openPlayer = useStore((state) => state.openPlayer);
   const showManager = useStore((state) => state.showManager);
-  const addChatMessage = useStore((state) => state.addChatMessage);
+  const pushEvent = useStore((state) => state.pushEvent);
 
   const [isRenting, setIsRenting] = useState(false);
   const [rentSuccess, setRentSuccess] = useState(false);
@@ -232,17 +232,10 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
 
   const handleAskManager = useCallback(() => {
     if (!film) return;
-    const questions = [
-      `Dis-moi, qu'est-ce que tu penses de "${film.title}" ?`,
-      `T'aurais une anecdote sur "${film.title}" ?`,
-      `"${film.title}", c'est bien ? Tu me le conseilles ?`,
-      `Parle-moi de "${film.title}", il vaut le coup ?`,
-    ];
-    const question = questions[Math.floor(Math.random() * questions.length)];
+    pushEvent(`Le client demande l'avis du manager sur "${film.title}" (id:${film.id}, tmdb:${film.tmdb_id}).`);
     onClose();
     showManager();
-    addChatMessage("user", question);
-  }, [film, onClose, showManager, addChatMessage]);
+  }, [film, onClose, showManager, pushEvent]);
 
   const handleRent = useCallback(async () => {
     if (!film) return;

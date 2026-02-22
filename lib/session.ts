@@ -33,3 +33,16 @@ export function getUserFromSession(token: string | undefined): User | null {
 
     return getUserById(session.userId);
 }
+
+/**
+ * Authenticate via x-api-key header + x-user-id header.
+ * For automated testing / CLI tooling only.
+ */
+export function getUserFromApiKey(req: Request): User | null {
+    const key = req.headers.get('x-api-key');
+    const apiSecret = process.env.API_SECRET;
+    if (!key || !apiSecret || key !== apiSecret) return null;
+
+    const userId = parseInt(req.headers.get('x-user-id') || '1', 10);
+    return getUserById(userId);
+}

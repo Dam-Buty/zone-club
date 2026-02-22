@@ -84,4 +84,20 @@ try {
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_weekly_bonuses_user_week ON weekly_bonuses(user_id, week_number)');
 } catch {}
 
+// Chat sessions table (safe with IF NOT EXISTS in schema.sql, but migration for existing DBs)
+try {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS chat_sessions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      raw_messages TEXT NOT NULL DEFAULT '[]',
+      summary TEXT DEFAULT NULL,
+      started_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      ended_at TEXT DEFAULT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+  `);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_chat_sessions_user ON chat_sessions(user_id)');
+} catch {}
+
 export default db;
