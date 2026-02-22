@@ -11,6 +11,7 @@
     "audit:unused": "node scripts/audit-unused-files.mjs",
     "audit:unused:strict": "node scripts/audit-unused-files.mjs --strict",
     "seed": "npx tsx scripts/seed-films.ts",
+    "test:player-flow": "node scripts/test-player-flow.mjs",
     "test:phase": "node --test \"tests/**/*.test.mjs\"",
     "test:phase:full": "npm run test:phase && npm run build"
   },
