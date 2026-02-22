@@ -2,6 +2,8 @@ import { db } from './db';
 import { createRentalSymlinks, deleteRentalSymlinks, getStreamingUrl } from './symlinks';
 import { getFilmById, getFilmTier, type Film } from './films';
 import { RENTAL_COSTS, RENTAL_DURATIONS } from '../src/types';
+import { access } from 'fs/promises';
+import { join } from 'path';
 
 export interface Rental {
     id: number;
@@ -34,6 +36,13 @@ export interface RentalStatus {
     rented_by_current_user: boolean;
     rental?: RentalWithFilm;
 }
+
+export interface RentalDownloadSource {
+    absolutePath: string;
+    filename: string;
+}
+
+const SYMLINKS_PATH = process.env.SYMLINKS_PATH || '/media/public/symlinks';
 
 export function getActiveRentalForFilm(filmId: number): Rental | null {
     return db.prepare(`
@@ -238,6 +247,57 @@ export function setViewingMode(userId: number, filmId: number, mode: 'sur_place'
     db.prepare('UPDATE rentals SET viewing_mode = ? WHERE id = ?').run(mode, rental.id);
 
     return enrichRental(db.prepare('SELECT * FROM rentals WHERE id = ?').get(rental.id) as Rental)!;
+}
+
+function sanitizeDownloadName(name: string): string {
+    return name
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-zA-Z0-9._-]+/g, '_')
+        .replace(/_+/g, '_')
+        .replace(/^_+|_+$/g, '') || 'film';
+}
+
+export async function getRentalDownloadSource(userId: number, filmId: number): Promise<RentalDownloadSource> {
+    const rental = db.prepare(`
+        SELECT * FROM rentals
+        WHERE user_id = ? AND film_id = ? AND is_active = 1 AND expires_at > datetime('now')
+    `).get(userId, filmId) as Rental | null;
+
+    if (!rental) throw new Error('Location active non trouvée');
+
+    const film = getFilmById(filmId);
+    if (!film) throw new Error('Film non trouvé');
+
+    const vfPath = join(SYMLINKS_PATH, rental.symlink_uuid, 'film_vf.mp4');
+    const voPath = join(SYMLINKS_PATH, rental.symlink_uuid, 'film_vo.mp4');
+
+    let absolutePath: string | null = null;
+    let languageSuffix = 'VO';
+
+    try {
+        await access(vfPath);
+        absolutePath = vfPath;
+        languageSuffix = 'VF';
+    } catch {
+        try {
+            await access(voPath);
+            absolutePath = voPath;
+            languageSuffix = 'VO';
+        } catch {
+            absolutePath = null;
+        }
+    }
+
+    if (!absolutePath) {
+        throw new Error('Aucun fichier vidéo disponible pour cette location');
+    }
+
+    const baseName = sanitizeDownloadName(film.title);
+    return {
+        absolutePath,
+        filename: `${baseName}-${languageSuffix}.mp4`
+    };
 }
 
 export async function cleanupExpiredRentals(): Promise<number> {

@@ -251,12 +251,33 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
   const handleSetViewingMode = useCallback(async (mode: 'sur_place' | 'emporter') => {
     if (!film || settingMode) return;
     setSettingMode(true);
-    await storeSetViewingMode(film.id, mode);
+    const updatedRental = await storeSetViewingMode(film.id, mode);
     setSettingMode(false);
+    if (!updatedRental) return;
+
     if (mode === 'sur_place') {
       // Open player immediately
       onClose();
       openPlayer(film.id);
+      return;
+    }
+
+    // "À emporter" triggers the browser download automatically.
+    try {
+      const response = await fetch(`/api/rentals/${film.id}/download`, { credentials: 'include' });
+      if (!response.ok) throw new Error('Téléchargement impossible');
+
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = `${film.title}.mp4`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+    } catch (error) {
+      console.error('Erreur téléchargement à emporter:', error);
     }
   }, [film, settingMode, storeSetViewingMode, onClose, openPlayer]);
 

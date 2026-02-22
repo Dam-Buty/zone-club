@@ -502,6 +502,7 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
   const rentals = useStore(state => state.rentals)
   const films = useStore(state => state.films)
   const openTerminal = useStore(state => state.openTerminal)
+  const openPlayer = useStore(state => state.openPlayer)
   const requestPointerUnlock = useStore(state => state.requestPointerUnlock)
   const setSitting = useStore(state => state.setSitting)
   const isSitting = useStore(state => state.isSitting)
@@ -891,15 +892,15 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
     }
   })
 
-  // Jouer une vidéo (user-initiated, e.g. rented film)
-  const playVideo = useCallback((videoUrl: string) => {
+  // Ouvre le player global (même flux que "Mes locations > Lire")
+  const playVideo = useCallback((filmId: number) => {
     if (videoRef.current) {
-      videoRef.current.src = videoUrl
-      videoRef.current.muted = false
-      videoRef.current.play().catch(console.error)
-      setTvMode('playing')
+      videoRef.current.pause()
+      videoRef.current.currentTime = 0
     }
-  }, [])
+    requestPointerUnlock()
+    openPlayer(filmId)
+  }, [openPlayer, requestPointerUnlock])
 
   // Arrêter la vidéo (user-initiated film)
   const stopVideo = useCallback(() => {
@@ -993,7 +994,7 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
         } else if (rentedFilms.length > 0) {
           const selected = rentedFilms[selectedIndex]
           if (selected) {
-            playVideo(selected.rental.videoUrl)
+            playVideo(selected.rental.filmId)
           }
         }
       } else if (tvMode === 'playing') {
