@@ -115,10 +115,12 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [settingMode, setSettingMode] = useState(false);
+  const [showCouchPopup, setShowCouchPopup] = useState(false);
 
   // Live countdown timer
   const [countdown, setCountdown] = useState("");
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const couchPopupTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const credits = getCredits();
   const rental = film ? getRental(film.id) : undefined;
@@ -152,8 +154,30 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
       setShowAuthModal(false);
       setShowReviewModal(false);
       setSettingMode(false);
+      setShowCouchPopup(false);
+      if (couchPopupTimeoutRef.current) {
+        clearTimeout(couchPopupTimeoutRef.current);
+        couchPopupTimeoutRef.current = null;
+      }
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    return () => {
+      if (couchPopupTimeoutRef.current) {
+        clearTimeout(couchPopupTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const showCouchMeetingPopup = useCallback(() => {
+    setShowCouchPopup(true);
+    if (couchPopupTimeoutRef.current) clearTimeout(couchPopupTimeoutRef.current);
+    couchPopupTimeoutRef.current = setTimeout(() => {
+      setShowCouchPopup(false);
+      couchPopupTimeoutRef.current = null;
+    }, 2600);
+  }, []);
 
   // ESC key to close overlay
   useEffect(() => {
@@ -251,14 +275,24 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
   const handleSetViewingMode = useCallback(async (mode: 'sur_place' | 'emporter') => {
     if (!film || settingMode) return;
     setSettingMode(true);
-    await storeSetViewingMode(film.id, mode);
+    const updatedRental = await storeSetViewingMode(film.id, mode);
     setSettingMode(false);
+    if (!updatedRental) return;
+
     if (mode === 'sur_place') {
-      // Open player immediately
-      onClose();
-      openPlayer(film.id);
+      // Don't open player directly; invite user to sit on the couch first.
+      showCouchMeetingPopup();
+      return;
     }
-  }, [film, settingMode, storeSetViewingMode, onClose, openPlayer]);
+
+    // "À emporter" triggers the browser download automatically.
+    const link = document.createElement('a');
+    link.href = `/api/rentals/${film.id}/download`;
+    link.download = `${film.title}.mp4`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  }, [film, settingMode, storeSetViewingMode, showCouchMeetingPopup]);
 
   const handleSitDown = useCallback(() => {
     if (!film) return;
@@ -593,6 +627,33 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
           >
             Disponible pendant {formatDuration(duration)}
           </div>
+        </div>
+      )}
+
+      {/* Sur-place guidance popup */}
+      {showCouchPopup && (
+        <div
+          style={{
+            position: "fixed",
+            top: isMobile ? "72px" : "24px",
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 240,
+            padding: isMobile ? "10px 14px" : "12px 18px",
+            borderRadius: "8px",
+            border: "1px solid #00fff7",
+            background: "rgba(0, 20, 28, 0.92)",
+            color: "#00fff7",
+            fontFamily: "Orbitron, sans-serif",
+            fontSize: isMobile ? "0.72rem" : "0.82rem",
+            letterSpacing: "0.8px",
+            textAlign: "center",
+            boxShadow: "0 0 18px rgba(0,255,247,0.28)",
+            pointerEvents: "none",
+            textTransform: "uppercase",
+          }}
+        >
+          RDV sur le canapé pour regarder votre film
         </div>
       )}
 

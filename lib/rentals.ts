@@ -2,6 +2,9 @@ import { db } from './db';
 import { createRentalSymlinks, deleteRentalSymlinks, getStreamingUrl } from './symlinks';
 import { getFilmById, getFilmTier, type Film } from './films';
 import { RENTAL_COSTS, RENTAL_DURATIONS } from '../src/types';
+import { access } from 'fs/promises';
+import { join } from 'path';
+import { randomUUID } from 'crypto';
 
 export interface Rental {
     id: number;
@@ -34,6 +37,16 @@ export interface RentalStatus {
     rented_by_current_user: boolean;
     rental?: RentalWithFilm;
 }
+
+export interface RentalDownloadSource {
+    absolutePath: string;
+    filename: string;
+}
+
+const SYMLINKS_PATH = process.env.SYMLINKS_PATH || '/media/public/symlinks';
+const FORCED_RENTAL_VIDEO_URL = process.env.FORCED_RENTAL_VIDEO_URL || null;
+const FORCED_RENTAL_FILE_PATH = process.env.FORCED_RENTAL_FILE_PATH || null;
+const IS_FORCED_RENTAL_MODE = !!(FORCED_RENTAL_VIDEO_URL || FORCED_RENTAL_FILE_PATH);
 
 export function getActiveRentalForFilm(filmId: number): Rental | null {
     return db.prepare(`
@@ -91,14 +104,22 @@ function enrichRental(rental: Rental): RentalWithFilm | null {
     const now = new Date();
     const timeRemaining = Math.max(0, Math.floor((expiresAt.getTime() - now.getTime()) / 60000));
 
-    return {
-        ...rental,
-        film,
-        streaming_urls: {
+    const streamingUrls = FORCED_RENTAL_VIDEO_URL
+        ? {
+            vf: FORCED_RENTAL_VIDEO_URL,
+            vo: FORCED_RENTAL_VIDEO_URL,
+            subtitles: null
+        }
+        : {
             vf: film.file_path_vf_transcoded ? getStreamingUrl(rental.symlink_uuid, 'film_vf.mp4') : null,
             vo: film.file_path_vo_transcoded ? getStreamingUrl(rental.symlink_uuid, 'film_vo.mp4') : null,
             subtitles: film.subtitle_path ? getStreamingUrl(rental.symlink_uuid, 'subs_fr.vtt') : null
-        },
+        };
+
+    return {
+        ...rental,
+        film,
+        streaming_urls: streamingUrls,
         time_remaining: timeRemaining
     };
 }
@@ -129,11 +150,13 @@ export async function rentFilm(userId: number, filmId: number): Promise<RentalWi
         throw new Error(`Crédits insuffisants (${cost} requis, ${user.credits} disponibles)`);
     }
 
-    const symlinks = await createRentalSymlinks(film.tmdb_id, {
-        vf: film.file_path_vf_transcoded,
-        vo: film.file_path_vo_transcoded,
-        subtitles: film.subtitle_path
-    });
+    const symlinks = IS_FORCED_RENTAL_MODE
+        ? { uuid: `forced-${randomUUID()}` }
+        : await createRentalSymlinks(film.tmdb_id, {
+            vf: film.file_path_vf_transcoded,
+            vo: film.file_path_vo_transcoded,
+            subtitles: film.subtitle_path
+        });
 
     const durationMs = RENTAL_DURATIONS[tier];
     const expiresAt = new Date(Date.now() + durationMs)
@@ -238,6 +261,69 @@ export function setViewingMode(userId: number, filmId: number, mode: 'sur_place'
     db.prepare('UPDATE rentals SET viewing_mode = ? WHERE id = ?').run(mode, rental.id);
 
     return enrichRental(db.prepare('SELECT * FROM rentals WHERE id = ?').get(rental.id) as Rental)!;
+}
+
+function sanitizeDownloadName(name: string): string {
+    return name
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-zA-Z0-9._-]+/g, '_')
+        .replace(/_+/g, '_')
+        .replace(/^_+|_+$/g, '') || 'film';
+}
+
+export async function getRentalDownloadSource(userId: number, filmId: number): Promise<RentalDownloadSource> {
+    const rental = db.prepare(`
+        SELECT * FROM rentals
+        WHERE user_id = ? AND film_id = ? AND is_active = 1 AND expires_at > datetime('now')
+    `).get(userId, filmId) as Rental | null;
+
+    if (!rental) throw new Error('Location active non trouvée');
+
+    const film = getFilmById(filmId);
+    if (!film) throw new Error('Film non trouvé');
+
+    if (FORCED_RENTAL_FILE_PATH) {
+        try {
+            await access(FORCED_RENTAL_FILE_PATH);
+        } catch {
+            throw new Error('FORCED_RENTAL_FILE_PATH est configuré mais le fichier est introuvable');
+        }
+        return {
+            absolutePath: FORCED_RENTAL_FILE_PATH,
+            filename: `${sanitizeDownloadName(film.title)}-FORCED.mp4`
+        };
+    }
+
+    const vfPath = join(SYMLINKS_PATH, rental.symlink_uuid, 'film_vf.mp4');
+    const voPath = join(SYMLINKS_PATH, rental.symlink_uuid, 'film_vo.mp4');
+
+    let absolutePath: string | null = null;
+    let languageSuffix = 'VO';
+
+    try {
+        await access(vfPath);
+        absolutePath = vfPath;
+        languageSuffix = 'VF';
+    } catch {
+        try {
+            await access(voPath);
+            absolutePath = voPath;
+            languageSuffix = 'VO';
+        } catch {
+            absolutePath = null;
+        }
+    }
+
+    if (!absolutePath) {
+        throw new Error('Aucun fichier vidéo disponible pour cette location');
+    }
+
+    const baseName = sanitizeDownloadName(film.title);
+    return {
+        absolutePath,
+        filename: `${baseName}-${languageSuffix}.mp4`
+    };
 }
 
 export async function cleanupExpiredRentals(): Promise<number> {
