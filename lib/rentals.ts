@@ -4,6 +4,7 @@ import { getFilmById, getFilmTier, type Film } from './films';
 import { RENTAL_COSTS, RENTAL_DURATIONS } from '../src/types';
 import { access } from 'fs/promises';
 import { join } from 'path';
+import { randomUUID } from 'crypto';
 
 export interface Rental {
     id: number;
@@ -45,6 +46,7 @@ export interface RentalDownloadSource {
 const SYMLINKS_PATH = process.env.SYMLINKS_PATH || '/media/public/symlinks';
 const FORCED_RENTAL_VIDEO_URL = process.env.FORCED_RENTAL_VIDEO_URL || null;
 const FORCED_RENTAL_FILE_PATH = process.env.FORCED_RENTAL_FILE_PATH || null;
+const IS_FORCED_RENTAL_MODE = !!(FORCED_RENTAL_VIDEO_URL || FORCED_RENTAL_FILE_PATH);
 
 export function getActiveRentalForFilm(filmId: number): Rental | null {
     return db.prepare(`
@@ -148,11 +150,13 @@ export async function rentFilm(userId: number, filmId: number): Promise<RentalWi
         throw new Error(`Crédits insuffisants (${cost} requis, ${user.credits} disponibles)`);
     }
 
-    const symlinks = await createRentalSymlinks(film.tmdb_id, {
-        vf: film.file_path_vf_transcoded,
-        vo: film.file_path_vo_transcoded,
-        subtitles: film.subtitle_path
-    });
+    const symlinks = IS_FORCED_RENTAL_MODE
+        ? { uuid: `forced-${randomUUID()}` }
+        : await createRentalSymlinks(film.tmdb_id, {
+            vf: film.file_path_vf_transcoded,
+            vo: film.file_path_vo_transcoded,
+            subtitles: film.subtitle_path
+        });
 
     const durationMs = RENTAL_DURATIONS[tier];
     const expiresAt = new Date(Date.now() + durationMs)
