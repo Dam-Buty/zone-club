@@ -1,7 +1,7 @@
 import { cookies } from 'next/headers';
 import { streamText, convertToModelMessages, stepCountIs } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
-import { getUserFromSession } from '@/lib/session';
+import { getUserFromSession, getUserFromApiKey } from '@/lib/session';
 import { buildSystemPrompt } from '@/lib/chat';
 import { createChatTools } from '@/lib/chat-tools';
 import { createSession, appendMessages, getCurrentSession } from '@/lib/chat-history';
@@ -16,7 +16,7 @@ const openrouter = createOpenAI({
 
 export async function POST(req: Request) {
   const cookieStore = await cookies();
-  const user = getUserFromSession(cookieStore.get('session')?.value);
+  const user = getUserFromApiKey(req) ?? getUserFromSession(cookieStore.get('session')?.value);
   if (!user) {
     return new Response(JSON.stringify({ message: 'Non authentifié' }), { status: 401 });
   }
@@ -73,8 +73,8 @@ export async function POST(req: Request) {
       isEnabled: true,
       functionId: 'chat',
       metadata: {
-        langfuseUserId: String(user.id),
-        langfuseSessionId: String(session!.id),
+        userId: String(user.id),
+        sessionId: String(session!.id),
       },
     },
     onFinish: async ({ text }) => {

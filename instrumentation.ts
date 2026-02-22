@@ -1,12 +1,21 @@
-import { registerOTel } from '@vercel/otel';
-import { LangfuseExporter } from 'langfuse-vercel';
+import { LangfuseSpanProcessor, type ShouldExportSpan } from '@langfuse/otel';
+import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
+
+const shouldExportSpan: ShouldExportSpan = (span) => {
+    // Only export AI SDK spans, skip Next.js internals
+    return span.otelSpan.instrumentationScope.name !== 'next.js';
+};
+
+export const langfuseSpanProcessor = new LangfuseSpanProcessor({
+    shouldExportSpan,
+});
 
 export async function register() {
     if (process.env.NEXT_RUNTIME === 'nodejs') {
-        registerOTel({
-            serviceName: 'zone-club',
-            traceExporter: new LangfuseExporter(),
+        const tracerProvider = new NodeTracerProvider({
+            spanProcessors: [langfuseSpanProcessor],
         });
+        tracerProvider.register();
 
         const { startCleanupScheduler } = await import('./lib/cleanup');
         startCleanupScheduler();

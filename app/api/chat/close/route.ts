@@ -1,7 +1,7 @@
 import { cookies } from 'next/headers';
 import { generateText } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
-import { getUserFromSession } from '@/lib/session';
+import { getUserFromSession, getUserFromApiKey } from '@/lib/session';
 import { getCurrentSession, closeSession } from '@/lib/chat-history';
 
 const CHAT_MODEL = process.env.CHAT_MODEL || 'z-ai/glm-4.7-flash';
@@ -13,7 +13,7 @@ const openrouter = createOpenAI({
 
 export async function POST(req: Request) {
   const cookieStore = await cookies();
-  const user = getUserFromSession(cookieStore.get('session')?.value);
+  const user = getUserFromApiKey(req) ?? getUserFromSession(cookieStore.get('session')?.value);
   if (!user) {
     return new Response(null, { status: 401 });
   }
@@ -45,8 +45,8 @@ export async function POST(req: Request) {
         isEnabled: true,
         functionId: 'chat-summary',
         metadata: {
-          langfuseUserId: String(user.id),
-          langfuseSessionId: String(session.id),
+          userId: String(user.id),
+          sessionId: String(session.id),
         },
       },
     });

@@ -24,11 +24,11 @@ npm run seed         # Seed films database
 docker compose up -d # Production (5 services)
 ```
 
-**IMPORTANT** : Le container app build automatiquement au demarrage (npm install + npm run build). Pour tester des modifications, TOUJOURS relancer le container :
+**IMPORTANT** : Le container app sert le build standalone pre-construit. Pour deployer des modifications :
 ```bash
-docker compose down app && docker compose up -d app
+docker exec zone-app sh -c "cd /app && npm install && npm run build"
+docker compose restart app
 ```
-Ne JAMAIS lancer `npm run build` seul — le container s'en charge.
 
 ## Architecture
 
@@ -253,10 +253,38 @@ Pas de Docker build — l'app monte `.next/standalone` directement dans le conta
 | `RADARR_VO_API_KEY` | API key Radarr VO |
 | `RADARR_VF_API_KEY` | API key Radarr VF |
 | `HMAC_SECRET` | Signature cookies |
+| `API_SECRET` | Clef API pour tests automatises (header `x-api-key`) |
 | `DATABASE_PATH` | Chemin SQLite (`/data/zone.db`) |
 | `DOMAIN` | Domaine de base |
 | `SUBDOMAIN` | Sous-domaine app |
 | `STORAGE_SUBDOMAIN` | Sous-domaine storage |
+| `LANGFUSE_SECRET_KEY` | Langfuse secret key (observabilite LLM) |
+| `LANGFUSE_PUBLIC_KEY` | Langfuse public key |
+| `LANGFUSE_BASEURL` | Langfuse base URL (`https://cloud.langfuse.com`) |
+
+## API Testing
+
+Auth alternative par clef API pour tests CLI / automatises (pas besoin de cookies) :
+```bash
+curl -s "https://club.lazone.at/api/chat" \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: $API_SECRET" \
+  -H "x-user-id: 1" \
+  -d '{"messages":[{"id":"m1","role":"user","content":"Salut","parts":[{"type":"text","text":"Salut"}]}],"events":[]}'
+```
+
+**Format messages** : Le Vercel AI SDK attend des UIMessages avec `id`, `role`, `content` et `parts` (array de `{type:"text", text:"..."}`)
+
+**Routes supportees** : `/api/chat` (POST), `/api/chat/close` (POST)
+
+## Langfuse (observabilite LLM)
+
+Tracing OpenTelemetry via `@langfuse/otel` dans `instrumentation.ts`.
+
+- Chaque appel `streamText` / `generateText` a `experimental_telemetry: { isEnabled: true }` avec `userId` et `sessionId` dans les metadata
+- Les traces Langfuse incluent : modele, tokens, latence, system prompt, messages, tool calls
+- Dashboard : https://cloud.langfuse.com
+- API : `curl -u "$LANGFUSE_PUBLIC_KEY:$LANGFUSE_SECRET_KEY" https://cloud.langfuse.com/api/public/traces`
 
 ## Build Notes
 
