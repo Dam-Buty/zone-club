@@ -1,10 +1,64 @@
 import { useRef, useEffect } from 'react'
 import * as THREE from 'three'
 
-// LTC textures sont initialisées dans InteriorScene.tsx avant le Canvas
-
 // Mode d'éclairage: 'full' = 21 lumières, 'optimized' = 7 lumières
 const LIGHTING_MODE: 'full' | 'optimized' = 'optimized'
+
+// --- Genre RectAreaLights (real PBR area lighting from neon panels) ---
+// Desaturate neon color 40% + mix 30% warm white for realistic light spill
+function computePanelLightColor(neonHex: string): string {
+  const neon = new THREE.Color(neonHex)
+  const hsl = { h: 0, s: 0, l: 0 }
+  neon.getHSL(hsl)
+  hsl.s *= 0.6
+  hsl.l = Math.max(hsl.l, 0.5)
+  neon.setHSL(hsl.h, hsl.s, hsl.l)
+  neon.lerp(new THREE.Color('#fff5e6'), 0.3)
+  return '#' + neon.getHexString()
+}
+
+interface GenreRectLightConfig {
+  name: string
+  position: [number, number, number]
+  rotationY: number
+  neonColor: string
+  intensity: number
+}
+
+// Each RectAreaLight sits at the genre neon panel position, facing INTO the room.
+// Width=1.4 (neon tube length), height=0.3 (thin strip). Decay is natural with distance.
+const GENRE_RECT_LIGHT_CONFIGS: GenreRectLightConfig[] = [
+  // Left wall (face +X into room) — rotation PI/2
+  { name: 'horreur',  position: [-4.34, 2.07, -0.93], rotationY: Math.PI / 2,  neonColor: '#00ff00', intensity: 4 },
+  { name: 'thriller', position: [-4.34, 2.07,  1.58], rotationY: Math.PI / 2,  neonColor: '#ff6600', intensity: 3.5 },
+  // Back wall (face +Z into room) — rotation PI
+  { name: 'action',   position: [-2.25, 2.07, -4.17], rotationY: Math.PI,      neonColor: '#ff4444', intensity: 4 },
+  { name: 'drame',    position: [ 1.25, 2.07, -4.17], rotationY: Math.PI,      neonColor: '#8844ff', intensity: 5 },
+  // Right wall (face -X into room) — rotation -PI/2
+  { name: 'comedie',  position: [ 4.34, 2.07, -1.50], rotationY: -Math.PI / 2, neonColor: '#ffff00', intensity: 3 },
+]
+
+// Pre-compute desaturated colors
+const GENRE_RECT_LIGHT_COLORS = GENRE_RECT_LIGHT_CONFIGS.map(c => computePanelLightColor(c.neonColor))
+
+// 5 RectAreaLights at genre neon sign positions — real area lighting with PBR interaction
+function GenreRectLights() {
+  return (
+    <>
+      {GENRE_RECT_LIGHT_CONFIGS.map((config, i) => (
+        <rectAreaLight
+          key={config.name}
+          position={config.position}
+          rotation={[0, config.rotationY, 0]}
+          width={1.4}
+          height={0.3}
+          intensity={config.intensity}
+          color={GENRE_RECT_LIGHT_COLORS[i]}
+        />
+      ))}
+    </>
+  )
+}
 
 // OPTIMISATION: Géométries et matériaux partagés pour les 9 NeonTubes
 const NEON_TUBE_LENGTH = 1.4
@@ -93,9 +147,12 @@ function OptimizedLighting({ isMobile = false }: { isMobile?: boolean }) {
         intensity={isMobile ? 0.45 : 0.3}
       />
 
-      {/* PointLights d'accent — desktop only */}
+      {/* Desktop-only lights */}
       {!isMobile && (
         <>
+          {/* 5 RectAreaLights at genre neon positions — real PBR area lighting */}
+          <GenreRectLights />
+
           {/* PointLight îlot central */}
           <pointLight
             position={[-0.8, 2.4, 0]}
@@ -105,11 +162,27 @@ function OptimizedLighting({ isMobile = false }: { isMobile?: boolean }) {
             decay={2}
           />
 
-
+          {/* Storefront: DirectionalLight from outside, above at angle (street lamp)
+              castShadow so the storefront wall structure projects shadows through openings */}
+          <directionalLight
+            position={[0, 4, 8]}
+            intensity={0.6}
+            color="#6070a0"
+            castShadow
+            shadow-mapSize-width={1024}
+            shadow-mapSize-height={1024}
+            shadow-camera-left={-5}
+            shadow-camera-right={5}
+            shadow-camera-top={3}
+            shadow-camera-bottom={-0.5}
+            shadow-camera-near={1}
+            shadow-camera-far={12}
+            shadow-bias={-0.0003}
+          />
         </>
       )}
 
-      {/* DirectionalLight pour les ombres */}
+      {/* DirectionalLight pour les ombres intérieures */}
       <directionalLight
         position={[2, 2.7, 1]}
         intensity={0.3}

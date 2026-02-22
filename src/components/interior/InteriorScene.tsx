@@ -1,8 +1,15 @@
 import * as THREE from 'three/webgpu'
 import { Canvas, extend, type ThreeToJSXElements } from '@react-three/fiber'
 import { Suspense, useEffect, useMemo, useCallback, useRef, useState, memo, Component, type ReactNode, lazy } from 'react'
+import { RectAreaLightTexturesLib } from 'three/addons/lights/RectAreaLightTexturesLib.js'
 import { useStore } from '../../store'
 import { Lighting } from './Lighting'
+
+// Initialize LTC textures for RectAreaLight PBR shading (must run before first render)
+if (typeof window !== 'undefined') {
+  RectAreaLightTexturesLib.init();
+  (THREE as any).RectAreaLightNode.setLTC(RectAreaLightTexturesLib)
+}
 import { Controls } from './Controls'
 import { PostProcessingEffects } from './PostProcessingEffects'
 import { Environment } from '@react-three/drei'
@@ -17,9 +24,6 @@ import { TVTerminal } from '../terminal/TVTerminal'
 import { MobileControls } from '../mobile/MobileControls'
 import { MobileOnboarding } from '../mobile/MobileOnboarding'
 import { BenchmarkSampler, BenchmarkOverlay } from './BenchmarkMode'
-
-// LTC textures removed — no RectAreaLights in optimized lighting mode
-// If RectAreaLights are re-added, restore: RectAreaLightTexturesLib.init() + RectAreaLightNode.setLTC()
 
 // Error Boundary pour capturer les erreurs dans le canvas 3D
 interface ErrorBoundaryState {
@@ -102,7 +106,7 @@ const SceneContent = memo(function SceneContent({
       <Environment
         files="/textures/env/indoor_night.hdr"
         background={false}
-        environmentIntensity={0.7}
+        environmentIntensity={0.3}
       />
       <Lighting isMobile={isMobile} />
       <Aisle films={films} maxTextureArrayLayers={maxTextureArrayLayers} />
@@ -774,7 +778,7 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
           renderer.shadowMap.enabled = true
           renderer.shadowMap.type = isMobile ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap
           renderer.toneMapping = THREE.ACESFilmicToneMapping
-          renderer.toneMappingExposure = 1.0
+          renderer.toneMappingExposure = 1.12
           console.log(
             `[Canvas] WebGPU renderer initialized — layers: ${effectiveMaxLayers}${effectiveMaxLayers !== detectedMaxLayers ? ` (forced, device=${detectedMaxLayers})` : ''}, shadows: ${isMobile ? 'PCF' : 'PCFSoft'}, dpr: ${isMobile ? '≤1.5' : '≤2'}`
           )

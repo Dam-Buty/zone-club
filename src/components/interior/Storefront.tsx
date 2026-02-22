@@ -346,7 +346,7 @@ export function Storefront({ position, roomWidth, roomHeight, posterPaths }: Sto
     <group position={position} rotation={[0, Math.PI, 0]}>
       {/* ===== WALL WITH HOLES (ShapeGeometry — real cutouts for vitrine + door) ===== */}
       {/* Geometric depth: the holes let you see through to the recessed backdrop behind */}
-      <mesh position={[0, 0, Z_WALL]} geometry={wallWithHolesGeom} receiveShadow>
+      <mesh position={[0, 0, Z_WALL]} geometry={wallWithHolesGeom} castShadow receiveShadow>
         <primitive object={wallMaterial} attach="material" />
       </mesh>
 
@@ -384,21 +384,21 @@ export function Storefront({ position, roomWidth, roomHeight, posterPaths }: Sto
         <planeGeometry args={[VITRINE_WIDTH, VITRINE_HEIGHT]} />
       </mesh>
 
-      {/* ===== VITRINE FRAME (aluminum) ===== */}
+      {/* ===== VITRINE FRAME (aluminum) — castShadow for storefront light ===== */}
       {/* Top bar */}
-      <mesh position={[VITRINE_CENTER_X, VITRINE_BOTTOM + VITRINE_HEIGHT + frameThickness / 2, Z_FRAME]} material={FRAME_MAT}>
+      <mesh position={[VITRINE_CENTER_X, VITRINE_BOTTOM + VITRINE_HEIGHT + frameThickness / 2, Z_FRAME]} material={FRAME_MAT} castShadow>
         <boxGeometry args={[VITRINE_WIDTH + frameThickness * 2, frameThickness, frameDepth]} />
       </mesh>
       {/* Bottom bar */}
-      <mesh position={[VITRINE_CENTER_X, VITRINE_BOTTOM - frameThickness / 2, Z_FRAME]} material={FRAME_MAT}>
+      <mesh position={[VITRINE_CENTER_X, VITRINE_BOTTOM - frameThickness / 2, Z_FRAME]} material={FRAME_MAT} castShadow>
         <boxGeometry args={[VITRINE_WIDTH + frameThickness * 2, frameThickness, frameDepth]} />
       </mesh>
       {/* Left bar */}
-      <mesh position={[VITRINE_CENTER_X - VITRINE_WIDTH / 2 - frameThickness / 2, VITRINE_BOTTOM + VITRINE_HEIGHT / 2, Z_FRAME]} material={FRAME_MAT}>
+      <mesh position={[VITRINE_CENTER_X - VITRINE_WIDTH / 2 - frameThickness / 2, VITRINE_BOTTOM + VITRINE_HEIGHT / 2, Z_FRAME]} material={FRAME_MAT} castShadow>
         <boxGeometry args={[frameThickness, VITRINE_HEIGHT, frameDepth]} />
       </mesh>
       {/* Right bar */}
-      <mesh position={[VITRINE_CENTER_X + VITRINE_WIDTH / 2 + frameThickness / 2, VITRINE_BOTTOM + VITRINE_HEIGHT / 2, Z_FRAME]} material={FRAME_MAT}>
+      <mesh position={[VITRINE_CENTER_X + VITRINE_WIDTH / 2 + frameThickness / 2, VITRINE_BOTTOM + VITRINE_HEIGHT / 2, Z_FRAME]} material={FRAME_MAT} castShadow>
         <boxGeometry args={[frameThickness, VITRINE_HEIGHT, frameDepth]} />
       </mesh>
 
@@ -408,15 +408,15 @@ export function Storefront({ position, roomWidth, roomHeight, posterPaths }: Sto
         <planeGeometry args={[DOOR_WIDTH - 0.08, DOOR_HEIGHT - 0.08]} />
       </mesh>
       {/* Door frame - left (full height: door + transom) */}
-      <mesh position={[DOOR_CENTER_X - DOOR_WIDTH / 2 - doorFrameThickness / 2, roomHeight / 2, Z_FRAME]} material={DOOR_FRAME_MAT}>
+      <mesh position={[DOOR_CENTER_X - DOOR_WIDTH / 2 - doorFrameThickness / 2, roomHeight / 2, Z_FRAME]} material={DOOR_FRAME_MAT} castShadow>
         <boxGeometry args={[doorFrameThickness, roomHeight, doorFrameDepth]} />
       </mesh>
       {/* Door frame - right (full height: door + transom) */}
-      <mesh position={[DOOR_CENTER_X + DOOR_WIDTH / 2 + doorFrameThickness / 2, roomHeight / 2, Z_FRAME]} material={DOOR_FRAME_MAT}>
+      <mesh position={[DOOR_CENTER_X + DOOR_WIDTH / 2 + doorFrameThickness / 2, roomHeight / 2, Z_FRAME]} material={DOOR_FRAME_MAT} castShadow>
         <boxGeometry args={[doorFrameThickness, roomHeight, doorFrameDepth]} />
       </mesh>
       {/* Door frame - top bar at ceiling */}
-      <mesh position={[DOOR_CENTER_X, roomHeight - 0.02, Z_FRAME]} material={DOOR_FRAME_MAT}>
+      <mesh position={[DOOR_CENTER_X, roomHeight - 0.02, Z_FRAME]} material={DOOR_FRAME_MAT} castShadow>
         <boxGeometry args={[DOOR_WIDTH + doorFrameThickness * 2, doorFrameThickness, doorFrameDepth]} />
       </mesh>
       {/* Push bar (replaces box handle) */}
@@ -435,17 +435,17 @@ export function Storefront({ position, roomWidth, roomHeight, posterPaths }: Sto
         <planeGeometry args={[DOOR_WIDTH - 0.08, roomHeight - DOOR_HEIGHT - 0.08]} />
       </mesh>
       {/* Transom horizontal bar (separates door from transom) */}
-      <mesh position={[DOOR_CENTER_X, DOOR_HEIGHT + doorFrameThickness / 2, Z_FRAME]} material={DOOR_FRAME_MAT}>
+      <mesh position={[DOOR_CENTER_X, DOOR_HEIGHT + doorFrameThickness / 2, Z_FRAME]} material={DOOR_FRAME_MAT} castShadow>
         <boxGeometry args={[DOOR_WIDTH + doorFrameThickness * 2, doorFrameThickness, doorFrameDepth]} />
       </mesh>
 
       {/* ===== KICKBOARD (split around door opening) ===== */}
       {/* Left segment: -roomWidth/2 to DOOR_CENTER_X - DOOR_WIDTH/2 */}
-      <mesh position={[-1.0, KICKBOARD_HEIGHT / 2, Z_KICKBOARD]} material={KICKBOARD_MAT}>
+      <mesh position={[-1.0, KICKBOARD_HEIGHT / 2, Z_KICKBOARD]} material={KICKBOARD_MAT} castShadow>
         <boxGeometry args={[7.0, KICKBOARD_HEIGHT, 0.06]} />
       </mesh>
       {/* Right segment: DOOR_CENTER_X + DOOR_WIDTH/2 to +roomWidth/2 */}
-      <mesh position={[4.0, KICKBOARD_HEIGHT / 2, Z_KICKBOARD]} material={KICKBOARD_MAT}>
+      <mesh position={[4.0, KICKBOARD_HEIGHT / 2, Z_KICKBOARD]} material={KICKBOARD_MAT} castShadow>
         <boxGeometry args={[1.0, KICKBOARD_HEIGHT, 0.06]} />
       </mesh>
     </group>
