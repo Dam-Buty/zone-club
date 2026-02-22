@@ -41,6 +41,14 @@ export async function POST(req: Request) {
           content: messages.map((m: { role: string; content: string }) => `${m.role}: ${m.content}`).join('\n'),
         },
       ],
+      experimental_telemetry: {
+        isEnabled: true,
+        functionId: 'chat-summary',
+        metadata: {
+          langfuseUserId: String(user.id),
+          langfuseSessionId: String(session.id),
+        },
+      },
     });
     summary = result.text;
   } catch {

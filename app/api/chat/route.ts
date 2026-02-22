@@ -69,6 +69,14 @@ export async function POST(req: Request) {
     messages: allMessages,
     tools,
     stopWhen: stepCountIs(5),
+    experimental_telemetry: {
+      isEnabled: true,
+      functionId: 'chat',
+      metadata: {
+        langfuseUserId: String(user.id),
+        langfuseSessionId: String(session!.id),
+      },
+    },
     onFinish: async ({ text }) => {
       // Persist messages to DB
       const lastUserMsg = messages[messages.length - 1];
