@@ -36,6 +36,22 @@ export interface RentalStatus {
     is_rented: boolean;
     rented_by_current_user: boolean;
     rental?: RentalWithFilm;
+    stock: number;
+    active_rentals: number;
+    available_copies: number;
+    earliest_return?: string;
+}
+
+export interface ReturnRequest {
+    id: number;
+    film_id: number;
+    requester_id: number;
+    rental_id: number;
+    message: string | null;
+    status: string;
+    created_at: string;
+    film_title?: string;
+    requester_name?: string;
 }
 
 export interface RentalDownloadSource {
@@ -53,6 +69,27 @@ export function getActiveRentalForFilm(filmId: number): Rental | null {
         SELECT * FROM rentals
         WHERE film_id = ? AND is_active = 1 AND expires_at > datetime('now')
     `).get(filmId) as Rental | null;
+}
+
+export function getActiveRentalsForFilm(filmId: number): Rental[] {
+    return db.prepare(`
+        SELECT * FROM rentals
+        WHERE film_id = ? AND is_active = 1 AND expires_at > datetime('now')
+        ORDER BY expires_at ASC
+    `).all(filmId) as Rental[];
+}
+
+export function getActiveRentalCountForFilm(filmId: number): number {
+    const row = db.prepare(`
+        SELECT COUNT(*) as count FROM rentals
+        WHERE film_id = ? AND is_active = 1 AND expires_at > datetime('now')
+    `).get(filmId) as { count: number };
+    return row.count;
+}
+
+export function getFilmStock(filmId: number): number {
+    const row = db.prepare('SELECT stock FROM films WHERE id = ?').get(filmId) as { stock: number } | undefined;
+    return row?.stock ?? 2;
 }
 
 export function getUserActiveRentals(userId: number): RentalWithFilm[] {
@@ -81,18 +118,28 @@ export function hasUserRentedFilm(userId: number, filmId: number): boolean {
 }
 
 export function getFilmRentalStatus(filmId: number, userId: number | null): RentalStatus {
-    const activeRental = getActiveRentalForFilm(filmId);
+    const stock = getFilmStock(filmId);
+    const activeRentals = getActiveRentalsForFilm(filmId);
+    const activeCount = activeRentals.length;
+    const availableCopies = Math.max(0, stock - activeCount);
 
-    if (!activeRental) {
-        return { is_rented: false, rented_by_current_user: false };
-    }
+    const userRental = userId
+        ? activeRentals.find(r => r.user_id === userId)
+        : undefined;
 
-    const isCurrentUser = userId !== null && activeRental.user_id === userId;
+    const allRented = availableCopies <= 0;
+    const earliestReturn = allRented && activeRentals.length > 0
+        ? activeRentals[0].expires_at
+        : undefined;
 
     return {
-        is_rented: true,
-        rented_by_current_user: isCurrentUser,
-        rental: isCurrentUser ? enrichRental(activeRental) || undefined : undefined
+        is_rented: allRented,
+        rented_by_current_user: !!userRental,
+        rental: userRental ? enrichRental(userRental) || undefined : undefined,
+        stock,
+        active_rentals: activeCount,
+        available_copies: availableCopies,
+        earliest_return: earliestReturn,
     };
 }
 
@@ -134,13 +181,22 @@ export async function rentFilm(userId: number, filmId: number): Promise<RentalWi
         throw new Error('Ce film n\'est pas disponible');
     }
 
-    const existingRental = getActiveRentalForFilm(filmId);
-    if (existingRental && existingRental.user_id !== userId) {
-        throw new Error('Ce film est déjà loué par un autre membre');
+    // Multi-copy stock check
+    const stock = getFilmStock(filmId);
+    const activeRentals = getActiveRentalsForFilm(filmId);
+
+    // Check if this user already has an active rental for this film
+    const userExistingRental = activeRentals.find(r => r.user_id === userId);
+    if (userExistingRental) {
+        return enrichRental(userExistingRental)!;
     }
 
-    if (existingRental && existingRental.user_id === userId) {
-        return enrichRental(existingRental)!;
+    // Check stock availability
+    if (activeRentals.length >= stock) {
+        const earliest = activeRentals[0]; // sorted ASC by expires_at
+        const earliestDate = new Date(earliest.expires_at + 'Z');
+        const remainingMinutes = Math.max(0, Math.floor((earliestDate.getTime() - Date.now()) / 60000));
+        throw new Error(`Toutes les copies sont louées. Prochaine disponibilité dans ${Math.ceil(remainingMinutes / 60)}h.`);
     }
 
     const tier = getFilmTier(film);
@@ -324,6 +380,77 @@ export async function getRentalDownloadSource(userId: number, filmId: number): P
         absolutePath,
         filename: `${baseName}-${languageSuffix}.mp4`
     };
+}
+
+const EARLY_RETURN_HOURS = 24;
+const EARLY_RETURN_CREDIT = 1;
+
+export async function returnFilm(userId: number, filmId: number): Promise<{ earlyReturnCredit: boolean }> {
+    const rental = db.prepare(`
+        SELECT * FROM rentals
+        WHERE user_id = ? AND film_id = ? AND is_active = 1 AND expires_at > datetime('now')
+    `).get(userId, filmId) as Rental | null;
+
+    if (!rental) throw new Error('Location active non trouvée');
+
+    const rentedAt = new Date(rental.rented_at + 'Z');
+    const now = new Date();
+    const hoursElapsed = (now.getTime() - rentedAt.getTime()) / (1000 * 60 * 60);
+    const isEarlyReturn = hoursElapsed <= EARLY_RETURN_HOURS;
+
+    await deleteRentalSymlinks(rental.symlink_uuid);
+
+    db.transaction(() => {
+        db.prepare('UPDATE rentals SET is_active = 0, returned_early = ? WHERE id = ?')
+            .run(isEarlyReturn ? 1 : 0, rental.id);
+
+        if (isEarlyReturn) {
+            db.prepare('UPDATE users SET credits = credits + ? WHERE id = ?')
+                .run(EARLY_RETURN_CREDIT, userId);
+        }
+
+        // Dismiss any pending return requests for this rental
+        db.prepare('UPDATE return_requests SET status = ? WHERE rental_id = ?')
+            .run('dismissed', rental.id);
+    })();
+
+    return { earlyReturnCredit: isEarlyReturn };
+}
+
+export function createReturnRequest(filmId: number, requesterId: number): void {
+    const activeRentals = getActiveRentalsForFilm(filmId);
+    if (activeRentals.length === 0) throw new Error('Ce film n\'est pas loué');
+
+    // Target the rental expiring soonest
+    const targetRental = activeRentals[0];
+
+    if (targetRental.user_id === requesterId) {
+        throw new Error('Vous ne pouvez pas demander le retour de votre propre location');
+    }
+
+    // Rate limit: max 1 request per user per film per 24h
+    const existing = db.prepare(`
+        SELECT 1 FROM return_requests
+        WHERE film_id = ? AND requester_id = ? AND created_at > datetime('now', '-24 hours')
+    `).get(filmId, requesterId);
+    if (existing) throw new Error('Vous avez déjà envoyé une notification pour ce film récemment');
+
+    db.prepare(`
+        INSERT INTO return_requests (film_id, requester_id, rental_id)
+        VALUES (?, ?, ?)
+    `).run(filmId, requesterId, targetRental.id);
+}
+
+export function getReturnRequestsForUser(userId: number): ReturnRequest[] {
+    return db.prepare(`
+        SELECT rr.*, f.title as film_title, u.username as requester_name
+        FROM return_requests rr
+        JOIN films f ON rr.film_id = f.id
+        JOIN users u ON rr.requester_id = u.id
+        JOIN rentals r ON rr.rental_id = r.id
+        WHERE r.user_id = ? AND rr.status = 'pending'
+        ORDER BY rr.created_at DESC
+    `).all(userId) as ReturnRequest[];
 }
 
 export async function cleanupExpiredRentals(): Promise<number> {

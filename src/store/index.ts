@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Film, Rental, AisleType, SceneType, MemberLevel } from '../types';
-import api, { type ApiRentalWithFilm, type ApiFilm, type ReviewWithUser } from '../api';
+import api, { type ApiRentalWithFilm, type ApiFilm, type ReviewWithUser, type ApiReturnRequest } from '../api';
 import { preloadPosterImage } from '../utils/CassetteTextureArray';
 import { fetchVHSCoverData } from '../utils/VHSCoverGenerator';
 
@@ -34,6 +34,8 @@ function apiFilmToFilm(apiFilm: ApiFilm): Film {
     vote_average: 0, // fetched from TMDB at runtime in fetchVHSCoverData
     genres: apiFilm.genres,
     is_available: apiFilm.is_available,
+    stock: apiFilm.stock ?? 2,
+    active_rentals: apiFilm.active_rentals ?? 0,
   };
 }
 
@@ -98,6 +100,8 @@ interface VideoClubState {
   removeRental: (filmId: number) => void;
   getRental: (filmId: number) => Rental | undefined;
   rentFilm: (filmId: number) => Promise<Rental | null>;
+  returnFilm: (filmId: number) => Promise<{ earlyReturnCredit: boolean } | null>;
+  requestReturn: (filmId: number) => Promise<boolean>;
   setViewingMode: (filmId: number, mode: 'sur_place' | 'emporter') => Promise<Rental | null>;
   extendRental: (filmId: number) => Promise<Rental | null>;
 
@@ -111,8 +115,14 @@ interface VideoClubState {
 
   // Films cache
   films: Record<AisleType, Film[]>;
+  filmRentalCounts: Record<number, { stock: number; activeRentals: number }>;
+  setFilmRentalCounts: (filmId: number, stock: number, activeRentals: number) => void;
   setFilmsForAisle: (aisle: AisleType, films: Film[]) => void;
   loadFilmsFromApi: () => Promise<void>;
+
+  // Return notifications
+  returnNotifications: ApiReturnRequest[];
+  fetchNotifications: () => Promise<void>;
 
   // Manager IA
   managerVisible: boolean;
@@ -369,6 +379,39 @@ export const useStore = create<VideoClubState>()(
 
       getRental: (filmId) => get().rentals.find((r) => r.filmId === filmId),
 
+      returnFilm: async (filmId) => {
+        try {
+          const result = await api.rentals.returnFilm(filmId);
+          set((state) => ({
+            rentals: state.rentals.filter(r => r.filmId !== filmId),
+          }));
+          // Refresh credits (early return gives +1)
+          try {
+            const meData = await api.me.get();
+            set({ authUser: { id: meData.user.id, username: meData.user.username, credits: meData.user.credits, is_admin: meData.user.is_admin } });
+          } catch { /* stale */ }
+          // Decrement active rental count
+          const current = get().filmRentalCounts[filmId];
+          if (current) {
+            get().setFilmRentalCounts(filmId, current.stock, Math.max(0, current.activeRentals - 1));
+          }
+          return result;
+        } catch (error) {
+          console.error('Erreur retour:', error);
+          return null;
+        }
+      },
+
+      requestReturn: async (filmId) => {
+        try {
+          await api.rentals.requestReturn(filmId);
+          return true;
+        } catch (error) {
+          console.error('Erreur notification retour:', error);
+          return false;
+        }
+      },
+
       rentFilm: async (filmId) => {
         const { isAuthenticated } = get();
 
@@ -390,6 +433,12 @@ export const useStore = create<VideoClubState>()(
             const meData = await api.me.get();
             set({ authUser: { id: meData.user.id, username: meData.user.username, credits: meData.user.credits, is_admin: meData.user.is_admin } });
           } catch { /* credits will be stale until next refresh */ }
+
+          // Increment active rental count
+          const current = get().filmRentalCounts[filmId];
+          if (current) {
+            get().setFilmRentalCounts(filmId, current.stock, current.activeRentals + 1);
+          }
 
           return frontendRental;
         } catch (error) {
@@ -461,6 +510,22 @@ export const useStore = create<VideoClubState>()(
         animation: [],
         classiques: [],
       },
+      filmRentalCounts: {},
+      setFilmRentalCounts: (filmId, stock, activeRentals) =>
+        set((state) => ({
+          filmRentalCounts: { ...state.filmRentalCounts, [filmId]: { stock, activeRentals } },
+        })),
+
+      returnNotifications: [],
+      fetchNotifications: async () => {
+        try {
+          const { notifications } = await api.me.getNotifications();
+          set({ returnNotifications: notifications });
+        } catch {
+          // Not authenticated or error
+        }
+      },
+
       setFilmsForAisle: (aisle, films) =>
         set((state) => ({
           films: { ...state.films, [aisle]: films },
@@ -475,10 +540,18 @@ export const useStore = create<VideoClubState>()(
           const filmsMap: Record<AisleType, Film[]> = {
             nouveautes: [], action: [], horreur: [], comedie: [], drame: [], thriller: [], policier: [], sf: [], animation: [], classiques: [],
           };
+          const rentalCounts: Record<number, { stock: number; activeRentals: number }> = {};
           for (const { aisle, films: aisleFilms } of results) {
-            filmsMap[aisle as AisleType] = (aisleFilms as ApiFilm[]).map(apiFilmToFilm);
+            const converted = (aisleFilms as ApiFilm[]).map(apiFilmToFilm);
+            filmsMap[aisle as AisleType] = converted;
+            for (const film of converted) {
+              rentalCounts[film.id] = {
+                stock: film.stock ?? 2,
+                activeRentals: film.active_rentals ?? 0,
+              };
+            }
           }
-          set({ films: filmsMap });
+          set({ films: filmsMap, filmRentalCounts: rentalCounts });
         } catch (error) {
           console.error('Erreur chargement films:', error);
         }

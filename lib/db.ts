@@ -84,6 +84,47 @@ try {
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_weekly_bonuses_user_week ON weekly_bonuses(user_id, week_number)');
 } catch {}
 
+// Migrate: multi-copy rental system (stock, returned_early, return_requests)
+const multiCopyMigrations = [
+  'ALTER TABLE films ADD COLUMN stock INTEGER DEFAULT 2',
+  'ALTER TABLE rentals ADD COLUMN returned_early INTEGER DEFAULT 0',
+];
+
+for (const sql of multiCopyMigrations) {
+  try { db.exec(sql); } catch {}
+}
+
+// Set stock based on aisle (only on first migration)
+try {
+  const columns = db.prepare("PRAGMA table_info(films)").all() as { name: string }[];
+  if (columns.some(c => c.name === 'stock')) {
+    // Ensure default stock values by aisle
+    db.exec("UPDATE films SET stock = 3 WHERE is_nouveaute = 1 AND stock = 2");
+    db.exec("UPDATE films SET stock = 1 WHERE aisle = 'classiques' AND stock = 2");
+    db.exec("UPDATE films SET stock = 1 WHERE aisle = 'bizarre' AND stock = 2");
+  }
+} catch {}
+
+// Return requests table
+try {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS return_requests (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      film_id INTEGER NOT NULL,
+      requester_id INTEGER NOT NULL,
+      rental_id INTEGER NOT NULL,
+      message TEXT DEFAULT NULL,
+      status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'acknowledged', 'dismissed')),
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (film_id) REFERENCES films(id) ON DELETE CASCADE,
+      FOREIGN KEY (requester_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (rental_id) REFERENCES rentals(id) ON DELETE CASCADE
+    )
+  `);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_return_requests_rental ON return_requests(rental_id)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_return_requests_film ON return_requests(film_id)');
+} catch {}
+
 // Chat sessions table (safe with IF NOT EXISTS in schema.sql, but migration for existing DBs)
 try {
   db.exec(`

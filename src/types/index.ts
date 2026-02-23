@@ -14,6 +14,8 @@ export interface Film {
   tagline?: string;
   production_companies?: { id: number; name: string; logo_path: string | null }[];
   is_available?: boolean;
+  stock?: number;
+  active_rentals?: number;
   directors?: string[];
   actors?: string[];
 }

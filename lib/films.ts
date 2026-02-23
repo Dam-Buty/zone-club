@@ -193,6 +193,11 @@ export function setFilmNouveaute(filmId: number, isNouveaute: boolean): void {
     db.prepare('UPDATE films SET is_nouveaute = ? WHERE id = ?').run(isNouveaute ? 1 : 0, filmId);
 }
 
+export function setFilmStock(filmId: number, stock: number): void {
+    const clamped = Math.max(1, Math.min(10, Math.round(stock)));
+    db.prepare('UPDATE films SET stock = ? WHERE id = ?').run(clamped, filmId);
+}
+
 export function deleteFilm(filmId: number): void {
     db.prepare('DELETE FROM films WHERE id = ?').run(filmId);
 }

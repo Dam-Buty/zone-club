@@ -60,6 +60,8 @@ function apiFilmToFilm(f: ApiFilm): Film {
     vote_average: 0, // fetched from TMDB at runtime in fetchVHSCoverData
     genres: f.genres,
     is_available: f.is_available,
+    stock: f.stock ?? 2,
+    active_rentals: f.active_rentals ?? 0,
   };
 }
 
