@@ -31,6 +31,8 @@ export interface ApiFilm {
   aisle: string | null;
   is_nouveaute: boolean;
   is_available: boolean;
+  stock?: number;
+  active_rentals?: number;
   created_at: string;
 }
 
@@ -185,6 +187,14 @@ export const rentals = {
       body: JSON.stringify({ mode }),
     });
   },
+
+  async returnFilm(filmId: number): Promise<{ earlyReturnCredit: boolean }> {
+    return request(`/api/rentals/${filmId}/return`, { method: 'POST' });
+  },
+
+  async requestReturn(filmId: number): Promise<{ ok: boolean }> {
+    return request(`/api/rentals/${filmId}/request-return`, { method: 'POST' });
+  },
 };
 
 // ============ REVIEWS ============
@@ -270,7 +280,23 @@ export interface FilmWithRentalStatus extends ApiFilm {
     is_rented: boolean;
     rented_by_current_user: boolean;
     rental?: ApiRentalWithFilm;
+    stock: number;
+    active_rentals: number;
+    available_copies: number;
+    earliest_return?: string;
   };
+}
+
+export interface ApiReturnRequest {
+  id: number;
+  film_id: number;
+  requester_id: number;
+  rental_id: number;
+  message: string | null;
+  status: string;
+  created_at: string;
+  film_title?: string;
+  requester_name?: string;
 }
 
 export const films = {
@@ -322,6 +348,10 @@ export interface MeResponse {
 export const me = {
   async get(): Promise<MeResponse> {
     return request('/api/me');
+  },
+
+  async getNotifications(): Promise<{ notifications: ApiReturnRequest[] }> {
+    return request('/api/me/notifications');
   },
 
   async getWeeklyBonusStatus(): Promise<WeeklyBonusStatus> {
@@ -405,7 +435,7 @@ export const admin = {
     });
   },
 
-  async setFilmAisle(filmId: number, updates: { aisle?: string | null; is_nouveaute?: boolean }): Promise<void> {
+  async setFilmAisle(filmId: number, updates: { aisle?: string | null; is_nouveaute?: boolean; stock?: number }): Promise<void> {
     await request(`/api/admin/films/${filmId}/aisle`, {
       method: 'PATCH',
       body: JSON.stringify(updates),

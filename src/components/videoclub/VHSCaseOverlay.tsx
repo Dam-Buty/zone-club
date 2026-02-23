@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useStore } from "../../store";
 import { tmdb, type TMDBVideo } from "../../services/tmdb";
+import api, { type FilmWithRentalStatus } from "../../api";
 import { AuthModal } from "../auth/AuthModal";
 import { ReviewModal } from "../review/ReviewModal";
 import {
@@ -102,6 +103,8 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
   const getCredits = useStore((state) => state.getCredits);
   const getRental = useStore((state) => state.getRental);
   const storeRentFilm = useStore((state) => state.rentFilm);
+  const storeReturnFilm = useStore((state) => state.returnFilm);
+  const storeRequestReturn = useStore((state) => state.requestReturn);
   const storeSetViewingMode = useStore((state) => state.setViewingMode);
   const openPlayer = useStore((state) => state.openPlayer);
   const showManager = useStore((state) => state.showManager);
@@ -116,6 +119,11 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [settingMode, setSettingMode] = useState(false);
   const [showCouchPopup, setShowCouchPopup] = useState(false);
+  const [returning, setReturning] = useState(false);
+  const [requestingReturn, setRequestingReturn] = useState(false);
+  const [returnRequested, setReturnRequested] = useState(false);
+  const [filmRentalStatus, setFilmRentalStatus] = useState<FilmWithRentalStatus['rental_status'] | null>(null);
+  const [showLanguageChoice, setShowLanguageChoice] = useState(false);
 
   // Live countdown timer
   const [countdown, setCountdown] = useState("");
@@ -144,6 +152,17 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
     };
   }, [isOpen, rental]);
 
+  // Fetch detailed rental status (with stock info) when overlay opens
+  useEffect(() => {
+    if (!isOpen || !film?.tmdb_id) {
+      setFilmRentalStatus(null);
+      return;
+    }
+    api.films.getById(film.tmdb_id).then(data => {
+      setFilmRentalStatus(data.rental_status);
+    }).catch(() => {});
+  }, [isOpen, film?.tmdb_id]);
+
   // Reset states when overlay closes
   useEffect(() => {
     if (!isOpen) {
@@ -155,6 +174,10 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
       setShowReviewModal(false);
       setSettingMode(false);
       setShowCouchPopup(false);
+      setReturning(false);
+      setRequestingReturn(false);
+      setReturnRequested(false);
+      setShowLanguageChoice(false);
       if (couchPopupTimeoutRef.current) {
         clearTimeout(couchPopupTimeoutRef.current);
         couchPopupTimeoutRef.current = null;
@@ -184,7 +207,9 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.code === "Escape") {
-        if (showTrailer) {
+        if (showLanguageChoice) {
+          setShowLanguageChoice(false);
+        } else if (showTrailer) {
           setShowTrailer(false);
         } else if (showAuthModal) {
           setShowAuthModal(false);
@@ -197,7 +222,7 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, onClose, showTrailer, showAuthModal, showReviewModal]);
+  }, [isOpen, onClose, showTrailer, showAuthModal, showReviewModal, showLanguageChoice]);
 
   const handleWatchTrailer = useCallback(async () => {
     if (!film || loadingTrailer) return;
@@ -267,31 +292,67 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
 
   const handleSetViewingMode = useCallback(async (mode: 'sur_place' | 'emporter') => {
     if (!film || settingMode) return;
+
+    if (mode === 'emporter') {
+      // Show VF/VO language choice popup before setting mode
+      setShowLanguageChoice(true);
+      return;
+    }
+
     setSettingMode(true);
     const updatedRental = await storeSetViewingMode(film.id, mode);
     setSettingMode(false);
     if (!updatedRental) return;
 
-    if (mode === 'sur_place') {
-      // Don't open player directly; invite user to sit on the couch first.
-      showCouchMeetingPopup();
-      return;
-    }
-
-    // "À emporter" triggers the browser download automatically.
-    const link = document.createElement('a');
-    link.href = `/api/rentals/${film.id}/download`;
-    link.download = `${film.title}.mp4`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
+    // Don't open player directly; invite user to sit on the couch first.
+    showCouchMeetingPopup();
   }, [film, settingMode, storeSetViewingMode, showCouchMeetingPopup]);
+
+  const handleEmporterLanguage = useCallback(async (lang: 'vf' | 'vo') => {
+    if (!film || settingMode) return;
+    setShowLanguageChoice(false);
+    setSettingMode(true);
+    const updatedRental = await storeSetViewingMode(film.id, 'emporter');
+    setSettingMode(false);
+    if (!updatedRental) return;
+
+    // Use the streaming URL for the chosen language
+    const url = updatedRental.streamingUrls?.[lang] || updatedRental.streamingUrls?.vf || updatedRental.streamingUrls?.vo;
+    if (url) {
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${film.title} (${lang.toUpperCase()}).mp4`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    }
+  }, [film, settingMode, storeSetViewingMode]);
 
   const handleSitDown = useCallback(() => {
     if (!film) return;
     onClose();
     openPlayer(film.id);
   }, [film, onClose, openPlayer]);
+
+  const handleReturn = useCallback(async () => {
+    if (!film || returning) return;
+    setReturning(true);
+    const result = await storeReturnFilm(film.id);
+    setReturning(false);
+    if (result) {
+      onClose();
+    }
+  }, [film, returning, storeReturnFilm, onClose]);
+
+  const handleRequestReturn = useCallback(async () => {
+    if (!film || requestingReturn || returnRequested) return;
+    setRequestingReturn(true);
+    const success = await storeRequestReturn(film.id);
+    setRequestingReturn(false);
+    if (success) {
+      setReturnRequested(true);
+    }
+  }, [film, requestingReturn, returnRequested, storeRequestReturn]);
 
   const handleAuthSuccess = useCallback(() => {
     setShowAuthModal(false);
@@ -378,6 +439,17 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
             >
               {"\ud83d\udcfc"} {"\u00c0"} EMPORTER
             </button>
+            <button
+              onClick={handleReturn}
+              disabled={returning}
+              style={sideButtonStyle("#ff6600", "#ff6600", {
+                background: "rgba(255,102,0,0.12)",
+                cursor: returning ? "wait" : "pointer",
+                opacity: returning ? 0.6 : 1,
+              })}
+            >
+              {returning ? "RETOUR..." : "RETOURNER LE FILM"}
+            </button>
           </>
         );
       }
@@ -397,6 +469,17 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
             >
               {"\ud83d\udecb\ufe0f"} S'INSTALLER ET REGARDER
             </button>
+            <button
+              onClick={handleReturn}
+              disabled={returning}
+              style={sideButtonStyle("#ff6600", "#ff6600", {
+                background: "rgba(255,102,0,0.12)",
+                cursor: returning ? "wait" : "pointer",
+                opacity: returning ? 0.6 : 1,
+              })}
+            >
+              {returning ? "RETOUR..." : "RETOURNER LE FILM"}
+            </button>
           </>
         );
       }
@@ -413,23 +496,81 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
           >
             {"\ud83d\udcfc"} {"\u00c0"} EMPORTER {"\u2713"}
           </div>
+          <button
+            onClick={handleReturn}
+            disabled={returning}
+            style={sideButtonStyle("#ff6600", "#ff6600", {
+              background: "rgba(255,102,0,0.12)",
+              cursor: returning ? "wait" : "pointer",
+              opacity: returning ? 0.6 : 1,
+            })}
+          >
+            {returning ? "RETOUR..." : "RETOURNER LE FILM"}
+          </button>
         </>
       );
     }
 
-    // Not rented — show rent button
+    // Not rented — check stock availability
+    if (filmRentalStatus && filmRentalStatus.available_copies <= 0) {
+      // All copies rented out
+      return (
+        <>
+          <div
+            style={sideButtonStyle("#ff3333", "#ff3333", {
+              cursor: "default",
+              background: "rgba(255,51,51,0.1)",
+            })}
+          >
+            TOUTES LES COPIES LOU\u00c9ES ({filmRentalStatus.active_rentals}/{filmRentalStatus.stock})
+          </div>
+          {filmRentalStatus.earliest_return && (
+            <div
+              style={sideButtonStyle("#ffaa00", "#ffaa00", {
+                cursor: "default",
+                background: "rgba(255,170,0,0.08)",
+                fontSize: "0.7rem",
+              })}
+            >
+              Retour estim\u00e9: {formatCountdown(new Date(filmRentalStatus.earliest_return + 'Z').getTime())}
+            </div>
+          )}
+          <button
+            onClick={handleRequestReturn}
+            disabled={requestingReturn || returnRequested}
+            style={sideButtonStyle("#00fff7", "#00fff7", {
+              background: "rgba(0,255,247,0.12)",
+              boxShadow: "0 0 12px rgba(0,255,247,0.2)",
+              cursor: returnRequested ? "default" : "pointer",
+              opacity: returnRequested ? 0.6 : 1,
+            })}
+          >
+            {returnRequested ? "NOTIFICATION ENVOY\u00c9E \u2713" : requestingReturn ? "ENVOI..." : "NOTIFIER UN LOCATAIRE"}
+          </button>
+        </>
+      );
+    }
+
+    // Copies available — show rent button
     return (
-      <button
-        onClick={handleRent}
-        disabled={isAuthenticated && (!canAfford || isRenting)}
-        style={sideButtonStyle(rentBorderColor, rentTextColor, {
-          background: rentBg,
-          cursor: rentCursor,
-          boxShadow: rentShadow,
-        })}
-      >
-        {rentLabel}
-      </button>
+      <>
+        {filmRentalStatus && (
+          <div style={{ fontSize: "0.7rem", color: filmRentalStatus.available_copies > 0 ? "#00ff00" : "#ff3333", fontFamily: "Orbitron, sans-serif", textAlign: "center", letterSpacing: "0.5px" }}>
+            {filmRentalStatus.available_copies}/{filmRentalStatus.stock} dispo
+          </div>
+        )}
+        <button
+          onClick={handleRent}
+          disabled={isAuthenticated && (!canAfford || isRenting)}
+          style={sideButtonStyle(rentBorderColor, rentTextColor, {
+            background: rentBg,
+            cursor: rentCursor,
+            boxShadow: rentShadow,
+          })}
+        >
+          {rentLabel}
+        </button>
+      </>
     );
   }
 
@@ -508,7 +649,27 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
       );
     }
 
-    // Not rented
+    // Not rented — check stock
+    if (filmRentalStatus && filmRentalStatus.available_copies <= 0) {
+      return (
+        <>
+          <div style={mobilePillStyle("#ff3333", "#ff3333", { cursor: "default", background: "rgba(255,51,51,0.1)" })}>
+            TOUTES LOU\u00c9ES ({filmRentalStatus.active_rentals}/{filmRentalStatus.stock})
+          </div>
+          <button
+            onClick={handleRequestReturn}
+            disabled={requestingReturn || returnRequested}
+            style={mobilePillStyle("#00fff7", "#00fff7", {
+              background: "rgba(0,255,247,0.12)",
+              opacity: returnRequested ? 0.6 : 1,
+            })}
+          >
+            {returnRequested ? "ENVOY\u00c9 \u2713" : "NOTIFIER"}
+          </button>
+        </>
+      );
+    }
+
     return (
       <button
         onClick={handleRent}
@@ -619,6 +780,110 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
             }}
           >
             Disponible pendant {formatDuration(duration)}
+          </div>
+        </div>
+      )}
+
+      {/* VF/VO language choice popup */}
+      {showLanguageChoice && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.88)",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 210,
+          }}
+          onClick={() => setShowLanguageChoice(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: isMobile ? "16px" : "20px",
+              padding: isMobile ? "24px 20px" : "32px 40px",
+              background: "rgba(10,10,20,0.95)",
+              border: "1px solid rgba(255,153,0,0.4)",
+              borderRadius: "12px",
+              boxShadow: "0 0 30px rgba(255,153,0,0.15)",
+            }}
+          >
+            <div
+              style={{
+                fontFamily: "Orbitron, sans-serif",
+                fontSize: isMobile ? "0.85rem" : "1rem",
+                color: "#ff9900",
+                letterSpacing: "2px",
+                textTransform: "uppercase",
+                textShadow: "0 0 12px rgba(255,153,0,0.4)",
+              }}
+            >
+              CHOISIR LA LANGUE
+            </div>
+            <div style={{ display: "flex", gap: isMobile ? "12px" : "16px" }}>
+              <button
+                onClick={() => handleEmporterLanguage('vf')}
+                disabled={settingMode}
+                style={{
+                  padding: isMobile ? "14px 28px" : "16px 36px",
+                  background: "linear-gradient(135deg, rgba(0,120,255,0.25), rgba(0,80,200,0.25))",
+                  border: "1px solid #0088ff",
+                  borderRadius: "8px",
+                  color: "#ffffff",
+                  fontFamily: "Orbitron, sans-serif",
+                  fontSize: isMobile ? "0.9rem" : "1.05rem",
+                  cursor: settingMode ? "wait" : "pointer",
+                  letterSpacing: "2px",
+                  boxShadow: "0 0 14px rgba(0,136,255,0.25)",
+                  transition: "all 0.2s",
+                  opacity: settingMode ? 0.6 : 1,
+                }}
+              >
+                {"\ud83c\uddeb\ud83c\uddf7"} VF
+              </button>
+              <button
+                onClick={() => handleEmporterLanguage('vo')}
+                disabled={settingMode}
+                style={{
+                  padding: isMobile ? "14px 28px" : "16px 36px",
+                  background: "linear-gradient(135deg, rgba(220,50,50,0.25), rgba(180,30,30,0.25))",
+                  border: "1px solid #dd3333",
+                  borderRadius: "8px",
+                  color: "#ffffff",
+                  fontFamily: "Orbitron, sans-serif",
+                  fontSize: isMobile ? "0.9rem" : "1.05rem",
+                  cursor: settingMode ? "wait" : "pointer",
+                  letterSpacing: "2px",
+                  boxShadow: "0 0 14px rgba(220,50,50,0.25)",
+                  transition: "all 0.2s",
+                  opacity: settingMode ? 0.6 : 1,
+                }}
+              >
+                {"\ud83c\uddec\ud83c\udde7"} VO
+              </button>
+            </div>
+            <button
+              onClick={() => setShowLanguageChoice(false)}
+              style={{
+                marginTop: "4px",
+                padding: "8px 20px",
+                background: "transparent",
+                border: "1px solid rgba(255,255,255,0.2)",
+                borderRadius: "6px",
+                color: "rgba(255,255,255,0.4)",
+                fontFamily: "Orbitron, sans-serif",
+                fontSize: "0.7rem",
+                cursor: "pointer",
+                letterSpacing: "1px",
+              }}
+            >
+              ANNULER
+            </button>
           </div>
         </div>
       )}

@@ -138,8 +138,8 @@ async function main() {
     console.log(`Found ${allIds.length} unique TMDB IDs across ${Object.keys(filmsJson).length} aisles`);
 
     const insertFilm = db.prepare(`
-        INSERT INTO films (tmdb_id, title, title_original, synopsis, release_year, poster_url, backdrop_url, genres, directors, actors, runtime, aisle, is_nouveaute)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO films (tmdb_id, title, title_original, synopsis, release_year, poster_url, backdrop_url, genres, directors, actors, runtime, aisle, is_nouveaute, stock)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const insertGenre = db.prepare(`INSERT OR IGNORE INTO genres (name, slug, tmdb_id) VALUES (?, ?, ?)`);
@@ -172,12 +172,17 @@ async function main() {
                 insertGenre.run(genre.name, slugify(genre.name), genre.id);
             }
 
-            // Insert film with aisle and is_nouveaute
+            // Compute stock based on aisle/nouveaute
+            let stock = 2; // default
+            if (mapping.is_nouveaute) stock = 3;
+            else if (mapping.aisle === 'classiques' || mapping.aisle === 'bizarre') stock = 1;
+
+            // Insert film with aisle, is_nouveaute and stock
             const result = insertFilm.run(
                 data.tmdb_id, data.title, data.title_original, data.synopsis, data.release_year,
                 data.poster_url, data.backdrop_url,
                 JSON.stringify(data.genres), JSON.stringify(data.directors), JSON.stringify(data.actors),
-                data.runtime, mapping.aisle, mapping.is_nouveaute ? 1 : 0
+                data.runtime, mapping.aisle, mapping.is_nouveaute ? 1 : 0, stock
             );
 
             const filmId = result.lastInsertRowid as number;

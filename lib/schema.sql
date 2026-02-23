@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS films (
     file_path_vo_transcoded TEXT DEFAULT NULL,
     file_path_vf_transcoded TEXT DEFAULT NULL,
     sub_genre TEXT DEFAULT NULL,
+    stock INTEGER DEFAULT 2,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -72,6 +73,7 @@ CREATE TABLE IF NOT EXISTS rentals (
     rewind_claimed INTEGER DEFAULT 0,
     suggestion_film_id INTEGER DEFAULT NULL,
     viewing_mode TEXT DEFAULT NULL,
+    returned_early INTEGER DEFAULT 0,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (film_id) REFERENCES films(id) ON DELETE CASCADE
 );
@@ -115,6 +117,22 @@ CREATE TABLE IF NOT EXISTS weekly_bonuses (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_weekly_bonuses_user_week ON weekly_bonuses(user_id, week_number);
+
+-- Return requests (user asks renter to return faster)
+CREATE TABLE IF NOT EXISTS return_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    film_id INTEGER NOT NULL,
+    requester_id INTEGER NOT NULL,
+    rental_id INTEGER NOT NULL,
+    message TEXT DEFAULT NULL,
+    status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'acknowledged', 'dismissed')),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (film_id) REFERENCES films(id) ON DELETE CASCADE,
+    FOREIGN KEY (requester_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (rental_id) REFERENCES rentals(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_return_requests_rental ON return_requests(rental_id);
+CREATE INDEX IF NOT EXISTS idx_return_requests_film ON return_requests(film_id);
 
 -- Chat sessions (LLM manager conversations)
 CREATE TABLE IF NOT EXISTS chat_sessions (

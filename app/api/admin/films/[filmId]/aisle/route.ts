@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import { setFilmAisle, setFilmNouveaute } from '@/lib/films';
+import { setFilmAisle, setFilmNouveaute, setFilmStock } from '@/lib/films';
 import { getUserFromSession } from '@/lib/session';
 
 export async function PATCH(
@@ -23,6 +23,9 @@ export async function PATCH(
     }
     if ('is_nouveaute' in body) {
         setFilmNouveaute(filmId, body.is_nouveaute);
+    }
+    if ('stock' in body) {
+        setFilmStock(filmId, body.stock);
     }
 
     return NextResponse.json({ success: true });
