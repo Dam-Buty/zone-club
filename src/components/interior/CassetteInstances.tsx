@@ -220,6 +220,11 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
     let queueIdx = 0
     const loadNextBatch = () => {
       if (cancelled || queueIdx >= queue.length) return
+      // Wait until GPUTexture is allocated to avoid canvas fallback (GPU→CPU sync stall)
+      if (!texArray.isGPUReady()) {
+        requestAnimationFrame(loadNextBatch)
+        return
+      }
       const end = Math.min(queueIdx + POSTERS_PER_FRAME, queue.length)
       for (let j = queueIdx; j < end; j++) {
         const { index, url } = queue[j]

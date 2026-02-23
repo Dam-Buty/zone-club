@@ -1,7 +1,7 @@
 import { useRef, useEffect } from 'react'
 import { useThree, useFrame } from '@react-three/fiber'
 import * as THREE from 'three/webgpu'
-import { pass, mrt, output, normalView, viewportUV, clamp, float, time, vec2, fract, sin, dot, uniform } from 'three/tsl'
+import { pass, mrt, output, normalView, viewportUV, clamp, float, vec2, fract, sin, dot, uniform } from 'three/tsl'
 import { bloom } from 'three/addons/tsl/display/BloomNode.js'
 import { ao } from 'three/addons/tsl/display/GTAONode.js'
 import { fxaa } from 'three/addons/tsl/display/FXAANode.js'
@@ -17,9 +17,10 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
   const { gl: renderer, scene, camera } = useThree()
   const postProcessingRef = useRef<THREE.PostProcessing | null>(null)
   // DoF bokeh scale uniform — 0 = no blur, >0 = active (smooth lerp in useFrame)
-  const bokehRef = useRef<{ value: number }>({ value: 0 })
-  // Subscribe to VHS case state — triggers pipeline rebuild with/without DoF (desktop only)
-  // PostProcessingEffects returns null so re-renders are free (no scene graph changes)
+  const bokehRef = useRef<ReturnType<typeof uniform> | null>(null)
+  // Bloom strength uniform — 0.55 normal, 0 when VHS case open
+  const bloomStrengthRef = useRef<ReturnType<typeof uniform> | null>(null)
+  // Subscribe to VHS case state — DoF requires pipeline rebuild (can't use uniform-only)
   const isVHSCaseOpen = useStore(state => state.isVHSCaseOpen)
   // Mobile pipeline has no DoF — don't rebuild pipeline on case open/close
   const dofTrigger = isMobile ? false : isVHSCaseOpen
@@ -50,9 +51,8 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
       console.log('[PostProcessing] Pipeline: Vignette only (mobile)')
     } else {
       // ===== DESKTOP PIPELINE =====
-      // Without DoF: Scene MRT → GTAO(0.5x) → Bloom → CA → Vignette → FXAA → Film Grain
-      // With DoF:    Scene MRT → GTAO(0.5x) → Bloom → CA → DoF → Vignette → FXAA → Film Grain
-      // DoF is only included when VHS case is open (5 extra passes → 0 cost when closed)
+      // Bloom: uniform-controlled (no rebuild on toggle — strength lerps to 0 when VHS case open)
+      // DoF: conditional rebuild (dof() with bokehScale=0 still blurs via texture sampling)
 
       // 1. Scene pass avec MRT (Multiple Render Targets) pour normales + depth
       const scenePass = pass(scene, camera)
@@ -77,23 +77,21 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
       const aoValue = aoTexture.x
       const withAO = scenePassColor.mul(aoValue)
 
-      // 3. Bloom — skip entirely when VHS case is open (no neons visible, avoids white text blowout)
-      const bloomPass = isVHSCaseOpen ? null : bloom(withAO, 0.19, 0.4, 0.9)
-      const withBloom = bloomPass ? withAO.add(bloomPass) : withAO
+      // 3. Bloom — always in pipeline, controlled via bloomStrength uniform
+      // No rebuild needed: strength lerps 0.55 ↔ 0 (avoids white text blowout when VHS case open)
+      const bloomStrength = uniform(isVHSCaseOpen ? 0.0 : 0.55)
+      bloomStrengthRef.current = bloomStrength
+      const bloomPass = bloom(withAO, 0.14, bloomStrength, 0.9)
+      const withBloom = withAO.add(bloomPass)
 
       // 4. Conditional DoF — only when VHS case viewer is open
-      // Pipeline is rebuilt when isVHSCaseOpen changes (useEffect dep)
-      // This avoids the 5-pass DoF cost (~23 FPS) when not needed
+      // dof() with bokehScale=0 still introduces blur via texture sampling, so it must be excluded
       let postBloom = withBloom
 
       if (isVHSCaseOpen) {
         // CRITICAL: dof() expects viewZ (negative view-space Z), NOT raw depth [0,1]
-        // getViewZNode() converts depth buffer → linearized viewZ via perspectiveDepthToViewZ()
         const scenePassViewZ = scenePass.getViewZNode()
         // Focus at 0.4725m = exact DISTANCE_FROM_CAMERA in VHSCaseViewer
-        // focalLength 1.0 = objects >1m from focus go fully out-of-focus
-        //   → entire case stays sharp during rotation (spine swings ±10cm max)
-        //   → background shelves (2m+) still fully blurred
         const bokehScale = uniform(0)
         bokehRef.current = bokehScale
         postBloom = dof(withBloom, scenePassViewZ, 0.4725, 1.0, bokehScale)
@@ -105,18 +103,17 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
       // 6. FXAA (smooths geometry aliasing)
       const withFXAA = fxaa(withVignette)
 
-      // 8. Film Grain — very subtle analog texture, animated per frame
-      const grainUV = viewportUV.add(time.mul(float(0.17)))
-      const grain = fract(sin(dot(grainUV, vec2(12.9898, 78.233))).mul(float(43758.5453)))
-        .sub(float(0.5)).mul(float(0.016))
+      // 7. Film Grain — very subtle static analog texture
+      const grain = fract(sin(dot(viewportUV, vec2(12.9898, 78.233))).mul(float(43758.5453)))
+        .sub(float(0.5)).mul(float(0.0144))
       const withGrain = withFXAA.add(grain)
 
       postProcessing.outputNode = withGrain
 
       if (isVHSCaseOpen) {
-        console.log('[PostProcessing] Pipeline: GTAO + DoF(0.4725m) + Vignette + FXAA + Film Grain (no bloom)')
+        console.log('[PostProcessing] Pipeline: GTAO + Bloom(0) + DoF(0.4725m) + Vignette + FXAA + Film Grain')
       } else {
-        console.log('[PostProcessing] Pipeline: GTAO + Bloom + Vignette + FXAA + Film Grain')
+        console.log('[PostProcessing] Pipeline: GTAO + Bloom(uniform) + Vignette + FXAA + Film Grain')
       }
     }
 
@@ -125,6 +122,8 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
     return () => {
       postProcessing.dispose()
       postProcessingRef.current = null
+      bokehRef.current = null
+      bloomStrengthRef.current = null
     }
   }, [renderer, scene, camera, isMobile, dofTrigger])
 
@@ -134,12 +133,22 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
 
   // renderPriority=1 tells R3F to skip its default renderer.render() call
   useFrame((_, delta) => {
+    // Tab visibility pause — save 100% GPU when tab is hidden
+    if (document.hidden) return
+
     if (postProcessingRef.current) {
       // Smooth DoF ramp-up when case is open (bokehScale: 0 → 4 over ~0.2s)
       if (isVHSCaseOpen && bokehRef.current) {
         const target = 4.0
         const current = bokehRef.current.value
         bokehRef.current.value += (target - current) * Math.min(delta * 8, 1)
+      }
+
+      // Smooth bloom ramp: 0.55 normal, 0 when VHS case open (avoids white text blowout)
+      if (bloomStrengthRef.current) {
+        const bloomTarget = isVHSCaseOpen ? 0.0 : 0.55
+        const currentBloom = bloomStrengthRef.current.value
+        bloomStrengthRef.current.value += (bloomTarget - currentBloom) * Math.min(delta * 8, 1)
       }
 
       // Throttle rendering when VHS case is open and idle

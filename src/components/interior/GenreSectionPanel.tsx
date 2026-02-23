@@ -119,11 +119,11 @@ export function GenreSectionPanel({
   // Compenser l'intensité émissive selon la luminance perceptuelle de la couleur.
   // Le bloom (threshold=0.9) utilise la luminance : les couleurs sombres (violet, rouge, magenta)
   // ne déclenchaient pas le bloom contrairement au jaune/vert.
-  // On normalise pour que luminance × intensity ≈ 1.5 (au-dessus du threshold 0.9).
+  // Divisé par 2 pour un rendu plus doux et subtil.
   const neonIntensity = useMemo(() => {
     const c = new THREE.Color(color)
     const luminance = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b
-    return THREE.MathUtils.clamp(1.17 / luminance, 1.17, 4.05)
+    return THREE.MathUtils.clamp(1.17 / luminance, 1.17, 4.05) * 0.5
   }, [color])
 
   // Matériau partagé pour les tubes du cadre

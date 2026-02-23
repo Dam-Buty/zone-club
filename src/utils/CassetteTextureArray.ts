@@ -100,6 +100,19 @@ export class CassetteTextureArray {
   }
 
   /**
+   * Check if the GPU texture is allocated and ready for direct uploads.
+   * Returns false before the first render (GPUTexture not yet created).
+   */
+  isGPUReady(): boolean {
+    if (!this._renderer) return false
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const backend = (this._renderer as any).backend
+      return !!(backend?.device && backend.get?.(this.textureArray)?.texture)
+    } catch { return false }
+  }
+
+  /**
    * Fill a layer with a solid fallback color (used when no poster available).
    * Does NOT trigger GPU upload — call flush() after batch operations.
    */
