@@ -207,37 +207,37 @@ function Cassette({ posterUrl }) {
 
 Chaque lumière = calculs supplémentaires par pixel.
 
-| Type | Coût | Notes |
+| Type | Coût ALU/frag | Notes |
 |------|------|-------|
-| AmbientLight | Très faible | |
-| HemisphereLight | Faible | |
-| DirectionalLight | Moyen | |
-| PointLight | Élevé (avec decay) | |
-| RectAreaLight (grande, ceiling) | Élevé | Couvre toute la scène |
-| RectAreaLight (petite, neon sign) | **Très faible** | Analytique, rayon limité |
-| SpotLight | Très élevé | |
+| AmbientLight | ~0 | Uniform only |
+| HemisphereLight | ~0 | Uniform only |
+| DirectionalLight | ~18 | Per-fragment + shadow map |
+| PointLight | ~18 | Per-fragment, +6 cube renders if shadows |
+| RectAreaLight | ~30 each | Per-fragment + LTC sampling, 2 LTC textures in VRAM |
+| SpotLight | ~25 | Per-fragment + cone test |
+| IBL (env map) | ~12 fixed | Not per-light, once per pipeline |
+| Emissive + bloom | ~0 | Zero per-fragment, same post-process passes |
 
-### Solution
-
-Mode optimisé avec lumières combinées.
+### Solution — 3 Layers Architecture
 
 ```typescript
-function OptimizedLighting() {
-  return (
-    <>
-      <ambientLight intensity={0.25} />
-      <hemisphereLight intensity={0.2} />
-      {/* UNE grande RectAreaLight au lieu de plusieurs petites */}
-      <rectAreaLight width={10} height={8} intensity={1.2} position={[0, 2.65, 0]} />
-      {/* 2-3 PointLights pour accents */}
-    </>
-  )
-}
+// Layer 1: IBL as primary light (environmentIntensity=0.9) + uniforms
+<ambientLight intensity={0.22} />
+<hemisphereLight intensity={0.40} />
+
+// Layer 2: Max 3 per-fragment lights
+<directionalLight castShadow />    // Shadows
+<pointLight />                      // Island accent
+<pointLight />                      // Storefront (desktop only)
+
+// Layer 3: Fake lights — emissive planes + bloom (zero per-fragment cost)
+<mesh material={glowMaterial} />    // AdditiveBlending, depthWrite=false
+// Bloom threshold 0.14 captures toneMapped=false emissives
 ```
 
-**Note :** Les petites RectAreaLights (neon signs, ~1.5m × 0.1m) sont quasi gratuites car elles n'éclairent qu'une petite zone. 6 panneaux néon = coût négligeable. Voir PHOTOREALISM_PIPELINE.md § Neon Sign Lighting.
+**Rule:** Max 3 per-fragment lights. Beyond 3, use emissive planes + AdditiveBlending + bloom.
 
-**Gain :** -50% à -70% calculs éclairage
+**Gain :** -67% ALU/frag (198 → 66)
 
 ---
 
@@ -547,6 +547,75 @@ Le raycast touche le mesh le **plus proche** de la caméra. Si un overlay sans `
 
 ---
 
+## 15. Consolidated Best Practices (R3F + Codrops + Utsubo 100 Tips)
+
+Sources: [R3F Pitfalls](https://r3f.docs.pmnd.rs/advanced/pitfalls), [R3F Scaling Performance](https://r3f.docs.pmnd.rs/advanced/scaling-performance), [Codrops: Efficient Three.js Scenes](https://tympanus.net/codrops/2025/02/11/building-efficient-three-js-scenes), [Utsubo: 100 Three.js Tips](https://www.utsubo.com/blog/threejs-best-practices-100-tips)
+
+### Lighting (CRITICAL)
+
+| Rule | Source | Detail |
+|------|--------|--------|
+| Max 3 per-fragment lights | Utsubo #53 | Beyond 3, use env maps or baking |
+| Environment maps > dynamic lights | Utsubo #59, Codrops | IBL as primary light source |
+| Fake shadows with planes | Utsubo #62 | Semi-transparent + gradient = contact shadows for free |
+| PointLight shadow = 6 cube renders | Utsubo #54 | 2 PointLights with shadows = 120 draw calls |
+| Emissive + bloom > PointLight | Video Club pattern | Zero per-fragment cost, same visual result |
+
+### Rendering Pipeline
+
+| Rule | Source | Detail |
+|------|--------|--------|
+| Tab visibility pause | Codrops | `document.hidden` check in useFrame — 100% GPU saving |
+| On-demand rendering | R3F Scaling | `frameloop="demand"` + `invalidate()` for static scenes |
+| PerformanceMonitor | R3F Scaling, Drei | Adaptive quality — degrade DPR/post-processing |
+| Movement regression | R3F Scaling | `performance.regress()` during interactions |
+| Disable shadow autoUpdate | Utsubo #61 | `renderer.shadowMap.autoUpdate = false` for static scenes |
+| Toggle visibility, don't remount | Utsubo #71, R3F Pitfalls | `visible={false}` avoids shader recompilation |
+| Target < 100 draw calls | Utsubo #30 | Golden rule for stable 60fps |
+
+### React Patterns
+
+| Rule | Source | Detail |
+|------|--------|--------|
+| Mutate in useFrame, never setState | R3F Pitfalls, Utsubo #63 | Direct mutation, never setState in render loop |
+| Never create objects inside useFrame | R3F Pitfalls, Utsubo #66 | Reuse with `.set()`, pool pattern |
+| startTransition for heavy ops | R3F Scaling | Scene transitions, large state updates |
+| Suspense + lazy | Utsubo #84, #90 | Code-split Three.js, progressive loading |
+| useGLTF.preload | Utsubo #69 | Preload models before needed |
+| useLoader > new TextureLoader | R3F Pitfalls | Automatic caching in R3F tree |
+
+### Assets & Materials
+
+| Rule | Source | Detail |
+|------|--------|--------|
+| KTX2 for textures | Utsubo #22-23 | ~10x VRAM reduction, UASTC for normal maps |
+| gltfjsx -S -T -t | Codrops, Utsubo #24 | Simplification + Draco + TypeScript |
+| Atlas textures | Utsubo #27 | Combine textures to reduce GPU binds |
+| BatchedMesh | Utsubo #32 | Combine different geometries with same material |
+| Reuse shader programs | Utsubo #52 | Identical definitions share GPU program |
+
+### Shaders (WebGPU/TSL)
+
+| Rule | Source | Detail |
+|------|--------|--------|
+| Replace conditionals with mix()/step() | Utsubo #45 | Branching kills GPU parallelism |
+| Pack data into RGBA channels | Utsubo #46 | 4 values per texel = -75% fetches |
+| Avoid dynamic loops in shaders | Utsubo #47 | Fixed bounds for compiler optimization |
+| TSL Fn() reusable | Utsubo #50 | Composable functions compiled once |
+
+### Profiling
+
+| Tool | Source | Use Case |
+|------|--------|----------|
+| r3f-perf | Codrops, Utsubo #72 | Drop-in monitoring for R3F |
+| renderer.info | Utsubo #94 | Verify `calls`, `triangles`, `geometries`, `textures` |
+| three-mesh-bvh | Utsubo #95 | Accelerated raycasting for 80K+ polygons |
+| Spector.js | Utsubo #93 | Frame-by-frame capture (draw calls, binds, programs) |
+| stats-gl | Utsubo #91 | Real-time FPS/CPU/GPU for WebGL + WebGPU |
+| Canvas gl config | Codrops | `powerPreference: "high-performance"`, `alpha: false` |
+
+---
+
 ## Checklist d'Optimisation (mise à jour)
 
 - [ ] Géométrie partagée pour objets similaires
@@ -555,7 +624,7 @@ Le raycast touche le mesh le **plus proche** de la caméra. Si un overlay sans `
 - [ ] Variables réutilisables HORS des composants (Vector3, Matrix4...)
 - [ ] React.memo avec comparaison custom
 - [ ] Disposal textures/matériaux au unmount
-- [ ] Mode éclairage optimisé
+- [ ] **Max 3 per-fragment lights — IBL + emissive planes for the rest**
 - [ ] Shadows désactivés sur petits objets et GLB haute-poly
 - [ ] Raycast throttling
 - [ ] **meshStandardMaterial partout sauf surfaces vitrées**
@@ -564,30 +633,35 @@ Le raycast touche le mesh le **plus proche** de la caméra. Si un overlay sans `
 - [ ] **Textures CDN à résolution adaptée (w200 pour petits objets)**
 - [ ] **Bloom : compensation luminance pour couleurs variées**
 - [ ] **Pas de bevel sur polices manuscrites**
+- [ ] **Tab visibility pause (document.hidden in useFrame)**
+- [ ] **Fake shadows with emissive planes + AdditiveBlending**
 
 ---
 
 ## Métriques de Référence
 
-Pour une scène avec ~500 objets animés + 10 lumières :
+Pour une scène avec ~500 objets animés + 3 per-fragment lights :
 
 | Sans optimisation | Avec optimisation | Gain |
 |-------------------|-------------------|------|
 | 500 géométries | 1 géométrie | -99% mémoire |
 | 30000 callbacks/sec | 7500 callbacks/sec | -75% |
 | 500 animations | ~100 (visibles) | -80% |
-| 20+ lumières | 8 lumières | -60% |
+| 20+ lumières | 3 per-fragment + IBL | -85% ALU/frag |
 | 500 shadow renders | 0 | -100% |
 | meshPhysicalMaterial | meshStandardMaterial | -50% GPU shader |
 | Assets 85MB | Assets 5MB | -94% disque |
 | 350MB VRAM textures | 150MB VRAM | -57% GPU mém |
-| Bloom strength 0.4 | 0.19 | netteté +++ |
+| ~198 ALU/frag | ~66 ALU/frag | -67% lighting |
 
 ---
 
 ## Références
 
-- [React Three Fiber Performance Tips](https://docs.pmnd.rs/react-three-fiber/advanced/scaling-performance)
+- [React Three Fiber Pitfalls](https://r3f.docs.pmnd.rs/advanced/pitfalls)
+- [React Three Fiber Scaling Performance](https://r3f.docs.pmnd.rs/advanced/scaling-performance)
+- [Codrops: Building Efficient Three.js Scenes](https://tympanus.net/codrops/2025/02/11/building-efficient-three-js-scenes)
+- [Utsubo: 100 Three.js Best Practices](https://www.utsubo.com/blog/threejs-best-practices-100-tips)
 - [Three.js Optimization Guide](https://threejs.org/manual/#en/optimize-lots-of-objects)
 - Three.js Frustum class documentation
 - [gltf-transform CLI](https://gltf-transform.dev/cli) (Draco, quantization)

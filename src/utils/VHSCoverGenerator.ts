@@ -24,7 +24,7 @@ const _invertedLogoCache = new Map<string, HTMLCanvasElement>();
 const VHS_DATA_CACHE = new Map<number, VHSCoverData>();
 const VHS_TEXTURE_CACHE = new Map<number, THREE.CanvasTexture>();
 const VHS_TEXTURE_LRU: number[] = []; // oldest first
-const VHS_TEXTURE_MAX = 12; // ~108MB VRAM max (12 × 9MB per 1536² RGBA)
+const VHS_TEXTURE_MAX = 24; // ~216MB VRAM max (24 × 9MB per 1536² RGBA)
 
 // Face regions in canvas pixel coordinates { x, y, w, h }
 const FRONT = { x: 614, y: 117, w: 395, h: 712 };

@@ -21,40 +21,45 @@ interface GenreRectLightConfig {
   name: string
   position: [number, number, number]
   rotationY: number
+  tiltDeg: number // downward tilt in degrees (local X)
   neonColor: string
   intensity: number
 }
 
-// Each RectAreaLight sits at the genre neon panel position, facing INTO the room.
-// Width=1.4 (neon tube length), height=0.3 (thin strip). Decay is natural with distance.
+// Each RectAreaLight at genre neon panel position, facing INTO the room.
+// Width=2.52, height=0.72. Tilt via parent group (rotationY) + child (rotationX).
+// Back wall (Action/Drame) needs steeper tilt (65°) because shelves face same direction as light.
+// Left/right walls get 40° — cassettes present their face to the light naturally.
+
 const GENRE_RECT_LIGHT_CONFIGS: GenreRectLightConfig[] = [
-  // Left wall (face +X into room) — rotation PI/2
-  { name: 'horreur',  position: [-4.34, 2.07, -0.93], rotationY: Math.PI / 2,  neonColor: '#00ff00', intensity: 4 },
-  { name: 'thriller', position: [-4.34, 2.07,  1.58], rotationY: Math.PI / 2,  neonColor: '#ff6600', intensity: 3.5 },
-  // Back wall (face +Z into room) — rotation PI
-  { name: 'action',   position: [-2.25, 2.07, -4.17], rotationY: Math.PI,      neonColor: '#ff4444', intensity: 4 },
-  { name: 'drame',    position: [ 1.25, 2.07, -4.17], rotationY: Math.PI,      neonColor: '#8844ff', intensity: 5 },
-  // Right wall (face -X into room) — rotation -PI/2
-  { name: 'comedie',  position: [ 4.34, 2.07, -1.50], rotationY: -Math.PI / 2, neonColor: '#ffff00', intensity: 3 },
+  // Left wall (face +X into room)
+  { name: 'horreur',  position: [-4.34, 1.967, -0.93], rotationY: Math.PI / 2,  tiltDeg: 40, neonColor: '#00ff00', intensity: 0.7 },
+  { name: 'thriller', position: [-4.34, 1.967,  1.58], rotationY: Math.PI / 2,  tiltDeg: 40, neonColor: '#ff6600', intensity: 0.63 },
+  // Back wall (face +Z into room) — steeper tilt to hit shelf tops
+  { name: 'action',   position: [-2.25, 1.967, -4.17], rotationY: Math.PI,      tiltDeg: 65, neonColor: '#ff4444', intensity: 0.7 },
+  { name: 'drame',    position: [ 1.25, 1.967, -4.17], rotationY: Math.PI,      tiltDeg: 65, neonColor: '#8844ff', intensity: 0.875 },
+  // Right wall (face -X into room)
+  { name: 'comedie',  position: [ 4.34, 1.967, -1.50], rotationY: -Math.PI / 2, tiltDeg: 40, neonColor: '#ffff00', intensity: 0.525 },
 ]
 
 // Pre-compute desaturated colors
 const GENRE_RECT_LIGHT_COLORS = GENRE_RECT_LIGHT_CONFIGS.map(c => computePanelLightColor(c.neonColor))
 
-// 5 RectAreaLights at genre neon sign positions — real area lighting with PBR interaction
+// 3 wall RectAreaLights (horreur, thriller, comedie) + 2 back wall (action, drame)
+// No island lights — Nouveautés/SF/Classiques have no wall to project onto.
 function GenreRectLights() {
   return (
     <>
       {GENRE_RECT_LIGHT_CONFIGS.map((config, i) => (
-        <rectAreaLight
-          key={config.name}
-          position={config.position}
-          rotation={[0, config.rotationY, 0]}
-          width={1.4}
-          height={0.3}
-          intensity={config.intensity}
-          color={GENRE_RECT_LIGHT_COLORS[i]}
-        />
+        <group key={config.name} position={config.position} rotation={[0, config.rotationY, 0]}>
+          <rectAreaLight
+            rotation={[-(config.tiltDeg * Math.PI / 180), 0, 0]}
+            width={2.52}
+            height={0.72}
+            intensity={config.intensity}
+            color={GENRE_RECT_LIGHT_COLORS[i]}
+          />
+        </group>
       ))}
     </>
   )
@@ -137,14 +142,14 @@ function OptimizedLighting({ isMobile = false }: { isMobile?: boolean }) {
 
   return (
     <>
-      {/* 1. Lumière ambiante - réduite pour ambiance sombre */}
-      <ambientLight intensity={isMobile ? 0.25 : 0.15} color="#fff8f0" />
+      {/* 1. Lumière ambiante - relevée pour compenser suppression storefront DirLight */}
+      <ambientLight intensity={isMobile ? 0.3 : 0.22} color="#fff8f0" />
 
-      {/* 2. Hemisphere light - éclairage naturel subtil */}
+      {/* 2. Hemisphere light - éclairage naturel */}
       <hemisphereLight
         color="#fff8f0"
         groundColor="#4a4a5a"
-        intensity={isMobile ? 0.45 : 0.3}
+        intensity={isMobile ? 0.5 : 0.4}
       />
 
       {/* Desktop-only lights */}
@@ -160,24 +165,6 @@ function OptimizedLighting({ isMobile = false }: { isMobile?: boolean }) {
             color="#fff5e6"
             distance={3}
             decay={2}
-          />
-
-          {/* Storefront: DirectionalLight from outside, above at angle (street lamp)
-              castShadow so the storefront wall structure projects shadows through openings */}
-          <directionalLight
-            position={[0, 4, 8]}
-            intensity={0.6}
-            color="#6070a0"
-            castShadow
-            shadow-mapSize-width={1024}
-            shadow-mapSize-height={1024}
-            shadow-camera-left={-5}
-            shadow-camera-right={5}
-            shadow-camera-top={3}
-            shadow-camera-bottom={-0.5}
-            shadow-camera-near={1}
-            shadow-camera-far={12}
-            shadow-bias={-0.0003}
           />
         </>
       )}
