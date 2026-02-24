@@ -68,7 +68,7 @@ export function WallShelf({
     normalMap: woodTextures.normalMap as THREE.Texture,
     roughnessMap: woodTextures.roughnessMap as THREE.Texture,
     color: '#8a7560',
-    normalScale: new THREE.Vector2(0.7, 0.7),
+    normalScale: new THREE.Vector2(0.9, 0.9),
   }), [woodTextures])
 
   const plankMaterial = useMemo(() => new THREE.MeshStandardMaterial({
@@ -76,7 +76,7 @@ export function WallShelf({
     normalMap: woodTextures.normalMap as THREE.Texture,
     roughnessMap: woodTextures.roughnessMap as THREE.Texture,
     color: '#7a6550',
-    normalScale: new THREE.Vector2(0.7, 0.7),
+    normalScale: new THREE.Vector2(0.9, 0.9),
   }), [woodTextures])
 
   const dividerMaterial = useMemo(() => new THREE.MeshStandardMaterial({
@@ -84,7 +84,7 @@ export function WallShelf({
     normalMap: woodTextures.normalMap as THREE.Texture,
     roughnessMap: woodTextures.roughnessMap as THREE.Texture,
     color: '#6a5540',
-    normalScale: new THREE.Vector2(0.7, 0.7),
+    normalScale: new THREE.Vector2(0.9, 0.9),
   }), [woodTextures])
 
   const plankGeometry = useMemo(() =>
@@ -132,7 +132,7 @@ export function WallShelf({
       {/* Tilt group: pivot at shelf center height, ~5° backward lean */}
       <group position={[0, SHELF_PIVOT_Y, 0]} rotation={[-SHELF_TILT, 0, 0]}>
         {/* Structure principale — centered at tilt pivot */}
-        <mesh receiveShadow material={backMaterial}>
+        <mesh castShadow receiveShadow material={backMaterial}>
           <boxGeometry args={[length, SHELF_HEIGHT, SHELF_DEPTH]} />
         </mesh>
 

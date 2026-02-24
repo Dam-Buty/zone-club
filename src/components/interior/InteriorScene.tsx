@@ -733,6 +733,7 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
   return (
     <div style={{ position: 'fixed', inset: 0, touchAction: 'none' }}>
       <Canvas
+        shadows
         dpr={isMobile ? 1.0 : Math.min(window.devicePixelRatio, 1.5)}
         gl={(async (props: any) => {
           console.log('[Canvas] Initializing WebGPU renderer...')
@@ -778,7 +779,7 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
           renderer.shadowMap.enabled = true
           renderer.shadowMap.type = isMobile ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap
           renderer.toneMapping = THREE.ACESFilmicToneMapping
-          renderer.toneMappingExposure = 1.12
+          renderer.toneMappingExposure = 1.08
           console.log(
             `[Canvas] WebGPU renderer initialized — layers: ${effectiveMaxLayers}${effectiveMaxLayers !== detectedMaxLayers ? ` (forced, device=${detectedMaxLayers})` : ''}, shadows: ${isMobile ? 'PCF' : 'PCFSoft'}, dpr: ${isMobile ? '≤1.5' : '≤2'}`
           )

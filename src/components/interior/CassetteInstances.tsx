@@ -186,8 +186,8 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
   // Create custom TSL material with DataArrayTexture + compute-driven animation
   const material = useMemo(() => {
     const mat = new THREE.MeshStandardNodeMaterial()
-    mat.roughness = 0.5
-    mat.metalness = 0.08
+    mat.roughness = 0.15
+    mat.metalness = 0.15
 
     // TSL: read per-instance layer index and sample from DataArrayTexture
     const layerIdx = attribute('layerIndex')
