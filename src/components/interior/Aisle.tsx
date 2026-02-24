@@ -567,9 +567,9 @@ export function Aisle({ films, maxTextureArrayLayers = 256 }: AisleProps) {
   const allCassetteData = useMemo(() => {
     const all: CassetteInstanceData[] = []
 
-    // WallShelf: Horreur
+    // WallShelf: Horreur (Z=-1.80: moved back 0.26 to eliminate 17cm overlap with Thriller shelf)
     all.push(...computeWallShelfCassettes(
-      [-ROOM_WIDTH / 2 + WALL_SHELF_OFFSET, 0, -1.54], [0, Math.PI / 2, 0], 3.5, horreurSlice
+      [-ROOM_WIDTH / 2 + WALL_SHELF_OFFSET, 0, -1.80], [0, Math.PI / 2, 0], 3.5, horreurSlice
     ))
     // WallShelf: Thriller
     all.push(...computeWallShelfCassettes(
@@ -654,19 +654,19 @@ export function Aisle({ films, maxTextureArrayLayers = 256 }: AisleProps) {
       {/* ===== SECTION HORREUR - MUR GAUCHE ===== */}
       {/* ========================================= */}
       <group>
-        {/* Panneau HORREUR suspendu - décalé vers la droite */}
+        {/* Panneau HORREUR suspendu - reculé avec le meuble */}
         <GenreSectionPanel
           genre="HORREUR"
-          position={[-ROOM_WIDTH / 2 + 1.14, 2.07, -0.93]}
+          position={[-ROOM_WIDTH / 2 + 1.14, 2.07, -1.19]}
           rotation={[0, Math.PI / 2, 0]}
           color={GENRE_CONFIG.horreur.color}
           width={1.8}
           hanging={true}
         />
 
-        {/* Étagères Horreur - mur gauche */}
+        {/* Étagères Horreur - mur gauche (reculé vers le fond pour ne plus chevaucher Thriller) */}
         <WallShelf
-          position={[-ROOM_WIDTH / 2 + WALL_SHELF_OFFSET, 0, -1.54]}
+          position={[-ROOM_WIDTH / 2 + WALL_SHELF_OFFSET, 0, -1.80]}
           rotation={[0, Math.PI / 2, 0]}
           length={3.5}
         />
