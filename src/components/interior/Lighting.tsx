@@ -82,8 +82,8 @@ function CeilingTubeLights() {
           key={`ceiling-tube-${i}`}
           position={[x, y - 0.02, z]}
           rotation={[-Math.PI / 2, 0, 0]}
-          width={1.4}
-          height={0.12}
+          width={0.12}
+          height={1.4}
           intensity={35.0}
           color="#f0f5ff"
         />
@@ -95,7 +95,7 @@ function CeilingTubeLights() {
 // OPTIMISATION: Géométries et matériaux partagés pour les 9 NeonTubes
 const NEON_TUBE_LENGTH = 1.4
 const SHARED_NEON_TUBE_GEOM = new THREE.CylinderGeometry(0.025, 0.025, NEON_TUBE_LENGTH, 6)
-const SHARED_NEON_FIXTURE_GEOM = new THREE.BoxGeometry(NEON_TUBE_LENGTH + 0.1, 0.03, 0.08)
+const SHARED_NEON_FIXTURE_GEOM = new THREE.BoxGeometry(0.08, 0.03, NEON_TUBE_LENGTH + 0.1)
 const SHARED_NEON_TUBE_MAT = new THREE.MeshStandardMaterial({
   color: '#fff5e6',
   emissive: new THREE.Color('#fff5e6'),
@@ -119,7 +119,7 @@ const NEON_POSITIONS: [number, number, number][] = [
 
 // Matrices pré-calculées pour les tubes (rotation 90° sur Z) et fixtures (offset Y +0.04)
 const _tempMatrix = new THREE.Matrix4()
-const _tubeRotation = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, Math.PI / 2))
+const _tubeRotation = new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI / 2, 0, 0))
 
 // OPTIMISATION: 9 NeonTubes → 2 InstancedMesh (tube + fixture) = 18→2 draw calls
 function NeonTubesInstanced() {
@@ -210,12 +210,12 @@ function OptimizedLighting({ isMobile = false }: { isMobile?: boolean }) {
           {/* Positions: gauche-centre, centre, droite-centre — couvrent toute la pièce */}
           <CeilingTubeLights />
 
-          {/* COUCHE 2b : RectAreaLight zone manager/comptoir */}
+          {/* COUCHE 2b : RectAreaLight zone manager/comptoir — aligné sur tube [3, 2.7, 3] */}
           <rectAreaLight
-            position={[2.5, 2.68, 3]}
+            position={[3, 2.68, 3]}
             rotation={[-Math.PI / 2, 0, 0]}
-            width={1.4}
-            height={0.12}
+            width={0.12}
+            height={1.4}
             intensity={20.0}
             color="#fff5e6"
           />
