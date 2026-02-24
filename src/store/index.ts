@@ -693,6 +693,11 @@ export const useStore = create<VideoClubState>()(
 );
 
 
+// Dev/test hook — expose store to browser console & Playwright MCP
+if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production') {
+  (window as any).__store = useStore;
+}
+
 // Hook pour initialiser l'auth au démarrage
 export function useInitAuth() {
   const fetchMe = useStore((state) => state.fetchMe);
