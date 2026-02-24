@@ -24,11 +24,11 @@ npm run seed         # Seed films database
 docker compose up -d # Production (5 services)
 ```
 
-**IMPORTANT** : Le container app sert le build standalone pre-construit. Pour deployer des modifications :
+**IMPORTANT** : Le container app monte le dossier du projet et sert le build standalone. Builder depuis la machine hote (bien plus rapide que dans le container), puis redemarrer le container qui pickup le nouveau build :
 ```bash
-docker exec zone-app sh -c "cd /app && npm install && npm run build"
-docker compose restart app
+npm run build && docker compose restart app
 ```
+Si `.next/` a des fichiers root (crees par le container), supprimer d'abord : `sudo rm -rf .next`
 
 ## Architecture
 

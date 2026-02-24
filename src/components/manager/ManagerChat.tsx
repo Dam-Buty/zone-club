@@ -1,8 +1,8 @@
 import { useRef, useEffect, useCallback, useState } from 'react';
 import { useChat } from '@ai-sdk/react';
+import { isToolUIPart, getToolName } from 'ai';
 import { useStore } from '../../store';
 import { ChatMessageRenderer } from './ChatMessageRenderer';
-import type { ChatAnnotation } from '../../types/chat';
 import styles from './ManagerChat.module.css';
 
 export function ManagerChat() {
@@ -18,55 +18,38 @@ export function ManagerChat() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [inputValue, setInputValue] = useState('');
-  const [genUIMap, setGenUIMap] = useState<Record<string, ChatAnnotation[]>>({});
 
-  const { messages, sendMessage, status, error } = useChat({
-    onFinish: ({ message }) => {
-      // Inspect tool results in the finished message for side-effects
-      const messageGenUI: ChatAnnotation[] = [];
-      if (message.parts) {
-        for (const part of message.parts) {
-          if (part.type === 'tool-invocation' && 'result' in part) {
-            const result = part.result as any;
-            if (!result) continue;
+  // Track which tool calls we've already processed for side-effects
+  const processedToolCalls = useRef<Set<string>>(new Set());
 
-            // Backdrop
-            if (result.url && result.success === true) {
-              setChatBackdrop(result.url);
-            }
+  // Stable session UUID for Langfuse grouping — generated once when chat opens
+  const sessionIdRef = useRef<string>(crypto.randomUUID());
 
-            // Credits
-            if (result.action === 'credits') {
-              fetchMe();
-            }
+  const { messages, sendMessage, status, error } = useChat({});
 
-            // GenUI actions
-            if (result.action === 'rent' && result.film) {
-              messageGenUI.push({ name: 'rent', film: result.film });
-            }
-            if (result.action === 'critic' && result.filmId) {
-              messageGenUI.push({
-                name: 'critic',
-                filmId: result.filmId,
-                filmTitle: result.filmTitle,
-                preWrittenReview: result.preWrittenReview,
-              });
-            }
-            if (result.action === 'watch' && result.filmId) {
-              messageGenUI.push({
-                name: 'watch',
-                filmId: result.filmId,
-                title: result.title,
-              });
-            }
-          }
+  // Process side-effects from tool outputs (backdrop, credits)
+  useEffect(() => {
+    for (const msg of messages) {
+      if (msg.role !== 'assistant' || !msg.parts) continue;
+      for (const part of msg.parts) {
+        if (!isToolUIPart(part) || part.state !== 'output-available') continue;
+        if (processedToolCalls.current.has(part.toolCallId)) continue;
+
+        const toolName = getToolName(part);
+        const output = part.output as any;
+        if (!output) continue;
+
+        processedToolCalls.current.add(part.toolCallId);
+
+        if (toolName === 'backdrop' && output.success && output.url) {
+          setChatBackdrop(output.url);
+        }
+        if (toolName === 'add_credits' && output.action === 'credits') {
+          fetchMe();
         }
       }
-      if (messageGenUI.length > 0) {
-        setGenUIMap(prev => ({ ...prev, [message.id]: messageGenUI }));
-      }
-    },
-  });
+    }
+  }, [messages, setChatBackdrop, fetchMe]);
 
   const isLoading = status === 'streaming' || status === 'submitted';
 
@@ -75,9 +58,10 @@ export function ManagerChat() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
 
-  // Focus input + unlock pointer when chat opens
+  // Focus input + unlock pointer when chat opens, generate new session UUID
   useEffect(() => {
     if (managerVisible) {
+      sessionIdRef.current = crypto.randomUUID();
       requestPointerUnlock();
       inputRef.current?.focus();
     }
@@ -87,7 +71,7 @@ export function ManagerChat() {
   const closeChat = useCallback(async () => {
     hideManager();
     requestPointerLock();
-    setGenUIMap({});
+    processedToolCalls.current.clear();
     try {
       await fetch('/api/chat/close', { method: 'POST', credentials: 'include' });
     } catch {}
@@ -121,7 +105,7 @@ export function ManagerChat() {
     if (!text || isLoading) return;
     const events = drainEvents();
     setInputValue('');
-    sendMessage({ text }, { body: { events } });
+    sendMessage({ text }, { body: { events, sessionId: sessionIdRef.current } });
   }, [inputValue, isLoading, sendMessage, drainEvents]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -155,7 +139,6 @@ export function ManagerChat() {
             <ChatMessageRenderer
               key={message.id}
               message={message}
-              genUIData={genUIMap[message.id] || []}
             />
           ))}
           {isLoading && (messages.length === 0 || messages[messages.length - 1]?.role !== 'assistant') && (
