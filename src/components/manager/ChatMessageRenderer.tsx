@@ -1,5 +1,5 @@
 import type { UIMessage } from 'ai';
-import type { ChatAnnotation } from '../../types/chat';
+import { isToolUIPart, getToolName } from 'ai';
 import { GenUIRentCard } from './GenUIRentCard';
 import { GenUICriticForm } from './GenUICriticForm';
 import { GenUIWatchButton } from './GenUIWatchButton';
@@ -7,20 +7,10 @@ import styles from './ManagerChat.module.css';
 
 interface Props {
   message: UIMessage;
-  genUIData: ChatAnnotation[];
 }
 
-export function ChatMessageRenderer({ message, genUIData }: Props) {
+export function ChatMessageRenderer({ message }: Props) {
   const isAssistant = message.role === 'assistant';
-
-  // Extract text content from message parts
-  const displayText = message.parts
-    ?.filter((p): p is { type: 'text'; text: string } => p.type === 'text')
-    .map(p => p.text)
-    .join('') || '';
-
-  // Find GenUI data for this message (rendered after text)
-  const messageGenUI = isAssistant ? genUIData : [];
 
   return (
     <div
@@ -28,18 +18,55 @@ export function ChatMessageRenderer({ message, genUIData }: Props) {
         isAssistant ? styles.managerMessage : styles.userMessage
       }`}
     >
-      {displayText && (
-        <span className={styles.messageText}>{displayText}</span>
-      )}
-      {messageGenUI.map((data, i) => {
-        switch (data.name) {
+      {message.parts?.map((part, i) => {
+        if (part.type === 'text') {
+          return part.text ? (
+            <span key={`text-${i}`} className={styles.messageText}>{part.text}</span>
+          ) : null;
+        }
+
+        if (!isAssistant || !isToolUIPart(part)) return null;
+
+        const toolName = getToolName(part);
+
+        // Only render GenUI when tool output is available
+        if (part.state !== 'output-available') return null;
+        const output = part.output as any;
+        if (!output) return null;
+
+        switch (toolName) {
           case 'rent':
-            return <GenUIRentCard key={`rent-${i}`} data={data} />;
+            if (output.action === 'rent' && output.film) {
+              return <GenUIRentCard key={part.toolCallId} data={{ name: 'rent', film: output.film }} />;
+            }
+            return null;
           case 'critic':
-            return <GenUICriticForm key={`critic-${i}`} data={data} />;
+            if (output.action === 'critic' && output.filmId) {
+              return (
+                <GenUICriticForm
+                  key={part.toolCallId}
+                  data={{
+                    name: 'critic',
+                    filmId: output.filmId,
+                    filmTitle: output.filmTitle,
+                    preWrittenReview: output.preWrittenReview,
+                  }}
+                />
+              );
+            }
+            return null;
           case 'watch':
-            return <GenUIWatchButton key={`watch-${i}`} data={data} />;
+            if (output.action === 'watch' && output.filmId) {
+              return (
+                <GenUIWatchButton
+                  key={part.toolCallId}
+                  data={{ name: 'watch', filmId: output.filmId, title: output.title }}
+                />
+              );
+            }
+            return null;
           default:
+            // get_film, backdrop, add_credits: no inline UI
             return null;
         }
       })}

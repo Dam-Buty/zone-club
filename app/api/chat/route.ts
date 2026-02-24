@@ -1,11 +1,12 @@
 import { cookies } from 'next/headers';
+import { after } from 'next/server';
 import { streamText, convertToModelMessages, stepCountIs } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 import { getUserFromSession, getUserFromApiKey } from '@/lib/session';
 import { buildSystemPrompt } from '@/lib/chat';
 import { createChatTools } from '@/lib/chat-tools';
-import { createSession, appendMessages, getCurrentSession } from '@/lib/chat-history';
 import { db } from '@/lib/db';
+import { langfuseSpanProcessor } from '@/instrumentation';
 
 const CHAT_MODEL = process.env.CHAT_MODEL || 'z-ai/glm-4.7-flash';
 
@@ -22,17 +23,10 @@ export async function POST(req: Request) {
   }
 
   const body = await req.json();
-  const { messages, events } = body;
+  const { messages, events, sessionId } = body;
 
   // Get user credits
   const userData = db.prepare('SELECT credits FROM users WHERE id = ?').get(user.id) as { credits: number };
-
-  // Get or create chat session
-  let session = getCurrentSession(user.id);
-  if (!session) {
-    const sessionId = createSession(user.id);
-    session = { id: sessionId, user_id: user.id, raw_messages: '[]', summary: null, started_at: '', ended_at: null };
-  }
 
   const systemPrompt = buildSystemPrompt({
     userId: user.id,
@@ -73,28 +67,14 @@ export async function POST(req: Request) {
       isEnabled: true,
       functionId: 'chat',
       metadata: {
+        sessionId: sessionId || undefined,
         userId: String(user.id),
-        sessionId: String(session!.id),
       },
     },
-    onFinish: async ({ text }) => {
-      // Persist messages to DB
-      const lastUserMsg = messages[messages.length - 1];
-      const toStore: { role: string; content: string }[] = [];
-      if (lastUserMsg && lastUserMsg.role === 'user') {
-        const userContent = typeof lastUserMsg.content === 'string'
-          ? lastUserMsg.content
-          : lastUserMsg.parts?.filter((p: any) => p.type === 'text').map((p: any) => p.text).join('') || '';
-        toStore.push({ role: 'user', content: userContent });
-      }
-      if (text) {
-        toStore.push({ role: 'assistant', content: text });
-      }
-      if (toStore.length > 0) {
-        appendMessages(session!.id, toStore);
-      }
-    },
   });
+
+  // Flush Langfuse traces after response is sent
+  after(async () => await langfuseSpanProcessor.forceFlush());
 
   return result.toUIMessageStreamResponse();
 }

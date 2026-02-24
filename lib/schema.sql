@@ -134,17 +134,15 @@ CREATE TABLE IF NOT EXISTS return_requests (
 CREATE INDEX IF NOT EXISTS idx_return_requests_rental ON return_requests(rental_id);
 CREATE INDEX IF NOT EXISTS idx_return_requests_film ON return_requests(film_id);
 
--- Chat sessions (LLM manager conversations)
-CREATE TABLE IF NOT EXISTS chat_sessions (
+-- User facts (LLM-memorized facts about users)
+CREATE TABLE IF NOT EXISTS user_facts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
-    raw_messages TEXT NOT NULL DEFAULT '[]',
-    summary TEXT DEFAULT NULL,
-    started_at TEXT DEFAULT CURRENT_TIMESTAMP,
-    ended_at TEXT DEFAULT NULL,
+    fact TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
-CREATE INDEX IF NOT EXISTS idx_chat_sessions_user ON chat_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_facts_user ON user_facts(user_id);
 
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_rentals_user ON rentals(user_id);

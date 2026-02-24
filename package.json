@@ -13,7 +13,8 @@
     "seed": "npx tsx scripts/seed-films.ts",
     "test:player-flow": "node scripts/test-player-flow.mjs",
     "test:phase": "node --test \"tests/**/*.test.mjs\"",
-    "test:phase:full": "npm run test:phase && npm run build"
+    "test:phase:full": "npm run test:phase && npm run build",
+    "deploy": "docker compose down app && sudo rm -rf .next && npm run build && docker compose up -d app"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.30",

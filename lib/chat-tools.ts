@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { fetchFullMovieData, getMovieBackdrops, getBackdropUrl } from './tmdb';
 import { getFilmById, getFilmByTmdbId } from './films';
 import { getUserActiveRentals } from './rentals';
+import { addUserFact } from './user-facts';
 import { db } from './db';
 
 export function createChatTools(userId: number) {
@@ -130,6 +131,17 @@ export function createChatTools(userId: number) {
           newBalance: user.credits,
           reason,
         };
+      },
+    }),
+
+    remember_fact: tool({
+      description: 'Memorise un fait important sur le client pour les prochaines conversations. Utilise quand le client revele quelque chose d\'interessant: ses genres preferes, un film qu\'il a adore ou deteste, une anecdote personnelle liee au cinema, etc.',
+      inputSchema: z.object({
+        fact: z.string().describe('Fait concis en francais sur le client (ex: "adore les films de Kubrick", "a peur des films d\'horreur")'),
+      }),
+      execute: async ({ fact }) => {
+        addUserFact(userId, fact);
+        return { success: true };
       },
     }),
   };

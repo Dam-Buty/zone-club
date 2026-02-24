@@ -21,14 +21,11 @@ npm run dev          # Dev server (port 3000)
 npm run build        # Build production standalone
 npm run start        # Start production server
 npm run seed         # Seed films database
+npm run deploy       # Deploy complet : down app, clean .next, build, up app
 docker compose up -d # Production (5 services)
 ```
 
-**IMPORTANT** : Le container app sert le build standalone pre-construit. Pour deployer des modifications :
-```bash
-docker exec zone-app sh -c "cd /app && npm install && npm run build"
-docker compose restart app
-```
+**Deploy** : `npm run deploy` gere tout le cycle (down → clean → build → up). Le container app monte le dossier du projet et sert le build standalone — on build depuis la machine hote (bien plus rapide que dans le container).
 
 ## Architecture
 

@@ -1,7 +1,7 @@
 import { getFilmsByAisle, getNouveautes } from './films';
 import { getUserActiveRentals, getUserRentalHistory } from './rentals';
 import { getUserReviews } from './reviews';
-import { getRecentSummaries } from './chat-history';
+import { getUserFacts } from './user-facts';
 import { getFilmById } from './films';
 
 interface ChatContext {
@@ -15,7 +15,7 @@ export function buildSystemPrompt(context: ChatContext): string {
   const activeRentals = getUserActiveRentals(context.userId);
   const rentalHistory = getUserRentalHistory(context.userId);
   const reviews = getUserReviews(context.userId);
-  const summaries = getRecentSummaries(context.userId, 5);
+  const facts = getUserFacts(context.userId);
 
   // Build catalogue compact by aisle
   const aisles = ['action', 'horreur', 'sf', 'comedie', 'drame', 'thriller', 'policier', 'animation', 'classiques', 'bizarre'] as const;
@@ -51,10 +51,8 @@ export function buildSystemPrompt(context: ChatContext): string {
     return `- ${film?.title || 'Film inconnu'} (${avg}/5): "${r.content.slice(0, 200)}${r.content.length > 200 ? '...' : ''}"`;
   }).join('\n');
 
-  // Past conversation summaries
-  const summariesText = summaries.reverse().map(s =>
-    `[${new Date(s.started_at).toLocaleDateString('fr-FR')}] ${s.summary}`
-  ).join('\n');
+  // User facts from previous conversations
+  const factsText = facts.map(f => `- ${f.fact}`).join('\n');
 
   return `Tu es Michel, le gerant du videoclub Zone Club depuis 1984. Tu es un personnage haut en couleur.
 
@@ -74,6 +72,7 @@ export function buildSystemPrompt(context: ChatContext): string {
 - Utilise \`critic\` quand le client veut donner son avis apres avoir vu un film. Ecris une critique de 500+ caracteres dans son style.
 - Utilise \`get_film\` quand tu as besoin d'infos detaillees sur un film.
 - N'utilise PAS plusieurs outils visuels (rent, critic, watch) dans la meme reponse.
+- Utilise \`remember_fact\` pour memoriser un fait important sur le client (gouts, preferences, anecdotes). Max 2-3 par conversation. Pas de banalites.
 
 ## MINIGAME CREDITS
 Le client peut gagner des credits en discutant avec toi:
@@ -92,7 +91,7 @@ ${reviewsText ? `- Critiques ecrites:\n${reviewsText}` : ''}
 ## CATALOGUE (par rayon)
 ${catalogueLines.join('\n')}
 
-${summariesText ? `## CONVERSATIONS PRECEDENTES\n${summariesText}` : ''}
+${factsText ? `## CE QUE TU SAIS SUR CE CLIENT\n${factsText}` : ''}
 
 ## OUVERTURE
 Pour ton premier message:

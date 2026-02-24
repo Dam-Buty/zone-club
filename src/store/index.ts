@@ -127,12 +127,10 @@ interface VideoClubState {
   // Manager IA
   managerVisible: boolean;
   chatBackdropUrl: string | null;
-  chatSessionId: number | null;
   eventQueue: string[];
   showManager: () => void;
   hideManager: () => void;
   setChatBackdrop: (url: string | null) => void;
-  setChatSessionId: (id: number | null) => void;
   pushEvent: (event: string) => void;
   drainEvents: () => string[];
 
@@ -269,10 +267,6 @@ export const useStore = create<VideoClubState>()(
       },
 
       logout: async () => {
-        // Close chat session if open
-        if (get().managerVisible) {
-          try { await fetch('/api/chat/close', { method: 'POST', credentials: 'include' }); } catch {}
-        }
         try {
           await api.auth.logout();
         } catch {
@@ -285,7 +279,6 @@ export const useStore = create<VideoClubState>()(
           rentalHistory: [],
           managerVisible: false,
           chatBackdropUrl: null,
-          chatSessionId: null,
         });
       },
 
@@ -560,12 +553,10 @@ export const useStore = create<VideoClubState>()(
       // Manager IA
       managerVisible: false,
       chatBackdropUrl: null,
-      chatSessionId: null,
       eventQueue: [],
       showManager: () => set({ managerVisible: true }),
       hideManager: () => set({ managerVisible: false, chatBackdropUrl: null }),
       setChatBackdrop: (url) => set({ chatBackdropUrl: url }),
-      setChatSessionId: (id) => set({ chatSessionId: id }),
       pushEvent: (event) => set((state) => ({ eventQueue: [...state.eventQueue, event] })),
       drainEvents: () => {
         const events = get().eventQueue;
@@ -577,11 +568,7 @@ export const useStore = create<VideoClubState>()(
       isPlayerOpen: false,
       currentPlayingFilm: null,
       openPlayer: (filmId) => {
-        // Close chat session if open
-        if (get().managerVisible) {
-          fetch('/api/chat/close', { method: 'POST', credentials: 'include' }).catch(() => {});
-        }
-        set({ isPlayerOpen: true, currentPlayingFilm: filmId, managerVisible: false, chatBackdropUrl: null, chatSessionId: null });
+        set({ isPlayerOpen: true, currentPlayingFilm: filmId, managerVisible: false, chatBackdropUrl: null });
       },
       closePlayer: () => set({ isPlayerOpen: false, currentPlayingFilm: null }),
 
