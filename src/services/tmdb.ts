@@ -166,11 +166,18 @@ export const tmdb = {
       const data = await res.json();
       const logos: TMDBImage[] = data.logos || [];
       if (logos.length === 0) return null;
-      // Prefer French, then English, then any — pick widest for quality
-      const frLogo = logos.find((l: TMDBImage & { iso_639_1?: string }) =>
+      // Prefer French → English → any by width
+      // Exception: Scarface (id=111) — keep English logo
+      const ENGLISH_ONLY_IDS = [111]; // Scarface
+      const frLogos = ENGLISH_ONLY_IDS.includes(id) ? [] : logos.filter((l: TMDBImage & { iso_639_1?: string }) =>
         (l as TMDBImage & { iso_639_1?: string }).iso_639_1 === 'fr'
       );
-      const best = frLogo || logos.sort((a, b) => b.width - a.width)[0];
+      const enLogos = logos.filter((l: TMDBImage & { iso_639_1?: string }) =>
+        (l as TMDBImage & { iso_639_1?: string }).iso_639_1 === 'en'
+      );
+      const best = frLogos.sort((a, b) => b.vote_count - a.vote_count)[0]
+        || enLogos.sort((a, b) => b.vote_count - a.vote_count || b.width - a.width)[0]
+        || logos.sort((a, b) => b.width - a.width)[0];
       return best ? `${IMAGE_BASE}/w500${best.file_path}` : null;
     });
   },

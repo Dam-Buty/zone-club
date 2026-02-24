@@ -4,7 +4,7 @@ import { useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 import { bumpMap, texture, positionLocal, mix, float, clamp as tslClamp, uniform, vec3 } from 'three/tsl'
 import { useStore } from '../../store'
-import { fetchVHSCoverData, generateVHSCoverTexture } from '../../utils/VHSCoverGenerator'
+import { fetchVHSCoverData, fetchVHSCoverDataFast, generateVHSCoverTexture, regenerateVHSCoverTexture, hasVHSCoverData } from '../../utils/VHSCoverGenerator'
 import { useIsMobile } from '../../hooks/useIsMobile'
 import type { Film } from '../../types'
 
@@ -32,7 +32,7 @@ const PORTRAIT_QUAT = new THREE.Quaternion().setFromAxisAngle(
 
 // Albedo dampening — base attenuation for scene lighting (IBL 0.7 + PointLights)
 // Per-fragment Y-gradient correction is applied via TSL colorNode (see texture apply useEffect)
-const ALBEDO_COLOR = new THREE.Color(0.50, 0.50, 0.50)
+const ALBEDO_COLOR = new THREE.Color(0.89, 0.89, 0.89)
 
 // Animation constants
 const DISTANCE_FROM_CAMERA = 0.496  // meters in front of camera (+10%)
@@ -103,6 +103,9 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
             const mapImg = mat.map.image as { width?: number; height?: number } | null
             if (!mapImg || ((mapImg.width ?? 0) >= 512 && (mapImg.height ?? 0) >= 512)) {
               meshes.push(child)
+              // Hide GLB original texture immediately to prevent upside-down flash
+              // (GLB atlas has different flipY than our generated cover texture)
+              mat.map = null
             }
           }
         }
@@ -157,7 +160,9 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
     }
   }, [setVHSCaseOpen, camera, scene])
 
-  // Fetch cover data and generate texture
+  // 2-pass texture loading:
+  // Pass 1 (~100-200ms): poster + Film metadata already in memory → visible immediately
+  // Pass 2 (~1-3s): backdrops, logos, reviews, credits → canvas redrawn silently
   useEffect(() => {
     let cancelled = false
 
@@ -170,45 +175,49 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
     fadeProgressRef.current = 0
     fadeUniformRef.current = null
 
-    fetchVHSCoverData(film).then(data => {
-      if (cancelled) return
-      const tex = generateVHSCoverTexture(data)
-
-      // Don't dispose — LRU cache in VHSCoverGenerator manages texture lifecycle
-      coverTextureRef.current = tex
-
-      // Apply texture via TSL colorNode with subtle Y-based correction.
-      // With IBL-based lighting (no ceiling RectAreaLight), the gradient is flattened
-      // to avoid amplifying PointLight hotspots. Mild top darkening only.
-      // positionLocal.x = model height axis (maps to visual vertical after portrait rotation)
+    // Helper: apply texture to GLB meshes via TSL colorNode (called once for pass 1)
+    const applyTexture = (tex: THREE.CanvasTexture) => {
       const bumpTex = tex.userData.bumpMap as THREE.CanvasTexture | undefined
       const texNode = texture(tex)
-      const albedoBase = float(1.0)  // full brightness jacket artwork
-      // Normalize model height to 0(bottom)–1(top). Model is ~2m centered at origin.
+      const albedoBase = float(1.0)
       const normalizedHeight = tslClamp(positionLocal.x.add(1.0).div(2.0), 0.0, 1.0)
-      // Minimal gradient: scene IBL + lights provide natural variation, just subtle compensation
       const correction = mix(float(1.03), float(0.97), normalizedHeight)
       const correctedColor = texNode.mul(albedoBase).mul(correction)
 
-      // TSL uniform drives the fade from blank VHS → cover artwork in useFrame
       const fadeU = uniform(0.0)
       fadeUniformRef.current = fadeU
-      // Blank = neutral gray matching ALBEDO_COLOR (0.5)
       const blankColor = vec3(0.5, 0.5, 0.5)
       const fadedColor = mix(blankColor, correctedColor, fadeU)
 
       for (const mesh of meshesWithMap) {
         const mat = mesh.material as THREE.MeshStandardMaterial
-        mat.map = null  // disable built-in map — colorNode handles sampling
+        mat.map = null
         ;(mat as any).colorNode = fadedColor
         if (bumpTex) {
-          // WebGPU renderer requires TSL normalNode (classic bumpMap property is ignored)
           ;(mat as any).normalNode = bumpMap(texture(bumpTex), 1.2)
         }
         mat.needsUpdate = true
       }
 
+      coverTextureRef.current = tex
       textureReadyRef.current = true
+    }
+
+    // Pass 1: fast (poster + Film metadata)
+    fetchVHSCoverDataFast(film).then(fastData => {
+      if (cancelled) return
+      const tex = generateVHSCoverTexture(fastData)
+      applyTexture(tex)
+
+      // Skip pass 2 if fast returned full cached data (already enriched)
+      if (hasVHSCoverData(film.id)) return
+
+      // Pass 2: enriched (backdrops, logos, reviews, credits)
+      fetchVHSCoverData(film).then(enrichedData => {
+        if (cancelled) return
+        // Redraw same canvas with enriched data — needsUpdate triggers GPU re-upload
+        regenerateVHSCoverTexture(tex, enrichedData)
+      })
     })
 
     return () => { cancelled = true }
