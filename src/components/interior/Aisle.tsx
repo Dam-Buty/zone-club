@@ -609,9 +609,9 @@ export function Aisle({ films, maxTextureArrayLayers = 256 }: AisleProps) {
           map={floorTextures.map}
           normalMap={floorTextures.normalMap}
           color="#d8d0cc"
-          roughness={0.35}
-          metalness={0.0}
-          envMapIntensity={0.7}
+          roughness={0.12}
+          metalness={0.02}
+          envMapIntensity={0.4}
           normalScale={[0.8, 0.8] as unknown as THREE.Vector2}
         />
       </mesh>

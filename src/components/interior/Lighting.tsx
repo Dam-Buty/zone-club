@@ -10,7 +10,7 @@ function computePanelLightColor(neonHex: string): string {
   const neon = new THREE.Color(neonHex)
   const hsl = { h: 0, s: 0, l: 0 }
   neon.getHSL(hsl)
-  hsl.s *= 0.6
+  hsl.s *= 0.7
   hsl.l = Math.max(hsl.l, 0.5)
   neon.setHSL(hsl.h, hsl.s, hsl.l)
   neon.lerp(new THREE.Color('#fff5e6'), 0.3)
@@ -33,13 +33,13 @@ interface GenreRectLightConfig {
 
 const GENRE_RECT_LIGHT_CONFIGS: GenreRectLightConfig[] = [
   // Left wall (face +X into room)
-  { name: 'horreur',  position: [-4.34, 1.967, -0.93], rotationY: Math.PI / 2,  tiltDeg: 40, neonColor: '#00ff00', intensity: 0.7 },
-  { name: 'thriller', position: [-4.34, 1.967,  1.58], rotationY: Math.PI / 2,  tiltDeg: 40, neonColor: '#ff6600', intensity: 0.63 },
+  { name: 'horreur',  position: [-4.34, 1.967, -0.93], rotationY: Math.PI / 2,  tiltDeg: 40, neonColor: '#00ff00', intensity: 3.0 },
+  { name: 'thriller', position: [-4.34, 1.967,  1.58], rotationY: Math.PI / 2,  tiltDeg: 40, neonColor: '#ff6600', intensity: 2.5 },
   // Back wall (face +Z into room) — steeper tilt to hit shelf tops
-  { name: 'action',   position: [-2.25, 1.967, -4.17], rotationY: Math.PI,      tiltDeg: 65, neonColor: '#ff4444', intensity: 0.7 },
-  { name: 'drame',    position: [ 1.25, 1.967, -4.17], rotationY: Math.PI,      tiltDeg: 65, neonColor: '#8844ff', intensity: 0.875 },
+  { name: 'action',   position: [-2.25, 1.967, -4.17], rotationY: Math.PI,      tiltDeg: 65, neonColor: '#ff4444', intensity: 3.0 },
+  { name: 'drame',    position: [ 1.25, 1.967, -4.17], rotationY: Math.PI,      tiltDeg: 65, neonColor: '#8844ff', intensity: 4.0 },
   // Right wall (face -X into room)
-  { name: 'comedie',  position: [ 4.34, 1.967, -1.50], rotationY: -Math.PI / 2, tiltDeg: 40, neonColor: '#ffff00', intensity: 0.525 },
+  { name: 'comedie',  position: [ 4.34, 1.967, -1.50], rotationY: -Math.PI / 2, tiltDeg: 40, neonColor: '#ffff00', intensity: 2.0 },
 ]
 
 // Pre-compute desaturated colors
@@ -65,14 +65,41 @@ function GenreRectLights() {
   )
 }
 
+// 3 RectAreaLights plafond — positions stratégiques pour couverture maximale
+// Forme tube fluorescent : 1.4m × 0.12m, face vers le bas
+// Gauche, centre, droite — couvrent étagères murales + îlot central
+const CEILING_LIGHT_POSITIONS: [number, number, number][] = [
+  [-3, 2.7, 0],   // gauche — éclaire étagères mur gauche
+  [ 0, 2.7, 0],   // centre — éclaire îlot central
+  [ 3, 2.7, 0],   // droite — éclaire étagères mur droit
+]
+
+function CeilingTubeLights() {
+  return (
+    <>
+      {CEILING_LIGHT_POSITIONS.map(([x, y, z], i) => (
+        <rectAreaLight
+          key={`ceiling-tube-${i}`}
+          position={[x, y - 0.02, z]}
+          rotation={[-Math.PI / 2, 0, 0]}
+          width={0.12}
+          height={1.4}
+          intensity={35.0}
+          color="#f0f5ff"
+        />
+      ))}
+    </>
+  )
+}
+
 // OPTIMISATION: Géométries et matériaux partagés pour les 9 NeonTubes
 const NEON_TUBE_LENGTH = 1.4
 const SHARED_NEON_TUBE_GEOM = new THREE.CylinderGeometry(0.025, 0.025, NEON_TUBE_LENGTH, 6)
-const SHARED_NEON_FIXTURE_GEOM = new THREE.BoxGeometry(NEON_TUBE_LENGTH + 0.1, 0.03, 0.08)
+const SHARED_NEON_FIXTURE_GEOM = new THREE.BoxGeometry(0.08, 0.03, NEON_TUBE_LENGTH + 0.1)
 const SHARED_NEON_TUBE_MAT = new THREE.MeshStandardMaterial({
   color: '#fff5e6',
   emissive: new THREE.Color('#fff5e6'),
-  emissiveIntensity: 2,
+  emissiveIntensity: 3,
   roughness: 0.15,
   metalness: 0.05,
   toneMapped: false,
@@ -92,7 +119,7 @@ const NEON_POSITIONS: [number, number, number][] = [
 
 // Matrices pré-calculées pour les tubes (rotation 90° sur Z) et fixtures (offset Y +0.04)
 const _tempMatrix = new THREE.Matrix4()
-const _tubeRotation = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, Math.PI / 2))
+const _tubeRotation = new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI / 2, 0, 0))
 
 // OPTIMISATION: 9 NeonTubes → 2 InstancedMesh (tube + fixture) = 18→2 draw calls
 function NeonTubesInstanced() {
@@ -136,29 +163,64 @@ function NeonTubesInstanced() {
   )
 }
 
-// Version OPTIMISÉE: 7 lumières au lieu de 21
+// Architecture éclairage : 3 couches
+// Couche 1 : IBL (HDRI) + HemisphereLight → ambiance (~0 ALU)
+// Couche 2 : 3 RectAreaLights plafond + 1 DirectionalLight → éclairage direct (max budget ~90 ALU)
+// Couche 3 : 9 tubes émissifs + bloom → glow visuel (~0 ALU)
 function OptimizedLighting({ isMobile = false }: { isMobile?: boolean }) {
   const shadowMapSize = isMobile ? 256 : 1024
+  const dirLightRef = useRef<THREE.DirectionalLight>(null!)
+
+  // SHADOW CACHING: scène statique → on rend le shadow map UNE FOIS puis on le gèle
+  // Coût GPU par frame: 0 (shadow map en VRAM, réutilisé sans re-rendu)
+  useEffect(() => {
+    const light = dirLightRef.current
+    if (!light) return
+
+    // Laisser 2 frames pour que toute la géométrie soit chargée et positionnée
+    let frameCount = 0
+    const id = requestAnimationFrame(function wait() {
+      frameCount++
+      if (frameCount < 3) {
+        requestAnimationFrame(wait)
+        return
+      }
+      // Forcer un dernier rendu du shadow map puis geler
+      light.shadow.needsUpdate = true
+      light.shadow.autoUpdate = false
+      console.log('[Lighting] Shadow map cached — autoUpdate disabled (static scene)')
+    })
+
+    return () => cancelAnimationFrame(id)
+  }, [])
 
   return (
     <>
-      {/* 1. Lumière ambiante - relevée pour compenser suppression storefront DirLight */}
-      <ambientLight intensity={isMobile ? 0.3 : 0.22} color="#fff8f0" />
-
-      {/* 2. Hemisphere light - éclairage naturel */}
+      {/* COUCHE 1 : Ambiance — hemisphere fill (coût ~0) */}
       <hemisphereLight
         color="#fff8f0"
-        groundColor="#4a4a5a"
-        intensity={isMobile ? 0.5 : 0.4}
+        groundColor="#7a7a8a"
+        intensity={isMobile ? 0.5 : 0.35}
       />
 
-      {/* Desktop-only lights */}
+      {/* Desktop-only per-fragment lights */}
       {!isMobile && (
         <>
-          {/* 5 RectAreaLights at genre neon positions — real PBR area lighting */}
-          <GenreRectLights />
+          {/* COUCHE 2a : 3 RectAreaLights plafond — éclairage PBR réel des tubes fluorescents */}
+          {/* Positions: gauche-centre, centre, droite-centre — couvrent toute la pièce */}
+          <CeilingTubeLights />
 
-          {/* PointLight îlot central */}
+          {/* COUCHE 2b : RectAreaLight zone manager/comptoir — aligné sur tube [3, 2.7, 3] */}
+          <rectAreaLight
+            position={[3, 2.68, 3]}
+            rotation={[-Math.PI / 2, 0, 0]}
+            width={0.12}
+            height={1.4}
+            intensity={20.0}
+            color="#fff5e6"
+          />
+
+          {/* COUCHE 2c : PointLight îlot central */}
           <pointLight
             position={[-0.8, 2.4, 0]}
             intensity={0.8}
@@ -169,24 +231,26 @@ function OptimizedLighting({ isMobile = false }: { isMobile?: boolean }) {
         </>
       )}
 
-      {/* DirectionalLight pour les ombres intérieures */}
+      {/* DirectionalLight — ombres projetées depuis le plafond */}
+      {/* Shadow map précalculé: rendu 1 fois au chargement, gelé ensuite (scène statique) */}
       <directionalLight
-        position={[2, 2.7, 1]}
-        intensity={0.3}
-        color="#fff5e6"
+        ref={dirLightRef}
+        position={[4, 5, 2]}
+        intensity={3.0}
+        color="#f0f5ff"
         castShadow
         shadow-mapSize-width={shadowMapSize}
         shadow-mapSize-height={shadowMapSize}
-        shadow-camera-left={-5}
-        shadow-camera-right={5}
-        shadow-camera-top={4.5}
-        shadow-camera-bottom={-4.5}
+        shadow-camera-left={-10}
+        shadow-camera-right={10}
+        shadow-camera-top={10}
+        shadow-camera-bottom={-10}
         shadow-camera-near={0.1}
-        shadow-camera-far={6}
-        shadow-bias={-0.0002}
+        shadow-camera-far={12}
+        shadow-bias={-0.0003}
       />
 
-      {/* Tubes néon décoratifs - 9 tubes via 2 InstancedMesh (18→2 draw calls) */}
+      {/* COUCHE 3 : 9 tubes émissifs — glow visuel via bloom (coût GPU ~0) */}
       <NeonTubesInstanced />
     </>
   )

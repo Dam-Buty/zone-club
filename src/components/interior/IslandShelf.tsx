@@ -66,7 +66,7 @@ export function IslandShelf({
     normalMap: woodTextures.normalMap as THREE.Texture,
     roughnessMap: woodTextures.roughnessMap as THREE.Texture,
     color: '#7a6550',
-    normalScale: new THREE.Vector2(0.7, 0.7),
+    normalScale: new THREE.Vector2(0.9, 0.9),
   }), [woodTextures])
 
   const plankMaterial = useMemo(() => new THREE.MeshStandardMaterial({
@@ -74,7 +74,7 @@ export function IslandShelf({
     normalMap: woodTextures.normalMap as THREE.Texture,
     roughnessMap: woodTextures.roughnessMap as THREE.Texture,
     color: '#6a5540',
-    normalScale: new THREE.Vector2(0.7, 0.7),
+    normalScale: new THREE.Vector2(0.9, 0.9),
   }), [woodTextures])
 
   // Setup 8 planches in one InstancedMesh
