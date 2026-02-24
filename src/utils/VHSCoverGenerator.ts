@@ -19,6 +19,7 @@ const _logoSampleCtx = _logoSampleCanvas.getContext("2d", {
 const _logoBrightnessCache = new Map<string, boolean>();
 const _logoMonochromeCache = new Map<string, boolean>();
 const _invertedLogoCache = new Map<string, HTMLCanvasElement>();
+const _dominantColorCache = new Map<string, { dark: string; mid: string; accent: string }>();
 
 // ---- VHS Cover caches (avoid re-fetching TMDB data + re-rendering canvas) ----
 const VHS_DATA_CACHE = new Map<number, VHSCoverData>();
@@ -753,6 +754,91 @@ function isMonochromeLogo(img: HTMLImageElement): boolean {
   return result;
 }
 
+/** Extract dominant color from poster image for spine background.
+ *  Uses median-cut-like approach: samples center 60% of image, quantizes to 8-color palette,
+ *  picks the most frequent saturated color. Returns dark/mid variants + accent. */
+function extractDominantColor(img: HTMLImageElement): { dark: string; mid: string; accent: string } {
+  const cached = _dominantColorCache.get(img.src);
+  if (cached) return cached;
+
+  const size = 64;
+  _logoSampleCanvas.width = size;
+  _logoSampleCanvas.height = size;
+  _logoSampleCtx.clearRect(0, 0, size, size);
+  // Sample center 60% to avoid black borders/letterboxing
+  const cropX = img.width * 0.2;
+  const cropY = img.height * 0.2;
+  const cropW = img.width * 0.6;
+  const cropH = img.height * 0.6;
+  _logoSampleCtx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, size, size);
+  const pixels = _logoSampleCtx.getImageData(0, 0, size, size).data;
+
+  // Quantize into 5-bit buckets (32 levels per channel) and count
+  const buckets = new Map<number, { r: number; g: number; b: number; count: number }>();
+  for (let i = 0; i < pixels.length; i += 4) {
+    if (pixels[i + 3] < 50) continue;
+    const r = pixels[i], g = pixels[i + 1], b = pixels[i + 2];
+    // Skip very dark pixels (shadow/black bars) and very bright (overexposed)
+    const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    if (lum < 25 || lum > 230) continue;
+    const qr = (r >> 4) << 4;
+    const qg = (g >> 4) << 4;
+    const qb = (b >> 4) << 4;
+    const key = (qr << 16) | (qg << 8) | qb;
+    const existing = buckets.get(key);
+    if (existing) {
+      existing.r += r;
+      existing.g += g;
+      existing.b += b;
+      existing.count++;
+    } else {
+      buckets.set(key, { r, g, b, count: 1 });
+    }
+  }
+
+  // Sort by frequency, prefer saturated colors (weight = count * saturation factor)
+  let bestR = 40, bestG = 40, bestB = 60; // fallback dark blue
+  let bestScore = 0;
+  for (const bucket of buckets.values()) {
+    const avgR = bucket.r / bucket.count;
+    const avgG = bucket.g / bucket.count;
+    const avgB = bucket.b / bucket.count;
+    const maxC = Math.max(avgR, avgG, avgB);
+    const minC = Math.min(avgR, avgG, avgB);
+    const saturation = maxC > 0 ? (maxC - minC) / maxC : 0;
+    // Score: frequency × (1 + saturation boost) — saturated colors are preferred
+    const score = bucket.count * (1 + saturation * 2);
+    if (score > bestScore) {
+      bestScore = score;
+      bestR = avgR;
+      bestG = avgG;
+      bestB = avgB;
+    }
+  }
+
+  // Generate dark variant (spine bg) and accent (bright version)
+  const toHex = (r: number, g: number, b: number) =>
+    `#${Math.round(r).toString(16).padStart(2, '0')}${Math.round(g).toString(16).padStart(2, '0')}${Math.round(b).toString(16).padStart(2, '0')}`;
+
+  // Spine background: visible but not full brightness
+  const darkFactor = 0.55;
+  const midFactor = 0.75;
+  const dark = toHex(bestR * darkFactor, bestG * darkFactor, bestB * darkFactor);
+  const mid = toHex(bestR * midFactor, bestG * midFactor, bestB * midFactor);
+  // Accent: boost saturation + brightness for spine lines/text highlights
+  const maxC = Math.max(bestR, bestG, bestB);
+  const accentScale = maxC > 0 ? 220 / maxC : 1;
+  const accent = toHex(
+    Math.min(255, bestR * accentScale),
+    Math.min(255, bestG * accentScale),
+    Math.min(255, bestB * accentScale),
+  );
+
+  const result = { dark, mid, accent };
+  _dominantColorCache.set(img.src, result);
+  return result;
+}
+
 /** Get an inverted version of a logo image (white↔black, cached). */
 function getInvertedLogo(
   img: HTMLImageElement,
@@ -1257,17 +1343,17 @@ function drawFrontFullBleed(
   if (posterImg) {
     disableShadow(tc);
     coverCropImage(tc, posterImg, 0, 0, w, h);
-    // Bottom gradient (strong) for text zone
+    // Bottom gradient (strong) for text zone — reduced 10% opacity
     const gradBot = tc.createLinearGradient(0, h * 0.38, 0, h);
     gradBot.addColorStop(0, "transparent");
-    gradBot.addColorStop(0.3, "rgba(0,0,0,0.5)");
-    gradBot.addColorStop(0.6, "rgba(0,0,0,0.85)");
-    gradBot.addColorStop(1, "rgba(0,0,0,0.95)");
+    gradBot.addColorStop(0.3, "rgba(0,0,0,0.4)");
+    gradBot.addColorStop(0.6, "rgba(0,0,0,0.75)");
+    gradBot.addColorStop(1, "rgba(0,0,0,0.85)");
     tc.fillStyle = gradBot;
     tc.fillRect(0, h * 0.38, w, h * 0.62);
-    // Top gradient for studio/actors
+    // Top gradient for studio/actors — reduced 10% opacity
     const gradTop = tc.createLinearGradient(0, 0, 0, h * 0.22);
-    gradTop.addColorStop(0, "rgba(0,0,0,0.8)");
+    gradTop.addColorStop(0, "rgba(0,0,0,0.7)");
     gradTop.addColorStop(1, "transparent");
     tc.fillStyle = gradTop;
     tc.fillRect(0, 0, w, h * 0.22);
@@ -2329,9 +2415,18 @@ function drawSpine(
   blitFlipped(ctx, region, (tc, w, h) => {
     const { film } = data;
 
-    // Background gradient
+    // Background gradient — use poster dominant color if available, else template
     const grad = tc.createLinearGradient(0, 0, w, 0);
-    if (template.spineBg.length >= 3) {
+    let accentColor = template.spineAccent;
+    let spineBgDark = template.spineBg;
+    if (data.posterImg) {
+      const dominant = extractDominantColor(data.posterImg);
+      grad.addColorStop(0, dominant.dark);
+      grad.addColorStop(0.5, dominant.mid);
+      grad.addColorStop(1, dominant.dark);
+      accentColor = dominant.accent;
+      spineBgDark = [dominant.dark, dominant.mid, dominant.dark];
+    } else if (template.spineBg.length >= 3) {
       grad.addColorStop(0, template.spineBg[0]);
       grad.addColorStop(0.5, template.spineBg[1]);
       grad.addColorStop(1, template.spineBg[2]);
@@ -2343,7 +2438,7 @@ function drawSpine(
     tc.fillRect(0, 0, w, h);
 
     // Side accent lines
-    tc.fillStyle = template.spineAccent;
+    tc.fillStyle = accentColor;
     tc.fillRect(0, 0, 1, h);
     tc.fillRect(w - 1, 0, 1, h);
 
@@ -2366,7 +2461,7 @@ function drawSpine(
         lW = lH * aspect;
       }
       // Adaptive contrast: inverts monochrome logos when invisible on dark spine
-      drawLogoAdaptive(tc, studioLogo, -lW / 2, -lH / 2, lW, lH, isTemplateBgDark(template.spineBg));
+      drawLogoAdaptive(tc, studioLogo, -lW / 2, -lH / 2, lW, lH, isTemplateBgDark(spineBgDark));
       enableTextShadow(tc);
       tc.restore();
     } else if (data.studioName) {
@@ -2375,7 +2470,7 @@ function drawSpine(
       tc.translate(w / 2, 50);
       // No rotation — text horizontal
       tc.font = "bold 11px sans-serif";
-      tc.fillStyle = template.spineAccent;
+      tc.fillStyle = accentColor;
       tc.textAlign = "center";
       tc.textBaseline = "middle";
       tc.fillText(data.studioName.toUpperCase(), 0, 0);
@@ -2440,7 +2535,7 @@ function drawSpine(
     enableTextShadow(tc);
 
     // VHS Hi-Fi Stereo logo (bottom of spine)
-    drawVHSHiFiBlock(tc, w / 2, h - 72, template.spineAccent, w);
+    drawVHSHiFiBlock(tc, w / 2, h - 72, accentColor, w);
   });
 }
 
