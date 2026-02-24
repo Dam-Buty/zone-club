@@ -5,6 +5,7 @@ import * as THREE from 'three'
 import { bumpMap, texture, positionLocal, mix, float, clamp as tslClamp, uniform, vec3 } from 'three/tsl'
 import { useStore } from '../../store'
 import { fetchVHSCoverData, generateVHSCoverTexture } from '../../utils/VHSCoverGenerator'
+import { useIsMobile } from '../../hooks/useIsMobile'
 import type { Film } from '../../types'
 
 // Preload the VHS case model
@@ -48,6 +49,7 @@ interface VHSCaseViewerProps {
 
 export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
   const { camera, scene } = useThree()
+  const isMobile = useIsMobile()
   const groupRef = useRef<THREE.Group>(null)
   const coverTextureRef = useRef<THREE.CanvasTexture | null>(null)
   const textureReadyRef = useRef(false)
@@ -444,8 +446,9 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
     groupRef.current.quaternion.copy(_qTarget)
 
     // Position in front of camera at eye level (flat direction, fixed height)
+    // On mobile, raise the case slightly so it's above the retractable bottom sheet
     _targetPos.copy(_cameraWorldPos).addScaledVector(_cameraDir, DISTANCE_FROM_CAMERA)
-    _targetPos.y = _cameraWorldPos.y // keep at eye level, ignore pitch
+    _targetPos.y = _cameraWorldPos.y + (isMobile ? 0.07 : 0)
     groupRef.current.position.copy(_targetPos)
 
     // Loading pulse effect (before texture is ready) — fades out during texture fade-in
