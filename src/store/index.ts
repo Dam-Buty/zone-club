@@ -201,7 +201,7 @@ interface VideoClubState {
   clearLaZoneMenuAction: () => void;
   laZoneSoundOn: boolean;
   setLaZoneSoundOn: (val: boolean) => void;
-  laZoneChannelAction: { type: 'next' | 'prev' } | null;
+  laZoneChannelAction: { type: 'next' | 'prev'; ts: number } | null;
   dispatchLaZoneChannel: (action: 'next' | 'prev') => void;
   clearLaZoneChannelAction: () => void;
 
@@ -658,7 +658,7 @@ export const useStore = create<VideoClubState>()(
       laZoneSoundOn: false,
       setLaZoneSoundOn: (val) => set({ laZoneSoundOn: val }),
       laZoneChannelAction: null,
-      dispatchLaZoneChannel: (action) => set({ laZoneChannelAction: { type: action } }),
+      dispatchLaZoneChannel: (action) => set({ laZoneChannelAction: { type: action, ts: Date.now() } }),
       clearLaZoneChannelAction: () => set({ laZoneChannelAction: null }),
 
       // Onboarding
@@ -703,4 +703,9 @@ export function useInitAuth() {
     await fetchMe();
     await loadFilmsFromApi();
   };
+}
+
+// Debug: expose store on window for Playwright testing
+if (typeof window !== 'undefined') {
+  (window as unknown as Record<string, unknown>).__store = useStore;
 }
