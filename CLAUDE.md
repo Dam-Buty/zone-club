@@ -21,14 +21,11 @@ npm run dev          # Dev server (port 3000)
 npm run build        # Build production standalone
 npm run start        # Start production server
 npm run seed         # Seed films database
+npm run deploy       # Deploy complet : down app, clean .next, build, up app
 docker compose up -d # Production (5 services)
 ```
 
-**IMPORTANT** : Le container app monte le dossier du projet et sert le build standalone. Builder depuis la machine hote (bien plus rapide que dans le container), puis redemarrer le container qui pickup le nouveau build :
-```bash
-npm run build && docker compose restart app
-```
-Si `.next/` a des fichiers root (crees par le container), supprimer d'abord : `sudo rm -rf .next`
+**Deploy** : `npm run deploy` gere tout le cycle (down → clean → build → up). Le container app monte le dossier du projet et sert le build standalone — on build depuis la machine hote (bien plus rapide que dans le container).
 
 ## Architecture
 
