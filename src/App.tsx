@@ -111,6 +111,37 @@ function WebGPUNotSupported() {
   );
 }
 
+// Film reel loader — pure CSS spinner
+function FilmReelLoader() {
+  return (
+    <div style={{
+      width: 80, height: 80,
+      border: '3px solid #555',
+      borderRadius: '50%',
+      position: 'relative',
+      animation: 'film-reel-spin 2s linear infinite',
+    }}>
+      {/* Center hub */}
+      <div style={{
+        position: 'absolute', top: '50%', left: '50%',
+        transform: 'translate(-50%, -50%)',
+        width: 16, height: 16,
+        background: '#555', borderRadius: '50%',
+      }} />
+      {/* 8 sprocket holes */}
+      {Array.from({ length: 8 }).map((_, i) => (
+        <div key={i} style={{
+          position: 'absolute', top: '50%', left: '50%',
+          width: 12, height: 12,
+          background: '#000', border: '2px solid #555',
+          borderRadius: '50%',
+          transform: `translate(-50%, -50%) rotate(${i * 45}deg) translateY(-26px)`,
+        }} />
+      ))}
+    </div>
+  );
+}
+
 function App() {
   // WebGPU support check
   if (!navigator.gpu) {
@@ -126,9 +157,21 @@ function App() {
   const setFilmsForAisle = useStore(state => state.setFilmsForAisle);
   const isPlayerOpen = useStore(state => state.isPlayerOpen);
   const requestPointerLock = useStore(state => state.requestPointerLock);
+  const isSceneReady = useStore(state => state.isSceneReady);
 
   // Transition state
   const [isTransitioning, setIsTransitioning] = useState(false);
+
+  // Loading screen: dismiss after fade-out completes
+  const [loadingDismissed, setLoadingDismissed] = useState(false);
+  useEffect(() => {
+    if (isSceneReady) {
+      const timer = setTimeout(() => setLoadingDismissed(true), 1400); // 1.2s fade + 200ms buffer
+      return () => clearTimeout(timer);
+    } else {
+      setLoadingDismissed(false);
+    }
+  }, [isSceneReady]);
 
 
   // Restore auth session from cookie on mount
@@ -198,6 +241,31 @@ function App() {
       <Suspense fallback={null}>
         <InteriorScene onCassetteClick={handleFilmClick} />
       </Suspense>
+
+      {/* Loading screen overlay — film reel spinner + fade out */}
+      {currentScene === 'interior' && !loadingDismissed && (
+        <>
+          <style>{`@keyframes film-reel-spin { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }`}</style>
+          <div style={{
+            position: 'fixed', inset: 0, zIndex: 9999,
+            background: '#000',
+            display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'center',
+            opacity: isSceneReady ? 0 : 1,
+            transition: 'opacity 1.2s ease',
+            pointerEvents: isSceneReady ? 'none' : 'all',
+          }}>
+            <FilmReelLoader />
+            <p style={{
+              color: '#ccc', fontFamily: "'Courier New', monospace",
+              marginTop: 24, fontSize: 14, letterSpacing: 2,
+              textTransform: 'uppercase',
+            }}>
+              Vidéoclub en cours de chargement
+            </p>
+          </div>
+        </>
+      )}
 
       {/* VHS Case 3D overlay (bottom bar with rental/trailer/close buttons) */}
       <VHSCaseOverlay

@@ -444,7 +444,8 @@ function UIOverlays({ isMobile }: { isMobile: boolean }) {
   const targetedInteractive = useStore(state => state.targetedInteractive)
   const isSitting = useStore(state => state.isSitting)
   const isWatchingLaZone = useStore(state => state.isWatchingLaZone)
-  const overlaysEnabled = hasSeenOnboarding
+  const isSceneReady = useStore(state => state.isSceneReady)
+  const overlaysEnabled = hasSeenOnboarding && isSceneReady
 
   // Desktop controls hint (locked): show then fade out after 30s
   const [showHelp, setShowHelp] = useState(false)
@@ -789,6 +790,21 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
         onCreated={(state) => {
           console.log('[Canvas] onCreated - scene ready')
           console.log('[Canvas] Renderer type:', state.gl.constructor.name)
+
+          // Wait for films to be loaded + first frame rendered, then signal scene ready
+          const checkReady = () => {
+            const { films } = useStore.getState()
+            const totalFilms = Object.values(films).flat().length
+            if (totalFilms > 0) {
+              // Small delay for textures to upload to GPU
+              setTimeout(() => {
+                useStore.getState().setSceneReady(true)
+              }, 800)
+            } else {
+              requestAnimationFrame(checkReady)
+            }
+          }
+          checkReady()
         }}
       >
         <SceneErrorBoundary>

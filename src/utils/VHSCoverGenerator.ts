@@ -19,6 +19,7 @@ const _logoSampleCtx = _logoSampleCanvas.getContext("2d", {
 const _logoBrightnessCache = new Map<string, boolean>();
 const _logoMonochromeCache = new Map<string, boolean>();
 const _invertedLogoCache = new Map<string, HTMLCanvasElement>();
+const _dominantColorCache = new Map<string, { dark: string; mid: string; accent: string }>();
 
 // ---- VHS Cover caches (avoid re-fetching TMDB data + re-rendering canvas) ----
 const VHS_DATA_CACHE = new Map<number, VHSCoverData>();
@@ -277,7 +278,7 @@ const TEMPLATES: VHSTemplate[] = [
     showTagline: false,
     borderStyle: "thick-band",
     backBg: ["#0a0000", "#0f0505", "#0a0000"],
-    screenshotLayout: "asymmetric",
+    screenshotLayout: "hero-row",
     spineBg: ["#cc0000", "#8b0000", "#cc0000"],
     spineAccent: "#ffd700",
   },
@@ -291,7 +292,7 @@ const TEMPLATES: VHSTemplate[] = [
     showTagline: true,
     borderStyle: "double-stripe",
     backBg: ["#020208", "#0a0a15", "#050510"],
-    screenshotLayout: "sidebar",
+    screenshotLayout: "hero-row",
     spineBg: ["#0a0a1a", "#14142a", "#0a0a1a"],
     spineAccent: "#c8a000",
   },
@@ -305,7 +306,7 @@ const TEMPLATES: VHSTemplate[] = [
     showTagline: true,
     borderStyle: "none",
     backBg: ["#002828", "#003838", "#002020"],
-    screenshotLayout: "scattered",
+    screenshotLayout: "hero-row",
     spineBg: ["#004d4d", "#006666", "#004d4d"],
     spineAccent: "#00e5cc",
   },
@@ -333,7 +334,7 @@ const TEMPLATES: VHSTemplate[] = [
     showTagline: false,
     borderStyle: "thick-band",
     backBg: ["#141414", "#1a1a1a", "#111111"],
-    screenshotLayout: "asymmetric",
+    screenshotLayout: "hero-row",
     spineBg: ["#1a1a1a", "#252525", "#1a1a1a"],
     spineAccent: "#cc0000",
   },
@@ -349,6 +350,25 @@ function isTemplateBgDark(bgStops: string[]): boolean {
   const g = parseInt(hex.slice(3, 5), 16);
   const b = parseInt(hex.slice(5, 7), 16);
   return 0.2126 * r + 0.7152 * g + 0.0722 * b < 128;
+}
+
+/** Parse hex (#rrggbb) to perceptual luminance (0–255 scale). */
+function hexToLuminance(hex: string): number {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+/** Lerp a hex color toward target RGB by factor t (0–1). Preserves hue when target matches hue. */
+function lerpHexColor(hex: string, tR: number, tG: number, tB: number, t: number): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  const nr = Math.max(0, Math.min(255, Math.round(r + (tR - r) * t)));
+  const ng = Math.max(0, Math.min(255, Math.round(g + (tG - g) * t)));
+  const nb = Math.max(0, Math.min(255, Math.round(b + (tB - b) * t)));
+  return `#${nr.toString(16).padStart(2, '0')}${ng.toString(16).padStart(2, '0')}${nb.toString(16).padStart(2, '0')}`;
 }
 
 /** Pre-analyze a logo image: populate monochrome + brightness caches.
@@ -679,17 +699,36 @@ function drawTitleOrLogo(
       logoW = logoH * logoAspect;
     }
     const drawX = align === "center" ? x - logoW / 2 : x;
+    // Multi-pass glow for readability on dark poster gradients (matches spine rendering)
+    disableShadow(tc);
+    tc.shadowOffsetX = 0;
+    tc.shadowOffsetY = 0;
+    tc.shadowColor = "rgba(255,255,255,0.6)";
+    tc.shadowBlur = 12;
     tc.drawImage(data.logoImg, drawX, y, logoW, logoH);
+    tc.shadowBlur = 5;
+    tc.drawImage(data.logoImg, drawX, y, logoW, logoH);
+    disableShadow(tc);
     return logoH + 4;
   }
 
-  // Text fallback
+  // Text fallback — with stroke outline for contrast (matches spine rendering)
   tc.font = `bold ${fontSize}px sans-serif`;
-  tc.fillStyle = color;
   tc.textAlign = align;
+  // Outline pass
+  tc.strokeStyle = "rgba(255,255,255,0.35)";
+  tc.lineWidth = 4;
+  tc.lineJoin = "round";
   const lines = wrapText(tc, data.film.title.toUpperCase(), maxW, maxLines);
   let dy = 0;
   const lineH = Math.round(fontSize * 1.2);
+  for (const line of lines) {
+    tc.strokeText(line, x, y + fontSize + dy);
+    dy += lineH;
+  }
+  // Fill pass on top
+  tc.fillStyle = color;
+  dy = 0;
   for (const line of lines) {
     tc.fillText(line, x, y + fontSize + dy);
     dy += lineH;
@@ -750,6 +789,91 @@ function isMonochromeLogo(img: HTMLImageElement): boolean {
   // <10% colored pixels = monochrome
   const result = opaqueCount > 0 && colorCount / opaqueCount < 0.1;
   _logoMonochromeCache.set(img.src, result);
+  return result;
+}
+
+/** Extract dominant color from poster image for spine background.
+ *  Uses median-cut-like approach: samples center 60% of image, quantizes to 8-color palette,
+ *  picks the most frequent saturated color. Returns dark/mid variants + accent. */
+function extractDominantColor(img: HTMLImageElement): { dark: string; mid: string; accent: string } {
+  const cached = _dominantColorCache.get(img.src);
+  if (cached) return cached;
+
+  const size = 64;
+  _logoSampleCanvas.width = size;
+  _logoSampleCanvas.height = size;
+  _logoSampleCtx.clearRect(0, 0, size, size);
+  // Sample center 60% to avoid black borders/letterboxing
+  const cropX = img.width * 0.2;
+  const cropY = img.height * 0.2;
+  const cropW = img.width * 0.6;
+  const cropH = img.height * 0.6;
+  _logoSampleCtx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, size, size);
+  const pixels = _logoSampleCtx.getImageData(0, 0, size, size).data;
+
+  // Quantize into 5-bit buckets (32 levels per channel) and count
+  const buckets = new Map<number, { r: number; g: number; b: number; count: number }>();
+  for (let i = 0; i < pixels.length; i += 4) {
+    if (pixels[i + 3] < 50) continue;
+    const r = pixels[i], g = pixels[i + 1], b = pixels[i + 2];
+    // Skip very dark pixels (shadow/black bars) and very bright (overexposed)
+    const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    if (lum < 25 || lum > 230) continue;
+    const qr = (r >> 4) << 4;
+    const qg = (g >> 4) << 4;
+    const qb = (b >> 4) << 4;
+    const key = (qr << 16) | (qg << 8) | qb;
+    const existing = buckets.get(key);
+    if (existing) {
+      existing.r += r;
+      existing.g += g;
+      existing.b += b;
+      existing.count++;
+    } else {
+      buckets.set(key, { r, g, b, count: 1 });
+    }
+  }
+
+  // Sort by frequency, prefer saturated colors (weight = count * saturation factor)
+  let bestR = 40, bestG = 40, bestB = 60; // fallback dark blue
+  let bestScore = 0;
+  for (const bucket of buckets.values()) {
+    const avgR = bucket.r / bucket.count;
+    const avgG = bucket.g / bucket.count;
+    const avgB = bucket.b / bucket.count;
+    const maxC = Math.max(avgR, avgG, avgB);
+    const minC = Math.min(avgR, avgG, avgB);
+    const saturation = maxC > 0 ? (maxC - minC) / maxC : 0;
+    // Score: frequency × (1 + saturation boost) — saturated colors are preferred
+    const score = bucket.count * (1 + saturation * 2);
+    if (score > bestScore) {
+      bestScore = score;
+      bestR = avgR;
+      bestG = avgG;
+      bestB = avgB;
+    }
+  }
+
+  // Generate dark variant (spine bg) and accent (bright version)
+  const toHex = (r: number, g: number, b: number) =>
+    `#${Math.round(r).toString(16).padStart(2, '0')}${Math.round(g).toString(16).padStart(2, '0')}${Math.round(b).toString(16).padStart(2, '0')}`;
+
+  // Spine background: visible but not full brightness
+  const darkFactor = 0.55;
+  const midFactor = 0.75;
+  const dark = toHex(bestR * darkFactor, bestG * darkFactor, bestB * darkFactor);
+  const mid = toHex(bestR * midFactor, bestG * midFactor, bestB * midFactor);
+  // Accent: boost saturation + brightness for spine lines/text highlights
+  const maxC = Math.max(bestR, bestG, bestB);
+  const accentScale = maxC > 0 ? 220 / maxC : 1;
+  const accent = toHex(
+    Math.min(255, bestR * accentScale),
+    Math.min(255, bestG * accentScale),
+    Math.min(255, bestB * accentScale),
+  );
+
+  const result = { dark, mid, accent };
+  _dominantColorCache.set(img.src, result);
   return result;
 }
 
@@ -866,6 +990,47 @@ export interface VHSCoverData {
   certification: string;
   logoImg: HTMLImageElement | null;
   studioLogos: { img: HTMLImageElement; companyId: number }[];
+}
+
+/** Check if full (enriched) VHS cover data is already cached for a film. */
+export function hasVHSCoverData(filmId: number): boolean {
+  return VHS_DATA_CACHE.has(filmId);
+}
+
+/** Fast data fetch: poster + Film metadata already in memory (~100-200ms).
+ *  If full data is already cached, returns that instead. */
+export async function fetchVHSCoverDataFast(film: Film): Promise<VHSCoverData> {
+  // If full enriched data is cached, return it directly (no need for fast path)
+  const cached = VHS_DATA_CACHE.get(film.id);
+  if (cached) return cached;
+
+  const data: VHSCoverData = {
+    film,
+    posterImg: null,
+    backdropImgs: [],
+    directors: film.directors || [],
+    actors: film.actors || [],
+    secondaryActors: [],
+    producers: [],
+    writers: [],
+    composer: "",
+    tagline: film.tagline || "",
+    studioName: film.production_companies?.[0]?.name || "",
+    productionStudioName: "",
+    reviews: [],
+    certification: "",
+    logoImg: null,
+    studioLogos: [],
+  };
+
+  // Only load the poster (single network request)
+  if (film.poster_path) {
+    try {
+      data.posterImg = await loadImage(tmdb.posterUrl(film.poster_path, "w500"));
+    } catch { /* poster unavailable — will show text-only cover */ }
+  }
+
+  return data;
 }
 
 export async function fetchVHSCoverData(film: Film): Promise<VHSCoverData> {
@@ -1081,6 +1246,38 @@ function getTemplate(film: Film): VHSTemplate {
 
 // ---- Texture generation ----
 
+/** Draw all VHS cover faces onto the provided canvases (color + bump).
+ *  Shared by initial generation and 2-pass regeneration. */
+function drawVHSCoverToCanvas(
+  canvas: HTMLCanvasElement,
+  bumpCanvas: HTMLCanvasElement,
+  data: VHSCoverData,
+): void {
+  const ctx = canvas.getContext("2d")!;
+  ctx.setTransform(RENDER_SCALE, 0, 0, RENDER_SCALE, 0, 0);
+  ctx.fillStyle = "#0a0a12";
+  ctx.fillRect(0, 0, TEX_SIZE, TEX_SIZE);
+
+  const template = getTemplate(data.film);
+
+  const frontTitleInfo = drawFrontCover(ctx, data, template);
+  drawNotchCutout(ctx, FRONT);
+  const backTextOps = drawBackCover(ctx, data, template);
+  drawSpine(ctx, SPINE1, data, template);
+  drawSpine(ctx, SPINE2, data, template);
+  drawEdge(ctx, TOP_EDGE);
+  drawEdge(ctx, BOTTOM_EDGE);
+
+  const bCtx = bumpCanvas.getContext("2d")!;
+  bCtx.setTransform(RENDER_SCALE, 0, 0, RENDER_SCALE, 0, 0);
+  bCtx.fillStyle = "#000000";
+  bCtx.fillRect(0, 0, TEX_SIZE, TEX_SIZE);
+  drawSpineBump(bCtx, SPINE1, data, template);
+  drawSpineBump(bCtx, SPINE2, data, template);
+  drawFrontBump(bCtx, data, template, frontTitleInfo);
+  drawBackBump(bCtx, backTextOps);
+}
+
 export function generateVHSCoverTexture(
   data: VHSCoverData,
 ): THREE.CanvasTexture {
@@ -1092,36 +1289,12 @@ export function generateVHSCoverTexture(
   const canvas = document.createElement("canvas");
   canvas.width = TEX_SIZE * RENDER_SCALE;
   canvas.height = TEX_SIZE * RENDER_SCALE;
-  const ctx = canvas.getContext("2d")!;
-  ctx.scale(RENDER_SCALE, RENDER_SCALE);
 
-  const template = getTemplate(data.film);
-
-  ctx.fillStyle = "#0a0a12";
-  ctx.fillRect(0, 0, TEX_SIZE, TEX_SIZE);
-
-  const frontTitleInfo = drawFrontCover(ctx, data, template);
-  // Paint notch cutout — black semi-ellipse at top center of front cover
-  // Represents the paper jacket cutout where VHS tape is visible through black plastic
-  drawNotchCutout(ctx, FRONT);
-  const backTextOps = drawBackCover(ctx, data, template);
-  drawSpine(ctx, SPINE1, data, template);
-  drawSpine(ctx, SPINE2, data, template);
-  drawEdge(ctx, TOP_EDGE);
-  drawEdge(ctx, BOTTOM_EDGE);
-
-  // Generate bump map for text/logo relief (light-reactive emboss on all surfaces)
   const bumpCanvas = document.createElement("canvas");
   bumpCanvas.width = TEX_SIZE * RENDER_SCALE;
   bumpCanvas.height = TEX_SIZE * RENDER_SCALE;
-  const bCtx = bumpCanvas.getContext("2d")!;
-  bCtx.scale(RENDER_SCALE, RENDER_SCALE);
-  bCtx.fillStyle = "#000000";
-  bCtx.fillRect(0, 0, TEX_SIZE, TEX_SIZE);
-  drawSpineBump(bCtx, SPINE1, data, template);
-  drawSpineBump(bCtx, SPINE2, data, template);
-  drawFrontBump(bCtx, data, template, frontTitleInfo);
-  drawBackBump(bCtx, backTextOps);
+
+  drawVHSCoverToCanvas(canvas, bumpCanvas, data);
 
   const bumpTexture = new THREE.CanvasTexture(bumpCanvas);
   bumpTexture.flipY = false;
@@ -1147,6 +1320,32 @@ export function generateVHSCoverTexture(
   VHS_TEXTURE_LRU.push(filmId);
 
   return texture;
+}
+
+/** Regenerate an existing texture's canvas with enriched data (pass 2).
+ *  Same canvas object → same TSL texture() node → no shader recompilation.
+ *  Only the GPU content is re-uploaded via needsUpdate. */
+export function regenerateVHSCoverTexture(
+  existingTex: THREE.CanvasTexture,
+  data: VHSCoverData,
+): void {
+  const canvas = existingTex.image as HTMLCanvasElement;
+  const bumpTex = existingTex.userData.bumpMap as THREE.CanvasTexture | undefined;
+  const bumpCanvas = bumpTex
+    ? (bumpTex.image as HTMLCanvasElement)
+    : document.createElement("canvas");
+
+  if (!bumpTex) {
+    bumpCanvas.width = TEX_SIZE * RENDER_SCALE;
+    bumpCanvas.height = TEX_SIZE * RENDER_SCALE;
+  }
+
+  drawVHSCoverToCanvas(canvas, bumpCanvas, data);
+
+  existingTex.needsUpdate = true;
+  if (bumpTex) bumpTex.needsUpdate = true;
+
+  VHS_DATA_CACHE.set(data.film.id, data);
 }
 
 // ---- Notch cutout (tape-grab semi-ellipse at top center of front cover) ----
@@ -1237,6 +1436,28 @@ function drawFrontCover(
       titleInfo = drawFrontOffsetLeft(tc, w, h, pad, data, template);
     }
 
+    // --- Review quote (bottom right) ---
+    if (data.reviews.length > 0) {
+      const review = data.reviews[0];
+      const maxQuoteW = Math.round(w * 0.6);
+      tc.shadowColor = "rgba(0,0,0,0.7)";
+      tc.shadowBlur = 3;
+      tc.shadowOffsetX = 1;
+      tc.shadowOffsetY = 1;
+      tc.font = "italic 10px sans-serif";
+      tc.fillStyle = "rgba(255,255,255,0.8)";
+      tc.textAlign = "right";
+      const quoteLines = wrapText(tc, `\u00ab ${review.content} \u00bb`, maxQuoteW, 2);
+      let qY = h - pad - (quoteLines.length * 13) - 12;
+      for (const line of quoteLines) {
+        tc.fillText(line, w - pad, qY + 10);
+        qY += 13;
+      }
+      tc.font = "9px sans-serif";
+      tc.fillStyle = template.accentColor;
+      tc.fillText("\u2014 " + review.author, w - pad, qY + 9);
+    }
+
     // Restore fillText (remove instance shadow → prototype method)
     delete (tc as any).fillText;
   });
@@ -1257,20 +1478,6 @@ function drawFrontFullBleed(
   if (posterImg) {
     disableShadow(tc);
     coverCropImage(tc, posterImg, 0, 0, w, h);
-    // Bottom gradient (strong) for text zone
-    const gradBot = tc.createLinearGradient(0, h * 0.38, 0, h);
-    gradBot.addColorStop(0, "transparent");
-    gradBot.addColorStop(0.3, "rgba(0,0,0,0.5)");
-    gradBot.addColorStop(0.6, "rgba(0,0,0,0.85)");
-    gradBot.addColorStop(1, "rgba(0,0,0,0.95)");
-    tc.fillStyle = gradBot;
-    tc.fillRect(0, h * 0.38, w, h * 0.62);
-    // Top gradient for studio/actors
-    const gradTop = tc.createLinearGradient(0, 0, 0, h * 0.22);
-    gradTop.addColorStop(0, "rgba(0,0,0,0.8)");
-    gradTop.addColorStop(1, "transparent");
-    tc.fillStyle = gradTop;
-    tc.fillRect(0, 0, w, h * 0.22);
     enableTextShadow(tc);
   } else {
     tc.fillStyle = `${template.accentColor}18`;
@@ -1284,29 +1491,6 @@ function drawFrontFullBleed(
   // --- Top zone (below notch) ---
   let topY = NOTCH_BOTTOM + 4;
 
-  // Studio (centered, top)
-  enableLightTextShadow(tc);
-  if (data.studioName) {
-    tc.font = "bold 10px sans-serif";
-    tc.fillStyle = "rgba(255,255,255,0.55)";
-    tc.textAlign = "center";
-    tc.fillText(data.studioName.toUpperCase(), w / 2, topY + 10);
-    topY += 14;
-  }
-
-  // Actor names (centered)
-  if (data.actors.length > 0) {
-    tc.font = "bold 18px sans-serif";
-    tc.fillStyle = "#ffffff";
-    tc.textAlign = "center";
-    const actorStr = data.actors.slice(0, 3).join("  \u2022  ").toUpperCase();
-    const actorLines = wrapText(tc, actorStr, w - pad * 2, 2);
-    for (const line of actorLines) {
-      tc.fillText(line, w / 2, topY + 18);
-      topY += 22;
-    }
-    topY += 4;
-  }
   enableTextShadow(tc);
 
   // VHS badge (right) + Certification badge (left) — below studio/actors
@@ -1321,98 +1505,13 @@ function drawFrontFullBleed(
     );
   }
 
-  // --- Bottom text zone (shifted down 5% for breathing room below poster) ---
-  let curY = h - 260 + Math.round(h * 0.05);
-
-  // Awards badge
-  const awards = getAwardsText(film);
-  if (awards) {
-    tc.font = "bold 11px sans-serif";
-    tc.fillStyle = "#ffd700";
-    tc.textAlign = "center";
-    tc.fillText("\u2605 " + awards + " \u2605", w / 2, curY + 11);
-    curY += 20;
-  }
-
-  // Capture title position for bump map alignment
-  const _titleY = curY;
-
-  // Title (logo or text)
-  enableLightTextShadow(tc);
-  curY += drawTitleOrLogo(tc, data, {
-    x: w / 2,
-    y: curY,
-    maxW: w - pad * 2,
-    fontSize: 32,
-    color: template.titleColor,
-    align: "center",
-  });
-  enableTextShadow(tc);
-
-  // Tagline
-  if (template.showTagline && data.tagline) {
-    tc.font = "italic 12px sans-serif";
-    tc.fillStyle = "rgba(255,255,255,0.75)";
-    tc.textAlign = "center";
-    const tagLines = wrapText(tc, data.tagline, w - pad * 2, 2);
-    for (const line of tagLines) {
-      tc.fillText(line, w / 2, curY + 12);
-      curY += 16;
-    }
-    curY += 4;
-  }
-
-  // Director
-  if (data.directors.length > 0) {
-    tc.font = "12px sans-serif";
-    tc.fillStyle = "rgba(255,255,255,0.7)";
-    tc.textAlign = "center";
-    tc.fillText("Un film de " + data.directors.join(", "), w / 2, curY + 12);
-    curY += 18;
-  }
-
-  // Stars + year
-  drawStars(tc, film.vote_average, w / 2 - 55, curY + 14, 16);
-  curY += 24;
-  tc.font = "12px sans-serif";
-  tc.fillStyle = "rgba(255,255,255,0.6)";
-  tc.textAlign = "center";
-  const year = film.release_date
-    ? new Date(film.release_date).getFullYear()
-    : "";
-  tc.fillText(year.toString(), w / 2, curY + 12);
-  curY += 18;
-
-  // Genres
-  if (film.genres.length > 0) {
-    tc.font = "11px sans-serif";
-    tc.fillStyle = template.accentColor;
-    tc.textAlign = "center";
-    tc.fillText(
-      film.genres.map((g) => g.name).join(" \u2022 "),
-      w / 2,
-      curY + 11,
-    );
-    curY += 16;
-  }
-
-  // Runtime bar (bottom)
-  drawRuntimeBar(
-    tc,
-    film.runtime,
-    pad,
-    curY + 2,
-    w - pad * 2,
-    template.accentColor,
-  );
-
   return {
     x: w / 2,
-    y: _titleY,
+    y: h,
     maxW: w - pad * 2,
     fontSize: 32,
     align: "center",
-    maxLines: 2,
+    maxLines: 0,
     textOps: [],
   };
 }
@@ -1428,43 +1527,14 @@ function drawFrontCenteredPadded(
   const { film, posterImg } = data;
   let curY = 8;
 
-  // Top colored band with studio
+  // Top colored band
   if (template.borderStyle === "thick-band") {
     tc.fillStyle = template.accentColor;
     tc.fillRect(0, 0, w, 40);
-    if (data.studioName) {
-      tc.font = "bold 12px sans-serif";
-      tc.fillStyle = "#ffffff";
-      tc.textAlign = "center";
-      tc.fillText(data.studioName.toUpperCase(), w / 2, 26);
-    }
     curY = 46;
   }
 
-  // Studio + actors (below notch zone, above badges)
   curY = Math.max(curY, NOTCH_BOTTOM + 6);
-
-  enableLightTextShadow(tc);
-  if (data.studioName && template.borderStyle !== "thick-band") {
-    tc.font = "bold 10px sans-serif";
-    tc.fillStyle = "rgba(255,255,255,0.55)";
-    tc.textAlign = "center";
-    tc.fillText(data.studioName.toUpperCase(), w / 2, curY + 10);
-    curY += 14;
-  }
-
-  if (data.actors.length > 0) {
-    tc.font = "bold 16px sans-serif";
-    tc.fillStyle = "#ffffff";
-    tc.textAlign = "center";
-    const actorStr = data.actors.slice(0, 3).join("  \u2022  ").toUpperCase();
-    const actorLines = wrapText(tc, actorStr, w - pad * 2, 2);
-    for (const line of actorLines) {
-      tc.fillText(line, w / 2, curY + 16);
-      curY += 20;
-    }
-    curY += 4;
-  }
   enableTextShadow(tc);
 
   // Certification + VHS badges on same line (below studio/actors)
@@ -1512,85 +1582,13 @@ function drawFrontCenteredPadded(
     curY += fallH + 10;
   }
 
-  // Shift title block down 5% (same as full-bleed layout)
-  curY += Math.round(h * 0.05);
-
-  // Awards badge
-  const awards = getAwardsText(film);
-  if (awards) {
-    tc.font = "bold 10px sans-serif";
-    tc.fillStyle = "#ffd700";
-    tc.textAlign = "center";
-    tc.fillText("\u2605 " + awards + " \u2605", w / 2, curY + 10);
-    curY += 18;
-  }
-
-  // Capture title position for bump map alignment
-  const _titleY = curY;
-
-  // Title (logo or text)
-  enableLightTextShadow(tc);
-  curY += drawTitleOrLogo(tc, data, {
+  return {
     x: w / 2,
     y: curY,
     maxW: w - pad * 2,
     fontSize: 28,
-    color: template.titleColor,
     align: "center",
-  });
-  enableTextShadow(tc);
-
-  // Director
-  if (data.directors.length > 0) {
-    tc.font = "11px sans-serif";
-    tc.fillStyle = "rgba(255,255,255,0.7)";
-    tc.textAlign = "center";
-    tc.fillText("Un film de " + data.directors.join(", "), w / 2, curY + 11);
-    curY += 16;
-  }
-
-  // Stars + year
-  drawStars(tc, film.vote_average, w / 2 - 55, curY + 14, 16);
-  curY += 24;
-  tc.font = "12px sans-serif";
-  tc.fillStyle = "rgba(255,255,255,0.55)";
-  tc.textAlign = "center";
-  const yearCP = film.release_date
-    ? new Date(film.release_date).getFullYear()
-    : "";
-  tc.fillText(yearCP.toString(), w / 2, curY + 12);
-  curY += 18;
-
-  // Genres
-  if (film.genres.length > 0) {
-    tc.font = "11px sans-serif";
-    tc.fillStyle = template.accentColor;
-    tc.textAlign = "center";
-    tc.fillText(
-      film.genres.map((g) => g.name).join(" \u2022 "),
-      w / 2,
-      curY + 11,
-    );
-    curY += 16;
-  }
-
-  // Runtime bar
-  drawRuntimeBar(
-    tc,
-    film.runtime,
-    pad,
-    curY + 2,
-    w - pad * 2,
-    template.accentColor,
-  );
-
-  return {
-    x: w / 2,
-    y: _titleY,
-    maxW: w - pad * 2,
-    fontSize: 28,
-    align: "center",
-    maxLines: 2,
+    maxLines: 0,
     textOps: [],
   };
 }
@@ -1620,25 +1618,6 @@ function drawFrontOffsetLeft(
     const textW = w - posterW - 6 - pad;
     let rY = NOTCH_BOTTOM + 8;
 
-    // Studio (top of right column)
-    enableLightTextShadow(tc);
-    if (data.studioName) {
-      tc.font = "bold 10px sans-serif";
-      tc.fillStyle = "rgba(255,255,255,0.5)";
-      tc.textAlign = "left";
-      tc.fillText(data.studioName.toUpperCase(), textX, rY + 10);
-      rY += 16;
-    }
-
-    // Actor names vertically
-    tc.font = "bold 14px sans-serif";
-    tc.fillStyle = "#ffffff";
-    tc.textAlign = "left";
-    for (const actor of data.actors.slice(0, 4)) {
-      tc.fillText(actor.toUpperCase(), textX, rY + 14);
-      rY += 18;
-    }
-    rY += 6;
     enableTextShadow(tc);
 
     // VHS badge + certification (below studio/actors)
@@ -1654,90 +1633,13 @@ function drawFrontOffsetLeft(
     }
     rY += 28;
 
-    // Tagline
-    if (template.showTagline && data.tagline) {
-      tc.font = "italic 12px sans-serif";
-      tc.fillStyle = template.accentColor;
-      tc.textAlign = "left";
-      const tagLines = wrapText(tc, data.tagline, textW, 3);
-      for (const line of tagLines) {
-        tc.fillText(line, textX, rY + 12);
-        rY += 15;
-      }
-      rY += 6;
-    }
-
-    // Capture title position for bump map alignment
-    const _titleY = rY;
-
-    // Title (logo or text)
-    enableLightTextShadow(tc);
-    rY += drawTitleOrLogo(tc, data, {
+    return {
       x: textX,
       y: rY,
       maxW: textW,
       fontSize: 20,
-      color: template.titleColor,
       align: "left",
-      maxLines: 4,
-    });
-    enableTextShadow(tc);
-
-    // Awards
-    const awardsOL = getAwardsText(film);
-    if (awardsOL) {
-      tc.font = "bold 9px sans-serif";
-      tc.fillStyle = "#ffd700";
-      tc.textAlign = "left";
-      tc.fillText("\u2605 " + awardsOL, textX, rY + 9);
-      rY += 14;
-    }
-
-    // Director
-    if (data.directors.length > 0) {
-      tc.font = "10px sans-serif";
-      tc.fillStyle = "rgba(255,255,255,0.65)";
-      tc.textAlign = "left";
-      tc.fillText("R\u00e9al. " + data.directors[0], textX, rY + 10);
-      rY += 14;
-    }
-
-    // Stars
-    drawStars(tc, film.vote_average, textX, rY + 12, 14);
-    rY += 22;
-
-    // Year
-    tc.font = "11px sans-serif";
-    tc.fillStyle = "rgba(255,255,255,0.5)";
-    tc.textAlign = "left";
-    const yearOL = film.release_date
-      ? new Date(film.release_date).getFullYear()
-      : "";
-    tc.fillText(yearOL.toString(), textX, rY + 11);
-    rY += 16;
-
-    // Genres
-    if (film.genres.length > 0) {
-      tc.font = "10px sans-serif";
-      tc.fillStyle = template.accentColor;
-      tc.textAlign = "left";
-      for (const g of film.genres.slice(0, 3)) {
-        tc.fillText(g.name, textX, rY + 10);
-        rY += 14;
-      }
-      rY += 4;
-    }
-
-    // Runtime bar at bottom of right column
-    drawRuntimeBar(tc, film.runtime, textX, rY, textW, template.accentColor);
-
-    return {
-      x: textX,
-      y: _titleY,
-      maxW: textW,
-      fontSize: 20,
-      align: "left",
-      maxLines: 4,
+      maxLines: 0,
       textOps: [],
     };
   } else {
@@ -1825,29 +1727,6 @@ function drawBackCover(
     }
     enableTextShadow(tc);
 
-    // --- Review quotes ---
-    if (data.reviews.length > 0) {
-      for (const review of data.reviews.slice(0, 1)) {
-        tc.font = "italic 10px sans-serif";
-        tc.fillStyle = "rgba(255,255,255,0.75)";
-        tc.textAlign = "left";
-        const quoteLines = wrapText(
-          tc,
-          `\u00ab ${review.content} \u00bb`,
-          w - pad * 2,
-          3,
-        );
-        for (const line of quoteLines) {
-          tc.fillText(line, pad, curY + 10);
-          curY += 13;
-        }
-        tc.font = "9px sans-serif";
-        tc.fillStyle = template.accentColor;
-        tc.fillText("\u2014 " + review.author, pad + 20, curY + 9);
-        curY += 16;
-      }
-    }
-
     // --- Synopsis ---
     tc.shadowColor = "rgba(0,0,0,0.5)";
     tc.shadowBlur = 1.5;
@@ -1859,12 +1738,35 @@ function drawBackCover(
     tc.fillText("SYNOPSIS", pad, curY + 12);
     curY += 18;
 
+    const SYN_TARGET = 260;
+    const rawSyn = film.overview || "Aucun synopsis disponible.";
+    let synText = rawSyn;
+    if (rawSyn.length > SYN_TARGET) {
+      // Find the end of the sentence nearest to the target (., !, ?)
+      const sentenceEnd = /[.!?]/g;
+      let bestCut = -1;
+      let match;
+      while ((match = sentenceEnd.exec(rawSyn)) !== null) {
+        if (match.index + 1 >= SYN_TARGET - 60 && bestCut === -1) {
+          bestCut = match.index + 1; // first sentence end near target
+        }
+        if (match.index + 1 >= SYN_TARGET) break;
+      }
+      if (bestCut > 0 && bestCut < rawSyn.length) {
+        synText = rawSyn.substring(0, bestCut).trimEnd();
+      } else {
+        // No sentence boundary found — cut at last space before limit
+        const spaceIdx = rawSyn.lastIndexOf(" ", SYN_TARGET + 40);
+        synText = spaceIdx > SYN_TARGET - 60
+          ? rawSyn.substring(0, spaceIdx).trimEnd() + "\u2026"
+          : rawSyn.substring(0, SYN_TARGET).trimEnd() + "\u2026";
+      }
+    }
     tc.font = "15px sans-serif";
     tc.fillStyle = "#ffffff";
-    const synText = film.overview || "Aucun synopsis disponible.";
     // Calculate available space for synopsis
     const creditsHeight = estimateCreditsHeight(data);
-    const bottomReserved = 62 + creditsHeight; // barcode + branding + credits
+    const bottomReserved = 110 + creditsHeight; // barcode + logos + branding + runtime + classification + rembobinez + margins
     const maxSynY = h - bottomReserved;
     const availableSynLines = Math.max(3, Math.floor((maxSynY - curY) / 16));
     const synLines = wrapText(tc, synText, w - pad * 2, availableSynLines);
@@ -1882,29 +1784,34 @@ function drawBackCover(
     // --- Full credits block ---
     curY = drawCreditsBlock(tc, data, template, w, pad, curY);
 
-    // --- "Soyez aimable, rembobinez" sticker ---
-    curY += 2;
-    tc.font = "italic 8px sans-serif";
-    tc.fillStyle = template.accentColor;
-    tc.textAlign = "center";
-    tc.fillText("SOYEZ COOL, REMBOBINEZ", w / 2, curY + 8);
-    curY += 14;
-
-    // --- Certification + Runtime on back (compact line) ---
-    tc.font = "8px sans-serif";
+    // --- Runtime + Classification on back ---
+    tc.shadowColor = "rgba(0,0,0,0.6)";
+    tc.shadowBlur = 2;
+    tc.shadowOffsetX = 1;
+    tc.shadowOffsetY = 1;
+    tc.font = "10px sans-serif";
     tc.fillStyle = "rgba(255,255,255,0.5)";
     tc.textAlign = "left";
-    const backMeta: string[] = [];
-    if (data.certification) backMeta.push(data.certification);
-    if (film.runtime) backMeta.push(`${film.runtime} min`);
-    const yearBack = film.release_date
-      ? new Date(film.release_date).getFullYear()
-      : "";
-    if (yearBack) backMeta.push(`\u00a9 ${yearBack}`);
-    if (backMeta.length > 0) {
-      tc.fillText(backMeta.join(" \u2022 "), pad, curY + 8);
-      curY += 12;
+    if (film.runtime) {
+      tc.fillText(`Dur\u00e9e : ${film.runtime} min`, pad, curY + 10);
+      curY += 14;
     }
+    if (data.certification) {
+      tc.fillText(`Classification : ${data.certification}`, pad, curY + 10);
+      curY += 14;
+    }
+
+    // --- "Soyez cool, rembobinez" sticker ---
+    curY += 2;
+    tc.shadowColor = "rgba(0,0,0,0.6)";
+    tc.shadowBlur = 2;
+    tc.shadowOffsetX = 1;
+    tc.shadowOffsetY = 1;
+    tc.font = "italic 10px sans-serif";
+    tc.fillStyle = template.accentColor;
+    tc.textAlign = "center";
+    tc.fillText("SOYEZ COOL, REMBOBINEZ", w / 2, curY + 10);
+    curY += 16;
 
     // --- Production company logos (adaptive contrast — no pills) ---
     disableShadow(tc);
@@ -1920,7 +1827,7 @@ function drawBackCover(
         logoSizes.reduce((sum, s) => sum + s.w + logoPad * 2, 0) +
         logoGap * (logoSizes.length - 1);
       let lx = (w - totalW) / 2;
-      const ly = h - 72;
+      const ly = h - 78;
       const backBgDark = isTemplateBgDark(template.backBg);
       for (let i = 0; i < data.studioLogos.length; i++) {
         const { img: logoImg } = data.studioLogos[i];
@@ -1954,15 +1861,15 @@ function drawBackCover(
 
 function estimateCreditsHeight(data: VHSCoverData): number {
   let h = 0;
-  if (data.actors.length > 0) h += 26; // Starring + actors
-  if (data.secondaryActors.length > 0) h += 15;
-  if (data.directors.length > 0) h += 14;
-  if (data.producers.length > 0) h += 14;
-  if (data.writers.length > 0) h += 14;
-  if (data.composer) h += 14;
-  if (data.studioName) h += 14;
-  if (data.productionStudioName) h += 14;
-  return h + 8;
+  if (data.actors.length > 0) h += 30; // Starring + actors
+  if (data.secondaryActors.length > 0) h += 17;
+  if (data.directors.length > 0) h += 17;
+  if (data.producers.length > 0) h += 17;
+  if (data.writers.length > 0) h += 17;
+  if (data.composer) h += 17;
+  if (data.studioName) h += 17;
+  if (data.productionStudioName) h += 17;
+  return h + 10;
 }
 
 function drawCreditsBlock(
@@ -1980,20 +1887,20 @@ function drawCreditsBlock(
 
   function creditLine(label: string, value: string) {
     if (!value) return;
-    tc.font = "bold 10px sans-serif";
+    tc.font = "bold 11px sans-serif";
     tc.fillStyle = labelColor;
     tc.textAlign = "left";
-    tc.fillText(label, pad, curY + 10);
+    tc.fillText(label, pad, curY + 11);
     const labelW = tc.measureText(label).width + 4;
-    tc.font = "10px sans-serif";
+    tc.font = "11px sans-serif";
     tc.fillStyle = textColor;
     // Wrap value if too long
     const valLines = wrapText(tc, value, maxW - labelW, 2);
-    tc.fillText(valLines[0], pad + labelW, curY + 10);
-    curY += 13;
+    tc.fillText(valLines[0], pad + labelW, curY + 11);
+    curY += 15;
     if (valLines.length > 1) {
-      tc.fillText(valLines[1], pad + labelW, curY + 10);
-      curY += 13;
+      tc.fillText(valLines[1], pad + labelW, curY + 11);
+      curY += 15;
     }
   }
 
@@ -2041,11 +1948,11 @@ function drawCreditsBlock(
     : "";
   if (yearCr && data.studioName) {
     curY += 2;
-    tc.font = "bold 10px sans-serif";
+    tc.font = "bold 11px sans-serif";
     tc.fillStyle = "rgba(255,255,255,0.5)";
     tc.textAlign = "left";
-    tc.fillText(`\u00a9 ${yearCr} ${data.studioName}`, pad, curY + 10);
-    curY += 13;
+    tc.fillText(`\u00a9 ${yearCr} ${data.studioName}`, pad, curY + 11);
+    curY += 15;
   }
 
   return curY;
@@ -2329,21 +2236,70 @@ function drawSpine(
   blitFlipped(ctx, region, (tc, w, h) => {
     const { film } = data;
 
+    // Spine colors — poster dominant or template fallback
+    let accentColor = template.spineAccent;
+    let spineBgDark = [...template.spineBg];
+    if (data.posterImg) {
+      const dominant = extractDominantColor(data.posterImg);
+      accentColor = dominant.accent;
+      spineBgDark = [dominant.dark, dominant.mid, dominant.dark];
+    }
+
+    // Ensure spine bg has enough contrast with title (logo image or text fallback)
+    // Two guards:
+    // 1. Minimum brightness floor — very dark spines (lum < 55) make ALL content
+    //    invisible in-scene due to albedo dampening (0.5×) + light dimming
+    // 2. Dark-on-dark — dark logo on moderately dark spine needs extra boost
+    // 3. Bright-on-bright — rare but handle bright title on bright spine
+    {
+      const titleIsDark = data.logoImg ? !isLogoBright(data.logoImg) : false;
+      const midHex = spineBgDark[Math.floor(spineBgDark.length / 2)] || spineBgDark[0];
+      const midLum = hexToLuminance(midHex);
+
+      // Compute lerp target: accent color (preserves poster hue) or neutral gray fallback
+      const aR = parseInt(accentColor.slice(1, 3), 16);
+      const aG = parseInt(accentColor.slice(3, 5), 16);
+      const aB = parseInt(accentColor.slice(5, 7), 16);
+      const accentLum = 0.2126 * aR + 0.7152 * aG + 0.0722 * aB;
+      const [tR, tG, tB, tLum] = accentLum > midLum + 50
+        ? [aR, aG, aB, accentLum] as const
+        : [200, 200, 200, 200] as const;
+
+      const MIN_SPINE_LUM = 55;   // absolute floor — below this nothing is readable in-scene
+      const DARK_TITLE_LUM = 100; // target when title itself is also dark
+
+      if (midLum < MIN_SPINE_LUM) {
+        // Too dark for anything to read — lighten to floor
+        const targetLum = titleIsDark ? DARK_TITLE_LUM : MIN_SPINE_LUM;
+        const t = Math.max(0.25, Math.min(0.65,
+          (targetLum - midLum) / Math.max(tLum - midLum, 1)));
+        spineBgDark = spineBgDark.map(c => lerpHexColor(c, tR, tG, tB, t));
+      } else if (titleIsDark && midLum < 85) {
+        // Dark logo on moderately dark spine → boost more
+        const t = Math.max(0.3, Math.min(0.65,
+          (DARK_TITLE_LUM - midLum) / Math.max(tLum - midLum, 1)));
+        spineBgDark = spineBgDark.map(c => lerpHexColor(c, tR, tG, tB, t));
+      } else if (!titleIsDark && midLum > 160) {
+        // Bright title on bright spine → darken
+        spineBgDark = spineBgDark.map(c => lerpHexColor(c, 0, 0, 0, 0.5));
+      }
+    }
+
     // Background gradient
     const grad = tc.createLinearGradient(0, 0, w, 0);
-    if (template.spineBg.length >= 3) {
-      grad.addColorStop(0, template.spineBg[0]);
-      grad.addColorStop(0.5, template.spineBg[1]);
-      grad.addColorStop(1, template.spineBg[2]);
+    if (spineBgDark.length >= 3) {
+      grad.addColorStop(0, spineBgDark[0]);
+      grad.addColorStop(0.5, spineBgDark[1]);
+      grad.addColorStop(1, spineBgDark[2]);
     } else {
-      grad.addColorStop(0, template.spineBg[0]);
-      grad.addColorStop(1, template.spineBg[1] || template.spineBg[0]);
+      grad.addColorStop(0, spineBgDark[0]);
+      grad.addColorStop(1, spineBgDark[1] || spineBgDark[0]);
     }
     tc.fillStyle = grad;
     tc.fillRect(0, 0, w, h);
 
     // Side accent lines
-    tc.fillStyle = template.spineAccent;
+    tc.fillStyle = accentColor;
     tc.fillRect(0, 0, 1, h);
     tc.fillRect(w - 1, 0, 1, h);
 
@@ -2366,7 +2322,7 @@ function drawSpine(
         lW = lH * aspect;
       }
       // Adaptive contrast: inverts monochrome logos when invisible on dark spine
-      drawLogoAdaptive(tc, studioLogo, -lW / 2, -lH / 2, lW, lH, isTemplateBgDark(template.spineBg));
+      drawLogoAdaptive(tc, studioLogo, -lW / 2, -lH / 2, lW, lH, isTemplateBgDark(spineBgDark));
       enableTextShadow(tc);
       tc.restore();
     } else if (data.studioName) {
@@ -2375,7 +2331,7 @@ function drawSpine(
       tc.translate(w / 2, 50);
       // No rotation — text horizontal
       tc.font = "bold 11px sans-serif";
-      tc.fillStyle = template.spineAccent;
+      tc.fillStyle = accentColor;
       tc.textAlign = "center";
       tc.textBaseline = "middle";
       tc.fillText(data.studioName.toUpperCase(), 0, 0);
@@ -2384,9 +2340,8 @@ function drawSpine(
 
     // Title (center of spine — logo if available, adaptive text fallback)
     // 20px margin from studio logo zone (top ~95px) and VHS block zone (bottom ~h-117)
-    enableLightTextShadow(tc);
     if (data.logoImg) {
-      // Draw official movie logo rotated on spine
+      // Draw official movie logo rotated on spine with light outline glow
       tc.save();
       tc.translate(w / 2, h / 2);
       tc.rotate(Math.PI / 2);
@@ -2399,10 +2354,19 @@ function drawSpine(
         logoH = maxLogoH;
         logoW = logoH * logoAspect;
       }
+      // Multi-pass glow: draw logo several times with increasing blur for halo effect
+      disableShadow(tc);
+      tc.shadowOffsetX = 0;
+      tc.shadowOffsetY = 0;
+      tc.shadowColor = "rgba(255,255,255,0.5)";
+      tc.shadowBlur = 10;
       tc.drawImage(data.logoImg, -logoW / 2, -logoH / 2, logoW, logoH);
+      tc.shadowBlur = 4;
+      tc.drawImage(data.logoImg, -logoW / 2, -logoH / 2, logoW, logoH);
+      disableShadow(tc);
       tc.restore();
     } else {
-      // Fallback: adaptive font size text with offset-print emboss effect
+      // Fallback: adaptive font size text with stroke outline + emboss
       tc.save();
       tc.translate(w / 2, h / 2);
       tc.rotate(Math.PI / 2);
@@ -2422,14 +2386,17 @@ function drawSpine(
         tc.font = `bold ${spineFontSize}px sans-serif`;
       }
 
-      // Offset-print emboss: shadow pass (depth)
       disableShadow(tc);
+
+      // Light stroke outline for contrast on dark spines
+      tc.strokeStyle = "rgba(255,255,255,0.3)";
+      tc.lineWidth = 3;
+      tc.lineJoin = "round";
+      tc.strokeText(spineTitle, 0, 0);
+
+      // Offset-print emboss: shadow pass (depth)
       tc.fillStyle = "rgba(0,0,0,0.55)";
       tc.fillText(spineTitle, 1.5, 1.5);
-
-      // Highlight pass (catch light on raised edge)
-      tc.fillStyle = "rgba(255,255,255,0.12)";
-      tc.fillText(spineTitle, -1, -1);
 
       // Main text — off-white to prevent bloom blowout under fill lights
       tc.fillStyle = "#d8d8d8";
@@ -2440,7 +2407,7 @@ function drawSpine(
     enableTextShadow(tc);
 
     // VHS Hi-Fi Stereo logo (bottom of spine)
-    drawVHSHiFiBlock(tc, w / 2, h - 72, template.spineAccent, w);
+    drawVHSHiFiBlock(tc, w / 2, h - 72, accentColor, w);
   });
 }
 
@@ -2573,6 +2540,7 @@ function drawFrontBump(
     }
 
     // 4. Overdraw title at full white (#ffffff → full 1.5 effective bump)
+    // Skip if maxLines=0 (title removed from front face)
     const {
       x: titleX,
       y: titleY,
@@ -2581,32 +2549,34 @@ function drawFrontBump(
       align: titleAlign,
       maxLines: titleMaxLines,
     } = info;
-    if (data.logoImg) {
-      const logoAspect = data.logoImg.width / data.logoImg.height;
-      let logoW = titleMaxW;
-      let logoH = logoW / logoAspect;
-      const maxH = titleFontSize * titleMaxLines * 1.4;
-      if (logoH > maxH) {
-        logoH = maxH;
-        logoW = logoH * logoAspect;
-      }
-      const drawX = titleAlign === "center" ? titleX - logoW / 2 : titleX;
-      tc.drawImage(data.logoImg, drawX, titleY, logoW, logoH);
-    } else {
-      tc.font = `bold ${titleFontSize}px sans-serif`;
-      tc.fillStyle = "#ffffff";
-      tc.textAlign = titleAlign;
-      const lines = wrapText(
-        tc,
-        data.film.title.toUpperCase(),
-        titleMaxW,
-        titleMaxLines,
-      );
-      let dy = 0;
-      const lineH = Math.round(titleFontSize * 1.2);
-      for (const line of lines) {
-        tc.fillText(line, titleX, titleY + titleFontSize + dy);
-        dy += lineH;
+    if (titleMaxLines > 0) {
+      if (data.logoImg) {
+        const logoAspect = data.logoImg.width / data.logoImg.height;
+        let logoW = titleMaxW;
+        let logoH = logoW / logoAspect;
+        const maxH = titleFontSize * titleMaxLines * 1.4;
+        if (logoH > maxH) {
+          logoH = maxH;
+          logoW = logoH * logoAspect;
+        }
+        const drawX = titleAlign === "center" ? titleX - logoW / 2 : titleX;
+        tc.drawImage(data.logoImg, drawX, titleY, logoW, logoH);
+      } else {
+        tc.font = `bold ${titleFontSize}px sans-serif`;
+        tc.fillStyle = "#ffffff";
+        tc.textAlign = titleAlign;
+        const lines = wrapText(
+          tc,
+          data.film.title.toUpperCase(),
+          titleMaxW,
+          titleMaxLines,
+        );
+        let dy = 0;
+        const lineH = Math.round(titleFontSize * 1.2);
+        for (const line of lines) {
+          tc.fillText(line, titleX, titleY + titleFontSize + dy);
+          dy += lineH;
+        }
       }
     }
 

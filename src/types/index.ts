@@ -103,6 +103,34 @@ export interface FilmAnecdote {
   };
 }
 
+// TMDB credit/person types
+export interface CreditPerson {
+  id: number;
+  name: string;
+  character?: string;
+  job?: string;
+  profile_path: string | null;
+}
+
+export interface DetailedCredits {
+  directors: CreditPerson[];
+  actors: CreditPerson[];
+  writers: CreditPerson[];
+  producers: CreditPerson[];
+  composer: CreditPerson | null;
+}
+
+export interface PersonDetail {
+  id: number;
+  name: string;
+  biography: string;
+  birthday: string | null;
+  deathday: string | null;
+  place_of_birth: string | null;
+  profile_path: string | null;
+  known_for_department: string;
+}
+
 // Scene types
 export type SceneType = 'exterior' | 'interior';
 

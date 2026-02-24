@@ -5,7 +5,6 @@ import { pass, mrt, output, normalView, viewportUV, clamp, float, vec2, fract, s
 import { bloom } from 'three/addons/tsl/display/BloomNode.js'
 import { ao } from 'three/addons/tsl/display/GTAONode.js'
 import { fxaa } from 'three/addons/tsl/display/FXAANode.js'
-
 import { dof } from 'three/addons/tsl/display/DepthOfFieldNode.js'
 import { useStore } from '../../store'
 
@@ -20,6 +19,8 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
   const bokehRef = useRef<ReturnType<typeof uniform> | null>(null)
   // Bloom strength uniform — 0.55 normal, 0 when VHS case open
   const bloomStrengthRef = useRef<ReturnType<typeof uniform> | null>(null)
+  // Film grain time uniform — random seed each frame
+  const grainTimeRef = useRef<ReturnType<typeof uniform> | null>(null)
   // Subscribe to VHS case state — DoF requires pipeline rebuild (can't use uniform-only)
   const isVHSCaseOpen = useStore(state => state.isVHSCaseOpen)
   // Mobile pipeline has no DoF — don't rebuild pipeline on case open/close
@@ -103,17 +104,22 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
       // 6. FXAA (smooths geometry aliasing)
       const withFXAA = fxaa(withVignette)
 
-      // 7. Film Grain — very subtle static analog texture
-      const grain = fract(sin(dot(viewportUV, vec2(12.9898, 78.233))).mul(float(43758.5453)))
-        .sub(float(0.5)).mul(float(0.0144))
-      const withGrain = withFXAA.add(grain)
+      // 7. Cinematic film grain — animated monochrome, scalar add (proven working on WebGPU)
+      const grainTime = uniform(0.0)
+      grainTimeRef.current = grainTime
+
+      const grainNoise = fract(
+        sin(dot(viewportUV.add(vec2(grainTime, grainTime.mul(0.7))), vec2(12.9898, 78.233))).mul(43758.5453)
+      ).sub(0.5).mul(0.015)
+
+      const withGrain = withFXAA.add(grainNoise)
 
       postProcessing.outputNode = withGrain
 
       if (isVHSCaseOpen) {
-        console.log('[PostProcessing] Pipeline: GTAO + Bloom(0) + DoF(0.4725m) + Vignette + FXAA + Film Grain')
+        console.log('[PostProcessing] Pipeline: GTAO + Bloom(0) + DoF(0.4725m) + Vignette + FXAA + CineGrain')
       } else {
-        console.log('[PostProcessing] Pipeline: GTAO + Bloom(uniform) + Vignette + FXAA + Film Grain')
+        console.log('[PostProcessing] Pipeline: GTAO + Bloom(uniform) + Vignette + FXAA + CineGrain')
       }
     }
 
@@ -124,6 +130,7 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
       postProcessingRef.current = null
       bokehRef.current = null
       bloomStrengthRef.current = null
+      grainTimeRef.current = null
     }
   }, [renderer, scene, camera, isMobile, dofTrigger])
 
@@ -137,6 +144,11 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
     if (document.hidden) return
 
     if (postProcessingRef.current) {
+      // Animate film grain — random seed each frame
+      if (grainTimeRef.current) {
+        grainTimeRef.current.value = Math.random() * 1000
+      }
+
       // Smooth DoF ramp-up when case is open (bokehScale: 0 → 4 over ~0.2s)
       if (isVHSCaseOpen && bokehRef.current) {
         const target = 4.0

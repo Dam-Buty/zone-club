@@ -1,4 +1,4 @@
-import type { Film } from '../types';
+import type { Film, CreditPerson, DetailedCredits, PersonDetail } from '../types';
 
 const API_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY;
 const BASE_URL = 'https://api.themoviedb.org/3';
@@ -166,11 +166,18 @@ export const tmdb = {
       const data = await res.json();
       const logos: TMDBImage[] = data.logos || [];
       if (logos.length === 0) return null;
-      // Prefer French, then English, then any — pick widest for quality
-      const frLogo = logos.find((l: TMDBImage & { iso_639_1?: string }) =>
+      // Prefer French → English → any by width
+      // Exception: Scarface (id=111) — keep English logo
+      const ENGLISH_ONLY_IDS = [111]; // Scarface
+      const frLogos = ENGLISH_ONLY_IDS.includes(id) ? [] : logos.filter((l: TMDBImage & { iso_639_1?: string }) =>
         (l as TMDBImage & { iso_639_1?: string }).iso_639_1 === 'fr'
       );
-      const best = frLogo || logos.sort((a, b) => b.width - a.width)[0];
+      const enLogos = logos.filter((l: TMDBImage & { iso_639_1?: string }) =>
+        (l as TMDBImage & { iso_639_1?: string }).iso_639_1 === 'en'
+      );
+      const best = frLogos.sort((a, b) => b.vote_count - a.vote_count)[0]
+        || enLogos.sort((a, b) => b.vote_count - a.vote_count || b.width - a.width)[0]
+        || logos.sort((a, b) => b.width - a.width)[0];
       return best ? `${IMAGE_BASE}/w500${best.file_path}` : null;
     });
   },
@@ -314,5 +321,72 @@ export const tmdb = {
     }
 
     return allResults;
+  },
+
+  async getDetailedCredits(id: number): Promise<DetailedCredits> {
+    return withCache(`detailedCredits:${id}`, async () => {
+      const res = await fetch(
+        `${BASE_URL}/movie/${id}/credits?api_key=${API_KEY}&language=fr-FR`
+      );
+      if (!res.ok) throw new Error(`TMDB error: ${res.status}`);
+      const data = await res.json();
+
+      const allCast: (TMDBCast & { profile_path: string | null })[] =
+        (data.cast || []).sort((a: TMDBCast, b: TMDBCast) => a.order - b.order);
+
+      const directors: CreditPerson[] = (data.crew || [])
+        .filter((c: TMDBCrew) => c.job === 'Director')
+        .map((c: TMDBCrew & { profile_path?: string | null }) => ({
+          id: c.id, name: c.name, job: c.job, profile_path: c.profile_path ?? null,
+        }));
+
+      const actors: CreditPerson[] = allCast.slice(0, 12).map(c => ({
+        id: c.id, name: c.name, character: c.character, profile_path: c.profile_path,
+      }));
+
+      const seenWriters = new Set<number>();
+      const writers: CreditPerson[] = (data.crew || [])
+        .filter((c: TMDBCrew) => c.department === 'Writing')
+        .filter((c: TMDBCrew) => { if (seenWriters.has(c.id)) return false; seenWriters.add(c.id); return true; })
+        .slice(0, 4)
+        .map((c: TMDBCrew & { profile_path?: string | null }) => ({
+          id: c.id, name: c.name, job: c.job, profile_path: c.profile_path ?? null,
+        }));
+
+      const producers: CreditPerson[] = (data.crew || [])
+        .filter((c: TMDBCrew) => c.job === 'Producer')
+        .slice(0, 3)
+        .map((c: TMDBCrew & { profile_path?: string | null }) => ({
+          id: c.id, name: c.name, job: c.job, profile_path: c.profile_path ?? null,
+        }));
+
+      const composerEntry = (data.crew || [])
+        .find((c: TMDBCrew) => c.job === 'Original Music Composer');
+      const composer: CreditPerson | null = composerEntry
+        ? { id: composerEntry.id, name: composerEntry.name, job: composerEntry.job, profile_path: (composerEntry as TMDBCrew & { profile_path?: string | null }).profile_path ?? null }
+        : null;
+
+      return { directors, actors, writers, producers, composer };
+    });
+  },
+
+  async getPerson(id: number): Promise<PersonDetail> {
+    return withCache(`person:${id}`, async () => {
+      const res = await fetch(
+        `${BASE_URL}/person/${id}?api_key=${API_KEY}&language=fr-FR`
+      );
+      if (!res.ok) throw new Error(`TMDB error: ${res.status}`);
+      const data = await res.json();
+      return {
+        id: data.id,
+        name: data.name,
+        biography: data.biography || '',
+        birthday: data.birthday || null,
+        deathday: data.deathday || null,
+        place_of_birth: data.place_of_birth || null,
+        profile_path: data.profile_path || null,
+        known_for_department: data.known_for_department || '',
+      };
+    });
   },
 };

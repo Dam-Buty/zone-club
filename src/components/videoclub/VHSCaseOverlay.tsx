@@ -9,6 +9,9 @@ import {
   RENTAL_DURATIONS,
   type Film,
   type RentalTier,
+  type CreditPerson,
+  type DetailedCredits,
+  type PersonDetail,
 } from "../../types";
 import { useIsMobile } from "../../hooks/useIsMobile";
 
@@ -34,7 +37,7 @@ function formatDuration(ms: number): string {
 
 function formatCountdown(expiresAt: number): string {
   const remaining = expiresAt - Date.now();
-  if (remaining <= 0) return "EXPIR\u00c9";
+  if (remaining <= 0) return "EXPIRÉ";
   const h = Math.floor(remaining / 3600000);
   const m = Math.floor((remaining % 3600000) / 60000);
   const s = Math.floor((remaining % 60000) / 1000);
@@ -97,6 +100,227 @@ function mobilePillStyle(
   };
 }
 
+// Shared styles for credit labels/values (used as fallback when detailed credits not loaded)
+const creditLabelStyle: React.CSSProperties = {
+  fontFamily: "Orbitron, sans-serif",
+  fontSize: "0.68rem",
+  color: "rgba(255,255,255,0.35)",
+  letterSpacing: "1.5px",
+  textTransform: "uppercase",
+};
+
+const creditValueStyle: React.CSSProperties = {
+  fontSize: "0.75rem",
+  color: "rgba(255,255,255,0.5)",
+  marginTop: "4px",
+  lineHeight: 1.4,
+};
+
+// Clickable credit section
+function CreditSection({ label, persons, showCharacter, onSelect }: {
+  label: string;
+  persons: CreditPerson[];
+  showCharacter?: boolean;
+  onSelect: (p: CreditPerson) => void;
+}) {
+  return (
+    <div style={{ marginBottom: "10px" }}>
+      <div style={creditLabelStyle}>{label}</div>
+      <div style={{ marginTop: "4px", lineHeight: 1.6 }}>
+        {persons.map((p, i) => (
+          <span key={p.id}>
+            {i > 0 && <span style={{ color: "rgba(255,255,255,0.25)" }}>{showCharacter ? " · " : ", "}</span>}
+            <span
+              onClick={() => onSelect(p)}
+              style={{
+                fontSize: "0.75rem",
+                color: "#00d4cc",
+                cursor: "pointer",
+                transition: "color 0.15s",
+              }}
+              onMouseEnter={e => (e.currentTarget.style.color = "#00fff7")}
+              onMouseLeave={e => (e.currentTarget.style.color = "#00d4cc")}
+            >
+              {p.name}
+            </span>
+            {showCharacter && p.character && (
+              <span style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.3)", marginLeft: "4px" }}>
+                ({p.character})
+              </span>
+            )}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Person detail modal
+function PersonModal({ person, detail, loading, onClose }: {
+  person: CreditPerson;
+  detail: PersonDetail | null;
+  loading: boolean;
+  onClose: () => void;
+}) {
+  const photoUrl = person.profile_path
+    ? `https://image.tmdb.org/t/p/w342${person.profile_path}`
+    : null;
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.92)",
+        zIndex: 220,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "16px",
+      }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          maxWidth: "700px",
+          width: "100%",
+          maxHeight: "88vh",
+          overflowY: "auto",
+          background: "rgba(8,8,18,0.98)",
+          border: "1px solid rgba(0,255,247,0.25)",
+          borderRadius: "12px",
+          padding: "32px",
+          position: "relative",
+          boxShadow: "0 0 40px rgba(0,255,247,0.08)",
+        }}
+      >
+        {/* Close button */}
+        <button
+          onClick={onClose}
+          style={{
+            position: "absolute",
+            top: "14px",
+            right: "16px",
+            background: "none",
+            border: "none",
+            color: "rgba(255,255,255,0.5)",
+            fontSize: "1.3rem",
+            cursor: "pointer",
+            fontFamily: "Orbitron, sans-serif",
+            padding: "4px 8px",
+          }}
+        >
+          X
+        </button>
+
+        {/* Header: photo + name */}
+        <div style={{ display: "flex", gap: "22px", marginBottom: "20px" }}>
+          {photoUrl ? (
+            <img
+              src={photoUrl}
+              alt={person.name}
+              style={{
+                width: "120px",
+                height: "180px",
+                objectFit: "cover",
+                borderRadius: "8px",
+                flexShrink: 0,
+                border: "1px solid rgba(255,255,255,0.12)",
+              }}
+            />
+          ) : (
+            <div style={{
+              width: "120px",
+              height: "180px",
+              borderRadius: "8px",
+              flexShrink: 0,
+              background: "rgba(255,255,255,0.05)",
+              border: "1px solid rgba(255,255,255,0.1)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: "2.5rem",
+              color: "rgba(255,255,255,0.15)",
+            }}>
+              ?
+            </div>
+          )}
+          <div style={{ minWidth: 0, display: "flex", flexDirection: "column", justifyContent: "center" }}>
+            <div style={{
+              fontFamily: "Orbitron, sans-serif",
+              fontSize: "1.2rem",
+              color: "#00fff7",
+              textShadow: "0 0 10px rgba(0,255,247,0.4)",
+              lineHeight: 1.3,
+              marginBottom: "10px",
+            }}>
+              {person.name}
+            </div>
+            {loading ? (
+              <div style={{ fontSize: "0.85rem", color: "rgba(255,255,255,0.3)" }}>Chargement...</div>
+            ) : detail && (
+              <>
+                {detail.birthday && (
+                  <div style={{ fontSize: "0.85rem", color: "rgba(255,255,255,0.55)", marginBottom: "4px" }}>
+                    Né{detail.deathday ? "" : "(e)"} le {detail.birthday}
+                    {detail.deathday && <span> — déc. {detail.deathday}</span>}
+                  </div>
+                )}
+                {detail.place_of_birth && (
+                  <div style={{ fontSize: "0.82rem", color: "rgba(255,255,255,0.4)", marginBottom: "4px" }}>
+                    {detail.place_of_birth}
+                  </div>
+                )}
+                {detail.known_for_department && (
+                  <div style={{ fontSize: "0.72rem", color: "rgba(0,212,204,0.6)", fontFamily: "Orbitron, sans-serif", letterSpacing: "1px", textTransform: "uppercase", marginTop: "4px" }}>
+                    {detail.known_for_department}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Biography */}
+        {!loading && detail?.biography && (
+          <>
+            <hr style={{ border: "none", borderTop: "1px solid rgba(255,255,255,0.08)", margin: "0 0 16px" }} />
+            <div style={{
+              fontFamily: "Orbitron, sans-serif",
+              fontSize: "0.7rem",
+              color: "rgba(255,255,255,0.35)",
+              letterSpacing: "1.5px",
+              textTransform: "uppercase",
+              marginBottom: "10px",
+            }}>
+              Biographie
+            </div>
+            <div style={{
+              fontFamily: "sans-serif",
+              fontSize: "0.88rem",
+              color: "rgba(255,255,255,0.72)",
+              lineHeight: 1.7,
+              whiteSpace: "pre-line",
+            }}>
+              {detail.biography}
+            </div>
+          </>
+        )}
+
+        {!loading && detail && !detail.biography && (
+          <>
+            <hr style={{ border: "none", borderTop: "1px solid rgba(255,255,255,0.08)", margin: "0 0 16px" }} />
+            <div style={{ fontSize: "0.88rem", color: "rgba(255,255,255,0.3)", fontStyle: "italic" }}>
+              Aucune biographie disponible.
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
   const isMobile = useIsMobile();
   const isAuthenticated = useStore((state) => state.isAuthenticated);
@@ -124,6 +348,21 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
   const [returnRequested, setReturnRequested] = useState(false);
   const [filmRentalStatus, setFilmRentalStatus] = useState<FilmWithRentalStatus['rental_status'] | null>(null);
   const [showLanguageChoice, setShowLanguageChoice] = useState(false);
+  const [showReturnConfirm, setShowReturnConfirm] = useState(false);
+  const [earlyReturnBonus, setEarlyReturnBonus] = useState(false);
+  const [mobileExpanded, setMobileExpanded] = useState(false);
+
+  // Certification + TMDB reviews + budget
+  const [certification, setCertification] = useState("");
+  const [tmdbReviews, setTmdbReviews] = useState<{ author: string; content: string }[]>([]);
+  const [budget, setBudget] = useState<number>(0);
+  const [revenue, setRevenue] = useState<number>(0);
+
+  // Detailed credits + person modal
+  const [detailedCredits, setDetailedCredits] = useState<DetailedCredits | null>(null);
+  const [selectedPerson, setSelectedPerson] = useState<CreditPerson | null>(null);
+  const [personDetail, setPersonDetail] = useState<PersonDetail | null>(null);
+  const [loadingPerson, setLoadingPerson] = useState(false);
 
   // Live countdown timer
   const [countdown, setCountdown] = useState("");
@@ -163,6 +402,36 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
     }).catch(() => {});
   }, [isOpen, film?.tmdb_id]);
 
+  // Fetch detailed credits, certification, and TMDB reviews when overlay opens
+  useEffect(() => {
+    if (!isOpen || !film?.tmdb_id) {
+      setDetailedCredits(null);
+      setCertification("");
+      setTmdbReviews([]);
+      setBudget(0);
+      setRevenue(0);
+      return;
+    }
+    const id = film.tmdb_id;
+    tmdb.getDetailedCredits(id).then(setDetailedCredits).catch(e => console.warn('Credits fetch failed:', e));
+    tmdb.getCertification(id).then(c => { console.log(`[VHS] Certification for tmdb_id=${id}:`, JSON.stringify(c)); setCertification(c); }).catch(e => console.warn('Certification fetch failed:', e));
+    tmdb.getReviews(id).then(setTmdbReviews).catch(e => console.warn('Reviews fetch failed:', e));
+    tmdb.getFilm(id).then(d => { setBudget((d as any).budget || 0); setRevenue((d as any).revenue || 0); }).catch(() => {});
+  }, [isOpen, film?.tmdb_id]);
+
+  // Fetch person detail when a person is selected
+  useEffect(() => {
+    if (!selectedPerson) {
+      setPersonDetail(null);
+      return;
+    }
+    setLoadingPerson(true);
+    tmdb.getPerson(selectedPerson.id).then(d => {
+      setPersonDetail(d);
+      setLoadingPerson(false);
+    }).catch(() => setLoadingPerson(false));
+  }, [selectedPerson]);
+
   // Reset states when overlay closes
   useEffect(() => {
     if (!isOpen) {
@@ -178,6 +447,16 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
       setRequestingReturn(false);
       setReturnRequested(false);
       setShowLanguageChoice(false);
+      setShowReturnConfirm(false);
+      setEarlyReturnBonus(false);
+      setMobileExpanded(false);
+      setSelectedPerson(null);
+      setPersonDetail(null);
+      setDetailedCredits(null);
+      setCertification("");
+      setTmdbReviews([]);
+      setBudget(0);
+      setRevenue(0);
       if (couchPopupTimeoutRef.current) {
         clearTimeout(couchPopupTimeoutRef.current);
         couchPopupTimeoutRef.current = null;
@@ -207,7 +486,11 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.code === "Escape") {
-        if (showLanguageChoice) {
+        if (selectedPerson) {
+          setSelectedPerson(null);
+        } else if (showReturnConfirm) {
+          setShowReturnConfirm(false);
+        } else if (showLanguageChoice) {
           setShowLanguageChoice(false);
         } else if (showTrailer) {
           setShowTrailer(false);
@@ -222,7 +505,7 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, onClose, showTrailer, showAuthModal, showReviewModal, showLanguageChoice]);
+  }, [isOpen, onClose, showTrailer, showAuthModal, showReviewModal, showLanguageChoice, selectedPerson, showReturnConfirm]);
 
   const handleWatchTrailer = useCallback(async () => {
     if (!film || loadingTrailer) return;
@@ -334,13 +617,26 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
     openPlayer(film.id);
   }, [film, onClose, openPlayer]);
 
-  const handleReturn = useCallback(async () => {
+  const handleReturnClick = useCallback(() => {
+    setShowReturnConfirm(true);
+  }, []);
+
+  const handleReturnConfirm = useCallback(async () => {
     if (!film || returning) return;
     setReturning(true);
+    setShowReturnConfirm(false);
     const result = await storeReturnFilm(film.id);
     setReturning(false);
     if (result) {
-      onClose();
+      if (result.earlyReturnCredit) {
+        setEarlyReturnBonus(true);
+        setTimeout(() => {
+          setEarlyReturnBonus(false);
+          onClose();
+        }, 2200);
+      } else {
+        onClose();
+      }
     }
   }, [film, returning, storeReturnFilm, onClose]);
 
@@ -365,6 +661,11 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
   const cost = RENTAL_COSTS[tier];
   const duration = RENTAL_DURATIONS[tier];
   const canAfford = credits >= cost;
+
+  // Early return eligibility: within 24h of rental start
+  const isWithinEarlyReturn = rental
+    ? (Date.now() - rental.rentedAt) <= 24 * 60 * 60 * 1000
+    : false;
 
   // Rent button colors
   const rentBorderColor = !isAuthenticated
@@ -395,13 +696,34 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
 
   // ===== Rental section rendering helpers =====
 
+  // Shared return button for desktop (used in all rented sub-states)
+  function renderDesktopReturnButton() {
+    return (
+      <button
+        onClick={handleReturnClick}
+        disabled={returning}
+        style={sideButtonStyle("#ff6600", "#ff6600", {
+          width: "100%",
+          justifyContent: "center",
+          background: "rgba(255,102,0,0.12)",
+          cursor: returning ? "wait" : "pointer",
+          opacity: returning ? 0.6 : 1,
+        })}
+      >
+        {returning ? "RETOUR..." : "RETOURNER LA K7"}
+      </button>
+    );
+  }
+
   // Desktop rental buttons
   function renderDesktopRentalSection() {
+    // ---- STATE 3: User has rented this film ----
     if (isRented && rental) {
-      // Countdown timer
-      const timerEl = (
+      // Status badge: "Déjà loué" + countdown
+      const statusEl = (
         <div
           style={sideButtonStyle("#ffaa00", "#ffaa00", {
+            width: "100%",
             background: "rgba(255,170,0,0.08)",
             cursor: "default",
             flexDirection: "column",
@@ -409,160 +731,148 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
             gap: "2px",
           })}
         >
-          <span style={{ fontSize: "0.65rem", opacity: 0.7 }}>Expire dans</span>
+          <span style={{ fontSize: "0.65rem", opacity: 0.7 }}>Déjà loué — expire dans</span>
           <span style={{ fontVariantNumeric: "tabular-nums" }}>{countdown}</span>
         </div>
       );
+
+      // Early return hint
+      const earlyHint = isWithinEarlyReturn ? (
+        <div style={{ fontSize: "0.68rem", color: "#00ff88", fontFamily: "Orbitron, sans-serif", textAlign: "center", letterSpacing: "0.5px" }}>
+          Retour sous 24h = +1 crédit bonus
+        </div>
+      ) : null;
 
       // No viewing mode chosen yet
       if (!rental.viewingMode) {
         return (
           <>
-            {timerEl}
+            {statusEl}
+            {earlyHint}
             <button
               onClick={() => handleSetViewingMode('sur_place')}
               disabled={settingMode}
               style={sideButtonStyle("#00fff7", "#00fff7", {
+                width: "100%",
+                justifyContent: "center",
                 background: "linear-gradient(135deg, rgba(0,255,247,0.2), rgba(0,170,255,0.2))",
                 boxShadow: "0 0 12px rgba(0,255,247,0.25)",
               })}
             >
-              {"\ud83d\udcfa"} REGARDER SUR PLACE
+              📺 REGARDER SUR PLACE
             </button>
             <button
               onClick={() => handleSetViewingMode('emporter')}
               disabled={settingMode}
               style={sideButtonStyle("#ff9900", "#ff9900", {
+                width: "100%",
+                justifyContent: "center",
                 background: "linear-gradient(135deg, rgba(255,153,0,0.2), rgba(255,100,0,0.2))",
                 boxShadow: "0 0 12px rgba(255,153,0,0.2)",
               })}
             >
-              {"\ud83d\udcfc"} {"\u00c0"} EMPORTER
+              📼 À EMPORTER
             </button>
-            <button
-              onClick={handleReturn}
-              disabled={returning}
-              style={sideButtonStyle("#ff6600", "#ff6600", {
-                background: "rgba(255,102,0,0.12)",
-                cursor: returning ? "wait" : "pointer",
-                opacity: returning ? 0.6 : 1,
-              })}
-            >
-              {returning ? "RETOUR..." : "RETOURNER LE FILM"}
-            </button>
+            {renderDesktopReturnButton()}
           </>
         );
       }
 
-      // Mode = sur_place → sit down button
+      // Mode = sur_place
       if (rental.viewingMode === 'sur_place') {
         return (
           <>
-            {timerEl}
+            {statusEl}
+            {earlyHint}
             <button
               onClick={handleSitDown}
               style={sideButtonStyle("#00fff7", "#ffffff", {
+                width: "100%",
+                justifyContent: "center",
                 background: "linear-gradient(135deg, rgba(0,255,247,0.3), rgba(0,200,255,0.3))",
                 boxShadow: "0 0 16px rgba(0,255,247,0.35)",
                 fontSize: "0.85rem",
               })}
             >
-              {"\ud83d\udecb\ufe0f"} S'INSTALLER ET REGARDER
+              🛋️ S'INSTALLER ET REGARDER
             </button>
-            <button
-              onClick={handleReturn}
-              disabled={returning}
-              style={sideButtonStyle("#ff6600", "#ff6600", {
-                background: "rgba(255,102,0,0.12)",
-                cursor: returning ? "wait" : "pointer",
-                opacity: returning ? 0.6 : 1,
-              })}
-            >
-              {returning ? "RETOUR..." : "RETOURNER LE FILM"}
-            </button>
+            {renderDesktopReturnButton()}
           </>
         );
       }
 
-      // Mode = emporter → badge
+      // Mode = emporter
       return (
         <>
-          {timerEl}
+          {statusEl}
+          {earlyHint}
           <div
             style={sideButtonStyle("#ff9900", "#ff9900", {
+              width: "100%",
+              justifyContent: "center",
               background: "rgba(255,153,0,0.08)",
               cursor: "default",
             })}
           >
-            {"\ud83d\udcfc"} {"\u00c0"} EMPORTER {"\u2713"}
+            📼 À EMPORTER ✓
           </div>
-          <button
-            onClick={handleReturn}
-            disabled={returning}
-            style={sideButtonStyle("#ff6600", "#ff6600", {
-              background: "rgba(255,102,0,0.12)",
-              cursor: returning ? "wait" : "pointer",
-              opacity: returning ? 0.6 : 1,
-            })}
-          >
-            {returning ? "RETOUR..." : "RETOURNER LE FILM"}
-          </button>
+          {renderDesktopReturnButton()}
         </>
       );
     }
 
-    // Not rented — check stock availability
+    // ---- STATE 2: No copies available ----
     if (filmRentalStatus && filmRentalStatus.available_copies <= 0) {
-      // All copies rented out
       return (
         <>
           <div
             style={sideButtonStyle("#ff3333", "#ff3333", {
+              width: "100%",
+              justifyContent: "center",
               cursor: "default",
               background: "rgba(255,51,51,0.1)",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: "4px",
             })}
           >
-            TOUTES LES COPIES LOU\u00c9ES ({filmRentalStatus.active_rentals}/{filmRentalStatus.stock})
+            <span>AUCUNE K7 DISPONIBLE</span>
+            {filmRentalStatus.earliest_return && (
+              <span style={{ fontSize: "0.68rem", color: "#ffaa00", fontVariantNumeric: "tabular-nums" }}>
+                Retour dans {formatCountdown(new Date(filmRentalStatus.earliest_return + 'Z').getTime())}
+              </span>
+            )}
           </div>
-          {filmRentalStatus.earliest_return && (
-            <div
-              style={sideButtonStyle("#ffaa00", "#ffaa00", {
-                cursor: "default",
-                background: "rgba(255,170,0,0.08)",
-                fontSize: "0.7rem",
-              })}
-            >
-              Retour estim\u00e9: {formatCountdown(new Date(filmRentalStatus.earliest_return + 'Z').getTime())}
-            </div>
-          )}
           <button
             onClick={handleRequestReturn}
             disabled={requestingReturn || returnRequested}
             style={sideButtonStyle("#00fff7", "#00fff7", {
+              width: "100%",
+              justifyContent: "center",
               background: "rgba(0,255,247,0.12)",
               boxShadow: "0 0 12px rgba(0,255,247,0.2)",
               cursor: returnRequested ? "default" : "pointer",
               opacity: returnRequested ? 0.6 : 1,
             })}
           >
-            {returnRequested ? "NOTIFICATION ENVOY\u00c9E \u2713" : requestingReturn ? "ENVOI..." : "NOTIFIER UN LOCATAIRE"}
+            {returnRequested ? "NOTIFICATION ENVOYÉE ✓" : requestingReturn ? "ENVOI..." : "NOTIFIER UN LOCATAIRE"}
           </button>
         </>
       );
     }
 
-    // Copies available — show rent button
+    // ---- STATE 1: Copies available ----
     return (
       <>
-        {filmRentalStatus && (
-          <div style={{ fontSize: "0.7rem", color: filmRentalStatus.available_copies > 0 ? "#00ff00" : "#ff3333", fontFamily: "Orbitron, sans-serif", textAlign: "center", letterSpacing: "0.5px" }}>
-            {filmRentalStatus.available_copies}/{filmRentalStatus.stock} dispo
-          </div>
-        )}
+        <div style={{ fontSize: "0.72rem", color: "#00ff88", fontFamily: "Orbitron, sans-serif", textAlign: "center", letterSpacing: "0.5px" }}>
+          K7 DISPONIBLE
+        </div>
         <button
           onClick={handleRent}
           disabled={isAuthenticated && (!canAfford || isRenting)}
           style={sideButtonStyle(rentBorderColor, rentTextColor, {
+            width: "100%",
+            justifyContent: "center",
             background: rentBg,
             cursor: rentCursor,
             boxShadow: rentShadow,
@@ -576,8 +886,8 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
 
   // Mobile rental buttons
   function renderMobileRentalSection() {
+    // ---- STATE 3: User has rented ----
     if (isRented && rental) {
-      // Countdown pill
       const timerEl = (
         <div
           style={mobilePillStyle("#ffaa00", "#ffaa00", {
@@ -585,8 +895,22 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
             cursor: "default",
           })}
         >
-          {"\u23f1"} {countdown}
+          ⏱ {countdown}
         </div>
+      );
+
+      const returnBtn = (
+        <button
+          onClick={handleReturnClick}
+          disabled={returning}
+          style={mobilePillStyle("#ff6600", "#ff6600", {
+            background: "rgba(255,102,0,0.12)",
+            cursor: returning ? "wait" : "pointer",
+            opacity: returning ? 0.6 : 1,
+          })}
+        >
+          {returning ? "RETOUR..." : "RETOURNER"}
+        </button>
       );
 
       if (!rental.viewingMode) {
@@ -601,7 +925,7 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
                 boxShadow: "0 0 8px rgba(0,255,247,0.2)",
               })}
             >
-              {"\ud83d\udcfa"} SUR PLACE
+              📺 SUR PLACE
             </button>
             <button
               onClick={() => handleSetViewingMode('emporter')}
@@ -611,8 +935,9 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
                 boxShadow: "0 0 8px rgba(255,153,0,0.15)",
               })}
             >
-              {"\ud83d\udcfc"} EMPORTER
+              📼 EMPORTER
             </button>
+            {returnBtn}
           </>
         );
       }
@@ -628,8 +953,9 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
                 boxShadow: "0 0 10px rgba(0,255,247,0.3)",
               })}
             >
-              {"\ud83d\udecb\ufe0f"} S'INSTALLER
+              🛋️ S'INSTALLER
             </button>
+            {returnBtn}
           </>
         );
       }
@@ -643,18 +969,19 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
               cursor: "default",
             })}
           >
-            {"\ud83d\udcfc"} EMPORTER {"\u2713"}
+            📼 EMPORTER ✓
           </div>
+          {returnBtn}
         </>
       );
     }
 
-    // Not rented — check stock
+    // ---- STATE 2: No copies available ----
     if (filmRentalStatus && filmRentalStatus.available_copies <= 0) {
       return (
         <>
           <div style={mobilePillStyle("#ff3333", "#ff3333", { cursor: "default", background: "rgba(255,51,51,0.1)" })}>
-            TOUTES LOU\u00c9ES ({filmRentalStatus.active_rentals}/{filmRentalStatus.stock})
+            AUCUNE K7
           </div>
           <button
             onClick={handleRequestReturn}
@@ -664,12 +991,13 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
               opacity: returnRequested ? 0.6 : 1,
             })}
           >
-            {returnRequested ? "ENVOY\u00c9 \u2713" : "NOTIFIER"}
+            {returnRequested ? "ENVOYÉ ✓" : "NOTIFIER"}
           </button>
         </>
       );
     }
 
+    // ---- STATE 1: Available ----
     return (
       <button
         onClick={handleRent}
@@ -678,15 +1006,176 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
           background: rentBg,
           cursor: rentCursor,
           boxShadow: rentShadow,
+          fontSize: "0.75rem",
         })}
       >
-        {rentLabel}
+        {!isAuthenticated ? "CONNEXION" : isRenting ? "LOCATION..." : canAfford ? (
+          <>LOUER <span style={{ fontWeight: 700, color: "#00ff88" }}>{cost} cr.</span> — Solde: <span style={{ color: "#ffd700", fontWeight: 700 }}>{credits}</span></>
+        ) : (
+          <>PAS ASSEZ — Solde: <span style={{ color: "#ffd700", fontWeight: 700 }}>{credits}</span></>
+        )}
       </button>
     );
   }
 
   return (
     <>
+      {/* Person detail modal */}
+      {selectedPerson && (
+        <PersonModal
+          person={selectedPerson}
+          detail={personDetail}
+          loading={loadingPerson}
+          onClose={() => setSelectedPerson(null)}
+        />
+      )}
+
+      {/* Return confirmation modal */}
+      {showReturnConfirm && (
+        <div
+          onClick={() => setShowReturnConfirm(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.88)",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 210,
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: isMobile ? "14px" : "18px",
+              padding: isMobile ? "22px 18px" : "28px 36px",
+              background: "rgba(10,10,20,0.95)",
+              border: "1px solid rgba(255,102,0,0.4)",
+              borderRadius: "12px",
+              boxShadow: "0 0 30px rgba(255,102,0,0.15)",
+              maxWidth: "360px",
+              width: "90%",
+            }}
+          >
+            <div style={{
+              fontFamily: "Orbitron, sans-serif",
+              fontSize: isMobile ? "0.82rem" : "0.95rem",
+              color: "#ff6600",
+              letterSpacing: "2px",
+              textTransform: "uppercase",
+              textShadow: "0 0 12px rgba(255,102,0,0.4)",
+              textAlign: "center",
+            }}>
+              RETOURNER LA K7 ?
+            </div>
+            {isWithinEarlyReturn && (
+              <div style={{
+                fontSize: "0.75rem",
+                color: "#00ff88",
+                fontFamily: "Orbitron, sans-serif",
+                textAlign: "center",
+                lineHeight: 1.4,
+              }}>
+                Retour sous 24h : +1 crédit bonus
+              </div>
+            )}
+            <div style={{ display: "flex", gap: isMobile ? "10px" : "14px", width: "100%" }}>
+              <button
+                onClick={handleReturnConfirm}
+                disabled={returning}
+                style={{
+                  flex: 1,
+                  padding: isMobile ? "12px 16px" : "14px 24px",
+                  background: "linear-gradient(135deg, rgba(255,102,0,0.3), rgba(200,60,0,0.3))",
+                  border: "1px solid #ff6600",
+                  borderRadius: "8px",
+                  color: "#ffffff",
+                  fontFamily: "Orbitron, sans-serif",
+                  fontSize: isMobile ? "0.78rem" : "0.85rem",
+                  cursor: returning ? "wait" : "pointer",
+                  letterSpacing: "1px",
+                  boxShadow: "0 0 12px rgba(255,102,0,0.2)",
+                  transition: "all 0.2s",
+                  opacity: returning ? 0.6 : 1,
+                }}
+              >
+                {returning ? "RETOUR..." : "CONFIRMER"}
+              </button>
+              <button
+                onClick={() => setShowReturnConfirm(false)}
+                style={{
+                  flex: 1,
+                  padding: isMobile ? "12px 16px" : "14px 24px",
+                  background: "transparent",
+                  border: "1px solid rgba(255,255,255,0.2)",
+                  borderRadius: "8px",
+                  color: "rgba(255,255,255,0.5)",
+                  fontFamily: "Orbitron, sans-serif",
+                  fontSize: isMobile ? "0.78rem" : "0.85rem",
+                  cursor: "pointer",
+                  letterSpacing: "1px",
+                }}
+              >
+                ANNULER
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Early return bonus overlay */}
+      {earlyReturnBonus && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.85)",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 200,
+          }}
+        >
+          <div
+            style={{
+              fontSize: isMobile ? "3rem" : "4rem",
+              color: "#00ff88",
+              textShadow: "0 0 30px #00ff88, 0 0 60px #00ff88",
+            }}
+          >
+            +1
+          </div>
+          <div
+            style={{
+              fontFamily: "Orbitron, sans-serif",
+              fontSize: isMobile ? "1.1rem" : "1.4rem",
+              color: "#00fff7",
+              textShadow: "0 0 20px #00fff7",
+              marginTop: "0.8rem",
+              letterSpacing: "4px",
+              textAlign: "center",
+            }}
+          >
+            BONUS RETOUR ANTICIPÉ
+          </div>
+          <div
+            style={{
+              color: "rgba(255,255,255,0.5)",
+              marginTop: "0.4rem",
+              fontSize: "0.85rem",
+              fontFamily: "Orbitron, sans-serif",
+            }}
+          >
+            +1 crédit
+          </div>
+        </div>
+      )}
+
       {/* Trailer fullscreen overlay */}
       {showTrailer && trailerKey && (
         <div
@@ -758,7 +1247,7 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
               textShadow: "0 0 30px #00ff00, 0 0 60px #00ff00",
             }}
           >
-            {"\u2713"}
+            ✓
           </div>
           <div
             style={{
@@ -770,7 +1259,7 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
               letterSpacing: "8px",
             }}
           >
-            LOU{"\u00c9"}
+            LOUÉ
           </div>
           <div
             style={{
@@ -844,7 +1333,7 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
                   opacity: settingMode ? 0.6 : 1,
                 }}
               >
-                {"\ud83c\uddeb\ud83c\uddf7"} VF
+                🇫🇷 VF
               </button>
               <button
                 onClick={() => handleEmporterLanguage('vo')}
@@ -864,7 +1353,7 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
                   opacity: settingMode ? 0.6 : 1,
                 }}
               >
-                {"\ud83c\uddec\ud83c\udde7"} VO
+                🇬🇧 VO
               </button>
             </div>
             <button
@@ -918,7 +1407,7 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
       {/* ===== MOBILE LAYOUT ===== */}
       {isMobile ? (
         <>
-          {/* Close button — floating top-right */}
+          {/* Reposer button — floating top-right */}
           <button
             data-vhs-overlay
             onClick={onClose}
@@ -926,284 +1415,596 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
               position: "fixed",
               top: "16px",
               right: "16px",
-              width: 56,
-              height: 56,
-              borderRadius: "50%",
+              padding: "10px 16px",
+              borderRadius: "12px",
               border: "2px solid #ff2d44",
               background: "rgba(180,20,40,0.35)",
+              backdropFilter: "blur(8px)",
               color: "#ff4444",
               fontFamily: "Orbitron, sans-serif",
-              fontSize: "1.5rem",
+              fontSize: "0.68rem",
+              letterSpacing: "1px",
               display: "flex",
               alignItems: "center",
-              justifyContent: "center",
+              gap: "6px",
               cursor: "pointer",
-              zIndex: 100,
+              zIndex: 101,
               boxShadow: "0 0 14px rgba(255,45,68,0.4)",
             }}
           >
-            X
+            ↩ REPOSER
           </button>
 
-          {/* Bottom bar — flex-wrap buttons */}
+          {/* Dimming overlay — only when expanded */}
+          {mobileExpanded && (
+            <div style={{
+              position: "fixed",
+              top: 0,
+              left: 0,
+              right: 0,
+              height: "25vh",
+              background: "linear-gradient(180deg, rgba(0,0,0,0.2) 0%, rgba(0,0,0,0.5) 100%)",
+              pointerEvents: "none",
+              zIndex: 99,
+              transition: "opacity 0.3s",
+            }} />
+          )}
+
+          {/* Retractable Bottom Sheet */}
           <div
+            data-vhs-overlay
             style={{
               position: "fixed",
               bottom: 0,
               left: 0,
               right: 0,
+              maxHeight: mobileExpanded ? "85vh" : "40vh",
               zIndex: 100,
-              pointerEvents: "none",
-              background:
-                "linear-gradient(0deg, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.5) 70%, transparent 100%)",
-              paddingBottom: `calc(12px + env(safe-area-inset-bottom, 0px))`,
-              paddingTop: "12px",
+              background: "rgba(8,8,18,0.96)",
+              borderTop: "1px solid rgba(0,255,247,0.2)",
+              borderRadius: "16px 16px 0 0",
+              display: "flex",
+              flexDirection: "column",
+              transition: "max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1)",
+              overflow: "hidden",
+              paddingBottom: "calc(8px + env(safe-area-inset-bottom, 0px))",
+              textShadow: "0 1px 3px rgba(0,0,0,0.6)",
             }}
           >
-            {/* Film title + meta */}
-            <div
-              data-vhs-overlay
+            {/* Header — title + meta (always visible) */}
+            <div style={{ padding: "12px 16px 8px", flexShrink: 0 }}>
+              <div style={{
+                fontFamily: "Orbitron, sans-serif",
+                fontSize: "0.92rem",
+                color: "#00fff7",
+                textShadow: "0 0 12px rgba(0,255,247,0.5)",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}>
+                {film.title}
+                {certification && (
+                  <span style={{
+                    marginLeft: "8px",
+                    padding: "2px 6px",
+                    background: "rgba(255,255,255,0.08)",
+                    border: "1px solid rgba(255,255,255,0.35)",
+                    borderRadius: "3px",
+                    fontSize: "0.68rem",
+                    color: "rgba(255,255,255,0.7)",
+                    fontWeight: 600,
+                    verticalAlign: "middle",
+                    letterSpacing: "0.5px",
+                  }}>
+                    {certification}
+                  </span>
+                )}
+                <span style={{
+                  marginLeft: "8px",
+                  fontSize: "0.72rem",
+                  color: "#ffd700",
+                }}>
+                  ★ {film.vote_average.toFixed(1)}
+                </span>
+              </div>
+              <div style={{
+                fontSize: "0.7rem",
+                color: "rgba(255,255,255,0.45)",
+                marginTop: "3px",
+              }}>
+                {film.release_date ? new Date(film.release_date).getFullYear() : ""}
+                {film.runtime ? ` • ${film.runtime} min` : ""}
+                {film.genres?.length ? ` • ${film.genres[0].name}` : ""}
+              </div>
+            </div>
+
+            {/* Action buttons — always visible, right after header */}
+            <div style={{ padding: "4px 16px 8px", flexShrink: 0 }}>
+              {/* Rental section */}
+              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                {renderMobileRentalSection()}
+              </div>
+              {/* Secondary buttons row */}
+              <div style={{ display: "flex", gap: "6px", marginTop: "6px" }}>
+                <button
+                  onClick={handleWatchTrailer}
+                  disabled={loadingTrailer}
+                  style={mobilePillStyle("#ff4444", "#ff4444", {
+                    opacity: loadingTrailer ? 0.6 : 1,
+                    cursor: loadingTrailer ? "wait" : "pointer",
+                  })}
+                >
+                  ▶ TRAILER
+                </button>
+                <button
+                  onClick={() => setShowReviewModal(true)}
+                  style={mobilePillStyle("#ffd700", "#ffd700")}
+                >
+                  ★ AVIS
+                </button>
+                <button
+                  onClick={handleAskManager}
+                  style={mobilePillStyle("#00fff7", "#00fff7")}
+                >
+                  ? GÉRANT
+                </button>
+              </div>
+              {isRented && (
+                <div style={{ display: "flex", gap: "6px", marginTop: "6px" }}>
+                  <button
+                    onClick={() => setShowReviewModal(true)}
+                    style={mobilePillStyle("#ffd700", "#ffd700", { flex: "1 1 100%" })}
+                  >
+                    ★ CRITIQUER
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Toggle expand/collapse button */}
+            <button
+              onClick={() => setMobileExpanded(!mobileExpanded)}
               style={{
+                flexShrink: 0,
+                padding: "8px 16px",
+                background: "rgba(0,255,247,0.06)",
+                border: "none",
+                borderTop: "1px solid rgba(255,255,255,0.08)",
+                borderBottom: mobileExpanded ? "1px solid rgba(255,255,255,0.08)" : "none",
+                color: "#00fff7",
+                fontFamily: "Orbitron, sans-serif",
+                fontSize: "0.65rem",
+                letterSpacing: "1.5px",
+                cursor: "pointer",
                 textAlign: "center",
-                padding: "0 16px 10px",
-                pointerEvents: "auto",
+                transition: "background 0.2s",
               }}
             >
+              {mobileExpanded ? "▲ MOINS" : "▼ PLUS D'INFOS"}
+            </button>
+
+            {/* Enriched content — only visible when expanded */}
+            {mobileExpanded && (
+              <div style={{
+                flex: 1,
+                overflowY: "auto",
+                padding: "10px 16px",
+                minHeight: 0,
+              }}>
+                {/* Synopsis */}
+                {film.overview && (
+                  <div style={{ marginBottom: "12px" }}>
+                    <div style={{
+                      fontFamily: "Orbitron, sans-serif",
+                      fontSize: "0.65rem",
+                      color: "rgba(255,255,255,0.35)",
+                      letterSpacing: "1.5px",
+                      textTransform: "uppercase",
+                      marginBottom: "5px",
+                    }}>
+                      Synopsis
+                    </div>
+                    <div style={{
+                      fontFamily: "sans-serif",
+                      fontSize: "0.78rem",
+                      color: "rgba(255,255,255,0.7)",
+                      lineHeight: 1.5,
+                    }}>
+                      {film.overview}
+                    </div>
+                  </div>
+                )}
+
+                {/* TMDB Reviews */}
+                {tmdbReviews.length > 0 && (
+                  <div style={{ marginBottom: "12px" }}>
+                    <div style={creditLabelStyle}>Critiques</div>
+                    {tmdbReviews.map((r, i) => (
+                      <div key={i} style={{
+                        marginTop: "6px",
+                        padding: "6px 8px",
+                        background: "rgba(255,255,255,0.03)",
+                        borderLeft: "2px solid rgba(255,215,0,0.3)",
+                        borderRadius: "0 4px 4px 0",
+                      }}>
+                        <div style={{
+                          fontFamily: "sans-serif",
+                          fontSize: "0.72rem",
+                          color: "rgba(255,255,255,0.6)",
+                          lineHeight: 1.5,
+                          fontStyle: "italic",
+                        }}>
+                          &ldquo;{r.content}&rdquo;
+                        </div>
+                        <div style={{
+                          fontSize: "0.65rem",
+                          color: "rgba(255,215,0,0.5)",
+                          marginTop: "3px",
+                          textAlign: "right",
+                        }}>
+                          — {r.author}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Detailed credits sections */}
+                {detailedCredits ? (
+                  <>
+                    {detailedCredits.directors.length > 0 && (
+                      <CreditSection label="Réalisation" persons={detailedCredits.directors} onSelect={setSelectedPerson} />
+                    )}
+                    {detailedCredits.actors.length > 0 && (
+                      <CreditSection label="Casting" persons={detailedCredits.actors} showCharacter onSelect={setSelectedPerson} />
+                    )}
+                    {detailedCredits.writers.length > 0 && (
+                      <CreditSection label="Scénario" persons={detailedCredits.writers} onSelect={setSelectedPerson} />
+                    )}
+                    {detailedCredits.producers.length > 0 && (
+                      <CreditSection label="Production" persons={detailedCredits.producers} onSelect={setSelectedPerson} />
+                    )}
+                    {detailedCredits.composer && (
+                      <CreditSection label="Musique" persons={[detailedCredits.composer]} onSelect={setSelectedPerson} />
+                    )}
+                  </>
+                ) : (
+                  <>
+                    {film.directors && film.directors.length > 0 && (
+                      <div style={{ marginBottom: "8px" }}>
+                        <span style={creditLabelStyle}>Réal</span>
+                        <div style={creditValueStyle}>{film.directors.join(", ")}</div>
+                      </div>
+                    )}
+                    {film.actors && film.actors.length > 0 && (
+                      <div style={{ marginBottom: "8px" }}>
+                        <span style={creditLabelStyle}>Casting</span>
+                        <div style={creditValueStyle}>{film.actors.slice(0, 4).join(", ")}</div>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {/* Budget & Revenue */}
+                {(budget > 0 || revenue > 0) && (
+                  <div style={{ marginBottom: "10px" }}>
+                    <div style={creditLabelStyle}>Budget</div>
+                    <div style={{ marginTop: "4px", display: "flex", gap: "12px", flexWrap: "wrap" }}>
+                      {budget > 0 && (
+                        <span style={{ fontSize: "0.72rem", color: "rgba(255,255,255,0.55)" }}>
+                          Budget : <span style={{ color: "#ffd700" }}>{(budget / 1_000_000).toFixed(0)}M $</span>
+                        </span>
+                      )}
+                      {revenue > 0 && (
+                        <span style={{ fontSize: "0.72rem", color: "rgba(255,255,255,0.55)" }}>
+                          Recettes : <span style={{ color: revenue > budget ? "#00ff88" : "#ff6666" }}>{(revenue / 1_000_000).toFixed(0)}M $</span>
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </>
+      ) : (
+        /* ===== DESKTOP LAYOUT ===== */
+        <>
+          {/* RIGHT PANEL — full-height info + actions */}
+          <div
+            data-vhs-overlay
+            style={{
+              position: "fixed",
+              top: 0,
+              right: 0,
+              bottom: 0,
+              width: "340px",
+              zIndex: 100,
+              pointerEvents: "auto",
+              background: "rgba(0,0,0,0.88)",
+              borderLeft: "1px solid rgba(0,255,247,0.15)",
+              backdropFilter: "blur(12px)",
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
+            {/* Section haute — Titre + meta */}
+            <div style={{ padding: "24px 20px 16px", flexShrink: 0 }}>
               <div
                 style={{
                   fontFamily: "Orbitron, sans-serif",
-                  fontSize: "0.85rem",
+                  fontSize: "1rem",
                   color: "#00fff7",
                   textShadow: "0 0 12px rgba(0,255,247,0.5)",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
+                  lineHeight: 1.3,
                 }}
               >
                 {film.title}
               </div>
               <div
                 style={{
-                  fontSize: "0.7rem",
+                  fontSize: "0.78rem",
                   color: "rgba(255,255,255,0.45)",
-                  marginTop: "2px",
+                  marginTop: "6px",
                 }}
               >
                 {film.release_date
                   ? new Date(film.release_date).getFullYear()
                   : ""}{" "}
-                {film.runtime ? `\u2022 ${film.runtime} min` : ""} {"\u2022"}{" "}
-                {"\u2605"} {film.vote_average.toFixed(1)}
+                {film.runtime ? `• ${film.runtime} min` : ""}
+                {film.genres?.length ? ` • ${film.genres[0].name}` : ""}
+                {certification && (
+                  <span style={{
+                    marginLeft: "8px",
+                    padding: "2px 6px",
+                    background: "rgba(255,255,255,0.08)",
+                    border: "1px solid rgba(255,255,255,0.35)",
+                    borderRadius: "3px",
+                    fontSize: "0.72rem",
+                    color: "rgba(255,255,255,0.7)",
+                    fontWeight: 600,
+                    verticalAlign: "middle",
+                    letterSpacing: "0.5px",
+                  }}>
+                    {certification}
+                  </span>
+                )}
+              </div>
+              <div
+                style={{
+                  fontSize: "0.78rem",
+                  color: "rgba(255,255,255,0.45)",
+                  marginTop: "3px",
+                }}
+              >
+                ★ {film.vote_average.toFixed(1)}
                 <span
-                  style={{ marginLeft: "8px", color: "rgba(255,255,255,0.3)" }}
+                  style={{ marginLeft: "12px", color: "rgba(255,255,255,0.3)" }}
                 >
-                  <span style={{ color: "#ffd700" }}>{credits}</span> cr.
+                  Solde: <span style={{ color: "#ffd700" }}>{credits}</span> cr
+édit{credits > 1 ? "s" : ""}
                 </span>
               </div>
             </div>
 
-            {/* Button row — flex-wrap to fit screen */}
+            <hr style={{ border: "none", borderTop: "1px solid rgba(255,255,255,0.1)", margin: "0 20px" }} />
+
+            {/* Section milieu — Synopsis + Credits (scrollable) */}
             <div
-              data-vhs-overlay
               style={{
-                display: "flex",
-                flexWrap: "wrap",
-                gap: "8px",
-                padding: "0 16px",
-                justifyContent: "center",
-                pointerEvents: "auto",
+                flex: 1,
+                overflowY: "auto",
+                padding: "16px 20px",
+                minHeight: 0,
               }}
             >
-              {/* Avis */}
-              <button
-                onClick={() => setShowReviewModal(true)}
-                style={mobilePillStyle("#ffd700", "#ffd700")}
-              >
-                {"\u2605"} AVIS
-              </button>
+              {film.overview && (
+                <div style={{ marginBottom: "14px" }}>
+                  <div
+                    style={{
+                      fontFamily: "Orbitron, sans-serif",
+                      fontSize: "0.68rem",
+                      color: "rgba(255,255,255,0.35)",
+                      letterSpacing: "1.5px",
+                      textTransform: "uppercase",
+                      marginBottom: "6px",
+                    }}
+                  >
+                    Synopsis
+                  </div>
+                  <div
+                    style={{
+                      fontFamily: "sans-serif",
+                      fontSize: "0.8rem",
+                      color: "rgba(255,255,255,0.7)",
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    {film.overview}
+                  </div>
+                </div>
+              )}
 
-              {/* Trailer */}
+              {/* TMDB Reviews */}
+              {tmdbReviews.length > 0 && (
+                <div style={{ marginBottom: "14px" }}>
+                  <div style={creditLabelStyle}>Critiques</div>
+                  {tmdbReviews.map((r, i) => (
+                    <div key={i} style={{
+                      marginTop: "8px",
+                      padding: "8px 10px",
+                      background: "rgba(255,255,255,0.03)",
+                      borderLeft: "2px solid rgba(255,215,0,0.3)",
+                      borderRadius: "0 4px 4px 0",
+                    }}>
+                      <div style={{
+                        fontFamily: "sans-serif",
+                        fontSize: "0.76rem",
+                        color: "rgba(255,255,255,0.6)",
+                        lineHeight: 1.5,
+                        fontStyle: "italic",
+                      }}>
+                        "{r.content}"
+                      </div>
+                      <div style={{
+                        fontSize: "0.68rem",
+                        color: "rgba(255,215,0,0.5)",
+                        marginTop: "4px",
+                        textAlign: "right",
+                      }}>
+                        — {r.author}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Detailed credits sections */}
+              {detailedCredits ? (
+                <>
+                  {detailedCredits.directors.length > 0 && (
+                    <CreditSection label="Réalisation" persons={detailedCredits.directors} onSelect={setSelectedPerson} />
+                  )}
+                  {detailedCredits.actors.length > 0 && (
+                    <CreditSection label="Casting" persons={detailedCredits.actors} showCharacter onSelect={setSelectedPerson} />
+                  )}
+                  {detailedCredits.writers.length > 0 && (
+                    <CreditSection label="Scénario" persons={detailedCredits.writers} onSelect={setSelectedPerson} />
+                  )}
+                  {detailedCredits.producers.length > 0 && (
+                    <CreditSection label="Production" persons={detailedCredits.producers} onSelect={setSelectedPerson} />
+                  )}
+                  {detailedCredits.composer && (
+                    <CreditSection label="Musique" persons={[detailedCredits.composer]} onSelect={setSelectedPerson} />
+                  )}
+                </>
+              ) : (
+                <>
+                  {film.directors && film.directors.length > 0 && (
+                    <div style={{ marginBottom: "8px" }}>
+                      <span style={creditLabelStyle}>Réal</span>
+                      <div style={creditValueStyle}>{film.directors.join(", ")}</div>
+                    </div>
+                  )}
+                  {film.actors && film.actors.length > 0 && (
+                    <div style={{ marginBottom: "8px" }}>
+                      <span style={creditLabelStyle}>Casting</span>
+                      <div style={creditValueStyle}>{film.actors.slice(0, 4).join(", ")}</div>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* Budget & Revenue */}
+              {(budget > 0 || revenue > 0) && (
+                <div style={{ marginBottom: "10px" }}>
+                  <div style={creditLabelStyle}>Budget</div>
+                  <div style={{ marginTop: "4px", display: "flex", gap: "16px", flexWrap: "wrap" }}>
+                    {budget > 0 && (
+                      <span style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.55)" }}>
+                        Budget : <span style={{ color: "#ffd700" }}>{(budget / 1_000_000).toFixed(0)}M $</span>
+                      </span>
+                    )}
+                    {revenue > 0 && (
+                      <span style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.55)" }}>
+                        Recettes : <span style={{ color: revenue > budget ? "#00ff88" : "#ff6666" }}>{(revenue / 1_000_000).toFixed(0)}M $</span>
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <hr style={{ border: "none", borderTop: "1px solid rgba(255,255,255,0.1)", margin: "0 20px" }} />
+
+            {/* Section basse — Action buttons */}
+            <div
+              style={{
+                padding: "16px 20px 20px",
+                display: "flex",
+                flexDirection: "column",
+                gap: "8px",
+                flexShrink: 0,
+              }}
+            >
+              {renderDesktopRentalSection()}
+
               <button
                 onClick={handleWatchTrailer}
                 disabled={loadingTrailer}
-                style={mobilePillStyle("#ff4444", "#ff4444", {
+                style={sideButtonStyle("#ff4444", "#ff4444", {
+                  width: "100%",
+                  justifyContent: "center",
                   opacity: loadingTrailer ? 0.6 : 1,
                   cursor: loadingTrailer ? "wait" : "pointer",
                 })}
               >
-                {"\u25b6"} TRAILER
+                ▶ BANDE-ANNONCE
               </button>
 
-              {/* G\u00e9rant */}
+              <button
+                onClick={() => setShowReviewModal(true)}
+                style={sideButtonStyle("#ffd700", "#ffd700", {
+                  width: "100%",
+                  justifyContent: "center",
+                })}
+              >
+                ★ AVIS DU CLUB
+              </button>
+
               <button
                 onClick={handleAskManager}
-                style={mobilePillStyle("#00fff7", "#00fff7")}
+                style={sideButtonStyle("#00fff7", "#00fff7", {
+                  width: "100%",
+                  justifyContent: "center",
+                })}
               >
-                ? G{"\u00c9"}RANT
+                ? DEMANDER AU GÉRANT
               </button>
 
-              {/* Critiquer (if rented) */}
               {isRented && (
                 <button
                   onClick={() => setShowReviewModal(true)}
-                  style={mobilePillStyle("#ffd700", "#ffd700")}
+                  style={sideButtonStyle("#ffd700", "#ffd700", {
+                    width: "100%",
+                    justifyContent: "center",
+                  })}
                 >
-                  {"\u2605"} CRITIQUER
+                  ★ CRITIQUER
                 </button>
               )}
 
-              {/* Rental section */}
-              {renderMobileRentalSection()}
+              <button
+                onClick={onClose}
+                style={sideButtonStyle("#00ff88", "#00ff88", {
+                  width: "100%",
+                  justifyContent: "center",
+                  background: "rgba(0,255,136,0.12)",
+                  boxShadow: "0 0 12px rgba(0,255,136,0.25)",
+                })}
+              >
+                ↩ REPOSER SUR L'ÉTAGÈRE
+              </button>
             </div>
           </div>
-        </>
-      ) : (
-        /* ===== DESKTOP LAYOUT ===== */
-        <>
-          {/* LEFT SIDE */}
+
+          {/* Controls hint — bottom-left */}
           <div
             data-vhs-overlay
             style={{
               position: "fixed",
-              left: "11%",
-              top: "50%",
-              transform: "translateY(-50%)",
-              display: "flex",
-              flexDirection: "column",
-              gap: "12px",
-              zIndex: 100,
-              pointerEvents: "auto",
-              background: "rgba(0, 0, 0, 0.45)",
-              backdropFilter: "blur(6px)",
-              padding: "14px",
-              borderRadius: "10px",
-            }}
-          >
-            <button
-              onClick={() => setShowReviewModal(true)}
-              style={sideButtonStyle("#ffd700", "#ffd700")}
-            >
-              {"\u2605"} LIRE LES AVIS DU VIDEOCLUB
-            </button>
-
-            <button
-              onClick={handleWatchTrailer}
-              disabled={loadingTrailer}
-              style={sideButtonStyle("#ff4444", "#ff4444", {
-                opacity: loadingTrailer ? 0.6 : 1,
-                cursor: loadingTrailer ? "wait" : "pointer",
-              })}
-            >
-              {"\u25b6"} BANDE-ANNONCE
-            </button>
-
-            <button
-              onClick={handleAskManager}
-              style={sideButtonStyle("#00fff7", "#00fff7")}
-            >
-              ? DEMANDER AU G{"\u00c9"}RANT
-            </button>
-
-            {isRented && (
-              <button
-                onClick={() => setShowReviewModal(true)}
-                style={sideButtonStyle("#ffd700", "#ffd700")}
-              >
-                {"\u2605"} CRITIQUER
-              </button>
-            )}
-
-            {/* Rental section — rent button or timer + viewing mode */}
-            {renderDesktopRentalSection()}
-          </div>
-
-          {/* RIGHT SIDE */}
-          <div
-            data-vhs-overlay
-            style={{
-              position: "fixed",
-              right: "11%",
-              top: "50%",
-              transform: "translateY(-50%)",
-              display: "flex",
-              flexDirection: "column",
-              gap: "12px",
-              zIndex: 100,
-              pointerEvents: "auto",
-              background: "rgba(0, 0, 0, 0.45)",
-              backdropFilter: "blur(6px)",
-              padding: "14px",
-              borderRadius: "10px",
-            }}
-          >
-            <button
-              onClick={onClose}
-              style={sideButtonStyle("#00ff88", "#00ff88", {
-                background: "rgba(0,255,136,0.12)",
-                boxShadow: "0 0 12px rgba(0,255,136,0.25)",
-              })}
-            >
-              {"\u21a9"} REPOSER SUR L'{"\u00c9"}TAG{"\u00c8"}RE
-            </button>
-          </div>
-
-          {/* BOTTOM — Film title + controls hint */}
-          <div
-            data-vhs-overlay
-            style={{
-              position: "fixed",
-              bottom: 0,
-              left: 0,
-              right: 0,
+              bottom: "12px",
+              left: "16px",
               zIndex: 100,
               pointerEvents: "none",
-              textAlign: "center",
-              padding: "16px 24px",
-              background:
-                "linear-gradient(0deg, rgba(0,0,0,0.6) 0%, transparent 100%)",
+              color: "rgba(255,255,255,0.3)",
+              fontSize: "0.7rem",
+              fontFamily: "sans-serif",
             }}
           >
-            <div
-              style={{
-                fontFamily: "Orbitron, sans-serif",
-                fontSize: "1rem",
-                color: "#00fff7",
-                textShadow: "0 0 12px rgba(0,255,247,0.5)",
-              }}
-            >
-              {film.title}
-            </div>
-            <div
-              style={{
-                fontSize: "0.8rem",
-                color: "rgba(255,255,255,0.45)",
-                marginTop: "4px",
-              }}
-            >
-              {film.release_date
-                ? new Date(film.release_date).getFullYear()
-                : ""}{" "}
-              {film.runtime ? `\u2022 ${film.runtime} min` : ""} {"\u2022"}{" "}
-              {"\u2605"} {film.vote_average.toFixed(1)}
-              <span
-                style={{ marginLeft: "12px", color: "rgba(255,255,255,0.3)" }}
-              >
-                Solde: <span style={{ color: "#ffd700" }}>{credits}</span> cr
-                {"\u00e9"}dit{credits > 1 ? "s" : ""}
-              </span>
-            </div>
-            <div
-              style={{
-                marginTop: "6px",
-                color: "rgba(255,255,255,0.3)",
-                fontSize: "0.7rem",
-                fontFamily: "sans-serif",
-              }}
-            >
-              <strong>Clic</strong> - Retourner | <strong>Q</strong> /{" "}
-              <strong>E</strong> - Tourner le bo{"\u00ee"}tier |{" "}
-              <strong>ESC</strong> - Reposer
-            </div>
+            <strong>Clic</strong> - Retourner | <strong>Q</strong> /{" "}
+            <strong>E</strong> - Tourner le boîtier |{" "}
+            <strong>ESC</strong> - Reposer
           </div>
         </>
       )}

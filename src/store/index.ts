@@ -213,6 +213,10 @@ interface VideoClubState {
   benchmarkEnabled: boolean;
   setBenchmarkEnabled: (enabled: boolean) => void;
   toggleBenchmarkEnabled: () => void;
+
+  // Loading screen
+  isSceneReady: boolean;
+  setSceneReady: (ready: boolean) => void;
 }
 
 export const useStore = create<VideoClubState>()(
@@ -477,7 +481,7 @@ export const useStore = create<VideoClubState>()(
       currentScene: 'exterior',
       currentAisle: 'nouveautes',
       selectedFilmId: null,
-      setScene: (scene) => set({ currentScene: scene }),
+      setScene: (scene) => set({ currentScene: scene, isSceneReady: scene !== 'interior' }),
       setAisle: (aisle) => set({ currentAisle: aisle }),
       selectFilm: (filmId) => {
         set({ selectedFilmId: filmId });
@@ -665,6 +669,10 @@ export const useStore = create<VideoClubState>()(
       benchmarkEnabled: false,
       setBenchmarkEnabled: (enabled) => set({ benchmarkEnabled: enabled }),
       toggleBenchmarkEnabled: () => set((state) => ({ benchmarkEnabled: !state.benchmarkEnabled })),
+
+      // Loading screen
+      isSceneReady: false,
+      setSceneReady: (ready) => set({ isSceneReady: ready }),
     }),
     {
       name: 'videoclub-storage',
@@ -679,6 +687,11 @@ export const useStore = create<VideoClubState>()(
   )
 );
 
+
+// Dev/test hook — expose store to browser console & Playwright MCP
+if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production') {
+  (window as any).__store = useStore;
+}
 
 // Hook pour initialiser l'auth au démarrage
 export function useInitAuth() {
