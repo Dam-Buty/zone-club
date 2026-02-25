@@ -530,6 +530,12 @@ export function Controls({
       // Seated TV menu navigation — intercept movement keys
       const { isSitting: sittingNow } = useStore.getState();
       if (sittingNow) {
+        // Q = Eject (stand up from couch)
+        if (event.code === "KeyQ") {
+          event.preventDefault();
+          useStore.getState().setSitting(false);
+          return;
+        }
         if (event.code === "ArrowUp" || event.code === "KeyW") {
           event.preventDefault();
           useStore.getState().dispatchTVMenu('up');
@@ -914,6 +920,11 @@ export function Controls({
       camera.position.x = THREE.MathUtils.lerp(camera.position.x, targetX, alpha);
       camera.position.y = THREE.MathUtils.lerp(camera.position.y, standingY, alpha);
       camera.position.z = THREE.MathUtils.lerp(camera.position.z, targetZ, alpha);
+      // Rotate camera to face back into the store (towards -X)
+      const standTarget = new THREE.Vector3(0, 1.52, 1.2);
+      _lookAtMatrix.lookAt(camera.position, standTarget, _up);
+      _targetQuat.setFromRotationMatrix(_lookAtMatrix);
+      camera.quaternion.slerp(_targetQuat, alpha);
       if (Math.abs(camera.position.y - standingY) < 0.01) {
         camera.position.set(targetX, standingY, targetZ);
         wasSittingRef.current = false;

@@ -220,11 +220,6 @@ function App() {
     }, 100);
   }, [setScene]);
 
-  // Show player if open
-  if (isPlayerOpen) {
-    return <VHSPlayer />;
-  }
-
   // Exterior view
   if (currentScene === 'exterior') {
     return (
@@ -234,7 +229,7 @@ function App() {
     );
   }
 
-  // Interior view (3D scene)
+  // Interior view (3D scene) — VHSPlayer overlays on top, scene stays mounted
   return (
     <>
       {/* 3D R3F + WebGPU Video Club Scene */}
@@ -273,6 +268,9 @@ function App() {
         isOpen={selectedFilmId !== null}
         onClose={handleCloseModal}
       />
+
+      {/* VHS Player — overlays on top of scene (scene stays mounted to preserve WebGPU state) */}
+      {isPlayerOpen && <VHSPlayer />}
 
       {/* Manager Chat */}
       <ManagerChat />

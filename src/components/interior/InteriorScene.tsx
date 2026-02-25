@@ -692,6 +692,7 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
   const isMountedRef = useRef(true)
   const [maxTextureArrayLayers, setMaxTextureArrayLayers] = useState(256)
   const [gpuError, setGpuError] = useState<string | null>(null)
+  const [isPortrait, setIsPortrait] = useState(false)
 
   const films = useStore(state => state.films)
   const selectedFilmId = useStore(state => state.selectedFilmId)
@@ -705,6 +706,14 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
       isMountedRef.current = false
     }
   }, [])
+
+  useEffect(() => {
+    if (!isMobile) return
+    const check = () => setIsPortrait(window.innerHeight > window.innerWidth)
+    check()
+    window.addEventListener('resize', check)
+    return () => window.removeEventListener('resize', check)
+  }, [isMobile])
 
   const allFilms = useMemo(() => {
     const seen = new Set<number>()
@@ -845,6 +854,22 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
       )}
 
       <BenchmarkOverlay enabled={benchmarkMode} />
+
+      {isMobile && isPortrait && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 9999,
+          background: 'rgba(0,0,0,0.95)',
+          display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center',
+          color: '#00ffff', fontFamily: "'Courier New', monospace",
+          textAlign: 'center', padding: '2rem',
+        }}>
+          <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>📱↻</div>
+          <p style={{ fontSize: '1.2rem', letterSpacing: 2 }}>
+            Tournez votre téléphone<br/>en mode paysage
+          </p>
+        </div>
+      )}
 
       <UIOverlays isMobile={isMobile} />
 

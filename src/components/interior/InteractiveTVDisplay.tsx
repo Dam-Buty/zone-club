@@ -693,6 +693,12 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
       ctx.fillStyle = isSelected ? '#00ffff' : '#009999'
       ctx.fillText(`${prefix}${opt}`, LX * 3, 180 + i * 165)
     })
+    // Hint eject en bas du menu
+    ctx.font = `24px ${CRT_FONT}`
+    ctx.fillStyle = '#666666'
+    ctx.shadowColor = '#444444'
+    ctx.shadowBlur = 1
+    ctx.fillText('\u23CF Appuyez sur Q pour se lever', LX * 3, h - 80)
     ctx.shadowBlur = 0
     applyCRT(ctx, w, h)
 
