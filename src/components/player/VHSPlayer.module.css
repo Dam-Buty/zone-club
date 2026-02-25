@@ -58,6 +58,76 @@
   z-index: 10;
 }
 
+.mobileRemotePrompt {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  z-index: 24;
+  width: min(360px, calc(100vw - 1.5rem));
+  background: rgba(5, 10, 20, 0.94);
+  border: 1px solid rgba(0, 255, 247, 0.35);
+  border-radius: 8px;
+  box-shadow: 0 0 18px rgba(0, 255, 247, 0.2);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mobileRemotePromptTitle {
+  font-family: var(--font-display);
+  font-size: 0.82rem;
+  color: var(--color-neon-cyan);
+  letter-spacing: 0.12em;
+  text-shadow: var(--glow-cyan);
+}
+
+.mobileRemotePromptText {
+  font-family: 'Courier New', monospace;
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.85);
+  line-height: 1.35;
+}
+
+.mobileRemotePromptActions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mobileRemotePrimaryBtn {
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  color: #00140f;
+  background: #00ff88;
+  border: 1px solid #00ff88;
+  border-radius: 5px;
+  padding: 8px 10px;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+
+.mobileRemotePrimaryBtn:hover {
+  background: #6dffbf;
+}
+
+.mobileRemoteSecondaryBtn {
+  font-family: var(--font-display);
+  font-size: 0.68rem;
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 5px;
+  padding: 7px 10px;
+  letter-spacing: 0.07em;
+  cursor: pointer;
+}
+
+.mobileRemoteSecondaryBtn:hover {
+  border-color: var(--color-neon-cyan);
+  color: var(--color-neon-cyan);
+}
+
 /* ===== Blue Screen (Stop) ===== */
 .blueScreen {
   position: absolute;
@@ -381,6 +451,78 @@
   color: #ffd700;
   text-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
   margin-left: 8px;
+}
+
+.mirroringOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 25;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.mirroringPanel {
+  width: min(640px, 100%);
+  border: 1px solid rgba(0, 255, 247, 0.35);
+  border-radius: 8px;
+  background: rgba(5, 10, 20, 0.96);
+  box-shadow: 0 0 24px rgba(0, 255, 247, 0.2);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.mirroringTitle {
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  color: var(--color-neon-cyan);
+  letter-spacing: 0.14em;
+  text-shadow: var(--glow-cyan);
+}
+
+.mirroringContextHint {
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  color: var(--color-neon-pink);
+  letter-spacing: 0.08em;
+}
+
+.mirroringSteps {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-family: 'Courier New', monospace;
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.85);
+  line-height: 1.35;
+}
+
+.mirroringFootnote {
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.55);
+  font-family: var(--font-display);
+  letter-spacing: 0.06em;
+}
+
+.mirroringCloseBtn {
+  align-self: flex-end;
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  color: var(--color-neon-cyan);
+  background: rgba(0, 255, 247, 0.08);
+  border: 1px solid var(--color-neon-cyan);
+  border-radius: 4px;
+  padding: 8px 14px;
+  cursor: pointer;
+  letter-spacing: 0.12em;
+}
+
+.mirroringCloseBtn:hover {
+  background: rgba(0, 255, 247, 0.16);
 }
 
 @keyframes flicker {

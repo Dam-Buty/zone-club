@@ -225,6 +225,46 @@
   color: var(--color-neon-cyan);
 }
 
+.remoteControls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.remoteBtn {
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(30, 30, 40, 0.75);
+  color: rgba(255, 255, 255, 0.8);
+  font-family: var(--font-display);
+  font-size: 0.58rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border-radius: 3px;
+  padding: 5px 7px;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.remoteBtn:hover {
+  border-color: var(--color-neon-cyan);
+  color: var(--color-neon-cyan);
+}
+
+.remoteBtnActive {
+  color: #00ff88;
+  border-color: #00ff88;
+  box-shadow: 0 0 8px rgba(0, 255, 136, 0.35);
+}
+
+.remoteError {
+  margin-top: 8px;
+  color: #ffb3c7;
+  font-family: var(--font-display);
+  font-size: 0.6rem;
+  letter-spacing: 0.08em;
+  text-align: right;
+}
+
 .volumeSlider {
   width: 70px;
   height: 4px;

@@ -5,6 +5,8 @@ import { VHSControls } from './VHSControls';
 import { RentalTimer } from '../ui/RentalTimer';
 import api, { type ReviewsResponse } from '../../api';
 import type { PlayerState } from '../../types';
+import { useGoogleCast } from '../../hooks/useGoogleCast';
+import { useIsMobile } from '../../hooks/useIsMobile';
 import styles from './VHSPlayer.module.css';
 
 const MIN_CONTENT_LENGTH = 500;
@@ -14,6 +16,11 @@ export type AudioTrack = 'vf' | 'vo';
 // Rewind state machine
 type RewindPhase = 'none' | 'prompt' | 'rewinding' | 'complete';
 
+type AirPlayVideoElement = HTMLVideoElement & {
+  webkitShowPlaybackTargetPicker?: () => void;
+  webkitCurrentPlaybackTargetIsWireless?: boolean;
+};
+
 export function VHSPlayer() {
   const { isPlayerOpen, currentPlayingFilm, closePlayer, getRental, films, fetchMe, isAuthenticated, addCredits } = useStore();
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -22,6 +29,13 @@ export function VHSPlayer() {
   const [showSubtitles, setShowSubtitles] = useState(true);
   const [currentTime, setCurrentTime] = useState(0);
   const [showBlueScreen, setShowBlueScreen] = useState(false);
+  const [remoteError, setRemoteError] = useState<string | null>(null);
+  const [showMirroringHelp, setShowMirroringHelp] = useState(false);
+  const [mirroringContext, setMirroringContext] = useState<'generic' | 'cast' | 'airplay'>('generic');
+  const [isAirPlaySupported, setIsAirPlaySupported] = useState(false);
+  const [isAirPlayAvailable, setIsAirPlayAvailable] = useState(false);
+  const [isAirPlayConnected, setIsAirPlayConnected] = useState(false);
+  const [showMobileRemotePrompt, setShowMobileRemotePrompt] = useState(false);
 
   // FF/RW state
   const [ffSpeed, setFfSpeed] = useState(0); // 0=off, 2=x2, 4=x4
@@ -50,6 +64,19 @@ export function VHSPlayer() {
   const [reviewData, setReviewData] = useState<ReviewsResponse | null>(null);
   const [reviewLoading, setReviewLoading] = useState(false);
 
+  const {
+    isReady: isCastReady,
+    castState,
+    hasDevices: hasCastDevices,
+    isConnected: isCastConnected,
+    connectedDeviceName: castDeviceName,
+    castMedia,
+  } = useGoogleCast({
+    enabled: isPlayerOpen,
+    receiverApplicationId: process.env.NEXT_PUBLIC_GOOGLE_CAST_APP_ID,
+  });
+  const isMobile = useIsMobile();
+
   const rental = currentPlayingFilm ? getRental(currentPlayingFilm) : null;
   const streamingUrls = rental?.streamingUrls;
 
@@ -69,6 +96,13 @@ export function VHSPlayer() {
     if (audioTrack === 'vo' && hasVO) return streamingUrls.vo!;
     return streamingUrls.vf || streamingUrls.vo || rental?.videoUrl || '';
   }, [streamingUrls, audioTrack, hasVF, hasVO, rental?.videoUrl]);
+
+  const openMirroringFallback = useCallback((context: 'generic' | 'cast' | 'airplay' = 'generic') => {
+    setMirroringContext(context);
+    setShowMirroringHelp(true);
+  }, []);
+
+  const videoUrl = getVideoUrl();
 
   // Handle audio track change - preserve current time
   const handleAudioTrackChange = useCallback((newTrack: AudioTrack) => {
@@ -272,6 +306,121 @@ export function VHSPlayer() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isPlayerOpen, handleEject, handleStop, handleFFCycle, handleRWCycle, hasVF, hasVO, hasSubtitles, audioTrack, handleAudioTrackChange, stopRW]);
 
+  // ===== Remote playback (AirPlay) =====
+  useEffect(() => {
+    if (!isPlayerOpen) return;
+
+    const video = videoRef.current as AirPlayVideoElement | null;
+    if (!video) return;
+
+    video.setAttribute('x-webkit-airplay', 'allow');
+    video.setAttribute('airplay', 'allow');
+    (video as HTMLVideoElement & { disableRemotePlayback?: boolean }).disableRemotePlayback = false;
+
+    const supportsAirPlay = typeof video.webkitShowPlaybackTargetPicker === 'function';
+    setIsAirPlaySupported(supportsAirPlay);
+    setIsAirPlayAvailable(supportsAirPlay);
+    setIsAirPlayConnected(Boolean(video.webkitCurrentPlaybackTargetIsWireless));
+
+    const handleAvailability = (event: Event) => {
+      const availability = (event as Event & { availability?: string }).availability;
+      setIsAirPlayAvailable(availability === 'available');
+    };
+
+    const handleWirelessChange = () => {
+      setIsAirPlayConnected(Boolean(video.webkitCurrentPlaybackTargetIsWireless));
+    };
+
+    video.addEventListener('webkitplaybacktargetavailabilitychanged', handleAvailability as EventListener);
+    video.addEventListener('webkitcurrentplaybacktargetiswirelesschanged', handleWirelessChange as EventListener);
+
+    return () => {
+      video.removeEventListener('webkitplaybacktargetavailabilitychanged', handleAvailability as EventListener);
+      video.removeEventListener('webkitcurrentplaybacktargetiswirelesschanged', handleWirelessChange as EventListener);
+    };
+  }, [isPlayerOpen, videoUrl]);
+
+  const handleCastCurrentVideo = useCallback(async () => {
+    setRemoteError(null);
+
+    if (!videoUrl) {
+      setRemoteError('Aucune source vidéo disponible pour Google Cast.');
+      return;
+    }
+
+    if (!isCastReady) {
+      setRemoteError('Google Cast indisponible sur ce navigateur.');
+      openMirroringFallback('cast');
+      return;
+    }
+
+    if (!hasCastDevices && !isCastConnected) {
+      setRemoteError('Aucun appareil Cast détecté sur le même réseau.');
+      openMirroringFallback('cast');
+      return;
+    }
+
+    const video = videoRef.current;
+    const result = await castMedia({
+      url: videoUrl,
+      title: currentFilm?.title || 'Zone Club',
+      currentTime: video?.currentTime || 0,
+      autoplay: Boolean(video && !video.paused),
+    });
+
+    if (!result.ok) {
+      setRemoteError(result.error || 'Impossible de lancer Google Cast.');
+      openMirroringFallback('cast');
+      return;
+    }
+
+    if (video && !video.paused) {
+      video.pause();
+      setPlayerState('paused');
+    }
+  }, [videoUrl, isCastReady, hasCastDevices, isCastConnected, castMedia, currentFilm?.title, openMirroringFallback]);
+
+  const handleAirPlayPicker = useCallback(() => {
+    setRemoteError(null);
+
+    const video = videoRef.current as AirPlayVideoElement | null;
+    if (!video || typeof video.webkitShowPlaybackTargetPicker !== 'function') {
+      setRemoteError('AirPlay indisponible sur ce navigateur.');
+      openMirroringFallback('airplay');
+      return;
+    }
+
+    if (!isAirPlayAvailable && !isAirPlayConnected) {
+      setRemoteError('Aucun appareil AirPlay détecté sur le même réseau.');
+      openMirroringFallback('airplay');
+      return;
+    }
+
+    video.webkitShowPlaybackTargetPicker();
+  }, [isAirPlayAvailable, isAirPlayConnected, openMirroringFallback]);
+
+  const handleWatchOnTVFromPrompt = useCallback(() => {
+    setShowMobileRemotePrompt(false);
+    if (isCastReady || hasCastDevices || isCastConnected) {
+      void handleCastCurrentVideo();
+      return;
+    }
+    if (isAirPlaySupported) {
+      handleAirPlayPicker();
+      return;
+    }
+    openMirroringFallback('generic');
+  }, [isCastReady, hasCastDevices, isCastConnected, isAirPlaySupported, handleCastCurrentVideo, handleAirPlayPicker, openMirroringFallback]);
+
+  // Mobile prompt when player opens
+  useEffect(() => {
+    if (isPlayerOpen && isMobile) {
+      setShowMobileRemotePrompt(true);
+      return;
+    }
+    setShowMobileRemotePrompt(false);
+  }, [isPlayerOpen, isMobile]);
+
   // ===== Watch Progress Reporting (every 30s) =====
   useEffect(() => {
     if (!isPlayerOpen || !currentPlayingFilm) return;
@@ -406,6 +555,13 @@ export function VHSPlayer() {
       setFfSpeed(0);
       setPlayerState('paused');
       setShowBlueScreen(false);
+      setRemoteError(null);
+      setShowMirroringHelp(false);
+      setMirroringContext('generic');
+      setIsAirPlaySupported(false);
+      setIsAirPlayAvailable(false);
+      setIsAirPlayConnected(false);
+      setShowMobileRemotePrompt(false);
       setRewindPhase('none');
       setRewindProgress(0);
       // Reset review state
@@ -420,8 +576,7 @@ export function VHSPlayer() {
   }, [isPlayerOpen, stopRW]);
 
   if (!isPlayerOpen || !rental) return null;
-
-  const videoUrl = getVideoUrl();
+  const connectedTvLabel = castDeviceName || (isAirPlayConnected ? 'TV AirPlay connectée' : null);
 
   return (
     <div className={styles.player}>
@@ -442,6 +597,7 @@ export function VHSPlayer() {
         ref={videoRef}
         className={styles.video}
         autoPlay
+        playsInline
         onPlay={() => { setPlayerState('playing'); setShowBlueScreen(false); }}
         onPause={() => {
           // Don't override rewinding state
@@ -472,6 +628,25 @@ export function VHSPlayer() {
       <div className={styles.rentalTimer}>
         <RentalTimer expiresAt={rental.expiresAt} />
       </div>
+
+      {showMobileRemotePrompt && rewindPhase === 'none' && (
+        <div className={styles.mobileRemotePrompt}>
+          <div className={styles.mobileRemotePromptTitle}>Regarder sur TV ?</div>
+          <div className={styles.mobileRemotePromptText}>
+            {connectedTvLabel
+              ? `TV connectée: ${connectedTvLabel}`
+              : 'Caster/AirPlay disponible si votre TV est sur le même Wi-Fi.'}
+          </div>
+          <div className={styles.mobileRemotePromptActions}>
+            <button className={styles.mobileRemotePrimaryBtn} onClick={handleWatchOnTVFromPrompt}>
+              {connectedTvLabel ? `Regarder sur ${connectedTvLabel}` : 'Regarder sur TV'}
+            </button>
+            <button className={styles.mobileRemoteSecondaryBtn} onClick={() => setShowMobileRemotePrompt(false)}>
+              Continuer sur smartphone
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ===== Rewind Prompt (film ended) ===== */}
       {rewindPhase === 'prompt' && (
@@ -619,13 +794,48 @@ export function VHSPlayer() {
         </div>
       )}
 
+      {showMirroringHelp && (
+        <div className={styles.mirroringOverlay}>
+          <div className={styles.mirroringPanel}>
+            <div className={styles.mirroringTitle}>MODE MIROIR (FALLBACK)</div>
+            {mirroringContext === 'cast' && (
+              <div className={styles.mirroringContextHint}>
+                Google Cast n&apos;est pas disponible, utilisez la recopie d&apos;écran.
+              </div>
+            )}
+            {mirroringContext === 'airplay' && (
+              <div className={styles.mirroringContextHint}>
+                AirPlay n&apos;est pas disponible, utilisez la recopie d&apos;écran.
+              </div>
+            )}
+            <div className={styles.mirroringSteps}>
+              <strong>Android (Chrome)</strong>
+              <span>1. Ouvre le menu Chrome (⋮) puis Caster.</span>
+              <span>2. Sélectionne ta TV ou Chromecast.</span>
+              <span>3. Si besoin: Sources &gt; Caster l&apos;écran.</span>
+            </div>
+            <div className={styles.mirroringSteps}>
+              <strong>iPhone / iPad</strong>
+              <span>1. Ouvre le Centre de contrôle.</span>
+              <span>2. Appuie sur Recopie de l&apos;écran.</span>
+              <span>3. Sélectionne Apple TV ou la Smart TV compatible.</span>
+            </div>
+            <div className={styles.mirroringFootnote}>
+              Téléphone/tablette et TV doivent être sur le même réseau Wi-Fi.
+            </div>
+            <button className={styles.mirroringCloseBtn} onClick={() => setShowMirroringHelp(false)}>
+              FERMER
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* VCR Controls — only show when not in rewind sequence */}
       {rewindPhase === 'none' && (
         <VHSControls
           videoRef={videoRef}
           playerState={playerState}
           onStateChange={setPlayerState}
-          onClose={closePlayer}
           onStop={handleStop}
           onEject={handleEject}
           ffSpeed={ffSpeed}
@@ -638,6 +848,17 @@ export function VHSPlayer() {
           hasVF={hasVF}
           hasVO={hasVO}
           hasSubtitles={hasSubtitles}
+          onCast={handleCastCurrentVideo}
+          onAirPlay={handleAirPlayPicker}
+          onMirroringHelp={() => openMirroringFallback('generic')}
+          isCastReady={isCastReady}
+          hasCastDevices={hasCastDevices}
+          isCastConnected={isCastConnected}
+          isCastConnecting={castState === 'CONNECTING'}
+          isAirPlaySupported={isAirPlaySupported}
+          isAirPlayAvailable={isAirPlayAvailable}
+          isAirPlayConnected={isAirPlayConnected}
+          remoteError={remoteError}
         />
       )}
     </div>
