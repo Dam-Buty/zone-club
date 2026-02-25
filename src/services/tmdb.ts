@@ -47,6 +47,7 @@ export interface TMDBImage {
   width: number;
   height: number;
   aspect_ratio: number;
+  vote_count: number;
 }
 
 export interface TMDBCast {
