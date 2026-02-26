@@ -86,7 +86,6 @@ const SceneContent = memo(function SceneContent({
   selectedFilm,
   isMobile,
   mobileInputRef,
-  maxTextureArrayLayers,
   benchmarkMode,
 }: {
   films: import('../../types').Film[]
@@ -94,7 +93,6 @@ const SceneContent = memo(function SceneContent({
   selectedFilm: import('../../types').Film | null
   isMobile: boolean
   mobileInputRef: React.MutableRefObject<MobileInput>
-  maxTextureArrayLayers: number
   benchmarkMode: boolean
 }) {
   useEffect(() => {
@@ -109,7 +107,7 @@ const SceneContent = memo(function SceneContent({
         environmentIntensity={0.3}
       />
       <Lighting isMobile={isMobile} />
-      <Aisle films={films} maxTextureArrayLayers={maxTextureArrayLayers} />
+      <Aisle films={films} />
       <Controls
         onCassetteClick={onCassetteClick}
         isMobile={isMobile}
@@ -119,7 +117,6 @@ const SceneContent = memo(function SceneContent({
       <BenchmarkSampler
         enabled={benchmarkMode}
         isMobile={isMobile}
-        maxTextureArrayLayers={maxTextureArrayLayers}
       />
       {selectedFilm && <VHSCaseViewer key={selectedFilm.id} film={selectedFilm} />}
     </>
@@ -690,7 +687,6 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
   const isMobile = useIsMobile()
   const mobileInputRef = useRef<MobileInput>(createMobileInput())
   const isMountedRef = useRef(true)
-  const [maxTextureArrayLayers, setMaxTextureArrayLayers] = useState(256)
   const [gpuError, setGpuError] = useState<string | null>(null)
   const [isPortrait, setIsPortrait] = useState(false)
 
@@ -760,13 +756,7 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const backend = (renderer as any).backend
           const device = backend?.device as GPUDevice | undefined
-          const detectedMaxLayers = device?.limits.maxTextureArrayLayers ?? 256
-          const debugForcedLayers = Number(new URLSearchParams(window.location.search).get('debugMaxTextureArrayLayers'))
-          const effectiveMaxLayers = Number.isFinite(debugForcedLayers) && debugForcedLayers > 0
-            ? Math.floor(debugForcedLayers)
-            : detectedMaxLayers
           if (isMountedRef.current) {
-            setMaxTextureArrayLayers(Math.max(1, effectiveMaxLayers))
             setGpuError(null)
           }
 
@@ -791,7 +781,7 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
           renderer.toneMapping = THREE.ACESFilmicToneMapping
           renderer.toneMappingExposure = 1.08
           console.log(
-            `[Canvas] WebGPU renderer initialized — layers: ${effectiveMaxLayers}${effectiveMaxLayers !== detectedMaxLayers ? ` (forced, device=${detectedMaxLayers})` : ''}, shadows: ${isMobile ? 'PCF' : 'PCFSoft'}, dpr: ${isMobile ? '≤1.5' : '≤2'}`
+            `[Canvas] WebGPU renderer initialized — shadows: ${isMobile ? 'PCF' : 'PCFSoft'}, dpr: ${isMobile ? '≤1.5' : '≤2'}`
           )
           return renderer
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -824,7 +814,6 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
               selectedFilm={selectedFilm}
               isMobile={isMobile}
               mobileInputRef={mobileInputRef}
-              maxTextureArrayLayers={maxTextureArrayLayers}
               benchmarkMode={benchmarkMode}
             />
           </Suspense>

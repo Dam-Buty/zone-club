@@ -14,7 +14,6 @@ interface BenchmarkSample {
   points: number
   cassetteChunks: number
   cassetteInstances: number
-  maxTextureArrayLayers: number
   isMobile: boolean
 }
 
@@ -52,11 +51,9 @@ function ensureStore(): BenchmarkStore | null {
 export function BenchmarkSampler({
   enabled,
   isMobile,
-  maxTextureArrayLayers,
 }: {
   enabled: boolean
   isMobile: boolean
-  maxTextureArrayLayers: number
 }) {
   const gl = useThree(state => state.gl)
   const scene = useThree(state => state.scene)
@@ -123,7 +120,6 @@ export function BenchmarkSampler({
       points: renderInfo.points ?? 0,
       cassetteChunks: state.cassetteChunks,
       cassetteInstances: state.cassetteInstances,
-      maxTextureArrayLayers,
       isMobile,
     }
 
@@ -218,7 +214,6 @@ export function BenchmarkOverlay({ enabled }: { enabled: boolean }) {
       <div>Triangles: {latest ? latest.triangles : '-'}</div>
       <div>Cassette chunks: {latest ? latest.cassetteChunks : '-'}</div>
       <div>Cassette instances: {latest ? latest.cassetteInstances : '-'}</div>
-      <div>Layer budget: {latest ? latest.maxTextureArrayLayers : '-'}</div>
 
       <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.6rem' }}>
         <button

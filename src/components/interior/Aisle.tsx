@@ -50,7 +50,6 @@ import type { CassetteInstanceData } from '../../utils/CassetteTextureArray'
 
 interface AisleProps {
   films: Film[]
-  maxTextureArrayLayers?: number
 }
 
 // Dimensions de la pièce (basées sur le plan PDF, réduites de 30%)
@@ -360,7 +359,7 @@ function computeIslandShelfCassettes(
   return data
 }
 
-export function Aisle({ films, maxTextureArrayLayers = 256 }: AisleProps) {
+export function Aisle({ films }: AisleProps) {
   // ===== FILMS POUR NOUVEAUTÉS (ÎLOT CENTRAL) =====
   // Uses films from the store's "nouveautes" aisle (already fetched in App.tsx alongside other aisles).
   // No separate TMDB fetch — avoids a second allCassetteData recomputation that caused
@@ -1021,11 +1020,10 @@ export function Aisle({ films, maxTextureArrayLayers = 256 }: AisleProps) {
         decay={2.5}
       />
 
-      {/* ===== TOUTES LES CASSETTES — InstancedMesh chunké selon maxTextureArrayLayers ===== */}
+      {/* ===== TOUTES LES CASSETTES — InstancedMesh avec atlas 2D ===== */}
       {allCassetteData.length > 0 && (
         <CassetteInstances
           instances={allCassetteData}
-          maxTextureArrayLayers={maxTextureArrayLayers}
         />
       )}
 

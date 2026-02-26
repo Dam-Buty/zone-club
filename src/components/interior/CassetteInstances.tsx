@@ -4,31 +4,27 @@ import * as THREE from 'three/webgpu'
 import {
   texture, uv, attribute,
   Fn, instanceIndex, deltaTime, instancedArray,
-  uniform, mix, vec3, positionLocal, float,
+  uniform, mix, vec3, vec2, positionLocal, float,
 } from 'three/tsl'
-import { CassetteTextureArray, type CassetteInstanceData } from '../../utils/CassetteTextureArray'
+import { CassetteTextureAtlas, type CassetteInstanceData } from '../../utils/CassetteTextureArray'
 import { useStore } from '../../store'
 import { RAYCAST_LAYER_CASSETTE } from './Controls'
 
-// Cassette dimensions (must match original Cassette.tsx)
 const CASSETTE_WIDTH = 0.168
 const CASSETTE_HEIGHT = 0.228
 const CASSETTE_DEPTH = 0.03
 
 const SHARED_CASSETTE_GEOMETRY = new THREE.BoxGeometry(CASSETTE_WIDTH, CASSETTE_HEIGHT, CASSETTE_DEPTH)
 
-// Pre-rendered "LOUE!" overlay — created once, shared across all chunks
 const LOUE_OVERLAY_TEXTURE = (() => {
   const canvas = document.createElement('canvas')
   canvas.width = 200
   canvas.height = 300
   const ctx = canvas.getContext('2d')!
 
-  // Semi-transparent dark overlay
   ctx.fillStyle = 'rgba(0, 0, 0, 0.65)'
   ctx.fillRect(0, 0, 200, 300)
 
-  // "LOUE!" text
   ctx.font = 'bold 36px "Arial Black", sans-serif'
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
@@ -37,7 +33,6 @@ const LOUE_OVERLAY_TEXTURE = (() => {
   ctx.shadowBlur = 8
   ctx.fillText('LOUÉ !', 100, 140)
 
-  // Smaller "retour bientot" label
   ctx.font = '14px Arial, sans-serif'
   ctx.fillStyle = '#ffcc00'
   ctx.shadowBlur = 0
@@ -48,11 +43,9 @@ const LOUE_OVERLAY_TEXTURE = (() => {
   return tex
 })()
 
-// Animation constants
 const HYSTERESIS_SELECT = 0.05
 const HYSTERESIS_DESELECT = 0.25
 
-// Per-instance hysteresis state (CPU-only — not sent to GPU)
 interface InstanceHysteresisState {
   stableTargeted: boolean
   targetedTimer: number
@@ -60,7 +53,6 @@ interface InstanceHysteresisState {
 
 interface CassetteInstancesProps {
   instances: CassetteInstanceData[]
-  maxTextureArrayLayers?: number
 }
 
 interface CassetteChunkProps {
@@ -73,15 +65,13 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
   const count = instances.length
   const gl = useThree(state => state.gl)
 
-  // Keep instances in a ref so useMemo doesn't rebuild on every array reference change
   const instancesRef = useRef(instances)
   instancesRef.current = instances
 
-  // Create texture array, lookup tables, and GPU storage buffers
-  // Poster layers are DEDUPLICATED: ~50 unique posters share layers instead of 520 copies.
+  // Build atlas, slot allocation (URL → slot), and per-instance atlasRect vec4
   const {
-    texArray, instanceIdToKey, instanceIdToFilmId,
-    instanceLayerMap, urlToLayer,
+    atlas, instanceIdToKey, instanceIdToFilmId,
+    atlasRectData, urlToSlot,
     hysteresisStates,
     targetHoverZBuffer, targetEmissiveBuffer,
     currentHoverZBuffer, currentEmissiveBuffer,
@@ -93,12 +83,11 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
     const idToFilm: number[] = new Array(count)
     const hStates: InstanceHysteresisState[] = new Array(count)
 
-    // Deduplicate poster URLs → shared texture layers
-    // Layer 0 = fallback (no poster), then 1 layer per unique posterUrl
-    const _urlToLayer = new Map<string, number>()
-    const _instanceLayerMap = new Float32Array(count)
-    const FALLBACK_LAYER = 0
-    let nextLayer = 1
+    // Deduplicate poster URLs → shared atlas slots
+    // Slot 0 = fallback (no poster), then 1 slot per unique posterUrl
+    const _urlToSlot = new Map<string, number>()
+    const FALLBACK_SLOT = 0
+    let nextSlot = 1
 
     for (let i = 0; i < count; i++) {
       const inst = currentInstances[i]
@@ -106,50 +95,60 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
       idToFilm[i] = inst.filmId
       hStates[i] = { stableTargeted: false, targetedTimer: 0 }
 
-      if (!inst.posterUrl) {
-        _instanceLayerMap[i] = FALLBACK_LAYER
-      } else {
-        let layer = _urlToLayer.get(inst.posterUrl)
-        if (layer === undefined) {
-          layer = nextLayer++
-          _urlToLayer.set(inst.posterUrl, layer)
+      if (inst.posterUrl) {
+        if (!_urlToSlot.has(inst.posterUrl)) {
+          _urlToSlot.set(inst.posterUrl, nextSlot++)
         }
-        _instanceLayerMap[i] = layer
       }
     }
 
-    const uniqueLayerCount = nextLayer
-    const ta = new CassetteTextureArray(uniqueLayerCount)
+    const uniqueSlotCount = nextSlot
+    const _atlas = new CassetteTextureAtlas(uniqueSlotCount)
+
+    // Build per-instance atlasRect (vec4: uOffset, vOffset, uScale, vScale)
+    const _atlasRectData = new Float32Array(count * 4)
+    const fallbackRect = _atlas.getSlotRect(FALLBACK_SLOT)
+
+    for (let i = 0; i < count; i++) {
+      const inst = currentInstances[i]
+      let rect: [number, number, number, number]
+      if (!inst.posterUrl) {
+        rect = fallbackRect
+      } else {
+        const slot = _urlToSlot.get(inst.posterUrl)!
+        rect = _atlas.getSlotRect(slot)
+      }
+      const base = i * 4
+      _atlasRectData[base] = rect[0]
+      _atlasRectData[base + 1] = rect[1]
+      _atlasRectData[base + 2] = rect[2]
+      _atlasRectData[base + 3] = rect[3]
+    }
 
     // GPU storage buffers for animation (instancedArray = StorageInstancedBufferAttribute)
-    const curHoverZ = instancedArray(count, 'float')    // current hover Z (GPU lerps)
-    const tarHoverZ = instancedArray(count, 'float')    // target hover Z (CPU writes)
-    const curEmissive = instancedArray(count, 'vec3')   // current emissive RGB (GPU lerps)
-    const tarEmissive = instancedArray(count, 'vec3')   // target emissive RGB (CPU writes)
-    const curRentedOut = instancedArray(count, 'float') // current rented-out state 0-1 (GPU lerps)
-    const tarRentedOut = instancedArray(count, 'float') // target rented-out state (CPU writes)
+    const curHoverZ = instancedArray(count, 'float')
+    const tarHoverZ = instancedArray(count, 'float')
+    const curEmissive = instancedArray(count, 'vec3')
+    const tarEmissive = instancedArray(count, 'vec3')
+    const curRentedOut = instancedArray(count, 'float')
+    const tarRentedOut = instancedArray(count, 'float')
 
-    // Uniform lerp speeds
     const speedHover = uniform(12.0)
     const speedEmissive = uniform(10.0)
 
-    // Compute shader: lerp current toward target each frame
     const computeFn = Fn(() => {
       const idx = instanceIndex
 
-      // Lerp hover Z
       const curH = curHoverZ.element(idx)
       const tarH = tarHoverZ.element(idx)
       const tH = deltaTime.mul(speedHover).min(float(1.0))
       curH.assign(mix(curH, tarH, tH))
 
-      // Lerp emissive RGB
       const curE = curEmissive.element(idx)
       const tarE = tarEmissive.element(idx)
       const tE = deltaTime.mul(speedEmissive).min(float(1.0))
       curE.assign(mix(curE, tarE, tE))
 
-      // Lerp rented-out overlay (smooth transition)
       const curR = curRentedOut.element(idx)
       const tarR = tarRentedOut.element(idx)
       curR.assign(mix(curR, tarR, tE))
@@ -158,11 +157,11 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
     const cNode = computeFn().compute(count)
 
     return {
-      texArray: ta,
+      atlas: _atlas,
       instanceIdToKey: idToKey,
       instanceIdToFilmId: idToFilm,
-      instanceLayerMap: _instanceLayerMap,
-      urlToLayer: _urlToLayer,
+      atlasRectData: _atlasRectData,
+      urlToSlot: _urlToSlot,
       hysteresisStates: hStates,
       targetHoverZBuffer: tarHoverZ,
       targetEmissiveBuffer: tarEmissive,
@@ -174,25 +173,32 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
     }
   }, [count])
 
-  // Each chunk gets its own geometry copy to avoid layerIndex attribute collisions.
-  // layerIndex maps each instance to its DEDUPLICATED texture layer (many instances → same layer).
+  // Geometry with per-instance atlasRect (vec4) attribute
   const geometry = useMemo(() => {
     const chunkGeometry = SHARED_CASSETTE_GEOMETRY.clone()
-    const layerIndexAttr = new THREE.InstancedBufferAttribute(instanceLayerMap, 1)
-    chunkGeometry.setAttribute('layerIndex', layerIndexAttr)
+    const atlasRectAttr = new THREE.InstancedBufferAttribute(atlasRectData, 4)
+    chunkGeometry.setAttribute('atlasRect', atlasRectAttr)
     return chunkGeometry
-  }, [instanceLayerMap])
+  }, [atlasRectData])
 
-  // Create custom TSL material with DataArrayTexture + compute-driven animation
+  // TSL material — 2D atlas texture with UV remapping per instance
   const material = useMemo(() => {
     const mat = new THREE.MeshStandardNodeMaterial()
     mat.roughness = 0.15
     mat.metalness = 0.15
 
-    // TSL: read per-instance layer index and sample from DataArrayTexture
-    const layerIdx = attribute('layerIndex')
-    const texArrayNode = texture(texArray.textureArray)
-    const baseColor = texArrayNode.sample(uv()).depth(layerIdx)
+    // Per-instance atlas rect: vec4(uOffset, vOffset, uScale, vScale)
+    const atlasRect = attribute('atlasRect')
+    const atlasNode = texture(atlas.texture)
+
+    // Remap box-face UVs to atlas sub-region.
+    // V is flipped: DataTexture flipY=false stores rows top-to-bottom (row 0 = top),
+    // but BoxGeometry UV.y=0 is bottom of quad → we need (1-uv.y) to match.
+    const posterUV = vec2(
+      atlasRect.x.add(atlasRect.z.mul(uv().x)),
+      atlasRect.y.add(atlasRect.w.mul(float(1.0).sub(uv().y)))
+    )
+    const baseColor = atlasNode.sample(posterUV)
 
     // "LOUE!" overlay blending (per-instance rentedOut factor 0-1)
     const overlayNode = texture(LOUE_OVERLAY_TEXTURE)
@@ -200,18 +206,14 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
     const rentedFactor = currentRentedOutBuffer.toAttribute()
     mat.colorNode = mix(baseColor, overlayColor, rentedFactor)
 
-    // Hover offset from compute shader — applied in local space
-    // instanceMatrix already contains rotation, so local Z offset hovers in correct direction
     const hoverZ = currentHoverZBuffer.toAttribute()
     mat.positionNode = positionLocal.add(vec3(0, 0, hoverZ))
 
-    // Emissive from compute shader (includes dim red for all-rented-out)
     mat.emissiveNode = currentEmissiveBuffer.toAttribute()
 
     return mat
-  }, [texArray, currentHoverZBuffer, currentEmissiveBuffer, currentRentedOutBuffer])
+  }, [atlas, currentHoverZBuffer, currentEmissiveBuffer, currentRentedOutBuffer])
 
-  // Setup: initialize instance matrices, load posters, pass renderer
   useEffect(() => {
     const mesh = meshRef.current
     if (!mesh) return
@@ -220,13 +222,9 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
     const _tempMatrix = new THREE.Matrix4()
     const _tempScale = new THREE.Vector3(1, 1, 1)
 
-    // Enable raycast layer for cassette detection
     mesh.layers.enable(RAYCAST_LAYER_CASSETTE)
-
-    // Disable mesh-level frustum culling: instances span the entire room
     mesh.frustumCulled = false
 
-    // Set STATIC instance matrices (never updated per frame — hover is via positionNode)
     for (let i = 0; i < count; i++) {
       const inst = currentInstances[i]
       _tempMatrix.compose(inst.worldPosition, inst.worldQuaternion, _tempScale)
@@ -235,47 +233,40 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
     mesh.instanceMatrix.needsUpdate = true
     mesh.computeBoundingSphere()
 
-    // Store lookup data in userData for raycasting
-    // NOTE: ALL userData must be set here (not via JSX prop) because R3F reconciler
-    // re-applies JSX userData on every re-render, wiping imperative additions.
     mesh.userData.isCassetteInstances = true
     mesh.userData.instanceIdToKey = instanceIdToKey
     mesh.userData.instanceIdToFilmId = instanceIdToFilmId
     mesh.userData.cassetteChunkIndex = chunkIndex
 
-    // Initialize target hover Z values from instance data
     const tarHoverArr = targetHoverZBuffer.value.array as Float32Array
     for (let i = 0; i < count; i++) {
-      tarHoverArr[i] = 0 // Start at 0 (not hovered)
+      tarHoverArr[i] = 0
     }
 
-    // Flush initial fallback colors to GPU
-    texArray.flush()
+    atlas.flush()
 
-    // Pass renderer for direct GPU uploads (copyExternalImageToTexture)
     const renderer = gl as unknown as THREE.WebGPURenderer
-    texArray.setRenderer(renderer)
+    atlas.setRenderer(renderer)
 
-    // Load UNIQUE poster textures spread across frames (4 per frame — only ~50 unique posters)
+    // Load unique poster textures (4 per frame — ~50 unique posters total)
     let cancelled = false
     const POSTERS_PER_FRAME = 4
-    const queue: { index: number; url: string }[] = []
-    for (const [url, layerIndex] of urlToLayer) {
-      queue.push({ index: layerIndex, url })
+    const queue: { slot: number; url: string }[] = []
+    for (const [url, slot] of urlToSlot) {
+      queue.push({ slot, url })
     }
 
     let queueIdx = 0
     const loadNextBatch = () => {
       if (cancelled || queueIdx >= queue.length) return
-      // Wait until GPUTexture is allocated to avoid canvas fallback (GPU→CPU sync stall)
-      if (!texArray.isGPUReady()) {
+      if (!atlas.isGPUReady()) {
         requestAnimationFrame(loadNextBatch)
         return
       }
       const end = Math.min(queueIdx + POSTERS_PER_FRAME, queue.length)
       for (let j = queueIdx; j < end; j++) {
-        const { index, url } = queue[j]
-        texArray.loadPosterIntoLayer(url, index)
+        const { slot, url } = queue[j]
+        atlas.loadPosterIntoSlot(url, slot)
       }
       queueIdx = end
       requestAnimationFrame(loadNextBatch)
@@ -284,14 +275,13 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
 
     return () => {
       cancelled = true
-      texArray.dispose()
+      atlas.dispose()
       material.dispose()
       geometry.dispose()
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [texArray, material, geometry, count, instanceIdToKey, instanceIdToFilmId, urlToLayer, gl])
+  }, [atlas, material, geometry, count, instanceIdToKey, instanceIdToFilmId, urlToSlot, gl])
 
-  // Ref to store hoverOffsetZ per instance (avoids reading instancesRef in hot loop)
   const hoverOffsetsRef = useRef<Float32Array>(new Float32Array(0))
   useEffect(() => {
     const offsets = new Float32Array(count)
@@ -302,31 +292,25 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
     hoverOffsetsRef.current = offsets
   }, [count])
 
-  // Track previous targeted key to skip 520-iteration loop when idle
   const prevTargetedKeyRef = useRef<string | null>(null)
   const hysteresisActiveRef = useRef(false)
 
-  // Animation loop — CPU only handles hysteresis + target writes, GPU does lerp
   useFrame((_state, delta) => {
     const mesh = meshRef.current
     if (!mesh) return
 
-    // Flush any remaining canvas-path poster uploads (fallback only — usually none)
-    texArray.flush()
+    atlas.flush()
 
-    // Read store once
     const storeState = useStore.getState()
     const targetedCassetteKey = storeState.targetedCassetteKey
     const getRental = storeState.getRental
     const filmRentalCounts = storeState.filmRentalCounts
 
-    // Skip entire 520-iteration loop when nothing has changed and no hysteresis in progress
     if (targetedCassetteKey === prevTargetedKeyRef.current && !hysteresisActiveRef.current) {
       return
     }
     prevTargetedKeyRef.current = targetedCassetteKey
 
-    // Get CPU-side typed arrays for target buffers
     const tarHoverArr = targetHoverZBuffer.value.array as Float32Array
     const tarEmissiveArr = targetEmissiveBuffer.value.array as Float32Array
     const tarRentedArr = targetRentedOutBuffer.value.array as Float32Array
@@ -346,10 +330,7 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
       const isAllRentedOut = rentalInfo ? rentalInfo.activeRentals >= rentalInfo.stock : false
       const showRentedOverlay = isAllRentedOut && !isRented
 
-      // Hysteresis
       if (isTargetedRaw !== hs.stableTargeted) {
-        // When another cassette is targeted, deselect immediately (no overlap)
-        // Delay only applies when moving away from ALL cassettes (targetedCassetteKey === null)
         const isSwitch = !isTargetedRaw && targetedCassetteKey !== null
         if (isSwitch) {
           hs.stableTargeted = false
@@ -370,21 +351,19 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
 
       const isTargeted = hs.stableTargeted
 
-      // Target hover Z
       const newTarHoverZ = isTargeted ? hoverOffsets[i] : 0
       if (tarHoverArr[i] !== newTarHoverZ) {
         tarHoverArr[i] = newTarHoverZ
         tarHoverDirty = true
       }
 
-      // Target emissive: rented=green, targeted=pink, all-rented=dim red, else=black
       let tR = 0; let tG = 0; let tB = 0
       if (isRented) {
-        tR = 0; tG = 0.3; tB = 0 // green * 0.3 intensity
+        tR = 0; tG = 0.3; tB = 0
       } else if (isTargeted) {
-        tR = 1.0 * 0.4; tG = 0.176 * 0.4; tB = 0.584 * 0.4 // #ff2d95 * 0.4
+        tR = 1.0 * 0.4; tG = 0.176 * 0.4; tB = 0.584 * 0.4
       } else if (showRentedOverlay) {
-        tR = 0.3; tG = 0; tB = 0 // dim red glow
+        tR = 0.3; tG = 0; tB = 0
       }
 
       const idx3 = i * 3
@@ -395,7 +374,6 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
         tarEmissiveDirty = true
       }
 
-      // Target rented-out overlay
       const newTarRented = showRentedOverlay ? 1.0 : 0.0
       if (tarRentedArr[i] !== newTarRented) {
         tarRentedArr[i] = newTarRented
@@ -403,10 +381,8 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
       }
     }
 
-    // Track hysteresis state for next-frame skip optimization
     hysteresisActiveRef.current = anyHysteresisActive
 
-    // Upload changed targets to GPU — skip compute entirely when nothing changed
     if (tarHoverDirty) {
       targetHoverZBuffer.value.needsUpdate = true
     }
@@ -434,47 +410,11 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
   )
 }
 
-export function CassetteInstances({ instances, maxTextureArrayLayers = 2048 }: CassetteInstancesProps) {
-  // With deduplicated layers, unique poster count is what matters — not instance count.
-  // ~50 unique posters for ~520 instances means chunking rarely triggers.
-  const safeLayerBudget = Math.max(1, Math.floor(maxTextureArrayLayers))
-
-  const chunks = useMemo(() => {
-    // Count unique poster URLs to check against layer budget
-    const uniqueUrls = new Set<string>()
-    for (const inst of instances) {
-      if (inst.posterUrl) uniqueUrls.add(inst.posterUrl)
-    }
-    // +1 for fallback layer (no poster)
-    const uniqueLayerCount = uniqueUrls.size + 1
-
-    if (uniqueLayerCount <= safeLayerBudget) return [instances]
-
-    // Rare: more unique posters than layer budget — split instances into groups
-    const grouped: CassetteInstanceData[][] = []
-    for (let i = 0; i < instances.length; i += safeLayerBudget) {
-      grouped.push(instances.slice(i, i + safeLayerBudget))
-    }
-    return grouped
-  }, [instances, safeLayerBudget])
-
-  useEffect(() => {
-    if (chunks.length > 1) {
-      console.log(
-        `[CassetteInstances] Layer budget ${safeLayerBudget} -> ${chunks.length} chunks for ${instances.length} cassettes`
-      )
-    }
-  }, [chunks.length, safeLayerBudget, instances.length])
-
+export function CassetteInstances({ instances }: CassetteInstancesProps) {
   return (
-    <>
-      {chunks.map((chunk, index) => (
-        <CassetteInstancesChunk
-          key={`cassette-chunk-${index}-${chunk[0]?.cassetteKey ?? 'empty'}`}
-          instances={chunk}
-          chunkIndex={index}
-        />
-      ))}
-    </>
+    <CassetteInstancesChunk
+      instances={instances}
+      chunkIndex={0}
+    />
   )
 }
