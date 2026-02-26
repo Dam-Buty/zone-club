@@ -7,7 +7,6 @@ interface VHSControlsProps {
   videoRef: React.RefObject<HTMLVideoElement | null>;
   playerState: PlayerState;
   onStateChange: (state: PlayerState) => void;
-  onClose: () => void;
   onStop: () => void;
   onEject: () => void;
   // FF/RW
@@ -22,6 +21,17 @@ interface VHSControlsProps {
   hasVF: boolean;
   hasVO: boolean;
   hasSubtitles: boolean;
+  onCast: () => void;
+  onAirPlay: () => void;
+  onMirroringHelp: () => void;
+  isCastReady: boolean;
+  hasCastDevices: boolean;
+  isCastConnected: boolean;
+  isCastConnecting: boolean;
+  isAirPlaySupported: boolean;
+  isAirPlayAvailable: boolean;
+  isAirPlayConnected: boolean;
+  remoteError: string | null;
 }
 
 function formatTime(seconds: number): string {
@@ -45,7 +55,6 @@ export function VHSControls({
   videoRef,
   playerState,
   onStateChange,
-  onClose,
   onStop,
   onEject,
   ffSpeed,
@@ -58,6 +67,17 @@ export function VHSControls({
   hasVF,
   hasVO,
   hasSubtitles,
+  onCast,
+  onAirPlay,
+  onMirroringHelp,
+  isCastReady,
+  hasCastDevices,
+  isCastConnected,
+  isCastConnecting,
+  isAirPlaySupported,
+  isAirPlayAvailable,
+  isAirPlayConnected,
+  remoteError,
 }: VHSControlsProps) {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -233,8 +253,29 @@ export function VHSControls({
           <button onClick={toggleFullscreen} className={styles.vcrSmallBtn} title="Plein écran [F]">
             ⛶
           </button>
+
+          <div className={styles.remoteControls}>
+            <button
+              onClick={onCast}
+              className={`${styles.remoteBtn} ${isCastConnected ? styles.remoteBtnActive : ''}`}
+              title={isCastConnected ? 'Casting actif' : isCastReady ? 'Google Cast' : 'Google Cast indisponible'}
+            >
+              {isCastConnected ? 'CAST ON' : isCastConnecting ? 'CAST…' : hasCastDevices ? 'CAST' : 'CAST ?'}
+            </button>
+            <button
+              onClick={onAirPlay}
+              className={`${styles.remoteBtn} ${isAirPlayConnected ? styles.remoteBtnActive : ''}`}
+              title={isAirPlayConnected ? 'AirPlay actif' : isAirPlaySupported ? 'AirPlay' : 'AirPlay indisponible'}
+            >
+              {isAirPlayConnected ? 'AIRPLAY ON' : isAirPlayAvailable ? 'AIRPLAY' : 'AIRPLAY ?'}
+            </button>
+            <button onClick={onMirroringHelp} className={styles.remoteBtn} title="Mode miroir (fallback)">
+              MIROIR
+            </button>
+          </div>
         </div>
       </div>
+      {remoteError && <div className={styles.remoteError}>{remoteError}</div>}
     </div>
   );
 }
