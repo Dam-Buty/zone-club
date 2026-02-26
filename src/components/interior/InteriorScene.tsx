@@ -695,6 +695,8 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
   const hasSeenOnboarding = useStore(state => state.hasSeenOnboarding)
   const benchmarkEnabled = useStore(state => state.benchmarkEnabled)
   const laZoneActive = useStore(state => state.isInteractingWithLaZone || state.isWatchingLaZone)
+  const isSitting = useStore(state => state.isSitting)
+  const isTerminalOpen = useStore(state => state.isTerminalOpen)
   const benchmarkMode = benchmarkEnabled || URL_BENCHMARK_MODE
 
   useEffect(() => {
@@ -844,7 +846,7 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
 
       <BenchmarkOverlay enabled={benchmarkMode} />
 
-      {isMobile && isPortrait && (
+      {isMobile && isSitting && isPortrait && (
         <div style={{
           position: 'fixed', inset: 0, zIndex: 9999,
           background: 'rgba(0,0,0,0.95)',
@@ -862,8 +864,112 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
 
       <UIOverlays isMobile={isMobile} />
 
-      {/* Mobile controls (joystick + touch look + interact button) — hidden during LaZone interaction */}
-      {isMobile && !laZoneActive && <MobileControls mobileInputRef={mobileInputRef} />}
+      {/* Mobile TV menu controls — shown when sitting on couch (not during terminal) */}
+      {isMobile && isSitting && !isTerminalOpen && (
+        <div style={{
+          position: 'fixed', bottom: '2rem', left: '50%',
+          transform: 'translateX(-50%)',
+          display: 'flex', gap: '12px', alignItems: 'center',
+          zIndex: 50,
+        }}>
+          <button
+            onTouchStart={(e) => { e.preventDefault(); useStore.getState().dispatchTVMenu('up') }}
+            style={{
+              width: 56, height: 56, borderRadius: '50%',
+              background: 'rgba(0,0,0,0.7)', border: '2px solid #00ffff',
+              color: '#00ffff', fontSize: '1.5rem',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              touchAction: 'none',
+            }}
+          >▲</button>
+          <button
+            onTouchStart={(e) => { e.preventDefault(); useStore.getState().dispatchTVMenu('select') }}
+            style={{
+              width: 72, height: 56, borderRadius: 12,
+              background: 'rgba(0,255,255,0.15)', border: '2px solid #00ffff',
+              color: '#00ffff', fontSize: '0.85rem', fontFamily: "'Courier New', monospace",
+              fontWeight: 'bold', letterSpacing: 1,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              touchAction: 'none',
+            }}
+          >OK</button>
+          <button
+            onTouchStart={(e) => { e.preventDefault(); useStore.getState().dispatchTVMenu('down') }}
+            style={{
+              width: 56, height: 56, borderRadius: '50%',
+              background: 'rgba(0,0,0,0.7)', border: '2px solid #00ffff',
+              color: '#00ffff', fontSize: '1.5rem',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              touchAction: 'none',
+            }}
+          >▼</button>
+          <button
+            onTouchStart={(e) => { e.preventDefault(); useStore.getState().setSitting(false) }}
+            style={{
+              width: 56, height: 56, borderRadius: '50%',
+              background: 'rgba(0,0,0,0.7)', border: '2px solid #ff4444',
+              color: '#ff4444', fontSize: '1.2rem',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              touchAction: 'none',
+            }}
+          >⏏</button>
+        </div>
+      )}
+
+      {/* Mobile terminal nav controls — shown over TVTerminal overlay (z-index > 300) */}
+      {isMobile && isTerminalOpen && (
+        <div style={{
+          position: 'fixed', bottom: '2rem', left: '50%',
+          transform: 'translateX(-50%)',
+          display: 'flex', gap: '12px', alignItems: 'center',
+          zIndex: 400,
+        }}>
+          <button
+            onTouchStart={(e) => { e.preventDefault(); document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true })) }}
+            style={{
+              width: 56, height: 56, borderRadius: '50%',
+              background: 'rgba(0,0,0,0.7)', border: '2px solid #00ffff',
+              color: '#00ffff', fontSize: '1.5rem',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              touchAction: 'none',
+            }}
+          >▲</button>
+          <button
+            onTouchStart={(e) => { e.preventDefault(); document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) }}
+            style={{
+              width: 72, height: 56, borderRadius: 12,
+              background: 'rgba(0,255,255,0.15)', border: '2px solid #00ffff',
+              color: '#00ffff', fontSize: '0.85rem', fontFamily: "'Courier New', monospace",
+              fontWeight: 'bold', letterSpacing: 1,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              touchAction: 'none',
+            }}
+          >OK</button>
+          <button
+            onTouchStart={(e) => { e.preventDefault(); document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })) }}
+            style={{
+              width: 56, height: 56, borderRadius: '50%',
+              background: 'rgba(0,0,0,0.7)', border: '2px solid #00ffff',
+              color: '#00ffff', fontSize: '1.5rem',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              touchAction: 'none',
+            }}
+          >▼</button>
+          <button
+            onTouchStart={(e) => { e.preventDefault(); document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })) }}
+            style={{
+              width: 56, height: 56, borderRadius: '50%',
+              background: 'rgba(0,0,0,0.7)', border: '2px solid #ff4444',
+              color: '#ff4444', fontSize: '0.85rem', fontFamily: "'Courier New', monospace",
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              touchAction: 'none',
+            }}
+          >ESC</button>
+        </div>
+      )}
+
+      {/* Mobile controls (joystick + touch look + interact button) — hidden during LaZone interaction or sitting */}
+      {isMobile && !laZoneActive && !isSitting && <MobileControls mobileInputRef={mobileInputRef} />}
 
       {/* Onboarding — first launch only */}
       {!hasSeenOnboarding && <MobileOnboarding isMobile={isMobile} />}

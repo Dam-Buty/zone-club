@@ -962,8 +962,7 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
 
         <div className={styles.footer}>
           {isMobile ? (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', width: '100%' }}>
-              <span>[↑↓] Naviguer</span>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', width: '100%', paddingBottom: '60px' }}>
               {isAuthenticated && authUser?.is_admin && !adminUnlocked && (
                 <button
                   onClick={() => secretInputRef.current?.focus()}
