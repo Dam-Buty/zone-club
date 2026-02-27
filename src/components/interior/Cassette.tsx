@@ -28,7 +28,7 @@ export const CASSETTE_DIMENSIONS = {
 const SHARED_CASSETTE_GEOMETRY = new THREE.BoxGeometry(CASSETTE_WIDTH, CASSETTE_HEIGHT, CASSETTE_DEPTH)
 
 // Couleurs aléatoires pour les cassettes sans poster
-const CASSETTE_COLORS = [
+export const CASSETTE_COLORS = [
   '#1a1a2e', '#16213e', '#0f3460', '#533483',
   '#2c3e50', '#34495e', '#1e3d59', '#3d5a80'
 ]

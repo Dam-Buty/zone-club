@@ -22,7 +22,14 @@ type AirPlayVideoElement = HTMLVideoElement & {
 };
 
 export function VHSPlayer() {
-  const { isPlayerOpen, currentPlayingFilm, closePlayer, getRental, films, fetchMe, isAuthenticated, addCredits } = useStore();
+  const isPlayerOpen = useStore(state => state.isPlayerOpen);
+  const currentPlayingFilm = useStore(state => state.currentPlayingFilm);
+  const closePlayer = useStore(state => state.closePlayer);
+  const getRental = useStore(state => state.getRental);
+  const films = useStore(state => state.films);
+  const fetchMe = useStore(state => state.fetchMe);
+  const isAuthenticated = useStore(state => state.isAuthenticated);
+  const addCredits = useStore(state => state.addCredits);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [playerState, setPlayerState] = useState<PlayerState>('paused');
   const [audioTrack, setAudioTrack] = useState<AudioTrack>('vf');

@@ -97,10 +97,6 @@ const SceneContent = memo(function SceneContent({
   mobileInputRef: React.MutableRefObject<MobileInput>
   benchmarkMode: boolean
 }) {
-  useEffect(() => {
-    console.log('[SceneContent] Mounted with', films.length, 'films')
-  }, [films.length])
-
   return (
     <>
       <Environment
@@ -762,17 +758,13 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
     return allFilms.find(f => f.id === selectedFilmId) || null
   }, [selectedFilmId, allFilms])
 
-  useEffect(() => {
-    console.log('[InteriorScene] Total unique films loaded:', allFilms.length)
-  }, [allFilms.length])
-
   return (
     <div style={{ position: 'fixed', inset: 0, touchAction: 'none' }}>
       <Canvas
         shadows
         dpr={isMobile ? 1.0 : Math.min(window.devicePixelRatio, 1.5)}
         gl={(async (props: any) => {
-          console.log('[Canvas] Initializing WebGPU renderer...')
+
 
           // Let Three.js handle adapter creation internally — avoid redundant
           // requestAdapter() calls that can interfere on some systems.
@@ -817,8 +809,7 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
         }) as any}
         onCreated={(state) => {
-          console.log('[Canvas] onCreated - scene ready')
-          console.log('[Canvas] Renderer type:', state.gl.constructor.name)
+
 
           // Wait for films to be loaded + first frame rendered, then signal scene ready
           const checkReady = () => {

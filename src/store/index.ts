@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Film, Rental, AisleType, SceneType, MemberLevel } from '../types';
+import type { Film, Rental, AisleType, SceneType, MemberLevel, AuthUser, LocalUser } from '../types';
 import api, { type ApiRentalWithFilm, type ApiFilm, type ReviewWithUser, type ApiReturnRequest } from '../api';
 import { preloadPosterImage } from '../utils/CassetteTextureArray';
 import { fetchVHSCoverData } from '../utils/VHSCoverGenerator';
@@ -55,21 +55,6 @@ function apiRentalToRental(apiRental: ApiRentalWithFilm): Rental {
   };
 }
 
-// User authentifié (backend)
-interface AuthUser {
-  id: number;
-  username: string;
-  credits: number;
-  is_admin: boolean;
-}
-
-// User local (fallback quand pas connecté)
-interface LocalUser {
-  credits: number;
-  totalRentals: number;
-  level: MemberLevel;
-  badges: string[];
-}
 
 interface VideoClubState {
   // Auth
@@ -291,6 +276,8 @@ export const useStore = create<VideoClubState>()(
           authUser: null,
           rentals: [],
           rentalHistory: [],
+          userReviews: [],
+          filmRentalCounts: {},
           managerVisible: false,
           chatBackdropUrl: null,
         });

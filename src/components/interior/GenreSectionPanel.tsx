@@ -1,4 +1,4 @@
-import { useMemo, useEffect, useRef, Suspense } from 'react'
+import { useMemo, useEffect, useRef, Suspense, memo } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { Text3D, Center } from '@react-three/drei'
@@ -103,7 +103,7 @@ function NeonText3D({
   )
 }
 
-export function GenreSectionPanel({
+export const GenreSectionPanel = memo(function GenreSectionPanel({
   genre,
   position,
   rotation = [0, 0, 0],
@@ -243,7 +243,7 @@ export function GenreSectionPanel({
       </group>
     </group>
   )
-}
+})
 
 // Configuration des genres avec leurs couleurs
 export const GENRE_CONFIG = {

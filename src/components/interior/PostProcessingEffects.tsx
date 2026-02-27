@@ -49,7 +49,7 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
       const withVignette = applyVignette(scenePassColor)
       postProcessing.outputNode = withVignette
 
-      console.log('[PostProcessing] Pipeline: Vignette only (mobile)')
+
     } else {
       // ===== DESKTOP PIPELINE =====
       // Bloom: uniform-controlled (no rebuild on toggle — strength lerps to 0 when VHS case open)
@@ -115,12 +115,6 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
       const withGrain = withFXAA.add(grainNoise)
 
       postProcessing.outputNode = withGrain
-
-      if (isVHSCaseOpen) {
-        console.log('[PostProcessing] Pipeline: GTAO + Bloom(0) + DoF(0.4725m) + Vignette + FXAA + CineGrain')
-      } else {
-        console.log('[PostProcessing] Pipeline: GTAO + Bloom(uniform) + Vignette + FXAA + CineGrain')
-      }
     }
 
     postProcessingRef.current = postProcessing

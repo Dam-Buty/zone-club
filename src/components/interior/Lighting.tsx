@@ -188,7 +188,6 @@ function OptimizedLighting({ isMobile = false }: { isMobile?: boolean }) {
       // Forcer un dernier rendu du shadow map puis geler
       light.shadow.needsUpdate = true
       light.shadow.autoUpdate = false
-      console.log('[Lighting] Shadow map cached — autoUpdate disabled (static scene)')
     })
 
     return () => cancelAnimationFrame(id)

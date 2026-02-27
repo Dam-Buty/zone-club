@@ -1,4 +1,4 @@
-import { useMemo, useEffect, Suspense } from 'react'
+import { useMemo, useEffect, Suspense, memo } from 'react'
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { useGLTF, useTexture } from '@react-three/drei'
@@ -37,7 +37,7 @@ import { useKTX2Textures } from '../../hooks/useKTX2Textures'
 import { WallShelf, SHELF_DEPTH, SHELF_TILT, SHELF_PIVOT_Y } from './WallShelf'
 import { IslandShelf } from './IslandShelf'
 import { CassetteInstances } from './CassetteInstances'
-import { CASSETTE_DIMENSIONS } from './Cassette'
+import { CASSETTE_DIMENSIONS, CASSETTE_COLORS } from './Cassette'
 import { GenreSectionPanel, GenrePanelAnimator, GENRE_CONFIG, filterFilmsByGenre } from './GenreSectionPanel'
 import { PosterWall } from './Poster'
 import { Storefront } from './Storefront'
@@ -217,11 +217,6 @@ const ISLAND_TOP_WIDTH = 0.35
 const ISLAND_CASSETTE_TILT = 0.15
 const ISLAND_CASSETTE_SPACING = CASSETTE_DIMENSIONS.width + 0.02
 
-const CASSETTE_COLORS = [
-  '#1a1a2e', '#16213e', '#0f3460', '#533483',
-  '#2c3e50', '#34495e', '#1e3d59', '#3d5a80'
-]
-
 function computeWallShelfCassettes(
   position: [number, number, number],
   rotation: [number, number, number],
@@ -359,7 +354,7 @@ function computeIslandShelfCassettes(
   return data
 }
 
-export function Aisle({ films }: AisleProps) {
+export const Aisle = memo(function Aisle({ films }: AisleProps) {
   // ===== FILMS POUR NOUVEAUTÉS (ÎLOT CENTRAL) =====
   // Uses films from the store's "nouveautes" aisle (already fetched in App.tsx alongside other aisles).
   // No separate TMDB fetch — avoids a second allCassetteData recomputation that caused
@@ -1031,4 +1026,4 @@ export function Aisle({ films }: AisleProps) {
       <DustParticles count={250} />
     </group>
   )
-}
+})
