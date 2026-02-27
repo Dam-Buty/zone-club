@@ -3,66 +3,11 @@ import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { useStore } from '../../store'
 import { RAYCAST_LAYER_INTERACTIVE } from './Controls'
+import { createTextTexture } from '../../utils/createTextTexture'
 
 interface ServiceBellProps {
   position: [number, number, number]
   rotation?: [number, number, number]
-}
-
-// Créer une texture de texte via Canvas 2D (compatible WebGPU)
-function createTextTexture(
-  text: string,
-  options: {
-    fontSize?: number
-    fontFamily?: string
-    color?: string
-    backgroundColor?: string
-    width?: number
-    height?: number
-    glowColor?: string
-  } = {}
-): THREE.CanvasTexture {
-  const {
-    fontSize = 32,
-    fontFamily = 'Arial, sans-serif',
-    color = '#ffffff',
-    backgroundColor = 'transparent',
-    width = 256,
-    height = 64,
-    glowColor,
-  } = options
-
-  const canvas = document.createElement('canvas')
-  canvas.width = width
-  canvas.height = height
-  const ctx = canvas.getContext('2d')!
-
-  // Fond
-  if (backgroundColor !== 'transparent') {
-    ctx.fillStyle = backgroundColor
-    ctx.fillRect(0, 0, width, height)
-  }
-
-  // Configuration du texte
-  ctx.font = `bold ${fontSize}px ${fontFamily}`
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'middle'
-
-  // Effet de glow si spécifié
-  if (glowColor) {
-    ctx.shadowColor = glowColor
-    ctx.shadowBlur = 15
-    ctx.shadowOffsetX = 0
-    ctx.shadowOffsetY = 0
-  }
-
-  // Dessiner le texte
-  ctx.fillStyle = color
-  ctx.fillText(text, width / 2, height / 2)
-
-  const texture = new THREE.CanvasTexture(canvas)
-  texture.needsUpdate = true
-  return texture
 }
 
 export function ServiceBell({ position, rotation = [0, 0, 0] }: ServiceBellProps) {

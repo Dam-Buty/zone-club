@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useStore } from '../../store';
 import { useIsMobile } from '../../hooks/useIsMobile';
+import { formatTimeRemaining } from '../../utils/formatTime';
 import { AuthModal } from '../auth/AuthModal';
 import { SearchModal } from '../search/SearchModal';
 import { ReviewModal } from '../review/ReviewModal';
@@ -15,19 +16,6 @@ interface TVTerminalProps {
 }
 
 type MenuSection = 'main' | 'rentals' | 'history' | 'credits' | 'account' | 'reviews' | 'admin' | 'admin-films' | 'admin-requests' | 'admin-add-film';
-
-// Formater une durée en texte lisible
-function formatTimeRemaining(expiresAt: number): string {
-  const remaining = expiresAt - Date.now();
-  if (remaining <= 0) return 'Expiré';
-
-  const hours = Math.floor(remaining / (1000 * 60 * 60));
-  const days = Math.floor(hours / 24);
-
-  if (days > 0) return `${days}j ${hours % 24}h restantes`;
-  if (hours > 0) return `${hours}h restantes`;
-  return 'Moins d\'une heure';
-}
 
 function formatDate(timestamp: number): string {
   return new Date(timestamp).toLocaleDateString('fr-FR', {
@@ -70,22 +58,20 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
   const [reviewFilm, setReviewFilm] = useState<Film | null>(null);
   const [canReviewMap, setCanReviewMap] = useState<Map<number, boolean>>(new Map());
 
-  const {
-    isAuthenticated,
-    authUser,
-    localUser,
-    logout,
-    rentals,
-    rentalHistory,
-    userReviews,
-    films,
-    openPlayer,
-    closeTerminal,
-    benchmarkEnabled,
-    setBenchmarkEnabled,
-    isZoomedOnTV,
-    terminalAdminMode,
-  } = useStore();
+  const isAuthenticated = useStore(state => state.isAuthenticated);
+  const authUser = useStore(state => state.authUser);
+  const localUser = useStore(state => state.localUser);
+  const logout = useStore(state => state.logout);
+  const rentals = useStore(state => state.rentals);
+  const rentalHistory = useStore(state => state.rentalHistory);
+  const userReviews = useStore(state => state.userReviews);
+  const films = useStore(state => state.films);
+  const openPlayer = useStore(state => state.openPlayer);
+  const closeTerminal = useStore(state => state.closeTerminal);
+  const benchmarkEnabled = useStore(state => state.benchmarkEnabled);
+  const setBenchmarkEnabled = useStore(state => state.setBenchmarkEnabled);
+  const isZoomedOnTV = useStore(state => state.isZoomedOnTV);
+  const terminalAdminMode = useStore(state => state.terminalAdminMode);
 
   // Utiliser authUser si connecté, sinon localUser
   const user = isAuthenticated && authUser
@@ -514,7 +500,7 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
                       <div>
                         <div className={styles.rentalTitle}>{getFilmTitle(rental.filmId)}</div>
                         <div className={styles.rentalMeta}>
-                          Loué le {formatDate(rental.rentedAt)} - {formatTimeRemaining(rental.expiresAt)}
+                          Loué le {formatDate(rental.rentedAt)} - {formatTimeRemaining(rental.expiresAt - Date.now())}
                         </div>
                       </div>
                       <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>

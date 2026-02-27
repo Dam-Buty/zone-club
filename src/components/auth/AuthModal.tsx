@@ -21,15 +21,13 @@ export function AuthModal({ isOpen, onClose, onSuccess, initialMode = 'login' }:
   const [newRecoveryPhrase, setNewRecoveryPhrase] = useState('');
   const [copied, setCopied] = useState(false);
 
-  const {
-    login,
-    register,
-    isLoading,
-    authError,
-    recoveryPhrase: registeredPhrase,
-    clearAuthError,
-    clearRecoveryPhrase,
-  } = useStore();
+  const login = useStore(state => state.login);
+  const register = useStore(state => state.register);
+  const isLoading = useStore(state => state.isLoading);
+  const authError = useStore(state => state.authError);
+  const registeredPhrase = useStore(state => state.recoveryPhrase);
+  const clearAuthError = useStore(state => state.clearAuthError);
+  const clearRecoveryPhrase = useStore(state => state.clearRecoveryPhrase);
 
   const resetForm = useCallback(() => {
     setUsername('');
