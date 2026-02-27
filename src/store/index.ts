@@ -169,8 +169,14 @@ interface VideoClubState {
 
   // Terminal
   isTerminalOpen: boolean;
+  terminalAdminMode: boolean;
   openTerminal: () => void;
   closeTerminal: () => void;
+  openTerminalAdmin: () => void;
+
+  // Settings modals (auth/search triggered from CRT settings menu)
+  pendingSettingsAction: 'auth' | 'search' | null;
+  setPendingSettingsAction: (action: 'auth' | 'search' | null) => void;
 
   // VHS Case viewer
   isVHSCaseOpen: boolean;
@@ -181,6 +187,10 @@ interface VideoClubState {
   // Sitting on couch
   isSitting: boolean;
   setSitting: (sitting: boolean) => void;
+
+  // TV zoom (Paramètres — camera fills viewport with CRT screen)
+  isZoomedOnTV: boolean;
+  setZoomedOnTV: (val: boolean) => void;
 
   // Standing TV interaction (click TV while standing → 2-option menu)
   isInteractingWithTV: boolean;
@@ -623,8 +633,14 @@ export const useStore = create<VideoClubState>()(
 
       // Terminal
       isTerminalOpen: false,
+      terminalAdminMode: false,
       openTerminal: () => set({ isTerminalOpen: true }),
-      closeTerminal: () => set({ isTerminalOpen: false }),
+      closeTerminal: () => set({ isTerminalOpen: false, terminalAdminMode: false }),
+      openTerminalAdmin: () => set({ isTerminalOpen: true, terminalAdminMode: true }),
+
+      // Settings modals
+      pendingSettingsAction: null,
+      setPendingSettingsAction: (action) => set({ pendingSettingsAction: action }),
 
       // VHS Case viewer
       isVHSCaseOpen: false,
@@ -637,6 +653,10 @@ export const useStore = create<VideoClubState>()(
       // Sitting on couch
       isSitting: false,
       setSitting: (sitting) => set({ isSitting: sitting }),
+
+      // TV zoom (Paramètres)
+      isZoomedOnTV: false,
+      setZoomedOnTV: (val) => set({ isZoomedOnTV: val }),
 
       // Standing TV interaction
       isInteractingWithTV: false,
