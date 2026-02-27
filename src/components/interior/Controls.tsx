@@ -164,7 +164,18 @@ const _up = new THREE.Vector3(0, 1, 0);
 // Couch at world x=2.5 (reculé 30cm), 40% zoom towards TV (x=4.0): distance 1.5*0.6=0.90
 const SEATED_POSITION = new THREE.Vector3(3.452, 0.683, 1.2);
 const SEATED_LOOKAT = new THREE.Vector3(4.225, 0.699, 1.2);
+// Mobile seated — closer to TV so CRT fills viewport height
+// Screen center (3.955, 0.754), height 0.386m, FOV 80° → distance 0.231m for ~100% fill
+const SEATED_POSITION_MOBILE = new THREE.Vector3(3.724, 0.754, 1.2);
+const SEATED_LOOKAT_MOBILE = new THREE.Vector3(3.955, 0.754, 1.2);
 const SIT_TRANSITION_SPEED = 5.0; // lerp alpha — ~95% converged at 600ms
+
+// TV Paramètres zoom — camera fills viewport with CRT screen
+// Screen world center: (3.955, 0.754, 1.2), faces -X
+// Distance for 85% viewport fill: 0.381m (FOV 70°), 0.318m (FOV 80° mobile)
+const TV_ZOOM_POSITION = new THREE.Vector3(3.574, 0.754, 1.2);
+const TV_ZOOM_POSITION_MOBILE = new THREE.Vector3(3.637, 0.754, 1.2);
+const TV_ZOOM_LOOKAT = new THREE.Vector3(3.955, 0.754, 1.2);
 
 // LaZone CRT watch position — perpendicular to screen surface
 // CRT origin: [4.2, 1.8, 3.95], Y-rot 65°, tilt -10°
@@ -228,6 +239,11 @@ export function Controls({
   const preWatchPosRef = useRef(new THREE.Vector3());
   const preWatchQuatRef = useRef(new THREE.Quaternion());
 
+  // TV zoom tracking (Paramètres)
+  const wasZoomedOnTVRef = useRef(false);
+  const preZoomTVPosRef = useRef(new THREE.Vector3());
+  const preZoomTVQuatRef = useRef(new THREE.Quaternion());
+
   // Hystérésis pour sélection cassettes
   const lastCassetteKeyRef = useRef<string | null>(null)
   const lastFilmIdRef = useRef<number | null>(null)
@@ -240,15 +256,28 @@ export function Controls({
   const frameCountRef = useRef(0);
   const RAYCAST_INTERVAL = isMobile ? 3 : 3; // 20/sec both mobile & desktop
 
-  // Configurer la caméra
+  // Configurer la caméra — portrait mode gets +10° FOV for spatial awareness
   useEffect(() => {
     camera.position.set(-3.0, 1.52, 3);
     camera.near = 0.1;
     camera.far = 15;
-    if (camera instanceof THREE.PerspectiveCamera) {
-      camera.fov = isMobile ? 80 : 70; // wider FOV on mobile for spatial awareness on small screens
-      camera.updateProjectionMatrix();
+    if (!isMobile) {
+      if (camera instanceof THREE.PerspectiveCamera) {
+        camera.fov = 70;
+        camera.updateProjectionMatrix();
+      }
+      return;
     }
+    const updateFov = () => {
+      if (camera instanceof THREE.PerspectiveCamera) {
+        const isPortrait = window.innerHeight > window.innerWidth;
+        camera.fov = isPortrait ? 90 : 80; // +10° in portrait for wider field of view
+        camera.updateProjectionMatrix();
+      }
+    };
+    updateFov();
+    window.addEventListener('resize', updateFov);
+    return () => window.removeEventListener('resize', updateFov);
   }, [camera, isMobile]);
 
   // Vérifier si un overlay est ouvert
@@ -530,8 +559,8 @@ export function Controls({
       // Seated TV menu navigation — intercept movement keys
       const { isSitting: sittingNow } = useStore.getState();
       if (sittingNow) {
-        // Q = Eject (stand up from couch)
-        if (event.code === "KeyQ") {
+        // Q = Eject (stand up from couch) — blocked while terminal open (zoom active)
+        if (event.code === "KeyQ" && !useStore.getState().isTerminalOpen) {
           event.preventDefault();
           useStore.getState().setSitting(false);
           return;
@@ -894,6 +923,34 @@ export function Controls({
       return;
     }
 
+    // === Zoomed on TV (Paramètres) — fills viewport with CRT screen ===
+    const isZoomedOnTV = useStore.getState().isZoomedOnTV;
+    if (isZoomedOnTV) {
+      if (!wasZoomedOnTVRef.current) {
+        preZoomTVPosRef.current.copy(camera.position);
+        preZoomTVQuatRef.current.copy(camera.quaternion);
+      }
+      wasZoomedOnTVRef.current = true;
+      const alpha = Math.min(1, SIT_TRANSITION_SPEED * delta);
+      camera.position.lerp(isMobile ? TV_ZOOM_POSITION_MOBILE : TV_ZOOM_POSITION, alpha);
+      _lookAtMatrix.lookAt(camera.position, TV_ZOOM_LOOKAT, _up);
+      _targetQuat.setFromRotationMatrix(_lookAtMatrix);
+      camera.quaternion.slerp(_targetQuat, alpha);
+      return; // Skip movement
+    }
+    // === Return from TV zoom ===
+    if (wasZoomedOnTVRef.current) {
+      const alpha = Math.min(1, SIT_TRANSITION_SPEED * delta);
+      camera.position.lerp(preZoomTVPosRef.current, alpha);
+      camera.quaternion.slerp(preZoomTVQuatRef.current, alpha);
+      if (camera.position.distanceTo(preZoomTVPosRef.current) < 0.01) {
+        camera.position.copy(preZoomTVPosRef.current);
+        camera.quaternion.copy(preZoomTVQuatRef.current);
+        wasZoomedOnTVRef.current = false;
+      }
+      return;
+    }
+
     // === Sitting on couch — smooth camera transition, skip movement ===
     const isSittingNow = useStore.getState().isSitting;
     if (isSittingNow) {
@@ -903,9 +960,11 @@ export function Controls({
       }
       wasSittingRef.current = true;
       const alpha = Math.min(1, SIT_TRANSITION_SPEED * delta);
-      camera.position.lerp(SEATED_POSITION, alpha);
+      const seatPos = isMobile ? SEATED_POSITION_MOBILE : SEATED_POSITION;
+      const seatLook = isMobile ? SEATED_LOOKAT_MOBILE : SEATED_LOOKAT;
+      camera.position.lerp(seatPos, alpha);
       // Compute target quaternion facing the TV
-      _lookAtMatrix.lookAt(camera.position, SEATED_LOOKAT, _up);
+      _lookAtMatrix.lookAt(camera.position, seatLook, _up);
       _targetQuat.setFromRotationMatrix(_lookAtMatrix);
       camera.quaternion.slerp(_targetQuat, alpha);
       return; // Skip FPS movement

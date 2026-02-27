@@ -21,6 +21,8 @@ import type { MobileInput } from '../../types/mobile'
 const Aisle = lazy(() => import('./Aisle').then(module => ({ default: module.Aisle })))
 import { VHSCaseViewer } from './VHSCaseViewer'
 import { TVTerminal } from '../terminal/TVTerminal'
+import { AuthModal } from '../auth/AuthModal'
+import { SearchModal } from '../search/SearchModal'
 import { MobileControls } from '../mobile/MobileControls'
 import { MobileOnboarding } from '../mobile/MobileOnboarding'
 import { BenchmarkSampler, BenchmarkOverlay } from './BenchmarkMode'
@@ -437,6 +439,7 @@ function UIOverlays({ isMobile }: { isMobile: boolean }) {
   const selectedFilmId = useStore(state => state.selectedFilmId)
   const hasSeenOnboarding = useStore(state => state.hasSeenOnboarding)
   const closeTerminal = useStore(state => state.closeTerminal)
+  const setZoomedOnTV = useStore(state => state.setZoomedOnTV)
   const requestPointerLock = useStore(state => state.requestPointerLock)
   const targetedInteractive = useStore(state => state.targetedInteractive)
   const isSitting = useStore(state => state.isSitting)
@@ -509,8 +512,9 @@ function UIOverlays({ isMobile }: { isMobile: boolean }) {
 
   const handleCloseTerminal = useCallback(() => {
     closeTerminal()
+    setZoomedOnTV(false)
     requestPointerLock()
-  }, [closeTerminal, requestPointerLock])
+  }, [closeTerminal, setZoomedOnTV, requestPointerLock])
 
   return (
     <>
@@ -679,6 +683,28 @@ function UIOverlays({ isMobile }: { isMobile: boolean }) {
 
       {/* Terminal TV */}
       <TVTerminal isOpen={isTerminalOpen} onClose={handleCloseTerminal} />
+
+      {/* Settings modals triggered from CRT settings menu */}
+      <SettingsModals />
+    </>
+  )
+}
+
+// Modals for auth/search triggered from CRT settings menu (separate component to isolate re-renders)
+function SettingsModals() {
+  const pendingSettingsAction = useStore(state => state.pendingSettingsAction)
+  const setPendingSettingsAction = useStore(state => state.setPendingSettingsAction)
+  const requestPointerLock = useStore(state => state.requestPointerLock)
+
+  const handleClose = useCallback(() => {
+    setPendingSettingsAction(null)
+    requestPointerLock()
+  }, [setPendingSettingsAction, requestPointerLock])
+
+  return (
+    <>
+      <AuthModal isOpen={pendingSettingsAction === 'auth'} onClose={handleClose} />
+      <SearchModal isOpen={pendingSettingsAction === 'search'} onClose={handleClose} />
     </>
   )
 }
@@ -688,13 +714,17 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
   const mobileInputRef = useRef<MobileInput>(createMobileInput())
   const isMountedRef = useRef(true)
   const [gpuError, setGpuError] = useState<string | null>(null)
-  const [isPortrait, setIsPortrait] = useState(false)
+  const [isPortrait, setIsPortrait] = useState(() =>
+    typeof window !== 'undefined' ? window.innerHeight > window.innerWidth : false
+  )
 
   const films = useStore(state => state.films)
   const selectedFilmId = useStore(state => state.selectedFilmId)
   const hasSeenOnboarding = useStore(state => state.hasSeenOnboarding)
   const benchmarkEnabled = useStore(state => state.benchmarkEnabled)
   const laZoneActive = useStore(state => state.isInteractingWithLaZone || state.isWatchingLaZone)
+  const isSitting = useStore(state => state.isSitting)
+  const isTerminalOpen = useStore(state => state.isTerminalOpen)
   const benchmarkMode = benchmarkEnabled || URL_BENCHMARK_MODE
 
   useEffect(() => {
@@ -844,7 +874,24 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
 
       <BenchmarkOverlay enabled={benchmarkMode} />
 
-      {isMobile && isPortrait && (
+      {/* Walking in store: portrait required (landscape forbidden) */}
+      {isMobile && !isSitting && !isPortrait && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 9999,
+          background: 'rgba(0,0,0,0.95)',
+          display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center',
+          color: '#00ffff', fontFamily: "'Courier New', monospace",
+          textAlign: 'center', padding: '2rem',
+        }}>
+          <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>📱↻</div>
+          <p style={{ fontSize: '1.2rem', letterSpacing: 2 }}>
+            Tournez votre téléphone<br/>en mode portrait
+          </p>
+        </div>
+      )}
+      {/* Sitting on couch: landscape required (portrait forbidden) */}
+      {isMobile && isSitting && isPortrait && (
         <div style={{
           position: 'fixed', inset: 0, zIndex: 9999,
           background: 'rgba(0,0,0,0.95)',
@@ -862,8 +909,95 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
 
       <UIOverlays isMobile={isMobile} />
 
-      {/* Mobile controls (joystick + touch look + interact button) — hidden during LaZone interaction */}
-      {isMobile && !laZoneActive && <MobileControls mobileInputRef={mobileInputRef} />}
+      {/* Mobile TV menu controls — stacked vertically on the right side */}
+      {isMobile && isSitting && !isTerminalOpen && (
+        <div style={{
+          position: 'fixed', right: '1rem', top: '50%',
+          transform: 'translateY(-50%)',
+          display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'center',
+          zIndex: 50,
+        }}>
+          <button
+            onTouchStart={(e) => { e.preventDefault(); useStore.getState().dispatchTVMenu('up') }}
+            style={{
+              width: 50, height: 50, borderRadius: '50%',
+              background: 'rgba(0,0,0,0.7)', border: '2px solid #00ffff',
+              color: '#00ffff', fontSize: '1.3rem',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              touchAction: 'none',
+            }}
+          >▲</button>
+          <button
+            onTouchStart={(e) => { e.preventDefault(); useStore.getState().dispatchTVMenu('select') }}
+            style={{
+              width: 50, height: 50, borderRadius: '50%',
+              background: 'rgba(0,255,255,0.15)', border: '2px solid #00ffff',
+              color: '#00ffff', fontSize: '0.75rem', fontFamily: "'Courier New', monospace",
+              fontWeight: 'bold', letterSpacing: 1,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              touchAction: 'none',
+            }}
+          >OK</button>
+          <button
+            onTouchStart={(e) => { e.preventDefault(); useStore.getState().dispatchTVMenu('down') }}
+            style={{
+              width: 50, height: 50, borderRadius: '50%',
+              background: 'rgba(0,0,0,0.7)', border: '2px solid #00ffff',
+              color: '#00ffff', fontSize: '1.3rem',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              touchAction: 'none',
+            }}
+          >▼</button>
+          <button
+            onTouchStart={(e) => { e.preventDefault(); useStore.getState().setSitting(false) }}
+            style={{
+              width: 50, height: 50, borderRadius: '50%',
+              background: 'rgba(0,0,0,0.7)', border: '2px solid #ff4444',
+              color: '#ff4444', fontSize: '1.1rem',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              touchAction: 'none', marginTop: '6px',
+            }}
+          >⏏</button>
+          <button
+            onClick={() => {
+              // Focus a visible-enough input to trigger mobile keyboard
+              // Must NOT preventDefault on touch — iOS requires a non-prevented user gesture for focus
+              let inp = document.getElementById('mobile-kb-input') as HTMLInputElement
+              if (!inp) {
+                inp = document.createElement('input')
+                inp.id = 'mobile-kb-input'
+                inp.type = 'text'
+                inp.inputMode = 'text'
+                inp.autocomplete = 'off'
+                inp.autocapitalize = 'off'
+                // Position off-screen but not display:none (keyboard won't open for hidden inputs)
+                inp.style.cssText = 'position:fixed;bottom:0;left:0;width:1px;height:1px;opacity:0.01;z-index:9999;'
+                inp.addEventListener('input', () => {
+                  const val = inp.value
+                  if (val) {
+                    for (const ch of val) {
+                      document.dispatchEvent(new KeyboardEvent('keydown', { key: ch, code: `Key${ch.toUpperCase()}`, bubbles: true }))
+                    }
+                    inp.value = ''
+                  }
+                })
+                document.body.appendChild(inp)
+              }
+              inp.focus({ preventScroll: true })
+            }}
+            style={{
+              width: 50, height: 50, borderRadius: 8,
+              background: 'rgba(0,0,0,0.7)', border: '2px solid #888',
+              color: '#ccc', fontSize: '1.3rem',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              touchAction: 'manipulation', marginTop: '10px',
+            }}
+          >⌨</button>
+        </div>
+      )}
+
+      {/* Mobile controls (joystick + touch look + interact button) — hidden during LaZone interaction or sitting */}
+      {isMobile && !laZoneActive && !isSitting && <MobileControls mobileInputRef={mobileInputRef} />}
 
       {/* Onboarding — first launch only */}
       {!hasSeenOnboarding && <MobileOnboarding isMobile={isMobile} />}

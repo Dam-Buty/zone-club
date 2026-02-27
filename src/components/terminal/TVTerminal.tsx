@@ -83,6 +83,8 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
     closeTerminal,
     benchmarkEnabled,
     setBenchmarkEnabled,
+    isZoomedOnTV,
+    terminalAdminMode,
   } = useStore();
 
   // Utiliser authUser si connecté, sinon localUser
@@ -102,6 +104,15 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
     const film = allFilms.find(f => f.id === filmId);
     return film?.title || `Film #${filmId}`;
   };
+
+  // Auto-unlock admin when opened via settings menu admin code
+  useEffect(() => {
+    if (isOpen && terminalAdminMode && isAuthenticated && authUser?.is_admin) {
+      setAdminUnlocked(true)
+      setCurrentSection('admin')
+      loadAdminStats()
+    }
+  }, [isOpen, terminalAdminMode]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Gérer le code secret "admin"
   useEffect(() => {
@@ -395,8 +406,16 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
   }[user.level];
 
   const content = (
-    <div className={styles.overlay} onClick={onClose}>
-      <div className={styles.terminal} onClick={e => e.stopPropagation()}>
+    <div
+      className={styles.overlay}
+      onClick={onClose}
+      style={isZoomedOnTV ? { background: 'rgba(0, 0, 0, 0.3)' } : undefined}
+    >
+      <div
+        className={styles.terminal}
+        onClick={e => e.stopPropagation()}
+        style={isZoomedOnTV ? { background: 'rgba(10, 10, 10, 0.75)' } : undefined}
+      >
         <div className={styles.header}>
           VIDEO CLUB TERMINAL v1.0
           <span className={styles.cursor} />
@@ -962,8 +981,7 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
 
         <div className={styles.footer}>
           {isMobile ? (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', width: '100%' }}>
-              <span>[↑↓] Naviguer</span>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', width: '100%', paddingBottom: '60px' }}>
               {isAuthenticated && authUser?.is_admin && !adminUnlocked && (
                 <button
                   onClick={() => secretInputRef.current?.focus()}
@@ -1018,9 +1036,66 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
     </div>
   );
 
+  const dispatchKey = (key: string) => document.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+
+  const mobileNavButtons = isMobile ? (
+    <div style={{
+      position: 'fixed', bottom: '2rem', left: '50%',
+      transform: 'translateX(-50%)',
+      display: 'flex', gap: '12px', alignItems: 'center',
+      zIndex: 200,
+    }}>
+      <button
+        onTouchStart={(e) => { e.preventDefault(); dispatchKey('ArrowUp'); }}
+        onClick={() => dispatchKey('ArrowUp')}
+        style={{
+          width: 56, height: 56, borderRadius: '50%',
+          background: 'rgba(0,0,0,0.7)', border: '2px solid #00ff00',
+          color: '#00ff00', fontSize: '1.5rem',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          touchAction: 'none',
+        }}
+      >▲</button>
+      <button
+        onTouchStart={(e) => { e.preventDefault(); dispatchKey('Enter'); }}
+        onClick={() => dispatchKey('Enter')}
+        style={{
+          width: 72, height: 56, borderRadius: 12,
+          background: 'rgba(0,255,0,0.15)', border: '2px solid #00ff00',
+          color: '#00ff00', fontSize: '0.85rem', fontFamily: "'Courier New', monospace",
+          fontWeight: 'bold', letterSpacing: 1,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          touchAction: 'none',
+        }}
+      >OK</button>
+      <button
+        onTouchStart={(e) => { e.preventDefault(); dispatchKey('ArrowDown'); }}
+        onClick={() => dispatchKey('ArrowDown')}
+        style={{
+          width: 56, height: 56, borderRadius: '50%',
+          background: 'rgba(0,0,0,0.7)', border: '2px solid #00ff00',
+          color: '#00ff00', fontSize: '1.5rem',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          touchAction: 'none',
+        }}
+      >▼</button>
+      <button
+        onTouchStart={(e) => { e.preventDefault(); dispatchKey('Escape'); }}
+        onClick={() => dispatchKey('Escape')}
+        style={{
+          width: 56, height: 56, borderRadius: '50%',
+          background: 'rgba(0,0,0,0.7)', border: '2px solid #ff4444',
+          color: '#ff4444', fontSize: '0.85rem', fontFamily: "'Courier New', monospace",
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          touchAction: 'none',
+        }}
+      >ESC</button>
+    </div>
+  ) : null;
+
   return (
     <>
-      {createPortal(content, document.body)}
+      {createPortal(<>{content}{mobileNavButtons}</>, document.body)}
       <AuthModal
         isOpen={showAuthModal}
         onClose={() => setShowAuthModal(false)}

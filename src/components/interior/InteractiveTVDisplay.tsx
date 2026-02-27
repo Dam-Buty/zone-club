@@ -3,6 +3,7 @@ import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { useTexture } from '@react-three/drei'
 import { useStore } from '../../store'
+import { useIsMobile } from '../../hooks/useIsMobile'
 import { Couch } from './Couch'
 import { RAYCAST_LAYER_INTERACTIVE } from './Controls'
 
@@ -305,6 +306,7 @@ interface InteractiveTVDisplayProps {
 }
 
 type TVMode = 'idle' | 'standing-menu' | 'seated-menu' | 'menu' | 'playing'
+  | 'settings' | 'settings-rentals' | 'settings-history' | 'settings-reviews' | 'settings-credits' | 'settings-account'
 
 // Créer une texture de texte via Canvas 2D (compatible WebGPU)
 function createTextTexture(
@@ -489,8 +491,11 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
   const [tvMode, setTvMode] = useState<TVMode>('idle')
   const [selectedIndex, setSelectedIndex] = useState(0)
 
+  const isMobile = useIsMobile()
   const [seatedMenuIndex, setSeatedMenuIndex] = useState(0)
   const [standingMenuIndex, setStandingMenuIndex] = useState(0)
+  const [settingsMenuIndex, setSettingsMenuIndex] = useState(0)
+  const [settingsSubIndex, setSettingsSubIndex] = useState(0)
   const [isHovered, setIsHovered] = useState(false)
 
   // Refs pour les textures dynamiques
@@ -502,6 +507,7 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
   const rentals = useStore(state => state.rentals)
   const films = useStore(state => state.films)
   const openTerminal = useStore(state => state.openTerminal)
+  const openTerminalAdmin = useStore(state => state.openTerminalAdmin)
   const openPlayer = useStore(state => state.openPlayer)
   const requestPointerUnlock = useStore(state => state.requestPointerUnlock)
   const setSitting = useStore(state => state.setSitting)
@@ -510,6 +516,11 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
   const setInteractingWithTV = useStore(state => state.setInteractingWithTV)
   const tvMenuAction = useStore(state => state.tvMenuAction)
   const clearTVMenuAction = useStore(state => state.clearTVMenuAction)
+  const isAuthenticated = useStore(state => state.isAuthenticated)
+  const authUser = useStore(state => state.authUser)
+  const localUser = useStore(state => state.localUser)
+  const rentalHistory = useStore(state => state.rentalHistory)
+  const userReviews = useStore(state => state.userReviews)
 
   const timeRef = useRef(0)
 
@@ -681,31 +692,34 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
     const ctx = canvas.getContext('2d')!
 
     const options = ['Regarder un film', 'Paramètres', '← Se lever']
-    ctx.font = `bold 58px ${CRT_FONT}`
+    const seatedFontSize = isMobile ? 46 : 58
+    ctx.font = `bold ${seatedFontSize}px ${CRT_FONT}`
     ctx.textAlign = 'left'
     ctx.textBaseline = 'middle'
 
+    const seatedOX = LX * 3 + w * 0.10  // +10% right
+    const seatedOY = h * 0.05           // +5% down
     options.forEach((opt, i) => {
       const isSelected = i === seatedMenuIndex
       const prefix = isSelected ? '▶ ' : '  '
       ctx.shadowColor = isSelected ? '#00ffff' : '#009999'
       ctx.shadowBlur = isSelected ? 3 : 2
       ctx.fillStyle = isSelected ? '#00ffff' : '#009999'
-      ctx.fillText(`${prefix}${opt}`, LX * 3, 180 + i * 165)
+      ctx.fillText(`${prefix}${opt}`, seatedOX, 180 + seatedOY + i * 165)
     })
     // Hint eject en bas du menu
     ctx.font = `24px ${CRT_FONT}`
     ctx.fillStyle = '#666666'
     ctx.shadowColor = '#444444'
     ctx.shadowBlur = 1
-    ctx.fillText('\u23CF Appuyez sur Q pour se lever', LX * 3, h - 80)
+    ctx.fillText('\u23CF Appuyez sur Q pour se lever', seatedOX, h - 80)
     ctx.shadowBlur = 0
     applyCRT(ctx, w, h)
 
     const texture = new THREE.CanvasTexture(canvas)
     texture.needsUpdate = true
     return texture
-  }, [seatedMenuIndex])
+  }, [seatedMenuIndex, isMobile])
 
   // Texture for standing TV menu (S'asseoir / Paramètres)
   const standingMenuTexture = useMemo(() => {
@@ -784,6 +798,332 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
     texture.needsUpdate = true
     return texture
   }, [])
+
+  // --- Settings CRT Textures (replacing old TVTerminal HTML overlay for Parametres) ---
+  const SETTINGS_COLORS = {
+    green: '#00ff00',
+    greenDim: '#009900',
+    cyan: '#00fff7',
+    gold: '#ffd700',
+    red: '#ff4444',
+    pink: '#ff2d95',
+    dimText: '#666666',
+    label: '#888888',
+  }
+
+  const getFilmTitle = useCallback((filmId: number) => {
+    const allFilms = Object.values(films).flat()
+    return allFilms.find(f => f.id === filmId)?.title || 'Film inconnu'
+  }, [films])
+
+  const formatTimeRemaining = useCallback((expiresAt: number) => {
+    const remaining = expiresAt - Date.now()
+    if (remaining <= 0) return 'Expiré'
+    const hours = Math.floor(remaining / (1000 * 60 * 60))
+    const days = Math.floor(hours / 24)
+    if (days > 0) return `${days}j ${hours % 24}h`
+    if (hours > 0) return `${hours}h`
+    return '<1h'
+  }, [])
+
+  const formatDate = useCallback((ts: number) => {
+    return new Date(ts).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  }, [])
+
+  const settingsMenuItems = useMemo(() => {
+    const items: { label: string; color: string; action: string }[] = []
+    if (!isAuthenticated) {
+      items.push({ label: "S'IDENTIFIER", color: SETTINGS_COLORS.cyan, action: 'auth' })
+    }
+    items.push({ label: `MES LOCATIONS (${rentals.length})`, color: SETTINGS_COLORS.green, action: 'rentals' })
+    items.push({ label: 'HISTORIQUE', color: SETTINGS_COLORS.green, action: 'history' })
+    items.push({ label: `MES CRITIQUES (${userReviews.length})`, color: SETTINGS_COLORS.gold, action: 'reviews' })
+    items.push({ label: 'MES CREDITS', color: SETTINGS_COLORS.green, action: 'credits' })
+    items.push({ label: 'MON COMPTE', color: SETTINGS_COLORS.green, action: 'account' })
+    items.push({ label: 'RECHERCHER UN FILM', color: SETTINGS_COLORS.pink, action: 'search' })
+    if (isAuthenticated) {
+      items.push({ label: 'SE DECONNECTER', color: SETTINGS_COLORS.red, action: 'logout' })
+    }
+    items.push({ label: '← Retour', color: SETTINGS_COLORS.dimText, action: 'back' })
+    return items
+  }, [isAuthenticated, rentals.length, userReviews.length])
+
+  // Settings main menu texture
+  const settingsTexture = useMemo(() => {
+    const w = 1536, h = 1020
+    const canvas = document.createElement('canvas')
+    canvas.width = w; canvas.height = h
+    const ctx = canvas.getContext('2d')!
+
+    const settOX = LX * 3 + w * 0.13  // +13% right
+    const settOY = h * 0.07           // +7% down
+    ctx.font = `bold 48px ${CRT_FONT}`
+    ctx.textAlign = 'left'
+    ctx.textBaseline = 'middle'
+    if (isAuthenticated && authUser) {
+      ctx.shadowColor = SETTINGS_COLORS.gold
+      ctx.shadowBlur = 3
+      ctx.fillStyle = SETTINGS_COLORS.gold
+      ctx.fillText(`@ ${authUser.username.toUpperCase()}`, settOX, 65 + settOY)
+    } else {
+      ctx.shadowColor = SETTINGS_COLORS.green
+      ctx.shadowBlur = 3
+      ctx.fillStyle = SETTINGS_COLORS.green
+      ctx.fillText('PARAMETRES', settOX, 65 + settOY)
+    }
+
+    ctx.font = `bold 38px ${CRT_FONT}`
+    const startY = 160 + settOY
+    const lineH = 85
+    settingsMenuItems.forEach((item, i) => {
+      const isSelected = i === settingsMenuIndex
+      const prefix = isSelected ? '▶ ' : '  '
+      ctx.shadowColor = item.color
+      ctx.shadowBlur = isSelected ? 4 : 1
+      ctx.fillStyle = isSelected ? item.color : (item.color + '99')
+      ctx.fillText(`${prefix}${item.label}`, settOX, startY + i * lineH)
+    })
+
+    ctx.shadowBlur = 0
+    applyCRT(ctx, w, h)
+    const texture = new THREE.CanvasTexture(canvas)
+    texture.needsUpdate = true
+    return texture
+  }, [settingsMenuIndex, settingsMenuItems, isAuthenticated, authUser])
+
+  // Settings: MES LOCATIONS sub-screen
+  const settingsRentalsTexture = useMemo(() => {
+    const w = 1536, h = 1020
+    const canvas = document.createElement('canvas')
+    canvas.width = w; canvas.height = h
+    const ctx = canvas.getContext('2d')!
+    const subOX = LX * 3 + w * 0.13
+    const subOY = h * 0.07
+
+    ctx.font = `bold 48px ${CRT_FONT}`
+    ctx.textAlign = 'left'
+    ctx.textBaseline = 'middle'
+    ctx.shadowColor = SETTINGS_COLORS.green
+    ctx.shadowBlur = 3
+    ctx.fillStyle = SETTINGS_COLORS.green
+    ctx.fillText('MES LOCATIONS ACTIVES', subOX, 65 + subOY)
+
+    if (rentals.length === 0) {
+      ctx.font = `italic 32px ${CRT_FONT}`
+      ctx.fillStyle = SETTINGS_COLORS.dimText
+      ctx.shadowBlur = 0
+      ctx.fillText('Aucune location en cours', subOX, 300 + subOY)
+    } else {
+      ctx.font = `bold 34px ${CRT_FONT}`
+      const startY = 170 + subOY
+      const lineH = 100
+      const visibleRentals = rentals.slice(0, 7)
+      const backIdx = visibleRentals.length
+
+      visibleRentals.forEach((rental, i) => {
+        const isSelected = i === settingsSubIndex
+        const prefix = isSelected ? '▶ ' : '  '
+        const title = getFilmTitle(rental.filmId).substring(0, 20)
+        const remaining = formatTimeRemaining(rental.expiresAt)
+
+        ctx.shadowColor = isSelected ? SETTINGS_COLORS.green : SETTINGS_COLORS.greenDim
+        ctx.shadowBlur = isSelected ? 3 : 1
+        ctx.fillStyle = isSelected ? SETTINGS_COLORS.green : SETTINGS_COLORS.greenDim
+        ctx.fillText(`${prefix}${title}`, subOX, startY + i * lineH)
+
+        ctx.font = `26px ${CRT_FONT}`
+        ctx.fillStyle = SETTINGS_COLORS.dimText
+        ctx.shadowBlur = 0
+        ctx.fillText(`   ${remaining} - ▶ LIRE`, subOX + 60, startY + i * lineH + 38)
+        ctx.font = `bold 34px ${CRT_FONT}`
+      })
+
+      const isBackSelected = settingsSubIndex === backIdx
+      ctx.shadowColor = isBackSelected ? SETTINGS_COLORS.green : SETTINGS_COLORS.dimText
+      ctx.shadowBlur = isBackSelected ? 3 : 1
+      ctx.fillStyle = isBackSelected ? SETTINGS_COLORS.green : SETTINGS_COLORS.dimText
+      ctx.fillText(isBackSelected ? '▶ ← Retour' : '  ← Retour', subOX, startY + backIdx * lineH + 30)
+    }
+
+    ctx.shadowBlur = 0
+    applyCRT(ctx, w, h)
+    const texture = new THREE.CanvasTexture(canvas)
+    texture.needsUpdate = true
+    return texture
+  }, [rentals, settingsSubIndex, getFilmTitle, formatTimeRemaining])
+
+  // Settings: HISTORIQUE sub-screen
+  const settingsHistoryTexture = useMemo(() => {
+    const w = 1536, h = 1020
+    const canvas = document.createElement('canvas')
+    canvas.width = w; canvas.height = h
+    const ctx = canvas.getContext('2d')!
+    const subOX = LX * 3 + w * 0.13
+    const subOY = h * 0.07
+
+    ctx.font = `bold 48px ${CRT_FONT}`
+    ctx.textAlign = 'left'
+    ctx.textBaseline = 'middle'
+    ctx.shadowColor = SETTINGS_COLORS.green
+    ctx.shadowBlur = 3
+    ctx.fillStyle = SETTINGS_COLORS.green
+    ctx.fillText('HISTORIQUE DES LOCATIONS', subOX, 65 + subOY)
+
+    if (rentalHistory.length === 0) {
+      ctx.font = `italic 32px ${CRT_FONT}`
+      ctx.fillStyle = SETTINGS_COLORS.dimText
+      ctx.shadowBlur = 0
+      ctx.fillText('Aucun historique disponible', subOX, 300 + subOY)
+    } else {
+      ctx.font = `bold 34px ${CRT_FONT}`
+      const startY = 170 + subOY
+      const lineH = 90
+      const reversed = [...rentalHistory].reverse().slice(0, 8)
+
+      reversed.forEach((entry, i) => {
+        const title = getFilmTitle(entry.filmId).substring(0, 22)
+        ctx.shadowColor = SETTINGS_COLORS.green
+        ctx.shadowBlur = 1
+        ctx.fillStyle = SETTINGS_COLORS.green
+        ctx.fillText(`  ${title}`, subOX, startY + i * lineH)
+
+        ctx.font = `26px ${CRT_FONT}`
+        ctx.fillStyle = SETTINGS_COLORS.dimText
+        ctx.shadowBlur = 0
+        ctx.fillText(`   Loué ${formatDate(entry.rentedAt)} - Rendu ${formatDate(entry.returnedAt)}`, subOX + 60, startY + i * lineH + 35)
+        ctx.font = `bold 34px ${CRT_FONT}`
+      })
+    }
+
+    ctx.font = `bold 34px ${CRT_FONT}`
+    ctx.shadowColor = SETTINGS_COLORS.dimText
+    ctx.shadowBlur = 1
+    ctx.fillStyle = SETTINGS_COLORS.dimText
+    ctx.fillText('▶ ← Retour', subOX, h - 60)
+
+    ctx.shadowBlur = 0
+    applyCRT(ctx, w, h)
+    const texture = new THREE.CanvasTexture(canvas)
+    texture.needsUpdate = true
+    return texture
+  }, [rentalHistory, getFilmTitle, formatDate])
+
+  // Settings: MES CREDITS sub-screen
+  const settingsCreditsTexture = useMemo(() => {
+    const w = 1536, h = 768
+    const canvas = document.createElement('canvas')
+    canvas.width = w; canvas.height = h
+    const ctx = canvas.getContext('2d')!
+    const subOX = LX * 3 + w * 0.13
+    const subOY = h * 0.07
+
+    ctx.font = `bold 48px ${CRT_FONT}`
+    ctx.textAlign = 'left'
+    ctx.textBaseline = 'middle'
+    ctx.shadowColor = SETTINGS_COLORS.green
+    ctx.shadowBlur = 3
+    ctx.fillStyle = SETTINGS_COLORS.green
+    ctx.fillText('MES CREDITS', subOX, 65 + subOY)
+
+    const credits = isAuthenticated && authUser ? authUser.credits : localUser.credits
+    ctx.font = `bold 120px ${CRT_FONT}`
+    ctx.textAlign = 'center'
+    ctx.shadowColor = SETTINGS_COLORS.green
+    ctx.shadowBlur = 8
+    ctx.fillStyle = SETTINGS_COLORS.green
+    ctx.fillText(`${credits}`, w / 2 + w * 0.065, 250 + subOY)
+
+    ctx.font = `32px ${CRT_FONT}`
+    ctx.shadowBlur = 2
+    ctx.fillStyle = SETTINGS_COLORS.greenDim
+    ctx.fillText(`crédit${credits > 1 ? 's' : ''} disponible${credits > 1 ? 's' : ''}`, w / 2 + w * 0.065, 330 + subOY)
+
+    const level = localUser.level.toUpperCase()
+    ctx.font = `bold 36px ${CRT_FONT}`
+    ctx.textAlign = 'left'
+    ctx.fillStyle = SETTINGS_COLORS.label
+    ctx.shadowBlur = 0
+    ctx.fillText('Niveau membre:', subOX, 440 + subOY)
+    ctx.fillStyle = SETTINGS_COLORS.gold
+    ctx.shadowColor = SETTINGS_COLORS.gold
+    ctx.shadowBlur = 3
+    ctx.fillText(level, subOX + 500, 440 + subOY)
+
+    ctx.font = `bold 34px ${CRT_FONT}`
+    ctx.shadowColor = SETTINGS_COLORS.dimText
+    ctx.shadowBlur = 1
+    ctx.fillStyle = SETTINGS_COLORS.dimText
+    ctx.fillText('▶ ← Retour', subOX, h - 60)
+
+    ctx.shadowBlur = 0
+    applyCRT(ctx, w, h)
+    const texture = new THREE.CanvasTexture(canvas)
+    texture.needsUpdate = true
+    return texture
+  }, [isAuthenticated, authUser, localUser])
+
+  // Settings: MON COMPTE sub-screen
+  const settingsAccountTexture = useMemo(() => {
+    const w = 1536, h = 1020
+    const canvas = document.createElement('canvas')
+    canvas.width = w; canvas.height = h
+    const ctx = canvas.getContext('2d')!
+
+    const subOX = LX * 3 + w * 0.13  // aligned with settings menu
+    const subOY = h * 0.07           // aligned with settings menu
+    ctx.font = `bold 48px ${CRT_FONT}`
+    ctx.textAlign = 'left'
+    ctx.textBaseline = 'middle'
+    ctx.shadowColor = SETTINGS_COLORS.green
+    ctx.shadowBlur = 3
+    ctx.fillStyle = SETTINGS_COLORS.green
+    ctx.fillText('MON COMPTE', subOX, 65 + subOY)
+
+    const lineH = 75
+    const startY = 180 + subOY
+    const labelX = subOX
+    const valueX = subOX + 620
+
+    const rows: [string, string, string][] = []
+    if (isAuthenticated && authUser) {
+      rows.push(['Utilisateur', authUser.username, SETTINGS_COLORS.gold])
+    }
+    rows.push(['Niveau', localUser.level.toUpperCase(), SETTINGS_COLORS.gold])
+    rows.push(['Total locations', `${rentals.length + rentalHistory.length}`, SETTINGS_COLORS.green])
+    rows.push(['Crédits', `${isAuthenticated && authUser ? authUser.credits : localUser.credits}`, SETTINGS_COLORS.green])
+    rows.push(['Locations actives', `${rentals.length}`, SETTINGS_COLORS.green])
+    rows.push(['Critiques publiées', `${userReviews.length}`, SETTINGS_COLORS.green])
+
+    ctx.font = `bold 34px ${CRT_FONT}`
+    rows.forEach(([label, value, color], i) => {
+      ctx.fillStyle = SETTINGS_COLORS.label
+      ctx.shadowBlur = 0
+      ctx.fillText(label, labelX, startY + i * lineH)
+      ctx.fillStyle = color
+      ctx.shadowColor = color
+      ctx.shadowBlur = 2
+      ctx.fillText(value, valueX, startY + i * lineH)
+    })
+
+    if (!isAuthenticated) {
+      ctx.font = `italic 28px ${CRT_FONT}`
+      ctx.fillStyle = SETTINGS_COLORS.dimText
+      ctx.shadowBlur = 0
+      ctx.fillText('Connectez-vous pour synchroniser', labelX, startY + rows.length * lineH + 30)
+    }
+
+    ctx.font = `bold 34px ${CRT_FONT}`
+    ctx.shadowColor = SETTINGS_COLORS.dimText
+    ctx.shadowBlur = 1
+    ctx.fillStyle = SETTINGS_COLORS.dimText
+    ctx.fillText('▶ ← Retour', labelX, h - 60)
+
+    ctx.shadowBlur = 0
+    applyCRT(ctx, w, h)
+    const texture = new THREE.CanvasTexture(canvas)
+    texture.needsUpdate = true
+    return texture
+  }, [isAuthenticated, authUser, localUser, rentals.length, rentalHistory.length, userReviews.length])
 
   // Texture indicateur films disponibles
   const indicatorTexture = useMemo(() => {
@@ -893,6 +1233,8 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
       material.emissiveIntensity = 0.6 + Math.sin(timeRef.current * 10) * 0.1
     } else if (tvMode === 'standing-menu' || tvMode === 'seated-menu' || tvMode === 'menu') {
       material.emissiveIntensity = 0.8
+    } else if (tvMode.startsWith('settings')) {
+      material.emissiveIntensity = 0.85
     } else if (tvMode === 'playing') {
       material.emissiveIntensity = 1.0
     }
@@ -924,8 +1266,11 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
   // Show/hide standing menu when isInteractingWithTV changes
   useEffect(() => {
     if (isInteractingWithTV && !isSitting) {
-      setStandingMenuIndex(0)
-      setTvMode('standing-menu')
+      // Don't override settings mode — only show standing menu if idle
+      if (!tvMode.startsWith('settings')) {
+        setStandingMenuIndex(0)
+        setTvMode('standing-menu')
+      }
     } else if (!isInteractingWithTV && tvMode === 'standing-menu') {
       setTvMode('idle')
     }
@@ -949,14 +1294,108 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
           setTvMode('menu')
           setSelectedIndex(0)
         } else if (standingMenuIndex === 1) {
-          // "Paramètres" → open terminal
-          setInteractingWithTV(false)
-          setTvMode('idle')
-          openTerminal()
-          requestPointerUnlock()
+          // "Paramètres" → show settings menu on CRT
+          setTvMode('settings')
+          setSettingsMenuIndex(0)
         }
       } else if (tvMenuAction === 'back') {
         setInteractingWithTV(false)
+      }
+      clearTVMenuAction()
+      return
+    }
+
+    // --- Settings modes (work regardless of sitting/standing) ---
+    if (tvMode === 'settings') {
+      if (tvMenuAction === 'up' || tvMenuAction === 'down') {
+        const maxIdx = settingsMenuItems.length - 1
+        setSettingsMenuIndex(prev =>
+          tvMenuAction === 'up' ? Math.max(0, prev - 1) : Math.min(maxIdx, prev + 1)
+        )
+      } else if (tvMenuAction === 'select') {
+        const item = settingsMenuItems[settingsMenuIndex]
+        if (item) {
+          switch (item.action) {
+            case 'auth':
+              useStore.getState().setPendingSettingsAction('auth')
+              requestPointerUnlock()
+              break
+            case 'rentals':
+              setTvMode('settings-rentals')
+              setSettingsSubIndex(0)
+              break
+            case 'history':
+              setTvMode('settings-history')
+              break
+            case 'reviews':
+              setTvMode('settings-account') // reviews shown in account for now
+              break
+            case 'credits':
+              setTvMode('settings-credits')
+              break
+            case 'account':
+              setTvMode('settings-account')
+              break
+            case 'search':
+              useStore.getState().setPendingSettingsAction('search')
+              requestPointerUnlock()
+              break
+            case 'logout':
+              useStore.getState().logout()
+              setSettingsMenuIndex(0)
+              break
+            case 'back':
+              if (isSitting) {
+                setTvMode('seated-menu')
+                setSeatedMenuIndex(0)
+              } else {
+                setTvMode('idle')
+                setInteractingWithTV(false)
+              }
+              break
+          }
+        }
+      } else if (tvMenuAction === 'back') {
+        if (isSitting) {
+          setTvMode('seated-menu')
+          setSeatedMenuIndex(0)
+        } else {
+          setTvMode('idle')
+          setInteractingWithTV(false)
+        }
+      }
+      clearTVMenuAction()
+      return
+    }
+
+    if (tvMode === 'settings-rentals') {
+      const backIdx = Math.min(rentals.length, 7)
+      if (tvMenuAction === 'up' || tvMenuAction === 'down') {
+        setSettingsSubIndex(prev =>
+          tvMenuAction === 'up' ? Math.max(0, prev - 1) : Math.min(backIdx, prev + 1)
+        )
+      } else if (tvMenuAction === 'select') {
+        if (settingsSubIndex === backIdx || rentals.length === 0) {
+          setTvMode('settings')
+          setSettingsMenuIndex(0)
+        } else {
+          const rental = rentals[settingsSubIndex]
+          if (rental) {
+            playVideo(rental.filmId)
+          }
+        }
+      } else if (tvMenuAction === 'back') {
+        setTvMode('settings')
+        setSettingsMenuIndex(0)
+      }
+      clearTVMenuAction()
+      return
+    }
+
+    if (tvMode === 'settings-history' || tvMode === 'settings-credits' || tvMode === 'settings-account') {
+      if (tvMenuAction === 'select' || tvMenuAction === 'back') {
+        setTvMode('settings')
+        setSettingsMenuIndex(0)
       }
       clearTVMenuAction()
       return
@@ -984,9 +1423,9 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
           setTvMode('menu')
           setSelectedIndex(0)
         } else if (seatedMenuIndex === 1) {
-          // "Paramètres" → open terminal
-          openTerminal()
-          requestPointerUnlock()
+          // "Paramètres" → show settings menu on CRT
+          setTvMode('settings')
+          setSettingsMenuIndex(0)
         } else if (seatedMenuIndex === 2) {
           // "← Se lever" → stand up
           setSitting(false)
@@ -1018,7 +1457,36 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
     }
 
     clearTVMenuAction()
-  }, [tvMenuAction, isSitting, isInteractingWithTV, tvMode, seatedMenuIndex, selectedIndex, standingMenuIndex, rentedFilms, playVideo, stopVideo, openTerminal, requestPointerUnlock, clearTVMenuAction, setSitting, setInteractingWithTV])
+  }, [tvMenuAction, isSitting, isInteractingWithTV, tvMode, seatedMenuIndex, selectedIndex, standingMenuIndex, settingsMenuIndex, settingsMenuItems, settingsSubIndex, rentedFilms, rentals, playVideo, stopVideo, openTerminal, requestPointerUnlock, clearTVMenuAction, setSitting, setInteractingWithTV])
+
+  // Admin secret code detection in settings menu
+  const adminBufferRef = useRef('')
+  const adminTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    if (!tvMode.startsWith('settings')) return
+    if (!isAuthenticated || !authUser?.is_admin) return
+
+    const handleAdminKey = (e: KeyboardEvent) => {
+      if (e.key.length === 1 && /[a-z]/i.test(e.key)) {
+        adminBufferRef.current = (adminBufferRef.current + e.key.toLowerCase()).slice(-5)
+        // Reset buffer after 2s of inactivity
+        if (adminTimerRef.current) clearTimeout(adminTimerRef.current)
+        adminTimerRef.current = setTimeout(() => { adminBufferRef.current = '' }, 2000)
+
+        if (adminBufferRef.current === 'admin') {
+          adminBufferRef.current = ''
+          openTerminalAdmin()
+          requestPointerUnlock()
+        }
+      }
+    }
+
+    document.addEventListener('keydown', handleAdminKey)
+    return () => {
+      document.removeEventListener('keydown', handleAdminKey)
+      if (adminTimerRef.current) clearTimeout(adminTimerRef.current)
+    }
+  }, [tvMode, isAuthenticated, authUser, openTerminalAdmin, requestPointerUnlock])
 
   // Auto-show menu when sitting down with rented films
   const prevSittingRef = useRef(false)
@@ -1144,6 +1612,36 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
           <mesh position={[0, -0.1, 0.085]} userData={{ isTVScreen: true }} ref={enableRaycastLayer}>
             <planeGeometry args={[0.282, 0.050]} />
             <meshBasicMaterial map={playingTexture} transparent toneMapped={false} />
+          </mesh>
+        )}
+        {tvMode === 'settings' && (
+          <mesh position={[0, -0.003, 0.085]} userData={{ isTVScreen: true }} ref={enableRaycastLayer}>
+            <planeGeometry args={[0.461, 0.337]} />
+            <meshBasicMaterial map={settingsTexture} transparent toneMapped={false} />
+          </mesh>
+        )}
+        {tvMode === 'settings-rentals' && (
+          <mesh position={[0, -0.003, 0.085]} userData={{ isTVScreen: true }} ref={enableRaycastLayer}>
+            <planeGeometry args={[0.461, 0.337]} />
+            <meshBasicMaterial map={settingsRentalsTexture} transparent toneMapped={false} />
+          </mesh>
+        )}
+        {tvMode === 'settings-history' && (
+          <mesh position={[0, -0.003, 0.085]} userData={{ isTVScreen: true }} ref={enableRaycastLayer}>
+            <planeGeometry args={[0.461, 0.337]} />
+            <meshBasicMaterial map={settingsHistoryTexture} transparent toneMapped={false} />
+          </mesh>
+        )}
+        {tvMode === 'settings-credits' && (
+          <mesh position={[0, -0.003, 0.085]} userData={{ isTVScreen: true }} ref={enableRaycastLayer}>
+            <planeGeometry args={[0.461, 0.337]} />
+            <meshBasicMaterial map={settingsCreditsTexture} transparent toneMapped={false} />
+          </mesh>
+        )}
+        {tvMode === 'settings-account' && (
+          <mesh position={[0, -0.003, 0.085]} userData={{ isTVScreen: true }} ref={enableRaycastLayer}>
+            <planeGeometry args={[0.461, 0.337]} />
+            <meshBasicMaterial map={settingsAccountTexture} transparent toneMapped={false} />
           </mesh>
         )}
 

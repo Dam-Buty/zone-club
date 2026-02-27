@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { tmdb, type TMDBSearchResult } from '../../services/tmdb';
 import { useStore } from '../../store';
@@ -19,7 +19,13 @@ export function SearchModal({ isOpen, onClose }: SearchModalProps) {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  const { isAuthenticated } = useStore();
+  // Timing guard: prevent immediate close from propagated touch/click events
+  const openTimeRef = useRef(0);
+  useEffect(() => {
+    if (isOpen) openTimeRef.current = Date.now();
+  }, [isOpen]);
+
+  const isAuthenticated = useStore(state => state.isAuthenticated);
 
   // Debounced search
   useEffect(() => {
@@ -81,6 +87,8 @@ export function SearchModal({ isOpen, onClose }: SearchModalProps) {
   }, [isAuthenticated]);
 
   const handleClose = useCallback(() => {
+    // Prevent close within 300ms of opening (guards against propagated touch events)
+    if (Date.now() - openTimeRef.current < 300) return;
     setQuery('');
     setResults([]);
     setError(null);
