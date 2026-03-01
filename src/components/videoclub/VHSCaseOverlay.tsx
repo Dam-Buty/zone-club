@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useDrag } from "@use-gesture/react";
 import { useStore } from "../../store";
 import { tmdb, type TMDBVideo } from "../../services/tmdb";
 import api, { type FilmWithRentalStatus } from "../../api";
@@ -336,6 +337,8 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
   const openPlayer = useStore((state) => state.openPlayer);
   const showManager = useStore((state) => state.showManager);
   const pushEvent = useStore((state) => state.pushEvent);
+  const hasSeenSwipeHint = useStore((state) => state.hasSeenVHSSwipeHint);
+  const setHasSeenSwipeHint = useStore((state) => state.setHasSeenVHSSwipeHint);
 
   const [isRenting, setIsRenting] = useState(false);
   const [rentSuccess, setRentSuccess] = useState(false);
@@ -353,13 +356,11 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
   const [showReturnConfirm, setShowReturnConfirm] = useState(false);
   const [earlyReturnBonus, setEarlyReturnBonus] = useState(false);
   const [mobileExpanded, setMobileExpanded] = useState(false);
+  const [showSwipeHint, setShowSwipeHint] = useState(false);
 
   // Navigation bounce state (desktop)
   const [bounceLeft, setBounceLeft] = useState(false);
   const [bounceRight, setBounceRight] = useState(false);
-
-  // Mobile swipe ref
-  const touchStartRef = useRef<{ x: number; y: number; t: number } | null>(null);
 
   // Prev/next film navigation (circular within same aisle)
   const { prevFilm, nextFilm } = useMemo(() => {
@@ -375,6 +376,41 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
     }
     return { prevFilm: null, nextFilm: null };
   }, [film, films]);
+
+  // Mobile swipe navigation via @use-gesture/react
+  const bind = useDrag(
+    ({ active, movement: [mx], velocity: [vx], axis, tap }) => {
+      if (tap) {
+        useStore.getState().requestVHSFlip();
+        return;
+      }
+      if (axis !== 'x') return;
+
+      const store = useStore.getState();
+      if (active) {
+        store.setVhsSwipeState(true, mx);
+      } else {
+        const shouldNavigate = Math.abs(mx) > 80 || Math.abs(vx) > 0.5;
+        if (shouldNavigate) {
+          // Inverted: swipe right (mx > 0) = next film, swipe left (mx < 0) = prev film
+          if (mx > 0 && nextFilm) {
+            store.setVHSNavDirection('left');
+            selectFilm(nextFilm.id);
+          } else if (mx < 0 && prevFilm) {
+            store.setVHSNavDirection('right');
+            selectFilm(prevFilm.id);
+          }
+        }
+        store.setVhsSwipeState(false, 0);
+      }
+    },
+    {
+      axis: 'lock',
+      threshold: 10,
+      filterTaps: true,
+      pointer: { touch: true },
+    }
+  );
 
   // Certification + TMDB reviews + budget
   const [certification, setCertification] = useState("");
@@ -503,6 +539,20 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
       couchPopupTimeoutRef.current = null;
     }, 2600);
   }, []);
+
+  // Swipe hint — show once on first mobile VHS open
+  useEffect(() => {
+    if (!isOpen || !isMobile || hasSeenSwipeHint) {
+      setShowSwipeHint(false);
+      return;
+    }
+    const showTimer = setTimeout(() => setShowSwipeHint(true), 800);
+    const hideTimer = setTimeout(() => {
+      setShowSwipeHint(false);
+      setHasSeenSwipeHint(true);
+    }, 4800);
+    return () => { clearTimeout(showTimer); clearTimeout(hideTimer); };
+  }, [isOpen, isMobile, hasSeenSwipeHint, setHasSeenSwipeHint]);
 
   // ESC key to close overlay
   useEffect(() => {
@@ -1273,32 +1323,73 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
             ↩ REPOSER
           </button>
 
-          {/* Swipe navigation zone — captures horizontal swipes above bottom sheet */}
+          {/* Swipe navigation zone — @use-gesture drag detection */}
           <div
+            {...bind()}
             style={{
               position: "fixed",
               top: 0,
               left: 0,
               right: 0,
-              bottom: mobileExpanded ? "85vh" : "40vh",
+              bottom: mobileExpanded ? "85vh" : "44vh",
               zIndex: 99,
-            }}
-            onTouchStart={(e) => {
-              touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now() };
-            }}
-            onTouchEnd={(e) => {
-              if (!touchStartRef.current) return;
-              const dx = e.changedTouches[0].clientX - touchStartRef.current.x;
-              const dy = e.changedTouches[0].clientY - touchStartRef.current.y;
-              const dt = Date.now() - touchStartRef.current.t;
-              touchStartRef.current = null;
-
-              if (Math.abs(dx) > 60 && Math.abs(dx) > 2 * Math.abs(dy) && dt < 400) {
-                if (dx > 0 && prevFilm) { setVHSNavDirection('right'); selectFilm(prevFilm.id); }
-                if (dx < 0 && nextFilm) { setVHSNavDirection('left'); selectFilm(nextFilm.id); }
-              }
+              touchAction: "pan-y",
             }}
           />
+
+          {/* Swipe hint — chevrons on each side of the VHS case, first time only */}
+          {showSwipeHint && (
+            <>
+              <style>{`
+                @keyframes swipeHintFadeIn {
+                  from { opacity: 0; }
+                  to { opacity: 1; }
+                }
+                @keyframes swipeChevronLeft {
+                  0%, 100% { transform: translateX(0) translateY(-50%); opacity: 0.4; }
+                  50% { transform: translateX(-10px) translateY(-50%); opacity: 1; }
+                }
+                @keyframes swipeChevronRight {
+                  0%, 100% { transform: translateX(0) translateY(-50%); opacity: 0.4; }
+                  50% { transform: translateX(10px) translateY(-50%); opacity: 1; }
+                }
+              `}</style>
+              {/* Left chevron */}
+              <div
+                style={{
+                  position: "fixed",
+                  top: "28%",
+                  left: "6%",
+                  zIndex: 100,
+                  pointerEvents: "none",
+                  fontFamily: "Orbitron, sans-serif",
+                  fontSize: "2.2rem",
+                  color: "rgba(255,215,0,0.85)",
+                  textShadow: "0 0 14px rgba(255,215,0,0.5), 0 0 28px rgba(255,215,0,0.2)",
+                  animation: "swipeHintFadeIn 0.5s ease-out, swipeChevronLeft 1.2s ease-in-out infinite",
+                }}
+              >
+                ‹
+              </div>
+              {/* Right chevron */}
+              <div
+                style={{
+                  position: "fixed",
+                  top: "28%",
+                  right: "6%",
+                  zIndex: 100,
+                  pointerEvents: "none",
+                  fontFamily: "Orbitron, sans-serif",
+                  fontSize: "2.2rem",
+                  color: "rgba(255,215,0,0.85)",
+                  textShadow: "0 0 14px rgba(255,215,0,0.5), 0 0 28px rgba(255,215,0,0.2)",
+                  animation: "swipeHintFadeIn 0.5s ease-out, swipeChevronRight 1.2s ease-in-out infinite",
+                }}
+              >
+                ›
+              </div>
+            </>
+          )}
 
           {/* Dimming overlay — only when expanded */}
           {mobileExpanded && (
@@ -1323,7 +1414,7 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
               bottom: 0,
               left: 0,
               right: 0,
-              maxHeight: mobileExpanded ? "85vh" : "40vh",
+              maxHeight: mobileExpanded ? "85vh" : "44vh",
               zIndex: 100,
               background: "rgba(8,8,18,0.96)",
               borderTop: "1px solid rgba(0,255,247,0.2)",
@@ -1425,6 +1516,27 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
                 </div>
               )}
             </div>
+
+            {/* Synopsis preview — always visible */}
+            {film.overview && !mobileExpanded && (
+              <div style={{
+                padding: "6px 16px 4px",
+                flexShrink: 0,
+              }}>
+                <div style={{
+                  fontFamily: "sans-serif",
+                  fontSize: "0.72rem",
+                  color: "rgba(255,255,255,0.55)",
+                  lineHeight: 1.4,
+                  overflow: "hidden",
+                  display: "-webkit-box",
+                  WebkitLineClamp: 3,
+                  WebkitBoxOrient: "vertical",
+                }}>
+                  {film.overview}
+                </div>
+              </div>
+            )}
 
             {/* Toggle expand/collapse button */}
             <button
