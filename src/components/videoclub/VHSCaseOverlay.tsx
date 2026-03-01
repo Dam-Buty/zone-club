@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useStore } from "../../store";
 import { tmdb, type TMDBVideo } from "../../services/tmdb";
 import api, { type FilmWithRentalStatus } from "../../api";
@@ -324,6 +324,9 @@ function PersonModal({ person, detail, loading, onClose }: {
 export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
   const isMobile = useIsMobile();
   const isAuthenticated = useStore((state) => state.isAuthenticated);
+  const films = useStore((state) => state.films);
+  const selectFilm = useStore((state) => state.selectFilm);
+  const setVHSNavDirection = useStore((state) => state.setVHSNavDirection);
   const getCredits = useStore((state) => state.getCredits);
   const getRental = useStore((state) => state.getRental);
   const storeRentFilm = useStore((state) => state.rentFilm);
@@ -350,6 +353,28 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
   const [showReturnConfirm, setShowReturnConfirm] = useState(false);
   const [earlyReturnBonus, setEarlyReturnBonus] = useState(false);
   const [mobileExpanded, setMobileExpanded] = useState(false);
+
+  // Navigation bounce state (desktop)
+  const [bounceLeft, setBounceLeft] = useState(false);
+  const [bounceRight, setBounceRight] = useState(false);
+
+  // Mobile swipe ref
+  const touchStartRef = useRef<{ x: number; y: number; t: number } | null>(null);
+
+  // Prev/next film navigation (circular within same aisle)
+  const { prevFilm, nextFilm } = useMemo(() => {
+    if (!film) return { prevFilm: null, nextFilm: null };
+    for (const aisleFilms of Object.values(films)) {
+      const idx = aisleFilms.findIndex(f => f.id === film.id);
+      if (idx !== -1) {
+        return {
+          prevFilm: aisleFilms[(idx - 1 + aisleFilms.length) % aisleFilms.length],
+          nextFilm: aisleFilms[(idx + 1) % aisleFilms.length],
+        };
+      }
+    }
+    return { prevFilm: null, nextFilm: null };
+  }, [film, films]);
 
   // Certification + TMDB reviews + budget
   const [certification, setCertification] = useState("");
@@ -1248,6 +1273,33 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
             ↩ REPOSER
           </button>
 
+          {/* Swipe navigation zone — captures horizontal swipes above bottom sheet */}
+          <div
+            style={{
+              position: "fixed",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: mobileExpanded ? "85vh" : "40vh",
+              zIndex: 99,
+            }}
+            onTouchStart={(e) => {
+              touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now() };
+            }}
+            onTouchEnd={(e) => {
+              if (!touchStartRef.current) return;
+              const dx = e.changedTouches[0].clientX - touchStartRef.current.x;
+              const dy = e.changedTouches[0].clientY - touchStartRef.current.y;
+              const dt = Date.now() - touchStartRef.current.t;
+              touchStartRef.current = null;
+
+              if (Math.abs(dx) > 60 && Math.abs(dx) > 2 * Math.abs(dy) && dt < 400) {
+                if (dx > 0 && prevFilm) { setVHSNavDirection('right'); selectFilm(prevFilm.id); }
+                if (dx < 0 && nextFilm) { setVHSNavDirection('left'); selectFilm(nextFilm.id); }
+              }
+            }}
+          />
+
           {/* Dimming overlay — only when expanded */}
           {mobileExpanded && (
             <div style={{
@@ -1523,6 +1575,82 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
       ) : (
         /* ===== DESKTOP LAYOUT ===== */
         <>
+          {/* Navigation arrows — positioned close to the VHS case */}
+          {prevFilm && (
+            <button
+              data-vhs-overlay
+              onClick={() => {
+                setVHSNavDirection('right');
+                selectFilm(prevFilm.id);
+                setBounceLeft(true);
+                setTimeout(() => setBounceLeft(false), 200);
+              }}
+              style={{
+                position: "fixed",
+                left: "calc(50% - 232px - 280px)",
+                top: "50%",
+                transform: bounceLeft ? "translate(-50%, -50%) scale(0.82)" : "translate(-50%, -50%) scale(1)",
+                transition: "transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)",
+                width: "96px",
+                height: "96px",
+                borderRadius: "50%",
+                background: "rgba(0, 0, 0, 0.6)",
+                border: "2px solid #ffd700",
+                color: "#ffd700",
+                fontFamily: "Orbitron, sans-serif",
+                fontSize: "2.4rem",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                cursor: "pointer",
+                pointerEvents: "auto",
+                zIndex: 100,
+                boxShadow: "0 0 12px rgba(255, 215, 0, 0.15)",
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = "#ffd700"; e.currentTarget.style.color = "#000000"; e.currentTarget.style.boxShadow = "0 0 20px rgba(255, 215, 0, 0.35)"; e.currentTarget.style.transform = "translate(-50%, -50%) scale(1.05)"; }}
+              onMouseLeave={e => { e.currentTarget.style.background = "rgba(0, 0, 0, 0.6)"; e.currentTarget.style.color = "#ffd700"; e.currentTarget.style.boxShadow = "0 0 12px rgba(255, 215, 0, 0.15)"; e.currentTarget.style.transform = "translate(-50%, -50%) scale(1)"; }}
+            >
+              ‹
+            </button>
+          )}
+          {nextFilm && (
+            <button
+              data-vhs-overlay
+              onClick={() => {
+                setVHSNavDirection('left');
+                selectFilm(nextFilm.id);
+                setBounceRight(true);
+                setTimeout(() => setBounceRight(false), 200);
+              }}
+              style={{
+                position: "fixed",
+                left: "calc(50% - 232px + 260px)",
+                top: "50%",
+                transform: bounceRight ? "translate(-50%, -50%) scale(0.82)" : "translate(-50%, -50%) scale(1)",
+                transition: "transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)",
+                width: "96px",
+                height: "96px",
+                borderRadius: "50%",
+                background: "rgba(0, 0, 0, 0.6)",
+                border: "2px solid #ffd700",
+                color: "#ffd700",
+                fontFamily: "Orbitron, sans-serif",
+                fontSize: "2.4rem",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                cursor: "pointer",
+                pointerEvents: "auto",
+                zIndex: 100,
+                boxShadow: "0 0 12px rgba(255, 215, 0, 0.15)",
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = "#ffd700"; e.currentTarget.style.color = "#000000"; e.currentTarget.style.boxShadow = "0 0 20px rgba(255, 215, 0, 0.35)"; e.currentTarget.style.transform = "translate(-50%, -50%) scale(1.05)"; }}
+              onMouseLeave={e => { e.currentTarget.style.background = "rgba(0, 0, 0, 0.6)"; e.currentTarget.style.color = "#ffd700"; e.currentTarget.style.boxShadow = "0 0 12px rgba(255, 215, 0, 0.15)"; e.currentTarget.style.transform = "translate(-50%, -50%) scale(1)"; }}
+            >
+              ›
+            </button>
+          )}
+
           {/* RIGHT PANEL — full-height info + actions */}
           <div
             data-vhs-overlay
@@ -1531,7 +1659,7 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
               top: 0,
               right: 0,
               bottom: 0,
-              width: "442px",
+              width: "464px",
               zIndex: 100,
               pointerEvents: "auto",
               background: "rgba(0,0,0,0.88)",

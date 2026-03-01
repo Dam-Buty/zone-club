@@ -168,6 +168,8 @@ interface VideoClubState {
   setVHSCaseOpen: (open: boolean) => void;
   vhsCaseAnimating: boolean;
   setVHSCaseAnimating: (animating: boolean) => void;
+  vhsNavDirection: 'left' | 'right' | null;
+  setVHSNavDirection: (dir: 'left' | 'right' | null) => void;
 
   // Sitting on couch
   isSitting: boolean;
@@ -636,6 +638,8 @@ export const useStore = create<VideoClubState>()(
       setVHSCaseAnimating: (animating) => {
         if (get().vhsCaseAnimating !== animating) set({ vhsCaseAnimating: animating });
       },
+      vhsNavDirection: null,
+      setVHSNavDirection: (dir) => set({ vhsNavDirection: dir }),
 
       // Sitting on couch
       isSitting: false,
