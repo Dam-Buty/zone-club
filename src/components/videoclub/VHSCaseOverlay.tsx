@@ -412,6 +412,45 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
     }
   );
 
+  // Bottom sheet vertical drag to expand/collapse (tracked)
+  // dragExtra = extra px of height added during drag (positive = taller sheet)
+  const [dragExtra, setDragExtra] = useState(0);
+  const bindSheet = useDrag(
+    ({ active, movement: [, my], velocity: [, vy], tap }) => {
+      if (tap) return;
+      if (active) {
+        // -my: dragging up → positive (add height), dragging down → negative (reduce height)
+        const extra = -my;
+        const maxExtra = window.innerHeight * 0.41;
+        const clamped = Math.max(mobileExpanded ? -maxExtra : 0, Math.min(extra, mobileExpanded ? 0 : maxExtra));
+        setDragExtra(clamped);
+      } else {
+        const shouldToggle = Math.abs(my) > 60 || Math.abs(vy) > 0.3;
+        if (shouldToggle) {
+          if (my < 0 && !mobileExpanded) setMobileExpanded(true);
+          else if (my > 0 && mobileExpanded) setMobileExpanded(false);
+        }
+        setDragExtra(0);
+      }
+    },
+    {
+      axis: 'y',
+      threshold: 10,
+      filterTaps: true,
+      pointer: { touch: true },
+    }
+  );
+
+  // Drag progress ratio (0 = collapsed, 1 = expanded)
+  // When collapsed and dragging up: dragExtra goes 0 → maxExtra → progress 0→1
+  // When expanded and dragging down: dragExtra goes 0 → -maxExtra → progress 1→0
+  const maxDragPx = typeof window !== 'undefined' ? window.innerHeight * 0.41 : 300;
+  const dragProgress = mobileExpanded
+    ? Math.max(0, Math.min(1, 1 + dragExtra / maxDragPx))
+    : Math.max(0, Math.min(1, dragExtra / maxDragPx));
+  // Effective expanded state: fully expanded OR dragging past threshold
+  const showEnrichedContent = mobileExpanded || dragExtra > 0;
+
   // Certification + TMDB reviews + budget
   const [certification, setCertification] = useState("");
   const [tmdbReviews, setTmdbReviews] = useState<{ author: string; content: string }[]>([]);
@@ -1331,7 +1370,9 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
               top: 0,
               left: 0,
               right: 0,
-              bottom: mobileExpanded ? "85vh" : "44vh",
+              bottom: dragExtra !== 0
+                ? `calc(${mobileExpanded ? 85 : 40}vh + ${dragExtra}px)`
+                : mobileExpanded ? "85vh" : "40vh",
               zIndex: 99,
               touchAction: "pan-y",
             }}
@@ -1414,24 +1455,46 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
               bottom: 0,
               left: 0,
               right: 0,
-              maxHeight: mobileExpanded ? "85vh" : "44vh",
+              maxHeight: dragExtra !== 0
+                ? `calc(${mobileExpanded ? 85 : 40}vh + ${dragExtra}px)`
+                : mobileExpanded ? "85vh" : "40vh",
               zIndex: 100,
               background: "rgba(8,8,18,0.96)",
               borderTop: "1px solid rgba(0,255,247,0.2)",
               borderRadius: "16px 16px 0 0",
               display: "flex",
               flexDirection: "column",
-              transition: "max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1)",
+              transition: dragExtra !== 0 ? "none" : "max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1)",
               overflow: "hidden",
               paddingBottom: "calc(8px + env(safe-area-inset-bottom, 0px))",
               textShadow: "0 1px 3px rgba(0,0,0,0.6)",
             }}
           >
+            {/* Drag handle */}
+            <div
+              {...bindSheet()}
+              style={{
+                flexShrink: 0,
+                display: "flex",
+                justifyContent: "center",
+                padding: "8px 0 4px",
+                cursor: "grab",
+                touchAction: "none",
+              }}
+            >
+              <div style={{
+                width: "36px",
+                height: "4px",
+                borderRadius: "2px",
+                background: "rgba(255,255,255,0.25)",
+              }} />
+            </div>
+
             {/* Header — title + meta (always visible) */}
-            <div style={{ padding: "12px 16px 8px", flexShrink: 0 }}>
+            <div style={{ padding: "4px 16px 8px", flexShrink: 0 }}>
               <div style={{
                 fontFamily: "Orbitron, sans-serif",
-                fontSize: "0.92rem",
+                fontSize: "1.18rem",
                 color: "#00fff7",
                 textShadow: "0 0 12px rgba(0,255,247,0.5)",
                 overflow: "hidden",
@@ -1439,6 +1502,15 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
                 whiteSpace: "nowrap",
               }}>
                 {film.title}
+              </div>
+              <div style={{
+                fontSize: "1.01rem",
+                color: "rgba(255,255,255,0.45)",
+                marginTop: "3px",
+              }}>
+                {film.release_date ? new Date(film.release_date).getFullYear() : ""}
+                {film.runtime ? ` • ${film.runtime} min` : ""}
+                {film.genres?.length ? ` • ${film.genres[0].name}` : ""}
                 {certification && (
                   <span style={{
                     marginLeft: "8px",
@@ -1446,7 +1518,7 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
                     background: "rgba(255,255,255,0.08)",
                     border: "1px solid rgba(255,255,255,0.35)",
                     borderRadius: "3px",
-                    fontSize: "0.68rem",
+                    fontSize: "0.79rem",
                     color: "rgba(255,255,255,0.7)",
                     fontWeight: 600,
                     verticalAlign: "middle",
@@ -1457,20 +1529,11 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
                 )}
                 <span style={{
                   marginLeft: "8px",
-                  fontSize: "0.72rem",
+                  fontSize: "0.84rem",
                   color: "#ffd700",
                 }}>
                   ★ {film.vote_average.toFixed(1)}
                 </span>
-              </div>
-              <div style={{
-                fontSize: "0.7rem",
-                color: "rgba(255,255,255,0.45)",
-                marginTop: "3px",
-              }}>
-                {film.release_date ? new Date(film.release_date).getFullYear() : ""}
-                {film.runtime ? ` • ${film.runtime} min` : ""}
-                {film.genres?.length ? ` • ${film.genres[0].name}` : ""}
               </div>
             </div>
 
@@ -1517,21 +1580,23 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
               )}
             </div>
 
-            {/* Synopsis preview — always visible */}
-            {film.overview && !mobileExpanded && (
+            {/* Synopsis preview — progressively unclamped during drag */}
+            {film.overview && (
               <div style={{
                 padding: "6px 16px 4px",
                 flexShrink: 0,
               }}>
                 <div style={{
                   fontFamily: "sans-serif",
-                  fontSize: "0.72rem",
-                  color: "rgba(255,255,255,0.55)",
+                  fontSize: "0.86rem",
+                  color: `rgba(255,255,255,${0.55 + dragProgress * 0.15})`,
                   lineHeight: 1.4,
                   overflow: "hidden",
-                  display: "-webkit-box",
-                  WebkitLineClamp: 3,
-                  WebkitBoxOrient: "vertical",
+                  ...(!mobileExpanded && dragProgress < 1 ? {
+                    display: "-webkit-box" as const,
+                    WebkitLineClamp: Math.max(2, Math.round(2 + dragProgress * 13)),
+                    WebkitBoxOrient: "vertical" as const,
+                  } : {}),
                 }}>
                   {film.overview}
                 </div>
@@ -1557,40 +1622,19 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
                 transition: "background 0.2s",
               }}
             >
-              {mobileExpanded ? "▲ MOINS" : "▼ PLUS D'INFOS"}
+              {mobileExpanded || showEnrichedContent ? "▲ MOINS" : "▼ PLUS D'INFOS"}
             </button>
 
-            {/* Enriched content — only visible when expanded */}
-            {mobileExpanded && (
+            {/* Enriched content — visible when expanded or dragging */}
+            {showEnrichedContent && (
               <div style={{
                 flex: 1,
                 overflowY: "auto",
                 padding: "10px 16px",
                 minHeight: 0,
+                opacity: dragExtra !== 0 ? Math.max(0.3, dragProgress) : 1,
+                transition: dragExtra !== 0 ? "none" : "opacity 0.3s",
               }}>
-                {/* Synopsis */}
-                {film.overview && (
-                  <div style={{ marginBottom: "12px" }}>
-                    <div style={{
-                      fontFamily: "Orbitron, sans-serif",
-                      fontSize: "0.65rem",
-                      color: "rgba(255,255,255,0.35)",
-                      letterSpacing: "1.5px",
-                      textTransform: "uppercase",
-                      marginBottom: "5px",
-                    }}>
-                      Synopsis
-                    </div>
-                    <div style={{
-                      fontFamily: "sans-serif",
-                      fontSize: "0.78rem",
-                      color: "rgba(255,255,255,0.7)",
-                      lineHeight: 1.5,
-                    }}>
-                      {film.overview}
-                    </div>
-                  </div>
-                )}
 
                 {/* TMDB Reviews */}
                 {tmdbReviews.length > 0 && (
