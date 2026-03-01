@@ -557,10 +557,14 @@ export function Controls({
       }
 
       // Seated TV menu navigation — intercept movement keys
-      const { isSitting: sittingNow } = useStore.getState();
+      const { isSitting: sittingNow, isTerminalOpen } = useStore.getState();
       if (sittingNow) {
-        // Q = Eject (stand up from couch) — blocked while terminal open (zoom active)
-        if (event.code === "KeyQ" && !useStore.getState().isTerminalOpen) {
+        // When terminal is open, let keys pass through (e.g. typing "admin" secret code)
+        if (isTerminalOpen) return;
+
+        // Q = Eject (stand up from couch) — use event.key to support AZERTY keyboards
+        // (on AZERTY, physical "A" reports code "KeyQ" which would eject when typing "admin")
+        if (event.key.toLowerCase() === "q") {
           event.preventDefault();
           useStore.getState().setSitting(false);
           return;
@@ -580,7 +584,8 @@ export function Controls({
           handleInteractionRef.current();
           return;
         }
-        // Block all other movement keys while sitting
+        // Let single letter keys pass through for admin secret code detection
+        // (InteractiveTVDisplay listens for "admin" typed in settings menu)
         return;
       }
 
