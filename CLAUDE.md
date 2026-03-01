@@ -14,6 +14,12 @@ Frontend 3D immersif pour Zone Club, un videoclub en ligne. Experience FPS dans 
 - **Auth** : Cookies signes avec `cookie-signature` (pas de JWT)
 - **Build** : `next build` avec `output: 'standalone'`
 
+## Regles Git — OBLIGATOIRE
+
+1. **Avant de travailler sur une branche feature** : TOUJOURS `git rebase main` ou verifier que la branche est a jour avec main. Ne jamais commencer a coder sur une branche qui n'a pas les derniers commits de main.
+2. **Quand on commit un fix sur main depuis une branche feature** (via stash) : TOUJOURS cherry-pick ou rebase le fix sur la branche feature immediatement apres. Le double stash (stash → pop sur main → commit → re-stash → pop sur feature) perd le fix car il est consomme par le commit sur main et n'est plus dans le second stash.
+3. **Ne jamais laisser une branche feature diverger de main** sans raison. Si un commit est pousse sur main pendant qu'on travaille sur une feature, le ramener sur la branche feature avant de continuer.
+
 ## Commandes
 
 ```bash
@@ -289,6 +295,40 @@ Tracing OpenTelemetry via `@langfuse/otel` dans `instrumentation.ts`.
 - `serverExternalPackages: ['better-sqlite3', 'bcrypt']` — modules natifs
 - Three.js WebGPU types : augmentation `ArrayBufferView<any>` sur `GPUQueue.writeBuffer`
 - `src/types/three-webgpu.d.ts` — declarations custom pour three/webgpu, three/tsl, addons
+
+## Regles obligatoires - Projets 3D / Graphiques
+
+### Avant de coder
+
+1. **Etudier l'image de reference pixel par pixel** — materiaux, textures, eclairages, proportions
+2. **Decouper en sous-taches granulaires** — chaque tache verifiable visuellement
+3. **Rechercher l'etat de l'art** — ne JAMAIS assumer, chercher comment les experts font
+4. **Comprendre l'objectif a 100%** — poser autant de questions que necessaire
+5. **Verifier visuellement apres chaque modification** — comparer avec la reference
+6. **Admettre quand je ne sais pas** — indiquer une alternative avec indice de confiance
+
+### Interdictions
+
+- JAMAIS utiliser des boites/formes simples par paresse au lieu de la bonne geometrie
+- JAMAIS pretendre qu'une tache est "completee" sans verification visuelle
+- JAMAIS passer a l'etape suivante sans validation visuelle
+- JAMAIS generer du code "plausible" sans reflechir a l'objectif
+
+### Lecons apprises
+
+**Geometrie (01/02/2026)** : Echec avec des boites au lieu de geometrie tubulaire (NeonTube.ts existait). Resultat : rendu "jeu video 2005" au lieu du photorealisme demande.
+
+**Instancing (03/02/2026)** : InstancedMesh ne fonctionne PAS quand chaque instance a sa propre texture (cassettes avec posters TMDB uniques). Utiliser geometrie partagee + meshes individuels.
+
+**Ciblage FPS (02/02/2026)** : Les evenements pointer R3F (`onPointerOver`, `onClick`) suivent la position souris reelle, pas le centre ecran. En mode pointer lock, il faut raycaster depuis `(0,0)` dans `useFrame` + store Zustand pour `targetedCassetteKey`.
+```
+INCORRECT: Evenements pointer R3F → Position souris reelle
+CORRECT:   useFrame → Raycast depuis (0,0) → Store Zustand → Cassette lit le store
+```
+
+**Identification objets 3D repetes** : Utiliser une cle basee sur la position (`cassetteKey: {shelf-type}-{position}-{row}-{col}`) plutot que l'ID de contenu (`filmId`). Stocker les deux dans `userData`.
+
+**Variables reutilisables** : Vector3, Matrix4, Frustum → HORS du composant pour eviter allocations par frame.
 
 ## Skills
 

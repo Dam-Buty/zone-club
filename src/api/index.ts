@@ -373,6 +373,9 @@ export interface AdminStats {
   totalRentals: number;
   totalReviews: number;
   pendingRequests: number;
+  filmsPerAisle: { aisle: string; count: number }[];
+  recentRentals: { day: string; count: number }[];
+  topRentedFilms: { title: string; rental_count: number }[];
 }
 
 export interface TranscodeStatus {

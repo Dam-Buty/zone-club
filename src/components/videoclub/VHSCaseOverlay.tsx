@@ -55,14 +55,14 @@ function sideButtonStyle(
     display: "flex",
     alignItems: "center",
     gap: "8px",
-    padding: "12px 20px",
+    padding: "14px 24px",
     background: "rgba(0,0,0,0.65)",
     backdropFilter: "blur(8px)",
     border: `1px solid ${borderColor}`,
     borderRadius: "6px",
     color: textColor,
     fontFamily: "Orbitron, sans-serif",
-    fontSize: "0.79rem",
+    fontSize: "1.05rem",
     cursor: "pointer",
     transition: "all 0.2s",
     letterSpacing: "1px",
@@ -103,15 +103,15 @@ function mobilePillStyle(
 // Shared styles for credit labels/values (used as fallback when detailed credits not loaded)
 const creditLabelStyle: React.CSSProperties = {
   fontFamily: "Orbitron, sans-serif",
-  fontSize: "0.68rem",
-  color: "rgba(255,255,255,0.35)",
+  fontSize: "1.02rem",
+  color: "rgba(255,255,255,0.55)",
   letterSpacing: "1.5px",
   textTransform: "uppercase",
 };
 
 const creditValueStyle: React.CSSProperties = {
-  fontSize: "0.75rem",
-  color: "rgba(255,255,255,0.5)",
+  fontSize: "1.13rem",
+  color: "rgba(255,255,255,0.7)",
   marginTop: "4px",
   lineHeight: 1.4,
 };
@@ -133,7 +133,7 @@ function CreditSection({ label, persons, showCharacter, onSelect }: {
             <span
               onClick={() => onSelect(p)}
               style={{
-                fontSize: "0.75rem",
+                fontSize: "1.13rem",
                 color: "#00d4cc",
                 cursor: "pointer",
                 transition: "color 0.15s",
@@ -144,7 +144,7 @@ function CreditSection({ label, persons, showCharacter, onSelect }: {
               {p.name}
             </span>
             {showCharacter && p.character && (
-              <span style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.3)", marginLeft: "4px" }}>
+              <span style={{ fontSize: "1.05rem", color: "rgba(255,255,255,0.5)", marginLeft: "4px" }}>
                 ({p.character})
               </span>
             )}
@@ -347,7 +347,6 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
   const [requestingReturn, setRequestingReturn] = useState(false);
   const [returnRequested, setReturnRequested] = useState(false);
   const [filmRentalStatus, setFilmRentalStatus] = useState<FilmWithRentalStatus['rental_status'] | null>(null);
-  const [showLanguageChoice, setShowLanguageChoice] = useState(false);
   const [showReturnConfirm, setShowReturnConfirm] = useState(false);
   const [earlyReturnBonus, setEarlyReturnBonus] = useState(false);
   const [mobileExpanded, setMobileExpanded] = useState(false);
@@ -446,7 +445,6 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
       setReturning(false);
       setRequestingReturn(false);
       setReturnRequested(false);
-      setShowLanguageChoice(false);
       setShowReturnConfirm(false);
       setEarlyReturnBonus(false);
       setMobileExpanded(false);
@@ -490,8 +488,6 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
           setSelectedPerson(null);
         } else if (showReturnConfirm) {
           setShowReturnConfirm(false);
-        } else if (showLanguageChoice) {
-          setShowLanguageChoice(false);
         } else if (showTrailer) {
           setShowTrailer(false);
         } else if (showAuthModal) {
@@ -505,7 +501,7 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, onClose, showTrailer, showAuthModal, showReviewModal, showLanguageChoice, selectedPerson, showReturnConfirm]);
+  }, [isOpen, onClose, showTrailer, showAuthModal, showReviewModal, selectedPerson, showReturnConfirm]);
 
   const handleWatchTrailer = useCallback(async () => {
     if (!film || loadingTrailer) return;
@@ -563,53 +559,34 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
     const result = await storeRentFilm(film.id);
     if (result) {
       setRentSuccess(true);
-      // Show success briefly, then transition to viewing mode choice
-      setTimeout(() => {
+      // Show success briefly, then auto-set viewing mode to sur_place
+      setTimeout(async () => {
         setRentSuccess(false);
         setIsRenting(false);
+        // Auto-set viewing mode without user choice
+        setSettingMode(true);
+        const updatedRental = await storeSetViewingMode(film.id, 'sur_place');
+        setSettingMode(false);
+        if (updatedRental) {
+          showCouchMeetingPopup();
+        }
       }, 1500);
     } else {
       setIsRenting(false);
     }
-  }, [film, isAuthenticated, credits, isRenting, getRental, storeRentFilm]);
+  }, [film, isAuthenticated, credits, isRenting, getRental, storeRentFilm, storeSetViewingMode, showCouchMeetingPopup]);
 
-  const handleSetViewingMode = useCallback(async (mode: 'sur_place' | 'emporter') => {
+  const handleSetViewingMode = useCallback(async () => {
     if (!film || settingMode) return;
 
-    if (mode === 'emporter') {
-      // Show VF/VO language choice popup before setting mode
-      setShowLanguageChoice(true);
-      return;
-    }
-
     setSettingMode(true);
-    const updatedRental = await storeSetViewingMode(film.id, mode);
+    const updatedRental = await storeSetViewingMode(film.id, 'sur_place');
     setSettingMode(false);
     if (!updatedRental) return;
 
     // Don't open player directly; invite user to sit on the couch first.
     showCouchMeetingPopup();
   }, [film, settingMode, storeSetViewingMode, showCouchMeetingPopup]);
-
-  const handleEmporterLanguage = useCallback(async (lang: 'vf' | 'vo') => {
-    if (!film || settingMode) return;
-    setShowLanguageChoice(false);
-    setSettingMode(true);
-    const updatedRental = await storeSetViewingMode(film.id, 'emporter');
-    setSettingMode(false);
-    if (!updatedRental) return;
-
-    // Use the streaming URL for the chosen language
-    const url = updatedRental.streamingUrls?.[lang] || updatedRental.streamingUrls?.vf || updatedRental.streamingUrls?.vo;
-    if (url) {
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${film.title} (${lang.toUpperCase()}).mp4`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-    }
-  }, [film, settingMode, storeSetViewingMode]);
 
   const handleSitDown = useCallback(() => {
     if (!film) return;
@@ -731,26 +708,26 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
             gap: "2px",
           })}
         >
-          <span style={{ fontSize: "0.65rem", opacity: 0.7 }}>Déjà loué — expire dans</span>
+          <span style={{ fontSize: "0.98rem", opacity: 0.7 }}>Déjà loué — expire dans</span>
           <span style={{ fontVariantNumeric: "tabular-nums" }}>{countdown}</span>
         </div>
       );
 
       // Early return hint
       const earlyHint = isWithinEarlyReturn ? (
-        <div style={{ fontSize: "0.68rem", color: "#00ff88", fontFamily: "Orbitron, sans-serif", textAlign: "center", letterSpacing: "0.5px" }}>
+        <div style={{ fontSize: "1.02rem", color: "#00ff88", fontFamily: "Orbitron, sans-serif", textAlign: "center", letterSpacing: "0.5px" }}>
           Retour sous 24h = +1 crédit bonus
         </div>
       ) : null;
 
-      // No viewing mode chosen yet
+      // No viewing mode yet — auto-setting in progress
       if (!rental.viewingMode) {
         return (
           <>
             {statusEl}
             {earlyHint}
             <button
-              onClick={() => handleSetViewingMode('sur_place')}
+              onClick={handleSetViewingMode}
               disabled={settingMode}
               style={sideButtonStyle("#00fff7", "#00fff7", {
                 width: "100%",
@@ -759,63 +736,30 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
                 boxShadow: "0 0 12px rgba(0,255,247,0.25)",
               })}
             >
-              📺 REGARDER SUR PLACE
-            </button>
-            <button
-              onClick={() => handleSetViewingMode('emporter')}
-              disabled={settingMode}
-              style={sideButtonStyle("#ff9900", "#ff9900", {
-                width: "100%",
-                justifyContent: "center",
-                background: "linear-gradient(135deg, rgba(255,153,0,0.2), rgba(255,100,0,0.2))",
-                boxShadow: "0 0 12px rgba(255,153,0,0.2)",
-              })}
-            >
-              📼 À EMPORTER
+              {settingMode ? "PRÉPARATION..." : "▶ REGARDER"}
             </button>
             {renderDesktopReturnButton()}
           </>
         );
       }
 
-      // Mode = sur_place
-      if (rental.viewingMode === 'sur_place') {
-        return (
-          <>
-            {statusEl}
-            {earlyHint}
-            <button
-              onClick={handleSitDown}
-              style={sideButtonStyle("#00fff7", "#ffffff", {
-                width: "100%",
-                justifyContent: "center",
-                background: "linear-gradient(135deg, rgba(0,255,247,0.3), rgba(0,200,255,0.3))",
-                boxShadow: "0 0 16px rgba(0,255,247,0.35)",
-                fontSize: "0.85rem",
-              })}
-            >
-              🛋️ S'INSTALLER ET REGARDER
-            </button>
-            {renderDesktopReturnButton()}
-          </>
-        );
-      }
-
-      // Mode = emporter
+      // Viewing mode set (sur_place) — show watch button
       return (
         <>
           {statusEl}
           {earlyHint}
-          <div
-            style={sideButtonStyle("#ff9900", "#ff9900", {
+          <button
+            onClick={handleSitDown}
+            style={sideButtonStyle("#00fff7", "#ffffff", {
               width: "100%",
               justifyContent: "center",
-              background: "rgba(255,153,0,0.08)",
-              cursor: "default",
+              background: "linear-gradient(135deg, rgba(0,255,247,0.3), rgba(0,200,255,0.3))",
+              boxShadow: "0 0 16px rgba(0,255,247,0.35)",
+              fontSize: "1.28rem",
             })}
           >
-            📼 À EMPORTER ✓
-          </div>
+            🛋️ S'INSTALLER ET REGARDER
+          </button>
           {renderDesktopReturnButton()}
         </>
       );
@@ -838,7 +782,7 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
           >
             <span>AUCUNE K7 DISPONIBLE</span>
             {filmRentalStatus.earliest_return && (
-              <span style={{ fontSize: "0.68rem", color: "#ffaa00", fontVariantNumeric: "tabular-nums" }}>
+              <span style={{ fontSize: "1.02rem", color: "#ffaa00", fontVariantNumeric: "tabular-nums" }}>
                 Retour dans {formatCountdown(new Date(filmRentalStatus.earliest_return + 'Z').getTime())}
               </span>
             )}
@@ -864,7 +808,7 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
     // ---- STATE 1: Copies available ----
     return (
       <>
-        <div style={{ fontSize: "0.72rem", color: "#00ff88", fontFamily: "Orbitron, sans-serif", textAlign: "center", letterSpacing: "0.5px" }}>
+        <div style={{ fontSize: "1.08rem", color: "#00ff88", fontFamily: "Orbitron, sans-serif", textAlign: "center", letterSpacing: "0.5px" }}>
           K7 DISPONIBLE
         </div>
         <button
@@ -918,42 +862,14 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
           <>
             {timerEl}
             <button
-              onClick={() => handleSetViewingMode('sur_place')}
+              onClick={handleSetViewingMode}
               disabled={settingMode}
               style={mobilePillStyle("#00fff7", "#00fff7", {
                 background: "rgba(0,255,247,0.12)",
                 boxShadow: "0 0 8px rgba(0,255,247,0.2)",
               })}
             >
-              📺 SUR PLACE
-            </button>
-            <button
-              onClick={() => handleSetViewingMode('emporter')}
-              disabled={settingMode}
-              style={mobilePillStyle("#ff9900", "#ff9900", {
-                background: "rgba(255,153,0,0.12)",
-                boxShadow: "0 0 8px rgba(255,153,0,0.15)",
-              })}
-            >
-              📼 EMPORTER
-            </button>
-            {returnBtn}
-          </>
-        );
-      }
-
-      if (rental.viewingMode === 'sur_place') {
-        return (
-          <>
-            {timerEl}
-            <button
-              onClick={handleSitDown}
-              style={mobilePillStyle("#00fff7", "#ffffff", {
-                background: "rgba(0,255,247,0.2)",
-                boxShadow: "0 0 10px rgba(0,255,247,0.3)",
-              })}
-            >
-              🛋️ S'INSTALLER
+              {settingMode ? "PRÉPARATION..." : "▶ REGARDER"}
             </button>
             {returnBtn}
           </>
@@ -963,14 +879,15 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
       return (
         <>
           {timerEl}
-          <div
-            style={mobilePillStyle("#ff9900", "#ff9900", {
-              background: "rgba(255,153,0,0.08)",
-              cursor: "default",
+          <button
+            onClick={handleSitDown}
+            style={mobilePillStyle("#00fff7", "#ffffff", {
+              background: "rgba(0,255,247,0.2)",
+              boxShadow: "0 0 10px rgba(0,255,247,0.3)",
             })}
           >
-            📼 EMPORTER ✓
-          </div>
+            🛋️ S'INSTALLER
+          </button>
           {returnBtn}
         </>
       );
@@ -1269,110 +1186,6 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
             }}
           >
             Disponible pendant {formatDuration(duration)}
-          </div>
-        </div>
-      )}
-
-      {/* VF/VO language choice popup */}
-      {showLanguageChoice && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.88)",
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 210,
-          }}
-          onClick={() => setShowLanguageChoice(false)}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              gap: isMobile ? "16px" : "20px",
-              padding: isMobile ? "24px 20px" : "32px 40px",
-              background: "rgba(10,10,20,0.95)",
-              border: "1px solid rgba(255,153,0,0.4)",
-              borderRadius: "12px",
-              boxShadow: "0 0 30px rgba(255,153,0,0.15)",
-            }}
-          >
-            <div
-              style={{
-                fontFamily: "Orbitron, sans-serif",
-                fontSize: isMobile ? "0.85rem" : "1rem",
-                color: "#ff9900",
-                letterSpacing: "2px",
-                textTransform: "uppercase",
-                textShadow: "0 0 12px rgba(255,153,0,0.4)",
-              }}
-            >
-              CHOISIR LA LANGUE
-            </div>
-            <div style={{ display: "flex", gap: isMobile ? "12px" : "16px" }}>
-              <button
-                onClick={() => handleEmporterLanguage('vf')}
-                disabled={settingMode}
-                style={{
-                  padding: isMobile ? "14px 28px" : "16px 36px",
-                  background: "linear-gradient(135deg, rgba(0,120,255,0.25), rgba(0,80,200,0.25))",
-                  border: "1px solid #0088ff",
-                  borderRadius: "8px",
-                  color: "#ffffff",
-                  fontFamily: "Orbitron, sans-serif",
-                  fontSize: isMobile ? "0.9rem" : "1.05rem",
-                  cursor: settingMode ? "wait" : "pointer",
-                  letterSpacing: "2px",
-                  boxShadow: "0 0 14px rgba(0,136,255,0.25)",
-                  transition: "all 0.2s",
-                  opacity: settingMode ? 0.6 : 1,
-                }}
-              >
-                🇫🇷 VF
-              </button>
-              <button
-                onClick={() => handleEmporterLanguage('vo')}
-                disabled={settingMode}
-                style={{
-                  padding: isMobile ? "14px 28px" : "16px 36px",
-                  background: "linear-gradient(135deg, rgba(220,50,50,0.25), rgba(180,30,30,0.25))",
-                  border: "1px solid #dd3333",
-                  borderRadius: "8px",
-                  color: "#ffffff",
-                  fontFamily: "Orbitron, sans-serif",
-                  fontSize: isMobile ? "0.9rem" : "1.05rem",
-                  cursor: settingMode ? "wait" : "pointer",
-                  letterSpacing: "2px",
-                  boxShadow: "0 0 14px rgba(220,50,50,0.25)",
-                  transition: "all 0.2s",
-                  opacity: settingMode ? 0.6 : 1,
-                }}
-              >
-                🇬🇧 VO
-              </button>
-            </div>
-            <button
-              onClick={() => setShowLanguageChoice(false)}
-              style={{
-                marginTop: "4px",
-                padding: "8px 20px",
-                background: "transparent",
-                border: "1px solid rgba(255,255,255,0.2)",
-                borderRadius: "6px",
-                color: "rgba(255,255,255,0.4)",
-                fontFamily: "Orbitron, sans-serif",
-                fontSize: "0.7rem",
-                cursor: "pointer",
-                letterSpacing: "1px",
-              }}
-            >
-              ANNULER
-            </button>
           </div>
         </div>
       )}
@@ -1718,7 +1531,7 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
               top: 0,
               right: 0,
               bottom: 0,
-              width: "340px",
+              width: "442px",
               zIndex: 100,
               pointerEvents: "auto",
               background: "rgba(0,0,0,0.88)",
@@ -1728,12 +1541,38 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
               flexDirection: "column",
             }}
           >
+            {/* Close button — top, above title */}
+            <button
+              onClick={onClose}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "10px",
+                padding: "14px 24px",
+                margin: "16px 20px 0",
+                background: "rgba(180,20,40,0.35)",
+                border: "1px solid #ff2d44",
+                borderRadius: "6px",
+                color: "#ff4444",
+                fontFamily: "Orbitron, sans-serif",
+                fontSize: "0.9rem",
+                cursor: "pointer",
+                letterSpacing: "1.5px",
+                flexShrink: 0,
+                boxShadow: "0 0 14px rgba(255,45,68,0.3)",
+                transition: "all 0.2s",
+              }}
+            >
+              ✕ REPOSER SUR L'ÉTAGÈRE
+            </button>
+
             {/* Section haute — Titre + meta */}
-            <div style={{ padding: "24px 20px 16px", flexShrink: 0 }}>
+            <div style={{ padding: "16px 24px 16px", flexShrink: 0 }}>
               <div
                 style={{
                   fontFamily: "Orbitron, sans-serif",
-                  fontSize: "1rem",
+                  fontSize: "1.5rem",
                   color: "#00fff7",
                   textShadow: "0 0 12px rgba(0,255,247,0.5)",
                   lineHeight: 1.3,
@@ -1743,8 +1582,8 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
               </div>
               <div
                 style={{
-                  fontSize: "0.78rem",
-                  color: "rgba(255,255,255,0.45)",
+                  fontSize: "1.17rem",
+                  color: "rgba(255,255,255,0.65)",
                   marginTop: "6px",
                 }}
               >
@@ -1758,10 +1597,10 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
                     marginLeft: "8px",
                     padding: "2px 6px",
                     background: "rgba(255,255,255,0.08)",
-                    border: "1px solid rgba(255,255,255,0.35)",
+                    border: "1px solid rgba(255,255,255,0.45)",
                     borderRadius: "3px",
-                    fontSize: "0.72rem",
-                    color: "rgba(255,255,255,0.7)",
+                    fontSize: "1.08rem",
+                    color: "rgba(255,255,255,0.85)",
                     fontWeight: 600,
                     verticalAlign: "middle",
                     letterSpacing: "0.5px",
@@ -1772,14 +1611,14 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
               </div>
               <div
                 style={{
-                  fontSize: "0.78rem",
-                  color: "rgba(255,255,255,0.45)",
+                  fontSize: "1.17rem",
+                  color: "rgba(255,255,255,0.65)",
                   marginTop: "3px",
                 }}
               >
                 ★ {film.vote_average.toFixed(1)}
                 <span
-                  style={{ marginLeft: "12px", color: "rgba(255,255,255,0.3)" }}
+                  style={{ marginLeft: "12px", color: "rgba(255,255,255,0.5)" }}
                 >
                   Solde: <span style={{ color: "#ffd700" }}>{credits}</span> cr
 édit{credits > 1 ? "s" : ""}
@@ -1787,14 +1626,14 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
               </div>
             </div>
 
-            <hr style={{ border: "none", borderTop: "1px solid rgba(255,255,255,0.1)", margin: "0 20px" }} />
+            <hr style={{ border: "none", borderTop: "1px solid rgba(255,255,255,0.1)", margin: "0 24px" }} />
 
             {/* Section milieu — Synopsis + Credits (scrollable) */}
             <div
               style={{
                 flex: 1,
                 overflowY: "auto",
-                padding: "16px 20px",
+                padding: "16px 24px",
                 minHeight: 0,
               }}
             >
@@ -1803,8 +1642,8 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
                   <div
                     style={{
                       fontFamily: "Orbitron, sans-serif",
-                      fontSize: "0.68rem",
-                      color: "rgba(255,255,255,0.35)",
+                      fontSize: "1.02rem",
+                      color: "rgba(255,255,255,0.55)",
                       letterSpacing: "1.5px",
                       textTransform: "uppercase",
                       marginBottom: "6px",
@@ -1815,8 +1654,8 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
                   <div
                     style={{
                       fontFamily: "sans-serif",
-                      fontSize: "0.8rem",
-                      color: "rgba(255,255,255,0.7)",
+                      fontSize: "1.2rem",
+                      color: "rgba(255,255,255,0.85)",
                       lineHeight: 1.5,
                     }}
                   >
@@ -1839,16 +1678,16 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
                     }}>
                       <div style={{
                         fontFamily: "sans-serif",
-                        fontSize: "0.76rem",
-                        color: "rgba(255,255,255,0.6)",
+                        fontSize: "1.14rem",
+                        color: "rgba(255,255,255,0.8)",
                         lineHeight: 1.5,
                         fontStyle: "italic",
                       }}>
                         "{r.content}"
                       </div>
                       <div style={{
-                        fontSize: "0.68rem",
-                        color: "rgba(255,215,0,0.5)",
+                        fontSize: "1.02rem",
+                        color: "rgba(255,215,0,0.7)",
                         marginTop: "4px",
                         textAlign: "right",
                       }}>
@@ -1901,12 +1740,12 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
                   <div style={creditLabelStyle}>Budget</div>
                   <div style={{ marginTop: "4px", display: "flex", gap: "16px", flexWrap: "wrap" }}>
                     {budget > 0 && (
-                      <span style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.55)" }}>
+                      <span style={{ fontSize: "1.13rem", color: "rgba(255,255,255,0.7)" }}>
                         Budget : <span style={{ color: "#ffd700" }}>{(budget / 1_000_000).toFixed(0)}M $</span>
                       </span>
                     )}
                     {revenue > 0 && (
-                      <span style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.55)" }}>
+                      <span style={{ fontSize: "1.13rem", color: "rgba(255,255,255,0.7)" }}>
                         Recettes : <span style={{ color: revenue > budget ? "#00ff88" : "#ff6666" }}>{(revenue / 1_000_000).toFixed(0)}M $</span>
                       </span>
                     )}
@@ -1915,15 +1754,15 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
               )}
             </div>
 
-            <hr style={{ border: "none", borderTop: "1px solid rgba(255,255,255,0.1)", margin: "0 20px" }} />
+            <hr style={{ border: "none", borderTop: "1px solid rgba(255,255,255,0.1)", margin: "0 24px" }} />
 
             {/* Section basse — Action buttons */}
             <div
               style={{
-                padding: "16px 20px 20px",
+                padding: "16px 24px 20px",
                 display: "flex",
                 flexDirection: "column",
-                gap: "8px",
+                gap: "10px",
                 flexShrink: 0,
               }}
             >
@@ -1974,17 +1813,6 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
                 </button>
               )}
 
-              <button
-                onClick={onClose}
-                style={sideButtonStyle("#00ff88", "#00ff88", {
-                  width: "100%",
-                  justifyContent: "center",
-                  background: "rgba(0,255,136,0.12)",
-                  boxShadow: "0 0 12px rgba(0,255,136,0.25)",
-                })}
-              >
-                ↩ REPOSER SUR L'ÉTAGÈRE
-              </button>
             </div>
           </div>
 
@@ -1997,8 +1825,8 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
               left: "16px",
               zIndex: 100,
               pointerEvents: "none",
-              color: "rgba(255,255,255,0.3)",
-              fontSize: "0.7rem",
+              color: "rgba(255,255,255,0.45)",
+              fontSize: "1.05rem",
               fontFamily: "sans-serif",
             }}
           >
