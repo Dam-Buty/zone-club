@@ -35,20 +35,22 @@ const PORTRAIT_QUAT = new THREE.Quaternion().setFromAxisAngle(
 const ALBEDO_COLOR = new THREE.Color(0.89, 0.89, 0.89)
 
 // Animation constants
-const DISTANCE_FROM_CAMERA = 0.496  // meters in front of camera (+10%)
+const DISTANCE_FROM_CAMERA = 0.471  // meters in front of camera (+5% zoom)
 const CASE_SCALE = 0.255          // model is ~2m tall → ~51cm
 const TILT_ANGLE = (3 * Math.PI) / 180 // 3° backward tilt — reduced from 10° to minimize ceiling light on top
 const MANUAL_ROTATE_SPEED = 2.5   // rad/s
 const ENTRY_DURATION = 0.3        // seconds
 const FLIP_DURATION = 0.4         // seconds for 180° flip animation
 const TEXTURE_FADE_DURATION = 0.3 // seconds for cover artwork fade-in
+const SLIDE_DURATION = 1.5       // seconds for slide-in navigation animation
+const SLIDE_DISTANCE = 0.85      // world units — enough to start off-screen
 
 interface VHSCaseViewerProps {
   film: Film
 }
 
 export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
-  const { camera, scene } = useThree()
+  const { camera, scene, size } = useThree()
   const isMobile = useIsMobile()
   const groupRef = useRef<THREE.Group>(null)
   const coverTextureRef = useRef<THREE.CanvasTexture | null>(null)
@@ -66,6 +68,16 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
   const pitchCorrectedRef = useRef(false)
   const prevAnimatingRef = useRef(true) // track animation state changes for store
   const prevManualRotRef = useRef(0) // track Q/E rotation changes for idle detection
+  const swipeDisplayRef = useRef(0)     // smoothed horizontal offset in pixels
+  const swipeFlipRef = useRef(0)        // smoothed flip angle (0 → PI during swipe)
+  const lastFlipCountRef = useRef(useStore.getState().vhsFlipCount) // sync with current store value at mount
+
+  // Read navigation direction at render time (immune to Strict Mode double-invocation)
+  const navDirAtMount = useStore.getState().vhsNavDirection
+  const slideProgressRef = useRef(navDirAtMount ? 0 : 1)
+  const slideDirectionRef = useRef(
+    navDirAtMount === 'right' ? 1 : navDirAtMount === 'left' ? -1 : 0
+  )
 
   // Store actions (stable refs)
   const setVHSCaseOpen = useStore(state => state.setVHSCaseOpen)
@@ -159,6 +171,13 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
       scene.environmentIntensity = savedEnvIntensity
     }
   }, [setVHSCaseOpen, camera, scene])
+
+  // Clear consumed navigation direction from store (read at render time above)
+  useEffect(() => {
+    if (navDirAtMount) {
+      useStore.getState().setVHSNavDirection(null)
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // 2-pass texture loading:
   // Pass 1 (~100-200ms): poster + Film metadata already in memory → visible immediately
@@ -304,6 +323,7 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
 
     // --- Touch handlers (mobile) ---
     const handleTouchStart = (e: TouchEvent) => {
+      if (useStore.getState().vhsSwiping) return
       const target = e.target as HTMLElement
       if (target.closest('button') || target.closest('[data-vhs-overlay]')) return
       if (activeTouchIdRef.current !== null) return
@@ -318,6 +338,11 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
     }
 
     const handleTouchMove = (e: TouchEvent) => {
+      if (useStore.getState().vhsSwiping) {
+        isDraggingRef.current = false
+        activeTouchIdRef.current = null
+        return
+      }
       for (let i = 0; i < e.changedTouches.length; i++) {
         const touch = e.changedTouches[i]
         if (touch.identifier !== activeTouchIdRef.current) continue
@@ -336,6 +361,11 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
     }
 
     const handleTouchEnd = (e: TouchEvent) => {
+      if (useStore.getState().vhsSwiping) {
+        isDraggingRef.current = false
+        activeTouchIdRef.current = null
+        return
+      }
       for (let i = 0; i < e.changedTouches.length; i++) {
         const touch = e.changedTouches[i]
         if (touch.identifier !== activeTouchIdRef.current) continue
@@ -386,6 +416,14 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
     if (!groupRef.current) return
     timeRef.current += delta
 
+    // Consume flip requests from store (mobile tap via useDrag)
+    const flipCount = useStore.getState().vhsFlipCount
+    if (flipCount !== lastFlipCountRef.current) {
+      lastFlipCountRef.current = flipCount
+      isFlippedRef.current = !isFlippedRef.current
+      manualRotationRef.current = 0
+    }
+
     // Show case immediately (blank VHS visible during texture load)
     if (!groupRef.current.visible) {
       groupRef.current.visible = true
@@ -430,6 +468,11 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
     // Right axis from flat direction
     _right.crossVectors(_cameraDir, _worldUp).normalize()
 
+    // Advance slide-in animation
+    if (slideProgressRef.current < 1) {
+      slideProgressRef.current = Math.min(1, slideProgressRef.current + delta / SLIDE_DURATION)
+    }
+
     // Animate flip progress (0→1 or 1→0)
     const flipTarget = isFlippedRef.current ? 1 : 0
     const flipSpeed = 1 / FLIP_DURATION
@@ -440,11 +483,16 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
     }
     const flipAngle = easeInOutCubic(flipProgressRef.current) * Math.PI
 
+    // Slide-in 360° spin (full rotation during slide, ends at 0)
+    const slideSpinAngle = slideDirectionRef.current !== 0 && slideProgressRef.current < 1
+      ? slideDirectionRef.current * (1 - easeOutCubic(slideProgressRef.current)) * Math.PI * 2
+      : 0
+
     // --- Quaternion rotation composition ---
     // 1. Portrait: model X (height) → world Y (up) via 90° around Z
-    // 2. Face camera + flip + manual: rotate around Y axis
+    // 2. Face camera + flip + manual + slide spin: rotate around Y axis
     // 3. Tilt: slight backward tilt for comfortable reading angle
-    const faceAngle = cameraYaw - Math.PI / 2 + flipAngle + manualRotationRef.current
+    const faceAngle = cameraYaw - Math.PI / 2 + flipAngle + manualRotationRef.current + slideSpinAngle + swipeFlipRef.current
 
     _qPortrait.copy(PORTRAIT_QUAT)
     _qFace.setFromAxisAngle(_yAxis, faceAngle)
@@ -457,7 +505,47 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
     // Position in front of camera at eye level (flat direction, fixed height)
     // On mobile, raise the case slightly so it's above the retractable bottom sheet
     _targetPos.copy(_cameraWorldPos).addScaledVector(_cameraDir, DISTANCE_FROM_CAMERA)
-    _targetPos.y = _cameraWorldPos.y + (isMobile ? 0.07 : 0)
+    _targetPos.y = _cameraWorldPos.y + (isMobile ? 0.12 : 0)
+
+    // Center the case in the available viewport space (excluding right panel on desktop)
+    if (!isMobile && size.width > 0) {
+      const panelFraction = 464 / size.width
+      const vFov = ((camera as THREE.PerspectiveCamera).fov * Math.PI) / 180
+      const aspect = size.width / size.height
+      const halfWidth = DISTANCE_FROM_CAMERA * Math.tan(vFov / 2) * aspect
+      const worldOffset = panelFraction * halfWidth
+      _targetPos.addScaledVector(_right, -worldOffset)
+    }
+
+    // Slide-in horizontal offset (case arrives from left or right)
+    if (slideDirectionRef.current !== 0 && slideProgressRef.current < 1) {
+      const slideOffset = slideDirectionRef.current * (1 - easeOutCubic(slideProgressRef.current)) * SLIDE_DISTANCE
+      _targetPos.addScaledVector(_right, slideOffset)
+    }
+
+    // Swipe drag feedback — case follows finger + controlled flip
+    const isSwiping = useStore.getState().vhsSwiping
+    const swipeTarget = useStore.getState().vhsSwipeOffset
+
+    if (isSwiping) {
+      swipeDisplayRef.current = swipeTarget * 0.6
+      const flipMagnitude = Math.min(1, Math.abs(swipeTarget) / 230) * (260 * Math.PI / 180)
+      swipeFlipRef.current = swipeTarget > 0 ? flipMagnitude : -flipMagnitude
+    } else {
+      swipeDisplayRef.current *= 0.85
+      if (Math.abs(swipeDisplayRef.current) < 0.5) swipeDisplayRef.current = 0
+      swipeFlipRef.current *= 0.85
+      if (Math.abs(swipeFlipRef.current) < 0.01) swipeFlipRef.current = 0
+    }
+
+    if (swipeDisplayRef.current !== 0 && size.width > 0) {
+      const vFov = ((camera as THREE.PerspectiveCamera).fov * Math.PI) / 180
+      const aspect = size.width / size.height
+      const visibleWidth = 2 * DISTANCE_FROM_CAMERA * Math.tan(vFov / 2) * aspect
+      const worldSwipe = (swipeDisplayRef.current / size.width) * visibleWidth
+      _targetPos.addScaledVector(_right, worldSwipe)
+    }
+
     groupRef.current.position.copy(_targetPos)
 
     // Loading pulse effect (before texture is ready) — fades out during texture fade-in
@@ -490,6 +578,9 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
     prevManualRotRef.current = manualRotationRef.current
     const isAnimating = entryProgressRef.current < 1 ||
       fadeProgressRef.current < 1 ||
+      slideProgressRef.current < 1 ||
+      Math.abs(swipeDisplayRef.current) > 0.5 ||
+      Math.abs(swipeFlipRef.current) > 0.01 ||
       Math.abs(flipProgressRef.current - flipTarget2) > 0.001 ||
       isDraggingRef.current ||
       !pitchCorrectedRef.current ||

@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useDrag } from "@use-gesture/react";
 import { useStore } from "../../store";
 import { tmdb, type TMDBVideo } from "../../services/tmdb";
 import api, { type FilmWithRentalStatus } from "../../api";
@@ -55,14 +56,14 @@ function sideButtonStyle(
     display: "flex",
     alignItems: "center",
     gap: "8px",
-    padding: "12px 20px",
+    padding: "14px 24px",
     background: "rgba(0,0,0,0.65)",
     backdropFilter: "blur(8px)",
     border: `1px solid ${borderColor}`,
     borderRadius: "6px",
     color: textColor,
     fontFamily: "Orbitron, sans-serif",
-    fontSize: "0.79rem",
+    fontSize: "1.05rem",
     cursor: "pointer",
     transition: "all 0.2s",
     letterSpacing: "1px",
@@ -103,15 +104,15 @@ function mobilePillStyle(
 // Shared styles for credit labels/values (used as fallback when detailed credits not loaded)
 const creditLabelStyle: React.CSSProperties = {
   fontFamily: "Orbitron, sans-serif",
-  fontSize: "0.68rem",
-  color: "rgba(255,255,255,0.35)",
+  fontSize: "1.02rem",
+  color: "rgba(255,255,255,0.55)",
   letterSpacing: "1.5px",
   textTransform: "uppercase",
 };
 
 const creditValueStyle: React.CSSProperties = {
-  fontSize: "0.75rem",
-  color: "rgba(255,255,255,0.5)",
+  fontSize: "1.13rem",
+  color: "rgba(255,255,255,0.7)",
   marginTop: "4px",
   lineHeight: 1.4,
 };
@@ -133,7 +134,7 @@ function CreditSection({ label, persons, showCharacter, onSelect }: {
             <span
               onClick={() => onSelect(p)}
               style={{
-                fontSize: "0.75rem",
+                fontSize: "1.13rem",
                 color: "#00d4cc",
                 cursor: "pointer",
                 transition: "color 0.15s",
@@ -144,7 +145,7 @@ function CreditSection({ label, persons, showCharacter, onSelect }: {
               {p.name}
             </span>
             {showCharacter && p.character && (
-              <span style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.3)", marginLeft: "4px" }}>
+              <span style={{ fontSize: "1.05rem", color: "rgba(255,255,255,0.5)", marginLeft: "4px" }}>
                 ({p.character})
               </span>
             )}
@@ -324,6 +325,9 @@ function PersonModal({ person, detail, loading, onClose }: {
 export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
   const isMobile = useIsMobile();
   const isAuthenticated = useStore((state) => state.isAuthenticated);
+  const films = useStore((state) => state.films);
+  const selectFilm = useStore((state) => state.selectFilm);
+  const setVHSNavDirection = useStore((state) => state.setVHSNavDirection);
   const getCredits = useStore((state) => state.getCredits);
   const getRental = useStore((state) => state.getRental);
   const storeRentFilm = useStore((state) => state.rentFilm);
@@ -333,6 +337,8 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
   const openPlayer = useStore((state) => state.openPlayer);
   const showManager = useStore((state) => state.showManager);
   const pushEvent = useStore((state) => state.pushEvent);
+  const hasSeenSwipeHint = useStore((state) => state.hasSeenVHSSwipeHint);
+  const setHasSeenSwipeHint = useStore((state) => state.setHasSeenVHSSwipeHint);
 
   const [isRenting, setIsRenting] = useState(false);
   const [rentSuccess, setRentSuccess] = useState(false);
@@ -347,10 +353,103 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
   const [requestingReturn, setRequestingReturn] = useState(false);
   const [returnRequested, setReturnRequested] = useState(false);
   const [filmRentalStatus, setFilmRentalStatus] = useState<FilmWithRentalStatus['rental_status'] | null>(null);
-  const [showLanguageChoice, setShowLanguageChoice] = useState(false);
   const [showReturnConfirm, setShowReturnConfirm] = useState(false);
   const [earlyReturnBonus, setEarlyReturnBonus] = useState(false);
   const [mobileExpanded, setMobileExpanded] = useState(false);
+  const [showSwipeHint, setShowSwipeHint] = useState(false);
+
+  // Navigation bounce state (desktop)
+  const [bounceLeft, setBounceLeft] = useState(false);
+  const [bounceRight, setBounceRight] = useState(false);
+
+  // Prev/next film navigation (circular within same aisle)
+  const { prevFilm, nextFilm } = useMemo(() => {
+    if (!film) return { prevFilm: null, nextFilm: null };
+    for (const aisleFilms of Object.values(films)) {
+      const idx = aisleFilms.findIndex(f => f.id === film.id);
+      if (idx !== -1) {
+        return {
+          prevFilm: aisleFilms[(idx - 1 + aisleFilms.length) % aisleFilms.length],
+          nextFilm: aisleFilms[(idx + 1) % aisleFilms.length],
+        };
+      }
+    }
+    return { prevFilm: null, nextFilm: null };
+  }, [film, films]);
+
+  // Mobile swipe navigation via @use-gesture/react
+  const bind = useDrag(
+    ({ active, movement: [mx], velocity: [vx], axis, tap }) => {
+      if (tap) {
+        useStore.getState().requestVHSFlip();
+        return;
+      }
+      if (axis !== 'x') return;
+
+      const store = useStore.getState();
+      if (active) {
+        store.setVhsSwipeState(true, mx);
+      } else {
+        const shouldNavigate = Math.abs(mx) > 80 || Math.abs(vx) > 0.5;
+        if (shouldNavigate) {
+          // Inverted: swipe right (mx > 0) = next film, swipe left (mx < 0) = prev film
+          if (mx > 0 && nextFilm) {
+            store.setVHSNavDirection('left');
+            selectFilm(nextFilm.id);
+          } else if (mx < 0 && prevFilm) {
+            store.setVHSNavDirection('right');
+            selectFilm(prevFilm.id);
+          }
+        }
+        store.setVhsSwipeState(false, 0);
+      }
+    },
+    {
+      axis: 'lock',
+      threshold: 10,
+      filterTaps: true,
+      pointer: { touch: true },
+    }
+  );
+
+  // Bottom sheet vertical drag to expand/collapse (tracked)
+  // dragExtra = extra px of height added during drag (positive = taller sheet)
+  const [dragExtra, setDragExtra] = useState(0);
+  const bindSheet = useDrag(
+    ({ active, movement: [, my], velocity: [, vy], tap }) => {
+      if (tap) return;
+      if (active) {
+        // -my: dragging up → positive (add height), dragging down → negative (reduce height)
+        const extra = -my;
+        const maxExtra = window.innerHeight * 0.41;
+        const clamped = Math.max(mobileExpanded ? -maxExtra : 0, Math.min(extra, mobileExpanded ? 0 : maxExtra));
+        setDragExtra(clamped);
+      } else {
+        const shouldToggle = Math.abs(my) > 60 || Math.abs(vy) > 0.3;
+        if (shouldToggle) {
+          if (my < 0 && !mobileExpanded) setMobileExpanded(true);
+          else if (my > 0 && mobileExpanded) setMobileExpanded(false);
+        }
+        setDragExtra(0);
+      }
+    },
+    {
+      axis: 'y',
+      threshold: 10,
+      filterTaps: true,
+      pointer: { touch: true },
+    }
+  );
+
+  // Drag progress ratio (0 = collapsed, 1 = expanded)
+  // When collapsed and dragging up: dragExtra goes 0 → maxExtra → progress 0→1
+  // When expanded and dragging down: dragExtra goes 0 → -maxExtra → progress 1→0
+  const maxDragPx = typeof window !== 'undefined' ? window.innerHeight * 0.41 : 300;
+  const dragProgress = mobileExpanded
+    ? Math.max(0, Math.min(1, 1 + dragExtra / maxDragPx))
+    : Math.max(0, Math.min(1, dragExtra / maxDragPx));
+  // Effective expanded state: fully expanded OR dragging past threshold
+  const showEnrichedContent = mobileExpanded || dragExtra > 0;
 
   // Certification + TMDB reviews + budget
   const [certification, setCertification] = useState("");
@@ -446,7 +545,6 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
       setReturning(false);
       setRequestingReturn(false);
       setReturnRequested(false);
-      setShowLanguageChoice(false);
       setShowReturnConfirm(false);
       setEarlyReturnBonus(false);
       setMobileExpanded(false);
@@ -481,6 +579,20 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
     }, 2600);
   }, []);
 
+  // Swipe hint — show once on first mobile VHS open
+  useEffect(() => {
+    if (!isOpen || !isMobile || hasSeenSwipeHint) {
+      setShowSwipeHint(false);
+      return;
+    }
+    const showTimer = setTimeout(() => setShowSwipeHint(true), 800);
+    const hideTimer = setTimeout(() => {
+      setShowSwipeHint(false);
+      setHasSeenSwipeHint(true);
+    }, 4800);
+    return () => { clearTimeout(showTimer); clearTimeout(hideTimer); };
+  }, [isOpen, isMobile, hasSeenSwipeHint, setHasSeenSwipeHint]);
+
   // ESC key to close overlay
   useEffect(() => {
     if (!isOpen) return;
@@ -490,8 +602,6 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
           setSelectedPerson(null);
         } else if (showReturnConfirm) {
           setShowReturnConfirm(false);
-        } else if (showLanguageChoice) {
-          setShowLanguageChoice(false);
         } else if (showTrailer) {
           setShowTrailer(false);
         } else if (showAuthModal) {
@@ -505,7 +615,7 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, onClose, showTrailer, showAuthModal, showReviewModal, showLanguageChoice, selectedPerson, showReturnConfirm]);
+  }, [isOpen, onClose, showTrailer, showAuthModal, showReviewModal, selectedPerson, showReturnConfirm]);
 
   const handleWatchTrailer = useCallback(async () => {
     if (!film || loadingTrailer) return;
@@ -563,53 +673,34 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
     const result = await storeRentFilm(film.id);
     if (result) {
       setRentSuccess(true);
-      // Show success briefly, then transition to viewing mode choice
-      setTimeout(() => {
+      // Show success briefly, then auto-set viewing mode to sur_place
+      setTimeout(async () => {
         setRentSuccess(false);
         setIsRenting(false);
+        // Auto-set viewing mode without user choice
+        setSettingMode(true);
+        const updatedRental = await storeSetViewingMode(film.id, 'sur_place');
+        setSettingMode(false);
+        if (updatedRental) {
+          showCouchMeetingPopup();
+        }
       }, 1500);
     } else {
       setIsRenting(false);
     }
-  }, [film, isAuthenticated, credits, isRenting, getRental, storeRentFilm]);
+  }, [film, isAuthenticated, credits, isRenting, getRental, storeRentFilm, storeSetViewingMode, showCouchMeetingPopup]);
 
-  const handleSetViewingMode = useCallback(async (mode: 'sur_place' | 'emporter') => {
+  const handleSetViewingMode = useCallback(async () => {
     if (!film || settingMode) return;
 
-    if (mode === 'emporter') {
-      // Show VF/VO language choice popup before setting mode
-      setShowLanguageChoice(true);
-      return;
-    }
-
     setSettingMode(true);
-    const updatedRental = await storeSetViewingMode(film.id, mode);
+    const updatedRental = await storeSetViewingMode(film.id, 'sur_place');
     setSettingMode(false);
     if (!updatedRental) return;
 
     // Don't open player directly; invite user to sit on the couch first.
     showCouchMeetingPopup();
   }, [film, settingMode, storeSetViewingMode, showCouchMeetingPopup]);
-
-  const handleEmporterLanguage = useCallback(async (lang: 'vf' | 'vo') => {
-    if (!film || settingMode) return;
-    setShowLanguageChoice(false);
-    setSettingMode(true);
-    const updatedRental = await storeSetViewingMode(film.id, 'emporter');
-    setSettingMode(false);
-    if (!updatedRental) return;
-
-    // Use the streaming URL for the chosen language
-    const url = updatedRental.streamingUrls?.[lang] || updatedRental.streamingUrls?.vf || updatedRental.streamingUrls?.vo;
-    if (url) {
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${film.title} (${lang.toUpperCase()}).mp4`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-    }
-  }, [film, settingMode, storeSetViewingMode]);
 
   const handleSitDown = useCallback(() => {
     if (!film) return;
@@ -731,26 +822,26 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
             gap: "2px",
           })}
         >
-          <span style={{ fontSize: "0.65rem", opacity: 0.7 }}>Déjà loué — expire dans</span>
+          <span style={{ fontSize: "0.98rem", opacity: 0.7 }}>Déjà loué — expire dans</span>
           <span style={{ fontVariantNumeric: "tabular-nums" }}>{countdown}</span>
         </div>
       );
 
       // Early return hint
       const earlyHint = isWithinEarlyReturn ? (
-        <div style={{ fontSize: "0.68rem", color: "#00ff88", fontFamily: "Orbitron, sans-serif", textAlign: "center", letterSpacing: "0.5px" }}>
+        <div style={{ fontSize: "1.02rem", color: "#00ff88", fontFamily: "Orbitron, sans-serif", textAlign: "center", letterSpacing: "0.5px" }}>
           Retour sous 24h = +1 crédit bonus
         </div>
       ) : null;
 
-      // No viewing mode chosen yet
+      // No viewing mode yet — auto-setting in progress
       if (!rental.viewingMode) {
         return (
           <>
             {statusEl}
             {earlyHint}
             <button
-              onClick={() => handleSetViewingMode('sur_place')}
+              onClick={handleSetViewingMode}
               disabled={settingMode}
               style={sideButtonStyle("#00fff7", "#00fff7", {
                 width: "100%",
@@ -759,63 +850,30 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
                 boxShadow: "0 0 12px rgba(0,255,247,0.25)",
               })}
             >
-              📺 REGARDER SUR PLACE
-            </button>
-            <button
-              onClick={() => handleSetViewingMode('emporter')}
-              disabled={settingMode}
-              style={sideButtonStyle("#ff9900", "#ff9900", {
-                width: "100%",
-                justifyContent: "center",
-                background: "linear-gradient(135deg, rgba(255,153,0,0.2), rgba(255,100,0,0.2))",
-                boxShadow: "0 0 12px rgba(255,153,0,0.2)",
-              })}
-            >
-              📼 À EMPORTER
+              {settingMode ? "PRÉPARATION..." : "▶ REGARDER"}
             </button>
             {renderDesktopReturnButton()}
           </>
         );
       }
 
-      // Mode = sur_place
-      if (rental.viewingMode === 'sur_place') {
-        return (
-          <>
-            {statusEl}
-            {earlyHint}
-            <button
-              onClick={handleSitDown}
-              style={sideButtonStyle("#00fff7", "#ffffff", {
-                width: "100%",
-                justifyContent: "center",
-                background: "linear-gradient(135deg, rgba(0,255,247,0.3), rgba(0,200,255,0.3))",
-                boxShadow: "0 0 16px rgba(0,255,247,0.35)",
-                fontSize: "0.85rem",
-              })}
-            >
-              🛋️ S'INSTALLER ET REGARDER
-            </button>
-            {renderDesktopReturnButton()}
-          </>
-        );
-      }
-
-      // Mode = emporter
+      // Viewing mode set (sur_place) — show watch button
       return (
         <>
           {statusEl}
           {earlyHint}
-          <div
-            style={sideButtonStyle("#ff9900", "#ff9900", {
+          <button
+            onClick={handleSitDown}
+            style={sideButtonStyle("#00fff7", "#ffffff", {
               width: "100%",
               justifyContent: "center",
-              background: "rgba(255,153,0,0.08)",
-              cursor: "default",
+              background: "linear-gradient(135deg, rgba(0,255,247,0.3), rgba(0,200,255,0.3))",
+              boxShadow: "0 0 16px rgba(0,255,247,0.35)",
+              fontSize: "1.28rem",
             })}
           >
-            📼 À EMPORTER ✓
-          </div>
+            🛋️ S'INSTALLER ET REGARDER
+          </button>
           {renderDesktopReturnButton()}
         </>
       );
@@ -838,7 +896,7 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
           >
             <span>AUCUNE K7 DISPONIBLE</span>
             {filmRentalStatus.earliest_return && (
-              <span style={{ fontSize: "0.68rem", color: "#ffaa00", fontVariantNumeric: "tabular-nums" }}>
+              <span style={{ fontSize: "1.02rem", color: "#ffaa00", fontVariantNumeric: "tabular-nums" }}>
                 Retour dans {formatCountdown(new Date(filmRentalStatus.earliest_return + 'Z').getTime())}
               </span>
             )}
@@ -864,7 +922,7 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
     // ---- STATE 1: Copies available ----
     return (
       <>
-        <div style={{ fontSize: "0.72rem", color: "#00ff88", fontFamily: "Orbitron, sans-serif", textAlign: "center", letterSpacing: "0.5px" }}>
+        <div style={{ fontSize: "1.08rem", color: "#00ff88", fontFamily: "Orbitron, sans-serif", textAlign: "center", letterSpacing: "0.5px" }}>
           K7 DISPONIBLE
         </div>
         <button
@@ -918,42 +976,14 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
           <>
             {timerEl}
             <button
-              onClick={() => handleSetViewingMode('sur_place')}
+              onClick={handleSetViewingMode}
               disabled={settingMode}
               style={mobilePillStyle("#00fff7", "#00fff7", {
                 background: "rgba(0,255,247,0.12)",
                 boxShadow: "0 0 8px rgba(0,255,247,0.2)",
               })}
             >
-              📺 SUR PLACE
-            </button>
-            <button
-              onClick={() => handleSetViewingMode('emporter')}
-              disabled={settingMode}
-              style={mobilePillStyle("#ff9900", "#ff9900", {
-                background: "rgba(255,153,0,0.12)",
-                boxShadow: "0 0 8px rgba(255,153,0,0.15)",
-              })}
-            >
-              📼 EMPORTER
-            </button>
-            {returnBtn}
-          </>
-        );
-      }
-
-      if (rental.viewingMode === 'sur_place') {
-        return (
-          <>
-            {timerEl}
-            <button
-              onClick={handleSitDown}
-              style={mobilePillStyle("#00fff7", "#ffffff", {
-                background: "rgba(0,255,247,0.2)",
-                boxShadow: "0 0 10px rgba(0,255,247,0.3)",
-              })}
-            >
-              🛋️ S'INSTALLER
+              {settingMode ? "PRÉPARATION..." : "▶ REGARDER"}
             </button>
             {returnBtn}
           </>
@@ -963,14 +993,15 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
       return (
         <>
           {timerEl}
-          <div
-            style={mobilePillStyle("#ff9900", "#ff9900", {
-              background: "rgba(255,153,0,0.08)",
-              cursor: "default",
+          <button
+            onClick={handleSitDown}
+            style={mobilePillStyle("#00fff7", "#ffffff", {
+              background: "rgba(0,255,247,0.2)",
+              boxShadow: "0 0 10px rgba(0,255,247,0.3)",
             })}
           >
-            📼 EMPORTER ✓
-          </div>
+            🛋️ S'INSTALLER
+          </button>
           {returnBtn}
         </>
       );
@@ -1273,110 +1304,6 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
         </div>
       )}
 
-      {/* VF/VO language choice popup */}
-      {showLanguageChoice && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.88)",
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 210,
-          }}
-          onClick={() => setShowLanguageChoice(false)}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              gap: isMobile ? "16px" : "20px",
-              padding: isMobile ? "24px 20px" : "32px 40px",
-              background: "rgba(10,10,20,0.95)",
-              border: "1px solid rgba(255,153,0,0.4)",
-              borderRadius: "12px",
-              boxShadow: "0 0 30px rgba(255,153,0,0.15)",
-            }}
-          >
-            <div
-              style={{
-                fontFamily: "Orbitron, sans-serif",
-                fontSize: isMobile ? "0.85rem" : "1rem",
-                color: "#ff9900",
-                letterSpacing: "2px",
-                textTransform: "uppercase",
-                textShadow: "0 0 12px rgba(255,153,0,0.4)",
-              }}
-            >
-              CHOISIR LA LANGUE
-            </div>
-            <div style={{ display: "flex", gap: isMobile ? "12px" : "16px" }}>
-              <button
-                onClick={() => handleEmporterLanguage('vf')}
-                disabled={settingMode}
-                style={{
-                  padding: isMobile ? "14px 28px" : "16px 36px",
-                  background: "linear-gradient(135deg, rgba(0,120,255,0.25), rgba(0,80,200,0.25))",
-                  border: "1px solid #0088ff",
-                  borderRadius: "8px",
-                  color: "#ffffff",
-                  fontFamily: "Orbitron, sans-serif",
-                  fontSize: isMobile ? "0.9rem" : "1.05rem",
-                  cursor: settingMode ? "wait" : "pointer",
-                  letterSpacing: "2px",
-                  boxShadow: "0 0 14px rgba(0,136,255,0.25)",
-                  transition: "all 0.2s",
-                  opacity: settingMode ? 0.6 : 1,
-                }}
-              >
-                🇫🇷 VF
-              </button>
-              <button
-                onClick={() => handleEmporterLanguage('vo')}
-                disabled={settingMode}
-                style={{
-                  padding: isMobile ? "14px 28px" : "16px 36px",
-                  background: "linear-gradient(135deg, rgba(220,50,50,0.25), rgba(180,30,30,0.25))",
-                  border: "1px solid #dd3333",
-                  borderRadius: "8px",
-                  color: "#ffffff",
-                  fontFamily: "Orbitron, sans-serif",
-                  fontSize: isMobile ? "0.9rem" : "1.05rem",
-                  cursor: settingMode ? "wait" : "pointer",
-                  letterSpacing: "2px",
-                  boxShadow: "0 0 14px rgba(220,50,50,0.25)",
-                  transition: "all 0.2s",
-                  opacity: settingMode ? 0.6 : 1,
-                }}
-              >
-                🇬🇧 VO
-              </button>
-            </div>
-            <button
-              onClick={() => setShowLanguageChoice(false)}
-              style={{
-                marginTop: "4px",
-                padding: "8px 20px",
-                background: "transparent",
-                border: "1px solid rgba(255,255,255,0.2)",
-                borderRadius: "6px",
-                color: "rgba(255,255,255,0.4)",
-                fontFamily: "Orbitron, sans-serif",
-                fontSize: "0.7rem",
-                cursor: "pointer",
-                letterSpacing: "1px",
-              }}
-            >
-              ANNULER
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* Sur-place guidance popup */}
       {showCouchPopup && (
         <div
@@ -1435,6 +1362,76 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
             ↩ REPOSER
           </button>
 
+          {/* Swipe navigation zone — @use-gesture drag detection */}
+          <div
+            {...bind()}
+            style={{
+              position: "fixed",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: dragExtra !== 0
+                ? `calc(${mobileExpanded ? 85 : 40}vh + ${dragExtra}px)`
+                : mobileExpanded ? "85vh" : "40vh",
+              zIndex: 99,
+              touchAction: "pan-y",
+            }}
+          />
+
+          {/* Swipe hint — chevrons on each side of the VHS case, first time only */}
+          {showSwipeHint && (
+            <>
+              <style>{`
+                @keyframes swipeHintFadeIn {
+                  from { opacity: 0; }
+                  to { opacity: 1; }
+                }
+                @keyframes swipeChevronLeft {
+                  0%, 100% { transform: translateX(0) translateY(-50%); opacity: 0.4; }
+                  50% { transform: translateX(-10px) translateY(-50%); opacity: 1; }
+                }
+                @keyframes swipeChevronRight {
+                  0%, 100% { transform: translateX(0) translateY(-50%); opacity: 0.4; }
+                  50% { transform: translateX(10px) translateY(-50%); opacity: 1; }
+                }
+              `}</style>
+              {/* Left chevron */}
+              <div
+                style={{
+                  position: "fixed",
+                  top: "28%",
+                  left: "6%",
+                  zIndex: 100,
+                  pointerEvents: "none",
+                  fontFamily: "Orbitron, sans-serif",
+                  fontSize: "2.2rem",
+                  color: "rgba(255,215,0,0.85)",
+                  textShadow: "0 0 14px rgba(255,215,0,0.5), 0 0 28px rgba(255,215,0,0.2)",
+                  animation: "swipeHintFadeIn 0.5s ease-out, swipeChevronLeft 1.2s ease-in-out infinite",
+                }}
+              >
+                ‹
+              </div>
+              {/* Right chevron */}
+              <div
+                style={{
+                  position: "fixed",
+                  top: "28%",
+                  right: "6%",
+                  zIndex: 100,
+                  pointerEvents: "none",
+                  fontFamily: "Orbitron, sans-serif",
+                  fontSize: "2.2rem",
+                  color: "rgba(255,215,0,0.85)",
+                  textShadow: "0 0 14px rgba(255,215,0,0.5), 0 0 28px rgba(255,215,0,0.2)",
+                  animation: "swipeHintFadeIn 0.5s ease-out, swipeChevronRight 1.2s ease-in-out infinite",
+                }}
+              >
+                ›
+              </div>
+            </>
+          )}
+
           {/* Dimming overlay — only when expanded */}
           {mobileExpanded && (
             <div style={{
@@ -1458,24 +1455,46 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
               bottom: 0,
               left: 0,
               right: 0,
-              maxHeight: mobileExpanded ? "85vh" : "40vh",
+              maxHeight: dragExtra !== 0
+                ? `calc(${mobileExpanded ? 85 : 40}vh + ${dragExtra}px)`
+                : mobileExpanded ? "85vh" : "40vh",
               zIndex: 100,
               background: "rgba(8,8,18,0.96)",
               borderTop: "1px solid rgba(0,255,247,0.2)",
               borderRadius: "16px 16px 0 0",
               display: "flex",
               flexDirection: "column",
-              transition: "max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1)",
+              transition: dragExtra !== 0 ? "none" : "max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1)",
               overflow: "hidden",
               paddingBottom: "calc(8px + env(safe-area-inset-bottom, 0px))",
               textShadow: "0 1px 3px rgba(0,0,0,0.6)",
             }}
           >
+            {/* Drag handle */}
+            <div
+              {...bindSheet()}
+              style={{
+                flexShrink: 0,
+                display: "flex",
+                justifyContent: "center",
+                padding: "8px 0 4px",
+                cursor: "grab",
+                touchAction: "none",
+              }}
+            >
+              <div style={{
+                width: "36px",
+                height: "4px",
+                borderRadius: "2px",
+                background: "rgba(255,255,255,0.25)",
+              }} />
+            </div>
+
             {/* Header — title + meta (always visible) */}
-            <div style={{ padding: "12px 16px 8px", flexShrink: 0 }}>
+            <div style={{ padding: "4px 16px 8px", flexShrink: 0 }}>
               <div style={{
                 fontFamily: "Orbitron, sans-serif",
-                fontSize: "0.92rem",
+                fontSize: "1.18rem",
                 color: "#00fff7",
                 textShadow: "0 0 12px rgba(0,255,247,0.5)",
                 overflow: "hidden",
@@ -1483,6 +1502,15 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
                 whiteSpace: "nowrap",
               }}>
                 {film.title}
+              </div>
+              <div style={{
+                fontSize: "1.01rem",
+                color: "rgba(255,255,255,0.45)",
+                marginTop: "3px",
+              }}>
+                {film.release_date ? new Date(film.release_date).getFullYear() : ""}
+                {film.runtime ? ` • ${film.runtime} min` : ""}
+                {film.genres?.length ? ` • ${film.genres[0].name}` : ""}
                 {certification && (
                   <span style={{
                     marginLeft: "8px",
@@ -1490,7 +1518,7 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
                     background: "rgba(255,255,255,0.08)",
                     border: "1px solid rgba(255,255,255,0.35)",
                     borderRadius: "3px",
-                    fontSize: "0.68rem",
+                    fontSize: "0.79rem",
                     color: "rgba(255,255,255,0.7)",
                     fontWeight: 600,
                     verticalAlign: "middle",
@@ -1501,20 +1529,11 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
                 )}
                 <span style={{
                   marginLeft: "8px",
-                  fontSize: "0.72rem",
+                  fontSize: "0.84rem",
                   color: "#ffd700",
                 }}>
                   ★ {film.vote_average.toFixed(1)}
                 </span>
-              </div>
-              <div style={{
-                fontSize: "0.7rem",
-                color: "rgba(255,255,255,0.45)",
-                marginTop: "3px",
-              }}>
-                {film.release_date ? new Date(film.release_date).getFullYear() : ""}
-                {film.runtime ? ` • ${film.runtime} min` : ""}
-                {film.genres?.length ? ` • ${film.genres[0].name}` : ""}
               </div>
             </div>
 
@@ -1561,6 +1580,29 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
               )}
             </div>
 
+            {/* Synopsis preview — progressively unclamped during drag */}
+            {film.overview && (
+              <div style={{
+                padding: "6px 16px 4px",
+                flexShrink: 0,
+              }}>
+                <div style={{
+                  fontFamily: "sans-serif",
+                  fontSize: "0.86rem",
+                  color: `rgba(255,255,255,${0.55 + dragProgress * 0.15})`,
+                  lineHeight: 1.4,
+                  overflow: "hidden",
+                  ...(!mobileExpanded && dragProgress < 1 ? {
+                    display: "-webkit-box" as const,
+                    WebkitLineClamp: Math.max(2, Math.round(2 + dragProgress * 13)),
+                    WebkitBoxOrient: "vertical" as const,
+                  } : {}),
+                }}>
+                  {film.overview}
+                </div>
+              </div>
+            )}
+
             {/* Toggle expand/collapse button */}
             <button
               onClick={() => setMobileExpanded(!mobileExpanded)}
@@ -1580,40 +1622,19 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
                 transition: "background 0.2s",
               }}
             >
-              {mobileExpanded ? "▲ MOINS" : "▼ PLUS D'INFOS"}
+              {mobileExpanded || showEnrichedContent ? "▲ MOINS" : "▼ PLUS D'INFOS"}
             </button>
 
-            {/* Enriched content — only visible when expanded */}
-            {mobileExpanded && (
+            {/* Enriched content — visible when expanded or dragging */}
+            {showEnrichedContent && (
               <div style={{
                 flex: 1,
                 overflowY: "auto",
                 padding: "10px 16px",
                 minHeight: 0,
+                opacity: dragExtra !== 0 ? Math.max(0.3, dragProgress) : 1,
+                transition: dragExtra !== 0 ? "none" : "opacity 0.3s",
               }}>
-                {/* Synopsis */}
-                {film.overview && (
-                  <div style={{ marginBottom: "12px" }}>
-                    <div style={{
-                      fontFamily: "Orbitron, sans-serif",
-                      fontSize: "0.65rem",
-                      color: "rgba(255,255,255,0.35)",
-                      letterSpacing: "1.5px",
-                      textTransform: "uppercase",
-                      marginBottom: "5px",
-                    }}>
-                      Synopsis
-                    </div>
-                    <div style={{
-                      fontFamily: "sans-serif",
-                      fontSize: "0.78rem",
-                      color: "rgba(255,255,255,0.7)",
-                      lineHeight: 1.5,
-                    }}>
-                      {film.overview}
-                    </div>
-                  </div>
-                )}
 
                 {/* TMDB Reviews */}
                 {tmdbReviews.length > 0 && (
@@ -1710,6 +1731,82 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
       ) : (
         /* ===== DESKTOP LAYOUT ===== */
         <>
+          {/* Navigation arrows — positioned close to the VHS case */}
+          {prevFilm && (
+            <button
+              data-vhs-overlay
+              onClick={() => {
+                setVHSNavDirection('right');
+                selectFilm(prevFilm.id);
+                setBounceLeft(true);
+                setTimeout(() => setBounceLeft(false), 200);
+              }}
+              style={{
+                position: "fixed",
+                left: "calc(50% - 232px - 280px)",
+                top: "50%",
+                transform: bounceLeft ? "translate(-50%, -50%) scale(0.82)" : "translate(-50%, -50%) scale(1)",
+                transition: "transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)",
+                width: "96px",
+                height: "96px",
+                borderRadius: "50%",
+                background: "rgba(0, 0, 0, 0.6)",
+                border: "2px solid #ffd700",
+                color: "#ffd700",
+                fontFamily: "Orbitron, sans-serif",
+                fontSize: "2.4rem",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                cursor: "pointer",
+                pointerEvents: "auto",
+                zIndex: 100,
+                boxShadow: "0 0 12px rgba(255, 215, 0, 0.15)",
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = "#ffd700"; e.currentTarget.style.color = "#000000"; e.currentTarget.style.boxShadow = "0 0 20px rgba(255, 215, 0, 0.35)"; e.currentTarget.style.transform = "translate(-50%, -50%) scale(1.05)"; }}
+              onMouseLeave={e => { e.currentTarget.style.background = "rgba(0, 0, 0, 0.6)"; e.currentTarget.style.color = "#ffd700"; e.currentTarget.style.boxShadow = "0 0 12px rgba(255, 215, 0, 0.15)"; e.currentTarget.style.transform = "translate(-50%, -50%) scale(1)"; }}
+            >
+              ‹
+            </button>
+          )}
+          {nextFilm && (
+            <button
+              data-vhs-overlay
+              onClick={() => {
+                setVHSNavDirection('left');
+                selectFilm(nextFilm.id);
+                setBounceRight(true);
+                setTimeout(() => setBounceRight(false), 200);
+              }}
+              style={{
+                position: "fixed",
+                left: "calc(50% - 232px + 260px)",
+                top: "50%",
+                transform: bounceRight ? "translate(-50%, -50%) scale(0.82)" : "translate(-50%, -50%) scale(1)",
+                transition: "transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)",
+                width: "96px",
+                height: "96px",
+                borderRadius: "50%",
+                background: "rgba(0, 0, 0, 0.6)",
+                border: "2px solid #ffd700",
+                color: "#ffd700",
+                fontFamily: "Orbitron, sans-serif",
+                fontSize: "2.4rem",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                cursor: "pointer",
+                pointerEvents: "auto",
+                zIndex: 100,
+                boxShadow: "0 0 12px rgba(255, 215, 0, 0.15)",
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = "#ffd700"; e.currentTarget.style.color = "#000000"; e.currentTarget.style.boxShadow = "0 0 20px rgba(255, 215, 0, 0.35)"; e.currentTarget.style.transform = "translate(-50%, -50%) scale(1.05)"; }}
+              onMouseLeave={e => { e.currentTarget.style.background = "rgba(0, 0, 0, 0.6)"; e.currentTarget.style.color = "#ffd700"; e.currentTarget.style.boxShadow = "0 0 12px rgba(255, 215, 0, 0.15)"; e.currentTarget.style.transform = "translate(-50%, -50%) scale(1)"; }}
+            >
+              ›
+            </button>
+          )}
+
           {/* RIGHT PANEL — full-height info + actions */}
           <div
             data-vhs-overlay
@@ -1718,7 +1815,7 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
               top: 0,
               right: 0,
               bottom: 0,
-              width: "340px",
+              width: "464px",
               zIndex: 100,
               pointerEvents: "auto",
               background: "rgba(0,0,0,0.88)",
@@ -1728,12 +1825,38 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
               flexDirection: "column",
             }}
           >
+            {/* Close button — top, above title */}
+            <button
+              onClick={onClose}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "10px",
+                padding: "14px 24px",
+                margin: "16px 20px 0",
+                background: "rgba(180,20,40,0.35)",
+                border: "1px solid #ff2d44",
+                borderRadius: "6px",
+                color: "#ff4444",
+                fontFamily: "Orbitron, sans-serif",
+                fontSize: "0.9rem",
+                cursor: "pointer",
+                letterSpacing: "1.5px",
+                flexShrink: 0,
+                boxShadow: "0 0 14px rgba(255,45,68,0.3)",
+                transition: "all 0.2s",
+              }}
+            >
+              ✕ REPOSER SUR L'ÉTAGÈRE
+            </button>
+
             {/* Section haute — Titre + meta */}
-            <div style={{ padding: "24px 20px 16px", flexShrink: 0 }}>
+            <div style={{ padding: "16px 24px 16px", flexShrink: 0 }}>
               <div
                 style={{
                   fontFamily: "Orbitron, sans-serif",
-                  fontSize: "1rem",
+                  fontSize: "1.5rem",
                   color: "#00fff7",
                   textShadow: "0 0 12px rgba(0,255,247,0.5)",
                   lineHeight: 1.3,
@@ -1743,8 +1866,8 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
               </div>
               <div
                 style={{
-                  fontSize: "0.78rem",
-                  color: "rgba(255,255,255,0.45)",
+                  fontSize: "1.17rem",
+                  color: "rgba(255,255,255,0.65)",
                   marginTop: "6px",
                 }}
               >
@@ -1758,10 +1881,10 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
                     marginLeft: "8px",
                     padding: "2px 6px",
                     background: "rgba(255,255,255,0.08)",
-                    border: "1px solid rgba(255,255,255,0.35)",
+                    border: "1px solid rgba(255,255,255,0.45)",
                     borderRadius: "3px",
-                    fontSize: "0.72rem",
-                    color: "rgba(255,255,255,0.7)",
+                    fontSize: "1.08rem",
+                    color: "rgba(255,255,255,0.85)",
                     fontWeight: 600,
                     verticalAlign: "middle",
                     letterSpacing: "0.5px",
@@ -1772,14 +1895,14 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
               </div>
               <div
                 style={{
-                  fontSize: "0.78rem",
-                  color: "rgba(255,255,255,0.45)",
+                  fontSize: "1.17rem",
+                  color: "rgba(255,255,255,0.65)",
                   marginTop: "3px",
                 }}
               >
                 ★ {film.vote_average.toFixed(1)}
                 <span
-                  style={{ marginLeft: "12px", color: "rgba(255,255,255,0.3)" }}
+                  style={{ marginLeft: "12px", color: "rgba(255,255,255,0.5)" }}
                 >
                   Solde: <span style={{ color: "#ffd700" }}>{credits}</span> cr
 édit{credits > 1 ? "s" : ""}
@@ -1787,14 +1910,14 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
               </div>
             </div>
 
-            <hr style={{ border: "none", borderTop: "1px solid rgba(255,255,255,0.1)", margin: "0 20px" }} />
+            <hr style={{ border: "none", borderTop: "1px solid rgba(255,255,255,0.1)", margin: "0 24px" }} />
 
             {/* Section milieu — Synopsis + Credits (scrollable) */}
             <div
               style={{
                 flex: 1,
                 overflowY: "auto",
-                padding: "16px 20px",
+                padding: "16px 24px",
                 minHeight: 0,
               }}
             >
@@ -1803,8 +1926,8 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
                   <div
                     style={{
                       fontFamily: "Orbitron, sans-serif",
-                      fontSize: "0.68rem",
-                      color: "rgba(255,255,255,0.35)",
+                      fontSize: "1.02rem",
+                      color: "rgba(255,255,255,0.55)",
                       letterSpacing: "1.5px",
                       textTransform: "uppercase",
                       marginBottom: "6px",
@@ -1815,8 +1938,8 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
                   <div
                     style={{
                       fontFamily: "sans-serif",
-                      fontSize: "0.8rem",
-                      color: "rgba(255,255,255,0.7)",
+                      fontSize: "1.2rem",
+                      color: "rgba(255,255,255,0.85)",
                       lineHeight: 1.5,
                     }}
                   >
@@ -1839,16 +1962,16 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
                     }}>
                       <div style={{
                         fontFamily: "sans-serif",
-                        fontSize: "0.76rem",
-                        color: "rgba(255,255,255,0.6)",
+                        fontSize: "1.14rem",
+                        color: "rgba(255,255,255,0.8)",
                         lineHeight: 1.5,
                         fontStyle: "italic",
                       }}>
                         "{r.content}"
                       </div>
                       <div style={{
-                        fontSize: "0.68rem",
-                        color: "rgba(255,215,0,0.5)",
+                        fontSize: "1.02rem",
+                        color: "rgba(255,215,0,0.7)",
                         marginTop: "4px",
                         textAlign: "right",
                       }}>
@@ -1901,12 +2024,12 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
                   <div style={creditLabelStyle}>Budget</div>
                   <div style={{ marginTop: "4px", display: "flex", gap: "16px", flexWrap: "wrap" }}>
                     {budget > 0 && (
-                      <span style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.55)" }}>
+                      <span style={{ fontSize: "1.13rem", color: "rgba(255,255,255,0.7)" }}>
                         Budget : <span style={{ color: "#ffd700" }}>{(budget / 1_000_000).toFixed(0)}M $</span>
                       </span>
                     )}
                     {revenue > 0 && (
-                      <span style={{ fontSize: "0.75rem", color: "rgba(255,255,255,0.55)" }}>
+                      <span style={{ fontSize: "1.13rem", color: "rgba(255,255,255,0.7)" }}>
                         Recettes : <span style={{ color: revenue > budget ? "#00ff88" : "#ff6666" }}>{(revenue / 1_000_000).toFixed(0)}M $</span>
                       </span>
                     )}
@@ -1915,15 +2038,15 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
               )}
             </div>
 
-            <hr style={{ border: "none", borderTop: "1px solid rgba(255,255,255,0.1)", margin: "0 20px" }} />
+            <hr style={{ border: "none", borderTop: "1px solid rgba(255,255,255,0.1)", margin: "0 24px" }} />
 
             {/* Section basse — Action buttons */}
             <div
               style={{
-                padding: "16px 20px 20px",
+                padding: "16px 24px 20px",
                 display: "flex",
                 flexDirection: "column",
-                gap: "8px",
+                gap: "10px",
                 flexShrink: 0,
               }}
             >
@@ -1974,17 +2097,6 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
                 </button>
               )}
 
-              <button
-                onClick={onClose}
-                style={sideButtonStyle("#00ff88", "#00ff88", {
-                  width: "100%",
-                  justifyContent: "center",
-                  background: "rgba(0,255,136,0.12)",
-                  boxShadow: "0 0 12px rgba(0,255,136,0.25)",
-                })}
-              >
-                ↩ REPOSER SUR L'ÉTAGÈRE
-              </button>
             </div>
           </div>
 
@@ -1997,8 +2109,8 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
               left: "16px",
               zIndex: 100,
               pointerEvents: "none",
-              color: "rgba(255,255,255,0.3)",
-              fontSize: "0.7rem",
+              color: "rgba(255,255,255,0.45)",
+              fontSize: "1.05rem",
               fontFamily: "sans-serif",
             }}
           >

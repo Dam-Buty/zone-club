@@ -6,6 +6,7 @@ import { formatTimeRemaining } from '../../utils/formatTime';
 import { AuthModal } from '../auth/AuthModal';
 import { SearchModal } from '../search/SearchModal';
 import { ReviewModal } from '../review/ReviewModal';
+import { useAdminFilms } from './hooks/useAdminFilms';
 import api, { type AdminStats, type FilmRequestWithUser, type ApiFilm, type TranscodeStatus } from '../../api';
 import type { Film } from '../../types';
 import styles from './TVTerminal.module.css';
@@ -51,7 +52,6 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
   const [addFilmSuccess, setAddFilmSuccess] = useState(false);
   const [secretCode, setSecretCode] = useState('');
   const [adminUnlocked, setAdminUnlocked] = useState(false);
-  const [filmSearchQuery, setFilmSearchQuery] = useState('');
   const [transcodeStatuses, setTranscodeStatuses] = useState<Map<number, TranscodeStatus>>(new Map());
 
   // Review modal state
@@ -73,6 +73,27 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
   const isZoomedOnTV = useStore(state => state.isZoomedOnTV);
   const terminalAdminMode = useStore(state => state.terminalAdminMode);
 
+  // Admin films hook (filters, sorting, bulk selection)
+  const {
+    filters: filmFilters,
+    filteredFilms,
+    uniqueGenres,
+    setSearch: setFilmSearch,
+    setAisle: setFilterAisle,
+    setStatus: setFilterStatus,
+    setGenre: setFilterGenre,
+    setSortBy,
+    resetFilters,
+    selectedIds,
+    toggleSelected,
+    selectAll,
+    clearSelection,
+  } = useAdminFilms(adminFilms, transcodeStatuses);
+
+  // Bulk action state
+  const [bulkRunning, setBulkRunning] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState('');
+
   // Utiliser authUser si connecté, sinon localUser
   const user = isAuthenticated && authUser
     ? {
@@ -90,15 +111,6 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
     const film = allFilms.find(f => f.id === filmId);
     return film?.title || `Film #${filmId}`;
   };
-
-  // Auto-unlock admin when opened via settings menu admin code
-  useEffect(() => {
-    if (isOpen && terminalAdminMode && isAuthenticated && authUser?.is_admin) {
-      setAdminUnlocked(true)
-      setCurrentSection('admin')
-      loadAdminStats()
-    }
-  }, [isOpen, terminalAdminMode]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Gérer le code secret "admin"
   useEffect(() => {
@@ -166,7 +178,7 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
             const target = adminSections[selectedIndex];
             setCurrentSection(target);
             setSelectedIndex(0);
-            if (target === 'admin-films') { setFilmSearchQuery(''); loadAdminFilms(); }
+            if (target === 'admin-films') { resetFilters(); loadAdminFilms(); }
             if (target === 'admin-requests') { loadAdminRequests(); }
             if (target === 'admin-add-film') { setAddFilmInput(''); setAddFilmError(null); }
           }
@@ -184,10 +196,17 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
   // Reset au montage
   useEffect(() => {
     if (isOpen) {
-      setCurrentSection('main');
+      // Si on ouvre via le code admin du menu paramètres, aller direct en admin
+      if (terminalAdminMode && isAuthenticated && authUser?.is_admin) {
+        setAdminUnlocked(true);
+        setCurrentSection('admin');
+        loadAdminStats();
+      } else {
+        setCurrentSection('main');
+        setAdminUnlocked(false);
+      }
       setSelectedIndex(0);
       setSecretCode('');
-      setAdminUnlocked(false);
     }
   }, [isOpen]);
 
@@ -402,7 +421,7 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
         onClick={e => e.stopPropagation()}
         style={isZoomedOnTV ? { background: 'rgba(10, 10, 10, 0.75)' } : undefined}
       >
-        <div className={styles.header}>
+        <div className={`${styles.header} ${adminUnlocked ? styles.headerAdmin : ''}`}>
           VIDEO CLUB TERMINAL v1.0
           <span className={styles.cursor} />
         </div>
@@ -734,6 +753,59 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
                     </div>
                   </div>
 
+                  {/* Films per aisle bar chart */}
+                  {adminStats.filmsPerAisle && adminStats.filmsPerAisle.length > 0 && (
+                    <div className={styles.statsSection}>
+                      <div className={styles.statsSubtitle}>FILMS PAR ALLÉE</div>
+                      {(() => {
+                        const max = Math.max(...adminStats.filmsPerAisle.map(a => a.count));
+                        return adminStats.filmsPerAisle.map(a => {
+                          const barLen = Math.max(1, Math.round((a.count / max) * 20));
+                          return (
+                            <div key={a.aisle} className={styles.barChartRow}>
+                              <span className={styles.barChartLabel}>{a.aisle}</span>
+                              <span className={styles.barChartBar}>{'█'.repeat(barLen)}</span>
+                              <span className={styles.barChartValue}>{a.count}</span>
+                            </div>
+                          );
+                        });
+                      })()}
+                    </div>
+                  )}
+
+                  {/* Recent rentals sparkline */}
+                  {adminStats.recentRentals && adminStats.recentRentals.length > 0 && (
+                    <div className={styles.statsSection}>
+                      <div className={styles.statsSubtitle}>LOCATIONS 14 DERNIERS JOURS</div>
+                      <div className={styles.sparklineRow}>
+                        {(() => {
+                          const chars = '▁▂▃▄▅▆▇█';
+                          const counts = adminStats.recentRentals.map(r => r.count);
+                          const max = Math.max(...counts, 1);
+                          return counts.map(c => chars[Math.min(chars.length - 1, Math.round((c / max) * (chars.length - 1)))]).join('');
+                        })()}
+                      </div>
+                      <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.3)' }}>
+                        Total: {adminStats.recentRentals.reduce((s, r) => s + r.count, 0)} locations
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Top 5 most rented */}
+                  {adminStats.topRentedFilms && adminStats.topRentedFilms.length > 0 && (
+                    <div className={styles.statsSection}>
+                      <div className={styles.statsSubtitle}>TOP LOCATIONS</div>
+                      {adminStats.topRentedFilms.map((f, i) => (
+                        <div key={i} className={styles.topFilmRow}>
+                          <span className={styles.topFilmRank}>{i + 1}.</span>
+                          <span className={styles.topFilmTitle}>{f.title}</span>
+                          <span className={styles.topFilmDots} />
+                          <span className={styles.topFilmCount}>{f.rental_count}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
                   {/* Admin menu */}
                   <ul className={styles.menu} style={{ marginTop: '20px' }}>
                     <li
@@ -745,7 +817,7 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
                     </li>
                     <li
                       className={`${styles.menuItem} ${styles.adminMenuItem}`}
-                      onClick={() => { setCurrentSection('admin-films'); setFilmSearchQuery(''); loadAdminFilms(); }}
+                      onClick={() => { setCurrentSection('admin-films'); resetFilters(); loadAdminFilms(); }}
                     >
                       <span className={styles.prefix}>&gt;</span>
                       GERER LES FILMS ({adminStats.totalFilms})
@@ -814,31 +886,189 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
               </div>
               <div className={`${styles.sectionTitle} ${styles.adminTitle}`}>
                 GESTION DES FILMS
+                <span className={styles.resultCount} style={{ float: 'right' }}>
+                  {filteredFilms.length}/{adminFilms.length}
+                </span>
               </div>
 
-              <input
-                type="text"
-                value={filmSearchQuery}
-                onChange={(e) => setFilmSearchQuery(e.target.value)}
-                placeholder="Rechercher un film..."
-                className={styles.adminInput}
-                style={{ marginBottom: '10px' }}
-              />
+              {/* Filter bar */}
+              <div className={styles.filterBar}>
+                <input
+                  type="text"
+                  value={filmFilters.search}
+                  onChange={(e) => setFilmSearch(e.target.value)}
+                  placeholder="Rechercher..."
+                  className={styles.adminInput}
+                />
+                <select
+                  className={styles.filterSelect}
+                  value={filmFilters.aisle}
+                  onChange={(e) => setFilterAisle(e.target.value)}
+                >
+                  <option value="all">ALLÉE</option>
+                  <option value="no-aisle">SANS ALLÉE</option>
+                  <option value="action">ACTION</option>
+                  <option value="horreur">HORREUR</option>
+                  <option value="comedie">COMEDIE</option>
+                  <option value="drame">DRAME</option>
+                  <option value="thriller">THRILLER</option>
+                  <option value="policier">POLICIER</option>
+                  <option value="sf">SF</option>
+                  <option value="animation">ANIMATION</option>
+                  <option value="classiques">CLASSIQUES</option>
+                </select>
+                <select
+                  className={styles.filterSelect}
+                  value={filmFilters.status}
+                  onChange={(e) => setFilterStatus(e.target.value)}
+                >
+                  <option value="all">STATUS</option>
+                  <option value="available">DISPO</option>
+                  <option value="hidden">MASQUÉ</option>
+                  <option value="downloading">EN DL</option>
+                  <option value="no-aisle">SANS ALLÉE</option>
+                </select>
+                <select
+                  className={styles.filterSelect}
+                  value={filmFilters.genre}
+                  onChange={(e) => setFilterGenre(e.target.value)}
+                >
+                  <option value="all">GENRE</option>
+                  {uniqueGenres.map(g => (
+                    <option key={g} value={g}>{g.toUpperCase()}</option>
+                  ))}
+                </select>
+                <button
+                  className={styles.sortBtn}
+                  onClick={() => setSortBy(filmFilters.sortBy === 'title' ? 'year' : filmFilters.sortBy === 'year' ? 'aisle' : filmFilters.sortBy === 'aisle' ? 'date' : 'title')}
+                >
+                  TRI: {filmFilters.sortBy.toUpperCase()} {filmFilters.sortDir === 'asc' ? '↑' : '↓'}
+                </button>
+              </div>
+
+              {/* Bulk actions bar */}
+              {selectedIds.size > 0 && (
+                <div className={styles.bulkBar}>
+                  <span className={styles.bulkCount}>{selectedIds.size} SEL.</span>
+                  {bulkRunning ? (
+                    <span className={styles.bulkProgress}>{bulkProgress}</span>
+                  ) : (
+                    <>
+                      <select
+                        className={`${styles.bulkBtn} ${styles.bulkBtnAction}`}
+                        defaultValue=""
+                        onChange={async (e) => {
+                          const aisle = e.target.value;
+                          if (!aisle) return;
+                          e.target.value = '';
+                          setBulkRunning(true);
+                          const ids = Array.from(selectedIds);
+                          for (let i = 0; i < ids.length; i++) {
+                            setBulkProgress(`ALLÉE ${i + 1}/${ids.length}...`);
+                            await handleSetAisle(ids[i], aisle === '--' ? null : aisle);
+                          }
+                          setBulkRunning(false);
+                          setBulkProgress('');
+                        }}
+                      >
+                        <option value="">ALLÉE...</option>
+                        <option value="--">--</option>
+                        <option value="action">ACTION</option>
+                        <option value="horreur">HORREUR</option>
+                        <option value="comedie">COMEDIE</option>
+                        <option value="drame">DRAME</option>
+                        <option value="thriller">THRILLER</option>
+                        <option value="policier">POLICIER</option>
+                        <option value="sf">SF</option>
+                        <option value="animation">ANIMATION</option>
+                        <option value="classiques">CLASSIQUES</option>
+                      </select>
+                      <button
+                        className={`${styles.bulkBtn} ${styles.bulkBtnGreen}`}
+                        onClick={async () => {
+                          setBulkRunning(true);
+                          const ids = Array.from(selectedIds);
+                          for (let i = 0; i < ids.length; i++) {
+                            setBulkProgress(`DISPO ${i + 1}/${ids.length}...`);
+                            await handleToggleFilmAvailability(ids[i], false);
+                          }
+                          setBulkRunning(false);
+                          setBulkProgress('');
+                        }}
+                      >
+                        DISPO
+                      </button>
+                      <button
+                        className={`${styles.bulkBtn} ${styles.bulkBtnAction}`}
+                        onClick={async () => {
+                          setBulkRunning(true);
+                          const ids = Array.from(selectedIds);
+                          for (let i = 0; i < ids.length; i++) {
+                            setBulkProgress(`MASQUER ${i + 1}/${ids.length}...`);
+                            await handleToggleFilmAvailability(ids[i], true);
+                          }
+                          setBulkRunning(false);
+                          setBulkProgress('');
+                        }}
+                      >
+                        MASQUER
+                      </button>
+                      <button
+                        className={`${styles.bulkBtn} ${styles.bulkBtnAction}`}
+                        onClick={async () => {
+                          setBulkRunning(true);
+                          const ids = Array.from(selectedIds);
+                          for (let i = 0; i < ids.length; i++) {
+                            setBulkProgress(`DL ${i + 1}/${ids.length}...`);
+                            await handleDownloadFilm(ids[i]);
+                          }
+                          setBulkRunning(false);
+                          setBulkProgress('');
+                        }}
+                      >
+                        DL TOUS
+                      </button>
+                      <button className={`${styles.bulkBtn} ${styles.bulkBtnAction}`} onClick={selectAll}>
+                        TOUT
+                      </button>
+                      <button className={`${styles.bulkBtn} ${styles.bulkBtnClose}`} onClick={clearSelection}>
+                        ✕
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
 
               {adminLoading ? (
                 <div className={styles.emptyMessage}>CHARGEMENT...</div>
               ) : adminFilms.length === 0 ? (
                 <div className={styles.emptyMessage}>Aucun film dans le catalogue</div>
+              ) : filteredFilms.length === 0 ? (
+                <div className={styles.emptyMessage}>Aucun résultat pour ces filtres</div>
               ) : (
-                adminFilms
-                  .filter(f => !filmSearchQuery || f.title.toLowerCase().includes(filmSearchQuery.toLowerCase()))
-                  .map(film => (
+                filteredFilms.map(film => (
                   <div key={film.id} className={styles.adminFilmItem}>
+                    <input
+                      type="checkbox"
+                      className={styles.filmCheckbox}
+                      checked={selectedIds.has(film.id)}
+                      onChange={() => toggleSelected(film.id)}
+                    />
                     <div className={styles.adminFilmInfo}>
                       <div className={styles.adminFilmTitle}>{film.title}</div>
                       <div className={styles.adminFilmMeta}>
                         ID: {film.tmdb_id} | {film.release_year || 'N/A'}
                       </div>
+                      {film.genres && film.genres.length > 0 && (
+                        <div className={styles.genreTags}>
+                          {film.genres.slice(0, 3).map(g => (
+                            <span key={g.id} className={styles.genreTag}>{g.name}</span>
+                          ))}
+                          {film.genres.length > 3 && (
+                            <span className={styles.genreOverflow}>+{film.genres.length - 3}</span>
+                          )}
+                        </div>
+                      )}
                     </div>
                     <div className={styles.adminFilmActions}>
                       <select

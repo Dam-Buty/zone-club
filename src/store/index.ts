@@ -168,6 +168,13 @@ interface VideoClubState {
   setVHSCaseOpen: (open: boolean) => void;
   vhsCaseAnimating: boolean;
   setVHSCaseAnimating: (animating: boolean) => void;
+  vhsNavDirection: 'left' | 'right' | null;
+  setVHSNavDirection: (dir: 'left' | 'right' | null) => void;
+  vhsSwiping: boolean;
+  vhsSwipeOffset: number;
+  setVhsSwipeState: (swiping: boolean, offset: number) => void;
+  vhsFlipCount: number;
+  requestVHSFlip: () => void;
 
   // Sitting on couch
   isSitting: boolean;
@@ -203,6 +210,10 @@ interface VideoClubState {
   // Onboarding
   hasSeenOnboarding: boolean;
   setHasSeenOnboarding: (seen: boolean) => void;
+
+  // VHS swipe hint (mobile)
+  hasSeenVHSSwipeHint: boolean;
+  setHasSeenVHSSwipeHint: (seen: boolean) => void;
 
   // Benchmark
   benchmarkEnabled: boolean;
@@ -636,6 +647,13 @@ export const useStore = create<VideoClubState>()(
       setVHSCaseAnimating: (animating) => {
         if (get().vhsCaseAnimating !== animating) set({ vhsCaseAnimating: animating });
       },
+      vhsNavDirection: null,
+      setVHSNavDirection: (dir) => set({ vhsNavDirection: dir }),
+      vhsSwiping: false,
+      vhsSwipeOffset: 0,
+      setVhsSwipeState: (swiping, offset) => set({ vhsSwiping: swiping, vhsSwipeOffset: offset }),
+      vhsFlipCount: 0,
+      requestVHSFlip: () => set((state) => ({ vhsFlipCount: state.vhsFlipCount + 1 })),
 
       // Sitting on couch
       isSitting: false,
@@ -672,6 +690,10 @@ export const useStore = create<VideoClubState>()(
       hasSeenOnboarding: false,
       setHasSeenOnboarding: (seen) => set({ hasSeenOnboarding: seen }),
 
+      // VHS swipe hint (mobile)
+      hasSeenVHSSwipeHint: false,
+      setHasSeenVHSSwipeHint: (seen) => set({ hasSeenVHSSwipeHint: seen }),
+
       // Benchmark
       benchmarkEnabled: false,
       setBenchmarkEnabled: (enabled) => set({ benchmarkEnabled: enabled }),
@@ -687,6 +709,7 @@ export const useStore = create<VideoClubState>()(
         localUser: state.localUser,
         rentalHistory: state.rentalHistory,
         hasSeenOnboarding: state.hasSeenOnboarding,
+        hasSeenVHSSwipeHint: state.hasSeenVHSSwipeHint,
         // Ne pas persister benchmarkEnabled — use ?benchmark=1 URL param only
         // Ne pas persister authUser, les cookies de session gèrent ça
       }),

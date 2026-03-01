@@ -19,6 +19,27 @@ export async function GET() {
         totalRentals: (db.prepare('SELECT COUNT(*) as count FROM rentals').get() as any).count,
         totalReviews: (db.prepare('SELECT COUNT(*) as count FROM reviews').get() as any).count,
         pendingRequests: (db.prepare("SELECT COUNT(*) as count FROM film_requests WHERE status = 'pending'").get() as any).count,
+
+        // Films per aisle
+        filmsPerAisle: db.prepare(
+            `SELECT aisle, COUNT(*) as count FROM films
+             WHERE aisle IS NOT NULL AND is_available = 1
+             GROUP BY aisle ORDER BY count DESC`
+        ).all() as { aisle: string; count: number }[],
+
+        // Rentals last 14 days
+        recentRentals: db.prepare(
+            `SELECT DATE(rented_at) as day, COUNT(*) as count FROM rentals
+             WHERE rented_at >= datetime('now', '-14 days')
+             GROUP BY DATE(rented_at) ORDER BY day`
+        ).all() as { day: string; count: number }[],
+
+        // Top 5 most rented films
+        topRentedFilms: db.prepare(
+            `SELECT f.title, COUNT(r.id) as rental_count FROM films f
+             JOIN rentals r ON r.film_id = f.id
+             GROUP BY f.id ORDER BY rental_count DESC LIMIT 5`
+        ).all() as { title: string; rental_count: number }[],
     };
 
     return NextResponse.json(stats);

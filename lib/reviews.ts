@@ -113,22 +113,7 @@ export function canUserReview(userId: number, filmId: number): { allowed: boolea
         return { allowed: false, reason: 'Vous devez regarder au moins 80% du film' };
     }
 
-    // 4. Time window check (1h)
-    const now = new Date();
-    if (rental.viewing_mode === 'sur_place' && rental.watch_completed_at) {
-        const completedAt = new Date(rental.watch_completed_at + 'Z');
-        const deadline = new Date(completedAt.getTime() + 60 * 60 * 1000);
-        if (now > deadline) {
-            return { allowed: false, reason: 'Délai d\'une heure après le visionnage dépassé' };
-        }
-    } else {
-        const rentedAt = new Date(rental.rented_at + 'Z');
-        const deadline = new Date(rentedAt.getTime() + 60 * 60 * 1000);
-        if (now > deadline) {
-            return { allowed: false, reason: 'Délai d\'une heure après la location dépassé' };
-        }
-    }
-
+    // No deadline — once watched 80%+, can review anytime
     return { allowed: true };
 }
 

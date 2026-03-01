@@ -172,9 +172,9 @@ const SIT_TRANSITION_SPEED = 5.0; // lerp alpha — ~95% converged at 600ms
 
 // TV Paramètres zoom — camera fills viewport with CRT screen
 // Screen world center: (3.955, 0.754, 1.2), faces -X
-// Distance for 85% viewport fill: 0.381m (FOV 70°), 0.318m (FOV 80° mobile)
-const TV_ZOOM_POSITION = new THREE.Vector3(3.574, 0.754, 1.2);
-const TV_ZOOM_POSITION_MOBILE = new THREE.Vector3(3.637, 0.754, 1.2);
+// Distance for ~80% viewport fill: 0.400m (FOV 70°), 0.334m (FOV 80° mobile)
+const TV_ZOOM_POSITION = new THREE.Vector3(3.555, 0.754, 1.2);
+const TV_ZOOM_POSITION_MOBILE = new THREE.Vector3(3.621, 0.754, 1.2);
 const TV_ZOOM_LOOKAT = new THREE.Vector3(3.955, 0.754, 1.2);
 
 // LaZone CRT watch position — perpendicular to screen surface
@@ -1004,7 +1004,7 @@ export function Controls({
     if (useStore.getState().isInteractingWithTV) return; // Block movement during standing TV menu
     if (useStore.getState().isInteractingWithLaZone) return; // Block movement during LaZone menu
 
-    const speed = isMobile ? 1.1 : 1.75; // slower on mobile for precision near shelves
+    const speed = isMobile ? 0.385 : 1.75; // slower on mobile for precision near shelves
     velocity.current.x -= velocity.current.x * 10.0 * delta;
     velocity.current.z -= velocity.current.z * 10.0 * delta;
 
