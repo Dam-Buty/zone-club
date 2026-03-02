@@ -248,12 +248,17 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
     const renderer = gl as unknown as THREE.WebGPURenderer
     atlas.setRenderer(renderer)
 
-    // Load unique poster textures (4 per frame — ~50 unique posters total)
+    // Load unique poster textures (10 per frame — ~50 unique posters total)
     let cancelled = false
-    const POSTERS_PER_FRAME = 4
+    const POSTERS_PER_FRAME = 10
     const queue: { slot: number; url: string }[] = []
     for (const [url, slot] of urlToSlot) {
       queue.push({ slot, url })
+    }
+
+    // Signal poster loading progress via global for InteriorScene loading screen
+    if (typeof window !== 'undefined') {
+      window.__posterProgress = { total: queue.length, loaded: 0 }
     }
 
     let queueIdx = 0
@@ -269,6 +274,9 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
         atlas.loadPosterIntoSlot(url, slot)
       }
       queueIdx = end
+      if (typeof window !== 'undefined' && window.__posterProgress) {
+        window.__posterProgress.loaded = queueIdx
+      }
       requestAnimationFrame(loadNextBatch)
     }
     requestAnimationFrame(loadNextBatch)

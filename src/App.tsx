@@ -9,6 +9,17 @@ import api from './api';
 import type { ApiFilm } from './api';
 import type { AisleType, Film } from './types';
 
+// PWA: global ref for deferred install prompt
+declare global {
+  interface Window {
+    __pwaPrompt?: BeforeInstallPromptEvent;
+  }
+  interface BeforeInstallPromptEvent extends Event {
+    prompt(): Promise<void>;
+    userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
+  }
+}
+
 // Lazy-load WebGPU-dependent components so they don't crash browsers without support
 const ExteriorView = lazy(() => import('./components/exterior/ExteriorView').then(m => ({ default: m.ExteriorView })));
 const _interiorImport = import('./components/interior/InteriorScene');
@@ -143,6 +154,44 @@ function FilmReelLoader() {
   );
 }
 
+function PWAInstallToast({ onInstall, onDismiss }: { onInstall: () => void; onDismiss: () => void }) {
+  useEffect(() => {
+    const timer = setTimeout(onDismiss, 8000);
+    return () => clearTimeout(timer);
+  }, [onDismiss]);
+
+  return (
+    <div style={{
+      position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
+      zIndex: 10000, display: 'flex', alignItems: 'center', gap: 12,
+      background: 'rgba(0, 0, 0, 0.85)', border: '1px solid rgba(255, 255, 255, 0.15)',
+      borderRadius: 8, padding: '10px 16px',
+      fontFamily: "'Courier New', monospace", fontSize: 13, color: '#ccc',
+      backdropFilter: 'blur(8px)',
+    }}>
+      <span>Installer Zone Club</span>
+      <button
+        onClick={onInstall}
+        style={{
+          background: '#ff2d95', color: '#fff', border: 'none', borderRadius: 4,
+          padding: '5px 12px', fontSize: 12, fontFamily: 'inherit', cursor: 'pointer',
+        }}
+      >
+        Installer
+      </button>
+      <button
+        onClick={onDismiss}
+        style={{
+          background: 'transparent', color: '#888', border: 'none',
+          fontSize: 16, cursor: 'pointer', padding: '0 4px',
+        }}
+      >
+        ✕
+      </button>
+    </div>
+  );
+}
+
 function App() {
   // WebGPU support check
   if (!navigator.gpu) {
@@ -161,18 +210,45 @@ function App() {
   const isSceneReady = useStore(state => state.isSceneReady);
   const showPostTutorialAuth = useStore(state => state.showPostTutorialAuth);
   const dismissPostTutorialAuth = useStore(state => state.dismissPostTutorialAuth);
+  const showInstallPrompt = useStore(state => state.showInstallPrompt);
+  const setShowInstallPrompt = useStore(state => state.setShowInstallPrompt);
+  const dismissInstallPrompt = useStore(state => state.dismissInstallPrompt);
+
+  // Register service worker + capture install prompt
+  useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    }
+    const handler = (e: Event) => {
+      e.preventDefault();
+      window.__pwaPrompt = e as BeforeInstallPromptEvent;
+    };
+    window.addEventListener('beforeinstallprompt', handler);
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
 
   // Transition state
   const [isTransitioning, setIsTransitioning] = useState(false);
 
-  // Loading screen: dismiss after fade-out completes
+  // Loading screen: minimum 2s visible + fade-out
   const [loadingDismissed, setLoadingDismissed] = useState(false);
+  const [loaderCanFade, setLoaderCanFade] = useState(false);
+  const loaderMountRef = useRef(0);
+  useEffect(() => {
+    if (currentScene === 'interior' && loaderMountRef.current === 0) {
+      loaderMountRef.current = Date.now();
+    }
+  }, [currentScene]);
   useEffect(() => {
     if (isSceneReady) {
-      const timer = setTimeout(() => setLoadingDismissed(true), 1400); // 1.2s fade + 200ms buffer
-      return () => clearTimeout(timer);
+      const elapsed = Date.now() - loaderMountRef.current;
+      const remaining = Math.max(0, 2000 - elapsed);
+      const t1 = setTimeout(() => setLoaderCanFade(true), remaining);
+      const t2 = setTimeout(() => setLoadingDismissed(true), remaining + 1400); // fade + buffer
+      return () => { clearTimeout(t1); clearTimeout(t2); };
     } else {
       setLoadingDismissed(false);
+      setLoaderCanFade(false);
     }
   }, [isSceneReady]);
 
@@ -182,6 +258,22 @@ function App() {
   useEffect(() => {
     fetchMe();
   }, [fetchMe]);
+
+  // Block native browser zoom (Ctrl+scroll on desktop, pinch on mobile fallback)
+  useEffect(() => {
+    const blockWheel = (e: WheelEvent) => {
+      if (e.ctrlKey || e.metaKey) e.preventDefault();
+    };
+    const blockGesture = (e: Event) => e.preventDefault();
+    document.addEventListener('wheel', blockWheel, { passive: false });
+    document.addEventListener('gesturestart', blockGesture, { passive: false });
+    document.addEventListener('gesturechange', blockGesture, { passive: false });
+    return () => {
+      document.removeEventListener('wheel', blockWheel);
+      document.removeEventListener('gesturestart', blockGesture);
+      document.removeEventListener('gesturechange', blockGesture);
+    };
+  }, []);
 
   // Await the module-level prefetch and push results into the store.
   // The API fetches started at JS load time — by the time the user clicks
@@ -240,7 +332,7 @@ function App() {
         <InteriorScene onCassetteClick={handleFilmClick} />
       </Suspense>
 
-      {/* Loading screen overlay — film reel spinner + fade out */}
+      {/* Loading screen overlay — film reel spinner + fade out (min 2s visible) */}
       {currentScene === 'interior' && !loadingDismissed && (
         <>
           <style>{`@keyframes film-reel-spin { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }`}</style>
@@ -249,9 +341,9 @@ function App() {
             background: '#000',
             display: 'flex', flexDirection: 'column',
             alignItems: 'center', justifyContent: 'center',
-            opacity: isSceneReady ? 0 : 1,
+            opacity: loaderCanFade ? 0 : 1,
             transition: 'opacity 1.2s ease',
-            pointerEvents: isSceneReady ? 'none' : 'all',
+            pointerEvents: loaderCanFade ? 'none' : 'all',
           }}>
             <FilmReelLoader />
             <p style={{
@@ -261,6 +353,16 @@ function App() {
             }}>
               Vidéoclub en cours de chargement
             </p>
+            {/* retd logo */}
+            <img
+              src="/retd.png"
+              alt=""
+              style={{
+                position: 'absolute', bottom: 32, left: '50%',
+                transform: 'translateX(-50%)',
+                height: 96, opacity: 0.7,
+              }}
+            />
           </div>
         </>
       )}
@@ -281,9 +383,27 @@ function App() {
       {/* Post-tutorial registration modal */}
       <AuthModal
         isOpen={showPostTutorialAuth}
-        onClose={dismissPostTutorialAuth}
+        onClose={() => {
+          dismissPostTutorialAuth();
+          // After onboarding + registration, suggest installing the app
+          if (window.__pwaPrompt) {
+            setTimeout(() => setShowInstallPrompt(true), 1000);
+          }
+        }}
         initialMode="register"
       />
+
+      {/* PWA install toast — shown after onboarding completion */}
+      {showInstallPrompt && (
+        <PWAInstallToast
+          onInstall={() => {
+            window.__pwaPrompt?.prompt();
+            window.__pwaPrompt = undefined;
+            dismissInstallPrompt();
+          }}
+          onDismiss={dismissInstallPrompt}
+        />
+      )}
     </>
   );
 }

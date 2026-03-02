@@ -247,10 +247,13 @@ interface VideoClubState {
   hasCompletedTutorial: boolean;
   tutorialCameraTarget: { position: [number, number, number]; lookAt: [number, number, number] } | null;
   showPostTutorialAuth: boolean;
+  showInstallPrompt: boolean;
   startTutorial: () => void;
   nextTutorialStep: () => void;
   skipTutorial: () => void;
   dismissPostTutorialAuth: () => void;
+  setShowInstallPrompt: (show: boolean) => void;
+  dismissInstallPrompt: () => void;
 }
 
 export const useStore = create<VideoClubState>()(
@@ -754,10 +757,14 @@ export const useStore = create<VideoClubState>()(
       hasCompletedTutorial: false,
       tutorialCameraTarget: null,
       showPostTutorialAuth: false,
+      showInstallPrompt: false,
+      setShowInstallPrompt: (show: boolean) => set({ showInstallPrompt: show }),
+      dismissInstallPrompt: () => set({ showInstallPrompt: false }),
       startTutorial: () => {
         set({
           tutorialStep: 0,
           tutorialCameraTarget: TUTORIAL_WAYPOINTS[0],
+          pointerLockRequested: 'unlock',
         });
       },
       nextTutorialStep: () => {

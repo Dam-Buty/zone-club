@@ -136,7 +136,6 @@ export function BenchmarkSampler({
 
 export function BenchmarkOverlay({ enabled }: { enabled: boolean }) {
   const [latest, setLatest] = useState<BenchmarkSample | null>(null)
-  const [historySize, setHistorySize] = useState(0)
 
   useEffect(() => {
     if (!enabled) return
@@ -146,7 +145,6 @@ export function BenchmarkOverlay({ enabled }: { enabled: boolean }) {
       const store = ensureStore()
       if (!store) return
       setLatest(store.latest)
-      setHistorySize(store.history.length)
     }, 300)
 
     return () => window.clearInterval(interval)
@@ -154,97 +152,25 @@ export function BenchmarkOverlay({ enabled }: { enabled: boolean }) {
 
   if (!enabled) return null
 
-  const exportBenchmarkJson = () => {
-    const store = ensureStore()
-    if (!store) return
-    const payload = {
-      exportedAt: new Date().toISOString(),
-      url: typeof window !== 'undefined' ? window.location.href : '',
-      userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
-      hardwareConcurrency: typeof navigator !== 'undefined' ? navigator.hardwareConcurrency : null,
-      deviceMemory: typeof navigator !== 'undefined' ? (navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? null : null,
-      history: store.history,
-      latest: store.latest,
-    }
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `videoclub-benchmark-${Date.now()}.json`
-    a.click()
-    URL.revokeObjectURL(url)
-  }
-
-  const resetBenchmark = () => {
-    const store = ensureStore()
-    if (!store) return
-    store.startedAt = Date.now()
-    store.history = []
-    store.latest = null
-    setLatest(null)
-    setHistorySize(0)
-  }
-
   return (
     <div
       style={{
         position: 'fixed',
-        right: '1rem',
-        bottom: '1rem',
+        left: '0.5rem',
+        top: '0.5rem',
         zIndex: 120,
-        minWidth: '270px',
-        padding: '0.75rem',
-        borderRadius: '10px',
-        border: '1px solid rgba(0,255,247,0.6)',
-        background: 'rgba(5, 8, 12, 0.86)',
-        color: '#dff',
+        padding: '4px 8px',
+        borderRadius: '4px',
+        background: 'rgba(0, 0, 0, 0.5)',
+        color: '#0f0',
         fontFamily: 'monospace',
-        fontSize: '12px',
-        lineHeight: 1.35,
+        fontSize: '11px',
+        lineHeight: 1.4,
+        pointerEvents: 'none',
       }}
     >
-      <div style={{ color: '#00fff7', marginBottom: '0.35rem' }}>BENCHMARK MODE</div>
-      <div>Samples: {historySize}</div>
-      <div>FPS: {latest ? latest.fps.toFixed(1) : '-'}</div>
-      <div>FPS avg: {latest ? latest.fpsAvg.toFixed(1) : '-'}</div>
-      <div>FPS 1% low: {latest ? latest.fps1Low.toFixed(1) : '-'}</div>
-      <div>Frame avg: {latest ? `${latest.frameMsAvg.toFixed(2)} ms` : '-'}</div>
-      <div>Frame p95: {latest ? `${latest.frameMsP95.toFixed(2)} ms` : '-'}</div>
-      <div>Draw calls: {latest ? latest.drawCalls : '-'}</div>
-      <div>Triangles: {latest ? latest.triangles : '-'}</div>
-      <div>Cassette chunks: {latest ? latest.cassetteChunks : '-'}</div>
-      <div>Cassette instances: {latest ? latest.cassetteInstances : '-'}</div>
-
-      <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.6rem' }}>
-        <button
-          onClick={exportBenchmarkJson}
-          style={{
-            flex: 1,
-            background: 'rgba(0,255,247,0.15)',
-            border: '1px solid rgba(0,255,247,0.45)',
-            color: '#dff',
-            padding: '0.35rem 0.5rem',
-            borderRadius: '6px',
-            cursor: 'pointer',
-          }}
-        >
-          Export JSON
-        </button>
-        <button
-          onClick={resetBenchmark}
-          style={{
-            flex: 1,
-            background: 'rgba(255,45,149,0.15)',
-            border: '1px solid rgba(255,45,149,0.45)',
-            color: '#ffd6ea',
-            padding: '0.35rem 0.5rem',
-            borderRadius: '6px',
-            cursor: 'pointer',
-          }}
-        >
-          Reset
-        </button>
-      </div>
+      <div>FPS {latest ? latest.fps.toFixed(0) : '-'}</div>
+      <div>AVG {latest ? latest.fpsAvg.toFixed(0) : '-'}</div>
     </div>
   )
 }

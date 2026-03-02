@@ -436,6 +436,7 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
   const [standingMenuIndex, setStandingMenuIndex] = useState(0)
   const [settingsMenuIndex, setSettingsMenuIndex] = useState(0)
   const [settingsSubIndex, setSettingsSubIndex] = useState(0)
+  const [accountMenuIndex, setAccountMenuIndex] = useState(0) // 0=benchmark, 1=retour
   const [isHovered, setIsHovered] = useState(false)
 
   // Refs pour les textures dynamiques
@@ -452,6 +453,7 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
   const requestPointerUnlock = useStore(state => state.requestPointerUnlock)
   const setSitting = useStore(state => state.setSitting)
   const isSitting = useStore(state => state.isSitting)
+  const benchmarkEnabled = useStore(state => state.benchmarkEnabled)
   const isInteractingWithTV = useStore(state => state.isInteractingWithTV)
   const setInteractingWithTV = useStore(state => state.setInteractingWithTV)
   const tvMenuAction = useStore(state => state.tvMenuAction)
@@ -1053,18 +1055,32 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
       ctx.fillText('Connectez-vous pour synchroniser', labelX, startY + rows.length * lineH + 30)
     }
 
+    // Actions below the data rows (same spacing)
+    const actionsStartY = startY + rows.length * lineH + (isAuthenticated ? lineH : lineH + 50)
+    const actions = [
+      { label: 'Benchmark', value: benchmarkEnabled ? 'ON' : 'OFF', color: SETTINGS_COLORS.gold },
+      { label: 'Installer l\'app', value: '', color: SETTINGS_COLORS.cyan },
+      { label: '← Retour', value: '', color: SETTINGS_COLORS.dimText },
+    ]
     ctx.font = `bold 34px ${CRT_FONT}`
-    ctx.shadowColor = SETTINGS_COLORS.dimText
-    ctx.shadowBlur = 1
-    ctx.fillStyle = SETTINGS_COLORS.dimText
-    ctx.fillText('▶ ← Retour', labelX, h - 60)
+    actions.forEach((action, i) => {
+      const selected = i === accountMenuIndex
+      const y = actionsStartY + i * lineH
+      ctx.fillStyle = selected ? action.color : SETTINGS_COLORS.dimText
+      ctx.shadowColor = selected ? action.color : 'transparent'
+      ctx.shadowBlur = selected ? 3 : 0
+      ctx.fillText(`${selected ? '▶ ' : '  '}${action.label}`, labelX, y)
+      if (action.value) {
+        ctx.fillText(action.value, valueX, y)
+      }
+    })
 
     ctx.shadowBlur = 0
     applyCRT(ctx, w, h)
     const texture = new THREE.CanvasTexture(canvas)
     texture.needsUpdate = true
     return texture
-  }, [isAuthenticated, authUser, localUser, rentals.length, rentalHistory.length, userReviews.length])
+  }, [isAuthenticated, authUser, localUser, rentals.length, rentalHistory.length, userReviews.length, benchmarkEnabled, accountMenuIndex])
 
   // Texture indicateur films disponibles
   const indicatorTexture = useMemo(() => {
@@ -1343,10 +1359,38 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
       return
     }
 
-    if (tvMode === 'settings-history' || tvMode === 'settings-credits' || tvMode === 'settings-account') {
+    if (tvMode === 'settings-history' || tvMode === 'settings-credits') {
       if (tvMenuAction === 'select' || tvMenuAction === 'back') {
         setTvMode('settings')
         setSettingsMenuIndex(0)
+      }
+      clearTVMenuAction()
+      return
+    }
+
+    if (tvMode === 'settings-account') {
+      if (tvMenuAction === 'up') {
+        setAccountMenuIndex(i => Math.max(0, i - 1))
+      } else if (tvMenuAction === 'down') {
+        setAccountMenuIndex(i => Math.min(2, i + 1))
+      } else if (tvMenuAction === 'select') {
+        if (accountMenuIndex === 0) {
+          useStore.getState().toggleBenchmarkEnabled()
+        } else if (accountMenuIndex === 1) {
+          // Trigger PWA install prompt
+          if (window.__pwaPrompt) {
+            window.__pwaPrompt.prompt()
+            window.__pwaPrompt = undefined
+          }
+        } else {
+          setTvMode('settings')
+          setSettingsMenuIndex(0)
+          setAccountMenuIndex(0)
+        }
+      } else if (tvMenuAction === 'back') {
+        setTvMode('settings')
+        setSettingsMenuIndex(0)
+        setAccountMenuIndex(0)
       }
       clearTVMenuAction()
       return
@@ -1408,7 +1452,7 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
     }
 
     clearTVMenuAction()
-  }, [tvMenuAction, isSitting, isInteractingWithTV, tvMode, seatedMenuIndex, selectedIndex, standingMenuIndex, settingsMenuIndex, settingsMenuItems, settingsSubIndex, rentedFilms, rentals, playVideo, stopVideo, openTerminal, requestPointerUnlock, clearTVMenuAction, setSitting, setInteractingWithTV])
+  }, [tvMenuAction, isSitting, isInteractingWithTV, tvMode, seatedMenuIndex, selectedIndex, standingMenuIndex, settingsMenuIndex, settingsMenuItems, settingsSubIndex, accountMenuIndex, rentedFilms, rentals, playVideo, stopVideo, openTerminal, requestPointerUnlock, clearTVMenuAction, setSitting, setInteractingWithTV])
 
   // Admin secret code detection in settings menu
   const adminBufferRef = useRef('')

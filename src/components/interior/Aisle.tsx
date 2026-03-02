@@ -33,6 +33,9 @@ function AsyncModel({ url, position, scale = 1, rotation = [0, 0, 0] }: {
     />
   )
 }
+// Preload shelf model at module level (downloaded at JS parse time, not component mount)
+useGLTF.preload('/models/shelf.glb', true)
+
 import { useKTX2Textures } from '../../hooks/useKTX2Textures'
 import { WallShelf, SHELF_DEPTH, SHELF_TILT, SHELF_PIVOT_Y } from './WallShelf'
 import { IslandShelf } from './IslandShelf'
@@ -246,7 +249,7 @@ function computeWallShelfCassettes(
     if (!film) continue
 
     const localX = (col - cassettesPerRow / 2 + 0.5) * WALL_CASSETTE_SPACING
-    const localY = 0.25 + row * WALL_ROW_HEIGHT
+    const localY = 0.25 + (row + 1) * WALL_ROW_HEIGHT  // skip bottom shelf (not visible)
     const localZ = SHELF_DEPTH / 2 + PLANK_DEPTH / 2  // centered on the plank
 
     // Apply tilt: translate to pivot, rotate, translate back
