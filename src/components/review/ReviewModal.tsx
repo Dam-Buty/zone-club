@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useStore } from '../../store';
-import api, { type ReviewsResponse } from '../../api';
+import api, { type ReviewsResponse, type ReviewWithUser } from '../../api';
 import type { Film } from '../../types';
 import styles from './ReviewModal.module.css';
 
@@ -23,8 +23,10 @@ export function ReviewModal({ isOpen, onClose, film }: ReviewModalProps) {
   const [success, setSuccess] = useState(false);
   const [reviewsData, setReviewsData] = useState<ReviewsResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [editMode, setEditMode] = useState(false);
 
   const isAuthenticated = useStore(state => state.isAuthenticated);
+  const authUser = useStore(state => state.authUser);
   const addCredits = useStore(state => state.addCredits);
 
   // Load reviews and check if user can review
@@ -33,13 +35,24 @@ export function ReviewModal({ isOpen, onClose, film }: ReviewModalProps) {
       setLoading(true);
       api.reviews.getByFilm(film.id).then((data) => {
         setReviewsData(data);
+        // Check if current user already has a review → edit mode
+        if (authUser && data.reviews.length > 0) {
+          const userReview = data.reviews.find((r: ReviewWithUser) => r.user_id === authUser.id);
+          if (userReview) {
+            setEditMode(true);
+            setContent(userReview.content);
+            setRatingDirection(userReview.rating_direction);
+            setRatingScreenplay(userReview.rating_screenplay);
+            setRatingActing(userReview.rating_acting);
+          }
+        }
         setLoading(false);
       }).catch((err) => {
         console.error(err);
         setLoading(false);
       });
     }
-  }, [isOpen, film]);
+  }, [isOpen, film, authUser]);
 
   const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
@@ -54,14 +67,19 @@ export function ReviewModal({ isOpen, onClose, film }: ReviewModalProps) {
     setError(null);
 
     try {
-      await api.reviews.create(film.id, {
+      const reviewData = {
         content,
         rating_direction: ratingDirection,
         rating_screenplay: ratingScreenplay,
         rating_acting: ratingActing,
-      });
+      };
+      if (editMode) {
+        await api.reviews.update(film.id, reviewData);
+      } else {
+        await api.reviews.create(film.id, reviewData);
+        addCredits(1); // +1 credit only on creation
+      }
       setSuccess(true);
-      addCredits(1); // +1 credit locally
       setTimeout(() => {
         handleClose();
       }, 2000);
@@ -70,7 +88,7 @@ export function ReviewModal({ isOpen, onClose, film }: ReviewModalProps) {
     } finally {
       setSubmitting(false);
     }
-  }, [film, isAuthenticated, content, ratingDirection, ratingScreenplay, ratingActing, addCredits]);
+  }, [film, isAuthenticated, content, ratingDirection, ratingScreenplay, ratingActing, addCredits, editMode]);
 
   const handleClose = useCallback(() => {
     setContent('');
@@ -80,19 +98,20 @@ export function ReviewModal({ isOpen, onClose, film }: ReviewModalProps) {
     setError(null);
     setSuccess(false);
     setReviewsData(null);
+    setEditMode(false);
     onClose();
   }, [onClose]);
 
   if (!isOpen || !film) return null;
 
-  const canReview = reviewsData?.canReview?.allowed ?? false;
-  const canReviewReason = reviewsData?.canReview?.reason;
+  const canReview = editMode || (reviewsData?.canReview?.allowed ?? false);
+  const canReviewReason = editMode ? undefined : reviewsData?.canReview?.reason;
 
   const content_ui = (
     <div className={styles.overlay} onClick={handleClose}>
       <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
         <div className={styles.header}>
-          CRITIQUER: {film.title.toUpperCase().substring(0, 30)}
+          {editMode ? 'MODIFIER' : 'CRITIQUER'}: {film.title.toUpperCase().substring(0, 30)}
           <span className={styles.cursor} />
         </div>
 
@@ -102,8 +121,8 @@ export function ReviewModal({ isOpen, onClose, film }: ReviewModalProps) {
           ) : success ? (
             <div className={styles.successBox}>
               <div className={styles.checkmark}>✓</div>
-              <div>CRITIQUE PUBLIEE !</div>
-              <div className={styles.creditBonus}>+1 CREDIT</div>
+              <div>{editMode ? 'CRITIQUE MODIFIEE !' : 'CRITIQUE PUBLIEE !'}</div>
+              {!editMode && <div className={styles.creditBonus}>+1 CREDIT</div>}
             </div>
           ) : !isAuthenticated ? (
             <div className={styles.notAllowed}>
@@ -185,7 +204,7 @@ export function ReviewModal({ isOpen, onClose, film }: ReviewModalProps) {
                 className={styles.submitButton}
                 disabled={submitting || content.length < MIN_CONTENT_LENGTH}
               >
-                {submitting ? 'PUBLICATION...' : 'PUBLIER (+1 CREDIT)'}
+                {submitting ? 'PUBLICATION...' : editMode ? 'MODIFIER' : 'PUBLIER (+1 CREDIT)'}
               </button>
             </form>
           )}
@@ -217,7 +236,7 @@ export function ReviewModal({ isOpen, onClose, film }: ReviewModalProps) {
         </div>
 
         <div className={styles.footer}>
-          [ESC] Fermer | Critique = +1 credit
+          [ESC] Fermer{editMode ? '' : ' | Critique = +1 credit'}
         </div>
       </div>
     </div>

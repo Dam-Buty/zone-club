@@ -135,6 +135,40 @@ function getISOWeekStart(): string {
     return monday.toISOString().replace('T', ' ').replace('Z', '');
 }
 
+export function updateReview(
+    userId: number,
+    filmId: number,
+    content: string,
+    ratings: {
+        direction: number;
+        screenplay: number;
+        acting: number;
+    }
+): Review {
+    if (content.length < MIN_REVIEW_LENGTH) {
+        throw new Error(`La critique doit faire au moins ${MIN_REVIEW_LENGTH} caractères`);
+    }
+
+    for (const [key, value] of Object.entries(ratings)) {
+        if (value < 1 || value > 5 || !Number.isInteger(value)) {
+            throw new Error(`La note de ${key} doit être entre 1 et 5`);
+        }
+    }
+
+    const existing = getUserReview(userId, filmId);
+    if (!existing) {
+        throw new Error('Aucune critique à modifier');
+    }
+
+    db.prepare(`
+        UPDATE reviews
+        SET content = ?, rating_direction = ?, rating_screenplay = ?, rating_acting = ?
+        WHERE user_id = ? AND film_id = ?
+    `).run(content, ratings.direction, ratings.screenplay, ratings.acting, userId, filmId);
+
+    return getUserReview(userId, filmId)!;
+}
+
 export function createReview(
     userId: number,
     filmId: number,

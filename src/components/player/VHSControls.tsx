@@ -13,6 +13,8 @@ interface VHSControlsProps {
   ffSpeed: number; // 0=off, 2=x2, 4=x4
   onFFCycle: () => void;
   onRWCycle: () => void;
+  onRewindToStart: () => void;
+  onResumeFromRW: () => void;
   // Audio track props
   audioTrack: AudioTrack;
   onAudioTrackChange: (track: AudioTrack) => void;
@@ -60,6 +62,8 @@ export function VHSControls({
   ffSpeed,
   onFFCycle,
   onRWCycle,
+  onRewindToStart,
+  onResumeFromRW,
   audioTrack,
   onAudioTrackChange,
   showSubtitles,
@@ -110,17 +114,20 @@ export function VHSControls({
     const video = videoRef.current;
     if (!video) return;
 
-    // Reset playback rate when pressing play
-    video.playbackRate = 1;
+    if (playerState === 'rewinding' || playerState === 'fastforwarding') {
+      onResumeFromRW();
+      return;
+    }
 
     if (playerState === 'playing') {
       video.pause();
       onStateChange('paused');
     } else {
+      video.playbackRate = 1;
       video.play();
       onStateChange('playing');
     }
-  }, [videoRef, playerState, onStateChange]);
+  }, [videoRef, playerState, onStateChange, onResumeFromRW]);
 
   const toggleMute = useCallback(() => {
     const video = videoRef.current;
@@ -169,9 +176,13 @@ export function VHSControls({
 
         {/* Center: VCR transport buttons */}
         <div className={styles.vcrTransport}>
+          <button onClick={onRewindToStart} className={styles.vcrBtn} title="Rembobiner au début [R]">
+            <span className={styles.vcrIcon}>⏮</span>
+            <span className={styles.vcrLabel}>REW</span>
+          </button>
           <button onClick={onRWCycle} className={`${styles.vcrBtn} ${playerState === 'rewinding' ? styles.vcrBtnActive : ''}`} title="Rembobiner [←]">
             <span className={styles.vcrIcon}>◀◀</span>
-            <span className={styles.vcrLabel}>REW</span>
+            <span className={styles.vcrLabel}>BACK</span>
           </button>
           <button onClick={togglePlay} className={`${styles.vcrBtn} ${styles.vcrPlayBtn} ${playerState === 'playing' ? styles.vcrBtnActive : ''}`} title="Lecture [Espace]">
             <span className={styles.vcrIcon}>▶</span>
@@ -182,7 +193,7 @@ export function VHSControls({
             <span className={styles.vcrLabel}>FF</span>
           </button>
           <button onClick={onStop} className={styles.vcrBtn} title="Stop [S]">
-            <span className={styles.vcrIcon}>■</span>
+            <span className={styles.vcrIcon} style={{ fontSize: '1.4rem' }}>■</span>
             <span className={styles.vcrLabel}>STOP</span>
           </button>
           <button onClick={onEject} className={`${styles.vcrBtn} ${styles.vcrEjectBtn}`} title="Éjecter [E / ESC]">

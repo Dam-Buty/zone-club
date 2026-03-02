@@ -68,6 +68,7 @@ CREATE TABLE IF NOT EXISTS rentals (
     expires_at DATETIME NOT NULL,
     is_active BOOLEAN DEFAULT TRUE,
     watch_progress INTEGER DEFAULT 0,
+    watch_position REAL DEFAULT 0,
     watch_completed_at TEXT DEFAULT NULL,
     extension_used INTEGER DEFAULT 0,
     rewind_claimed INTEGER DEFAULT 0,

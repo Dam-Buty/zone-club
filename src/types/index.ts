@@ -45,6 +45,7 @@ export interface Rental {
   streamingUrls?: StreamingUrls;
   // Gamification fields
   watchProgress: number;             // 0-100
+  watchPosition: number;             // seconds (video currentTime)
   watchCompletedAt: number | null;   // timestamp when 80%+ reached
   extensionUsed: boolean;
   rewindClaimed: boolean;

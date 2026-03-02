@@ -56,6 +56,7 @@ export interface ApiRentalWithFilm extends ApiRental {
   time_remaining: number; // minutes
   // Gamification fields
   watch_progress: number;
+  watch_position: number;
   watch_completed_at: string | null;
   extension_used: boolean;
   rewind_claimed: boolean;
@@ -166,10 +167,10 @@ export const rentals = {
     return request(`/api/rentals/${filmId}`, { method: 'POST' });
   },
 
-  async updateProgress(filmId: number, progress: number): Promise<{ ok: boolean }> {
+  async updateProgress(filmId: number, progress: number, position?: number): Promise<{ ok: boolean }> {
     return request(`/api/rentals/${filmId}/progress`, {
       method: 'PATCH',
-      body: JSON.stringify({ progress }),
+      body: JSON.stringify({ progress, position }),
     });
   },
 
@@ -236,6 +237,13 @@ export const reviews = {
   async create(filmId: number, data: CreateReviewData): Promise<{ review: ApiReview }> {
     return request(`/api/reviews/${filmId}`, {
       method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async update(filmId: number, data: CreateReviewData): Promise<{ review: ApiReview }> {
+    return request(`/api/reviews/${filmId}`, {
+      method: 'PUT',
       body: JSON.stringify(data),
     });
   },
