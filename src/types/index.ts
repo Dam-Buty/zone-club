@@ -35,7 +35,7 @@ export interface StreamingUrls {
 }
 
 // Rental types
-export type ViewingMode = 'sur_place' | 'emporter';
+export type ViewingMode = 'sur_place';
 
 export interface Rental {
   filmId: number;

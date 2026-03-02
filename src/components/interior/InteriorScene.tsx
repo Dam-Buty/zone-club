@@ -26,6 +26,8 @@ import { SearchModal } from '../search/SearchModal'
 import { MobileControls } from '../mobile/MobileControls'
 import { MobileOnboarding } from '../mobile/MobileOnboarding'
 import { BenchmarkSampler, BenchmarkOverlay } from './BenchmarkMode'
+import TutorialOverlay from '../tutorial/TutorialOverlay'
+import WeeklyBonusToast from '../ui/WeeklyBonusToast'
 
 // Error Boundary pour capturer les erreurs dans le canvas 3D
 interface ErrorBoundaryState {
@@ -441,6 +443,7 @@ function UIOverlays({ isMobile }: { isMobile: boolean }) {
   const isSitting = useStore(state => state.isSitting)
   const isWatchingLaZone = useStore(state => state.isWatchingLaZone)
   const isSceneReady = useStore(state => state.isSceneReady)
+  const tutorialStepUI = useStore(state => state.tutorialStep)
   const overlaysEnabled = hasSeenOnboarding && isSceneReady
 
   // Desktop controls hint (locked): show then fade out after 30s
@@ -515,7 +518,7 @@ function UIOverlays({ isMobile }: { isMobile: boolean }) {
   return (
     <>
       {/* Message "Cliquez pour prendre le contrôle" — desktop only, when not locked */}
-      {overlaysEnabled && !isMobile && !isPointerLocked && !isTerminalOpen && !selectedFilmId && showTakeControlHint && (
+      {overlaysEnabled && !isMobile && !isPointerLocked && !isTerminalOpen && !selectedFilmId && showTakeControlHint && tutorialStepUI === null && (
         <div
           style={{
             position: 'fixed',
@@ -682,6 +685,12 @@ function UIOverlays({ isMobile }: { isMobile: boolean }) {
 
       {/* Settings modals triggered from CRT settings menu */}
       <SettingsModals />
+
+      {/* Tutorial overlay */}
+      <TutorialOverlay />
+
+      {/* Weekly bonus toast */}
+      <WeeklyBonusToast />
     </>
   )
 }
@@ -717,6 +726,10 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
   const films = useStore(state => state.films)
   const selectedFilmId = useStore(state => state.selectedFilmId)
   const hasSeenOnboarding = useStore(state => state.hasSeenOnboarding)
+  const hasCompletedTutorial = useStore(state => state.hasCompletedTutorial)
+  const isSceneReady = useStore(state => state.isSceneReady)
+  const tutorialStep = useStore(state => state.tutorialStep)
+  const startTutorial = useStore(state => state.startTutorial)
   const benchmarkEnabled = useStore(state => state.benchmarkEnabled)
   const laZoneActive = useStore(state => state.isInteractingWithLaZone || state.isWatchingLaZone)
   const isSitting = useStore(state => state.isSitting)
@@ -736,6 +749,14 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
     window.addEventListener('resize', check)
     return () => window.removeEventListener('resize', check)
   }, [isMobile])
+
+  // Auto-start tutorial after onboarding if not completed
+  useEffect(() => {
+    if (isSceneReady && hasSeenOnboarding && !hasCompletedTutorial && tutorialStep === null) {
+      const timer = setTimeout(() => startTutorial(), 1500)
+      return () => clearTimeout(timer)
+    }
+  }, [isSceneReady, hasSeenOnboarding, hasCompletedTutorial, tutorialStep, startTutorial])
 
   const allFilms = useMemo(() => {
     const seen = new Set<number>()
@@ -987,8 +1008,8 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
         </div>
       )}
 
-      {/* Mobile controls (joystick + touch look + interact button) — hidden during LaZone interaction or sitting */}
-      {isMobile && !laZoneActive && !isSitting && <MobileControls mobileInputRef={mobileInputRef} />}
+      {/* Mobile controls (joystick + touch look + interact button) — hidden during LaZone interaction, sitting, or tutorial */}
+      {isMobile && !laZoneActive && !isSitting && tutorialStep === null && <MobileControls mobileInputRef={mobileInputRef} />}
 
       {/* Onboarding — first launch only */}
       {!hasSeenOnboarding && <MobileOnboarding isMobile={isMobile} />}

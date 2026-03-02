@@ -181,7 +181,7 @@ export const rentals = {
     return request(`/api/rentals/${filmId}/rewind`, { method: 'POST' });
   },
 
-  async setViewingMode(filmId: number, mode: 'sur_place' | 'emporter'): Promise<{ rental: ApiRentalWithFilm }> {
+  async setViewingMode(filmId: number, mode: 'sur_place'): Promise<{ rental: ApiRentalWithFilm }> {
     return request(`/api/rentals/${filmId}/viewing-mode`, {
       method: 'PATCH',
       body: JSON.stringify({ mode }),

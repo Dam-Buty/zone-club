@@ -22,7 +22,7 @@ export async function GET(
 
     let canReview: { allowed: boolean; reason?: string } = { allowed: false, reason: 'Non authentifié' };
     if (user) {
-        canReview = canUserReview(user.id, filmId);
+        canReview = canUserReview(user.id, filmId, user.is_admin);
     }
 
     return NextResponse.json({ reviews, ratings, canReview });
@@ -48,7 +48,7 @@ export async function POST(
             direction: rating_direction,
             screenplay: rating_screenplay,
             acting: rating_acting
-        });
+        }, user.is_admin);
         return NextResponse.json({ review });
     } catch (err) {
         return NextResponse.json({ error: (err as Error).message }, { status: 400 });

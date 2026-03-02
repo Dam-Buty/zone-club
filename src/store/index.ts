@@ -1,9 +1,22 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Film, Rental, AisleType, SceneType, MemberLevel, AuthUser, LocalUser } from '../types';
-import api, { type ApiRentalWithFilm, type ApiFilm, type ReviewWithUser, type ApiReturnRequest } from '../api';
+import api, { type ApiRentalWithFilm, type ApiFilm, type ReviewWithUser, type ApiReturnRequest, type WeeklyBonusStatus } from '../api';
 import { preloadPosterImage } from '../utils/CassetteTextureArray';
 import { fetchVHSCoverData } from '../utils/VHSCoverGenerator';
+
+// Tutorial waypoints — camera positions for the guided tour (7 steps)
+// Camera lookAt shifted opposite to Rick's portrait side so scene content is visible
+// Rick left → camera looks slightly right (+X offset), Rick right → slightly left (-X offset)
+export const TUTORIAL_WAYPOINTS: { position: [number, number, number]; lookAt: [number, number, number] }[] = [
+  { position: [-3.0, 1.52, 3.0],  lookAt: [0, 1.52, 0] },              // 0: BIENVENUE — centered, no offset
+  { position: [-2.25, 1.52, -2.5], lookAt: [-1.85, 1.52, -4.15] },     // 1: ALLEES — lookAt +0.4 X (Rick left)
+  { position: [-2.0, 1.52, -3.0], lookAt: [-1.6, 1.2, -4.5] },         // 2: K7 — inside aisle, closer to shelves
+  { position: [-2.0, 1.52, -3.0], lookAt: [-1.6, 1.2, -4.5] },         // 3: ECONOMIE — same position
+  { position: [1.5, 1.52, 2.0],   lookAt: [2.4, 1.2, 3.0] },           // 4: COMPTOIR — lookAt +0.4 X (Rick left)
+  { position: [3.2, 1.52, 3.2],   lookAt: [3.8, 2.05, 3.95] },         // 5: LAZONE — lookAt -0.4 X (Rick right)
+  { position: [2.4, 1.52, 1.2],   lookAt: [3.7, 0.75, 1.2] },          // 6: CANAPE — lookAt shifted 20% left
+];
 
 function calculateLevel(totalRentals: number): MemberLevel {
   if (totalRentals >= 50) return 'platine';
@@ -51,7 +64,7 @@ function apiRentalToRental(apiRental: ApiRentalWithFilm): Rental {
     watchCompletedAt: apiRental.watch_completed_at ? new Date(apiRental.watch_completed_at).getTime() : null,
     extensionUsed: !!apiRental.extension_used,
     rewindClaimed: !!apiRental.rewind_claimed,
-    viewingMode: (apiRental.viewing_mode as 'sur_place' | 'emporter') ?? null,
+    viewingMode: (apiRental.viewing_mode as 'sur_place') ?? null,
   };
 }
 
@@ -87,7 +100,7 @@ interface VideoClubState {
   rentFilm: (filmId: number) => Promise<Rental | null>;
   returnFilm: (filmId: number) => Promise<{ earlyReturnCredit: boolean } | null>;
   requestReturn: (filmId: number) => Promise<boolean>;
-  setViewingMode: (filmId: number, mode: 'sur_place' | 'emporter') => Promise<Rental | null>;
+  setViewingMode: (filmId: number, mode: 'sur_place') => Promise<Rental | null>;
   extendRental: (filmId: number) => Promise<Rental | null>;
 
   // Scene
@@ -223,6 +236,21 @@ interface VideoClubState {
   // Loading screen
   isSceneReady: boolean;
   setSceneReady: (ready: boolean) => void;
+
+  // Weekly bonus
+  weeklyBonusStatus: WeeklyBonusStatus | null;
+  setWeeklyBonusStatus: (s: WeeklyBonusStatus | null) => void;
+  claimWeeklyBonus: () => Promise<boolean>;
+
+  // Tutorial
+  tutorialStep: number | null;
+  hasCompletedTutorial: boolean;
+  tutorialCameraTarget: { position: [number, number, number]; lookAt: [number, number, number] } | null;
+  showPostTutorialAuth: boolean;
+  startTutorial: () => void;
+  nextTutorialStep: () => void;
+  skipTutorial: () => void;
+  dismissPostTutorialAuth: () => void;
 }
 
 export const useStore = create<VideoClubState>()(
@@ -305,10 +333,11 @@ export const useStore = create<VideoClubState>()(
             authUser: data.user,
             rentals: data.activeRentals.map(apiRentalToRental),
             userReviews: data.reviews || [],
+            weeklyBonusStatus: data.weeklyBonus ?? null,
           });
         } catch {
           // Non connecté, pas d'erreur
-          set({ isAuthenticated: false, authUser: null, userReviews: [] });
+          set({ isAuthenticated: false, authUser: null, userReviews: [], weeklyBonusStatus: null });
         }
       },
 
@@ -702,6 +731,65 @@ export const useStore = create<VideoClubState>()(
       // Loading screen
       isSceneReady: false,
       setSceneReady: (ready) => set({ isSceneReady: ready }),
+
+      // Weekly bonus
+      weeklyBonusStatus: null,
+      setWeeklyBonusStatus: (s) => set({ weeklyBonusStatus: s }),
+      claimWeeklyBonus: async () => {
+        try {
+          const result = await api.me.claimWeeklyBonus();
+          const { authUser } = get();
+          if (authUser) {
+            set({ authUser: { ...authUser, credits: result.new_balance } });
+          }
+          set({ weeklyBonusStatus: { canClaim: false, amount: 0 } });
+          return true;
+        } catch {
+          return false;
+        }
+      },
+
+      // Tutorial
+      tutorialStep: null,
+      hasCompletedTutorial: false,
+      tutorialCameraTarget: null,
+      showPostTutorialAuth: false,
+      startTutorial: () => {
+        set({
+          tutorialStep: 0,
+          tutorialCameraTarget: TUTORIAL_WAYPOINTS[0],
+        });
+      },
+      nextTutorialStep: () => {
+        const current = get().tutorialStep;
+        if (current === null) return;
+        const next = current + 1;
+        if (next >= TUTORIAL_WAYPOINTS.length) {
+          // Teleport back to entrance + show registration
+          const isAuth = get().isAuthenticated;
+          set({
+            tutorialStep: null,
+            tutorialCameraTarget: TUTORIAL_WAYPOINTS[0],
+            hasCompletedTutorial: true,
+            showPostTutorialAuth: !isAuth,
+          });
+        } else {
+          set({ tutorialStep: next, tutorialCameraTarget: TUTORIAL_WAYPOINTS[next] });
+        }
+      },
+      skipTutorial: () => {
+        // Teleport back to entrance + show registration
+        const isAuth = get().isAuthenticated;
+        set({
+          tutorialStep: null,
+          tutorialCameraTarget: TUTORIAL_WAYPOINTS[0],
+          hasCompletedTutorial: true,
+          showPostTutorialAuth: !isAuth,
+        });
+      },
+      dismissPostTutorialAuth: () => {
+        set({ showPostTutorialAuth: false, tutorialCameraTarget: null });
+      },
     }),
     {
       name: 'videoclub-storage',
@@ -710,6 +798,7 @@ export const useStore = create<VideoClubState>()(
         rentalHistory: state.rentalHistory,
         hasSeenOnboarding: state.hasSeenOnboarding,
         hasSeenVHSSwipeHint: state.hasSeenVHSSwipeHint,
+        hasCompletedTutorial: state.hasCompletedTutorial,
         // Ne pas persister benchmarkEnabled — use ?benchmark=1 URL param only
         // Ne pas persister authUser, les cookies de session gèrent ça
       }),
