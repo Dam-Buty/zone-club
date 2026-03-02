@@ -14,7 +14,7 @@ const MIN_CONTENT_LENGTH = 500;
 export type AudioTrack = 'vf' | 'vo';
 
 // Rewind state machine
-type RewindPhase = 'none' | 'prompt' | 'rewinding' | 'complete';
+type RewindPhase = 'none' | 'prompt' | 'rewinding';
 
 type AirPlayVideoElement = HTMLVideoElement & {
   webkitShowPlaybackTargetPicker?: () => void;
@@ -44,20 +44,31 @@ export function VHSPlayer() {
   const [isAirPlayConnected, setIsAirPlayConnected] = useState(false);
   const [showMobileRemotePrompt, setShowMobileRemotePrompt] = useState(false);
 
+  // Overlay auto-hide (4s inactivity)
+  const [overlayVisible, setOverlayVisible] = useState(true);
+  const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // FF/RW state
   const [ffSpeed, setFfSpeed] = useState(0); // 0=off, 2=x2, 4=x4
   const rwIntervalRef = useRef<number | null>(null);
   const rwSpeedRef = useRef(0);
+  const rwCleanupRef = useRef<(() => void) | null>(null);
+  // Guard flag to prevent onPause/onPlay handlers from interfering during FF/RW→play transition
+  const isTransitioningRef = useRef(false);
 
-  // Rewind animation state
+  // Rewind animation state (end-of-film rewind)
   const [rewindPhase, setRewindPhase] = useState<RewindPhase>('none');
   const [rewindProgress, setRewindProgress] = useState(0);
   const rewindStartRef = useRef(0);
   const rewindRafRef = useRef<number | null>(null);
+  const [pendingEject, setPendingEject] = useState(false);
+  const [rewindCredited, setRewindCredited] = useState(false);
 
-  // 80% milestone notification
-  const [showMilestone, setShowMilestone] = useState(false);
-  const milestoneShownRef = useRef(false);
+  // Rewind-to-start state (⏮ button)
+  const [rewindingToStart, setRewindingToStart] = useState(false);
+  const [rewindToStartProgress, setRewindToStartProgress] = useState(0);
+  const [rewindToStartCounter, setRewindToStartCounter] = useState(0);
+  const rewindToStartRafRef = useRef<number | null>(null);
 
   // Inline review state (during rewind)
   const [reviewContent, setReviewContentState] = useState('');
@@ -108,6 +119,13 @@ export function VHSPlayer() {
     return streamingUrls.vf || streamingUrls.vo || rental?.videoUrl || '';
   }, [streamingUrls, audioTrack, hasVF, hasVO, rental?.videoUrl]);
 
+  // Check if 80%+ of the film has been watched
+  const hasReachedMilestone = useCallback(() => {
+    const video = videoRef.current;
+    if (!video || !video.duration) return false;
+    return video.currentTime / video.duration >= 0.8;
+  }, []);
+
   const openMirroringFallback = useCallback((context: 'generic' | 'cast' | 'airplay' = 'generic') => {
     setMirroringContext(context);
     setShowMirroringHelp(true);
@@ -135,16 +153,77 @@ export function VHSPlayer() {
     }
   }, [audioTrack]);
 
+  // Resume from saved position when player opens
+  useEffect(() => {
+    if (!isPlayerOpen || !rental?.watchPosition) return;
+    const video = videoRef.current;
+    if (!video) return;
+
+    const handleCanPlay = () => {
+      if (rental.watchPosition > 0 && video.currentTime < 1) {
+        video.currentTime = rental.watchPosition;
+      }
+    };
+
+    video.addEventListener('canplay', handleCanPlay, { once: true });
+    return () => video.removeEventListener('canplay', handleCanPlay);
+  }, [isPlayerOpen, rental?.watchPosition]);
+
   // ===== FF/RW Logic =====
 
-  // Stop any active rewind interval
+  // Stop any active rewind RAF loop + clean up seeked listener
   const stopRW = useCallback(() => {
     if (rwIntervalRef.current !== null) {
-      clearInterval(rwIntervalRef.current);
+      cancelAnimationFrame(rwIntervalRef.current);
       rwIntervalRef.current = null;
     }
+    rwCleanupRef.current?.();
+    rwCleanupRef.current = null;
     rwSpeedRef.current = 0;
   }, []);
+
+  // Resume play after RW/FF — pause first for clean decoder state
+  const resumePlayFromRW = useCallback(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    // Set transition flag to suppress onPause/onPlay event handlers
+    isTransitioningRef.current = true;
+
+    stopRW();
+    video.pause(); // Pause first — needed for FF where video is still playing at high speed
+    video.playbackRate = 1;
+    setFfSpeed(0);
+    setShowBlueScreen(false);
+
+    // Force seek to nearest keyframe, then wait for decoder
+    const pos = video.currentTime;
+    video.currentTime = pos;
+
+    const resume = () => {
+      video.play().then(() => {
+        isTransitioningRef.current = false;
+        setPlayerState('playing');
+      }).catch(() => {
+        isTransitioningRef.current = false;
+        setPlayerState('paused');
+      });
+    };
+
+    const onSeeked = () => {
+      video.removeEventListener('seeked', onSeeked);
+      resume();
+    };
+    video.addEventListener('seeked', onSeeked, { once: true });
+
+    // Unconditional fallback if seeked never fires (already at exact position)
+    setTimeout(() => {
+      video.removeEventListener('seeked', onSeeked);
+      if (isTransitioningRef.current) {
+        resume();
+      }
+    }, 500);
+  }, [stopRW]);
 
   // FF cycle: off → x2 → x4 → off
   const handleFFCycle = useCallback(() => {
@@ -155,21 +234,21 @@ export function VHSPlayer() {
     stopRW();
 
     const nextSpeed = ffSpeed === 0 ? 2 : ffSpeed === 2 ? 4 : 0;
-    setFfSpeed(nextSpeed);
 
     if (nextSpeed > 0) {
+      setFfSpeed(nextSpeed);
       video.playbackRate = nextSpeed;
       if (video.paused) video.play();
       setPlayerState('fastforwarding');
       setShowBlueScreen(false);
     } else {
-      video.playbackRate = 1;
-      setPlayerState(video.paused ? 'paused' : 'playing');
+      // Returning to normal — use proper resync
+      resumePlayFromRW();
     }
-  }, [ffSpeed, stopRW]);
+  }, [ffSpeed, stopRW, resumePlayFromRW]);
 
   // RW cycle: off → x2 → x4 → off
-  // HTML5 video doesn't support negative playbackRate, so we use an interval
+  // Seek-chained reverse: seek → wait for seeked → seek again (as fast as decoder allows)
   const handleRWCycle = useCallback(() => {
     const video = videoRef.current;
     if (!video) return;
@@ -180,7 +259,7 @@ export function VHSPlayer() {
     const currentRWSpeed = rwSpeedRef.current;
     const nextSpeed = currentRWSpeed === 0 ? 2 : currentRWSpeed === 2 ? 4 : 0;
 
-    // Stop existing interval
+    // Stop existing loop
     stopRW();
 
     setFfSpeed(nextSpeed);
@@ -191,44 +270,138 @@ export function VHSPlayer() {
       setPlayerState('rewinding');
       setShowBlueScreen(false);
 
-      // Manual rewind via interval (60fps)
-      rwIntervalRef.current = window.setInterval(() => {
+      let lastSeekTs = performance.now();
+
+      const seekNext = () => {
         const v = videoRef.current;
-        if (!v) return;
-        v.currentTime = Math.max(0, v.currentTime - rwSpeedRef.current * (1 / 30));
-        if (v.currentTime <= 0) {
+        if (!v || rwSpeedRef.current === 0) return;
+
+        const now = performance.now();
+        const elapsed = (now - lastSeekTs) / 1000;
+        const step = rwSpeedRef.current * Math.max(elapsed, 0.1);
+        const newTime = Math.max(0, v.currentTime - step);
+        lastSeekTs = now;
+
+        if (newTime <= 0) {
+          v.currentTime = 0;
           stopRW();
           setFfSpeed(0);
           setPlayerState('paused');
+          return;
         }
-      }, 1000 / 30);
-    } else {
-      setPlayerState(video.paused ? 'paused' : 'playing');
-    }
-  }, [stopRW]);
 
-  // Stop button: pause + reset to 0 + blue screen
+        v.currentTime = newTime;
+        // seeked event will chain the next seek
+      };
+
+      const onSeeked = () => {
+        if (rwSpeedRef.current === 0) return;
+        rwIntervalRef.current = requestAnimationFrame(seekNext);
+      };
+
+      video.addEventListener('seeked', onSeeked);
+      rwCleanupRef.current = () => video.removeEventListener('seeked', onSeeked);
+
+      // Kick off first seek
+      rwIntervalRef.current = requestAnimationFrame(seekNext);
+    } else {
+      resumePlayFromRW();
+    }
+  }, [stopRW, resumePlayFromRW]);
+
+  // Stop button: save position + pause + blue screen (or rewind prompt at 80%+)
   const handleStop = useCallback(() => {
     const video = videoRef.current;
     if (!video) return;
 
+    // Save current position before stopping
+    if (currentPlayingFilm && video.duration > 0) {
+      const progress = Math.round((video.currentTime / video.duration) * 100);
+      api.rentals.updateProgress(currentPlayingFilm, progress, video.currentTime).catch(() => {});
+    }
+
     stopRW();
     video.pause();
-    video.currentTime = 0;
     video.playbackRate = 1;
     setFfSpeed(0);
-    setPlayerState('paused');
-    setShowBlueScreen(true);
-  }, [stopRW]);
 
-  // Eject: close player
-  const handleEject = useCallback(() => {
-    stopRW();
-    if (rewindRafRef.current !== null) {
-      cancelAnimationFrame(rewindRafRef.current);
+    // At 80%+ and not yet rewound → rewind prompt
+    if (hasReachedMilestone() && !rental?.rewindClaimed) {
+      setPendingEject(false);
+      setRewindPhase('prompt');
+    } else {
+      setPlayerState('paused');
+      setShowBlueScreen(true);
     }
-    closePlayer();
-  }, [closePlayer, stopRW]);
+  }, [stopRW, currentPlayingFilm, hasReachedMilestone, rental?.rewindClaimed]);
+
+  // Rewind to start (⏮) — simulates VHS tape rewind with proportional duration
+  const handleRewindToStart = useCallback(() => {
+    const video = videoRef.current;
+    if (!video || video.currentTime < 1 || rewindingToStart) return;
+
+    stopRW();
+    video.pause();
+    video.playbackRate = 1;
+    setFfSpeed(0);
+    setPlayerState('rewinding');
+    setShowBlueScreen(false);
+    setRewindingToStart(true);
+
+    const startTime = video.currentTime;
+    const startCounter = Math.floor((startTime / (video.duration || 1)) * 9999);
+    // Proportional: 2 min (120s) for full film, minimum 1s
+    const rewindDurationMs = Math.max(1000, (startTime / (video.duration || 1)) * 120000);
+    const animStart = performance.now();
+
+    const animate = () => {
+      const elapsed = performance.now() - animStart;
+      const t = Math.min(1, elapsed / rewindDurationMs);
+      const remaining = startTime * (1 - t);
+      video.currentTime = remaining;
+      setRewindToStartProgress(t * 100);
+      setRewindToStartCounter(Math.floor(startCounter * (1 - t)));
+
+      if (t >= 1) {
+        video.currentTime = 0;
+        setRewindingToStart(false);
+        setRewindToStartProgress(0);
+        setRewindToStartCounter(0);
+        setPlayerState('paused');
+        return;
+      }
+      rewindToStartRafRef.current = requestAnimationFrame(animate);
+    };
+
+    rewindToStartRafRef.current = requestAnimationFrame(animate);
+  }, [rewindingToStart, stopRW]);
+
+  // Eject: save position + close player (or rewind prompt at 80%+)
+  const handleEject = useCallback(() => {
+    const video = videoRef.current;
+    if (video && currentPlayingFilm && video.duration > 0) {
+      const progress = Math.round((video.currentTime / video.duration) * 100);
+      api.rentals.updateProgress(currentPlayingFilm, progress, video.currentTime).catch(() => {});
+    }
+    stopRW();
+
+    // At 80%+ and not yet rewound → rewind prompt before ejecting
+    if (hasReachedMilestone() && !rental?.rewindClaimed) {
+      const v = videoRef.current;
+      if (v) v.pause();
+      setPendingEject(true);
+      setRewindPhase('prompt');
+    } else {
+      if (rewindRafRef.current !== null) {
+        cancelAnimationFrame(rewindRafRef.current);
+      }
+      if (rewindToStartRafRef.current !== null) {
+        cancelAnimationFrame(rewindToStartRafRef.current);
+      }
+      setRewindingToStart(false);
+      closePlayer();
+    }
+  }, [closePlayer, stopRW, currentPlayingFilm, hasReachedMilestone, rental?.rewindClaimed]);
 
   // Clean up intervals on unmount
   useEffect(() => {
@@ -237,8 +410,35 @@ export function VHSPlayer() {
       if (rewindRafRef.current !== null) {
         cancelAnimationFrame(rewindRafRef.current);
       }
+      if (rewindToStartRafRef.current !== null) {
+        cancelAnimationFrame(rewindToStartRafRef.current);
+      }
     };
   }, [stopRW]);
+
+  // Dismiss rewind prompt without rewinding (STOP flow → blue screen)
+  const dismissRewindPrompt = useCallback(() => {
+    setRewindPhase('none');
+    setPlayerState('paused');
+    setShowBlueScreen(true);
+  }, []);
+
+  // Close rewind modal (during or after rewind)
+  const closeRewindModal = useCallback(() => {
+    if (rewindRafRef.current !== null) {
+      cancelAnimationFrame(rewindRafRef.current);
+      rewindRafRef.current = null;
+    }
+    setRewindPhase('none');
+    setRewindProgress(0);
+    setRewindCredited(false);
+    if (pendingEject) {
+      closePlayer();
+    } else {
+      setPlayerState('paused');
+      setShowBlueScreen(true);
+    }
+  }, [pendingEject, closePlayer]);
 
   // ===== Keyboard Controls (VCR style) =====
   useEffect(() => {
@@ -248,17 +448,37 @@ export function VHSPlayer() {
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === 'TEXTAREA' || tag === 'INPUT') return;
 
+      // Block most keys during rewind-to-start or rewind flow (only Escape allowed)
+      if (rewindingToStart) {
+        if (e.key === 'Escape') handleEject();
+        return;
+      }
+      if (rewindPhase !== 'none') {
+        if (e.key === 'Escape') {
+          if (rewindPhase === 'prompt') {
+            if (pendingEject) {
+              closePlayer();
+            } else {
+              setRewindPhase('none');
+              setPlayerState('paused');
+              setShowBlueScreen(true);
+            }
+          } else if (rewindPhase === 'rewinding') {
+            closeRewindModal();
+          }
+        }
+        return;
+      }
+
       const video = videoRef.current;
       if (!video) return;
 
       switch (e.key) {
         case ' ':
           e.preventDefault();
-          // Reset speed modes
-          stopRW();
-          video.playbackRate = 1;
-          setFfSpeed(0);
-          if (video.paused) {
+          if (playerState === 'rewinding' || playerState === 'fastforwarding') {
+            resumePlayFromRW();
+          } else if (video.paused) {
             video.play();
             setPlayerState('playing');
             setShowBlueScreen(false);
@@ -307,6 +527,10 @@ export function VHSPlayer() {
             setShowSubtitles(prev => !prev);
           }
           break;
+        case 'r':
+        case 'R':
+          handleRewindToStart();
+          break;
         case 'Escape':
           handleEject();
           break;
@@ -315,7 +539,7 @@ export function VHSPlayer() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isPlayerOpen, handleEject, handleStop, handleFFCycle, handleRWCycle, hasVF, hasVO, hasSubtitles, audioTrack, handleAudioTrackChange, stopRW]);
+  }, [isPlayerOpen, playerState, rewindingToStart, rewindPhase, pendingEject, closePlayer, closeRewindModal, handleEject, handleStop, handleFFCycle, handleRWCycle, handleRewindToStart, resumePlayFromRW, hasVF, hasVO, hasSubtitles, audioTrack, handleAudioTrackChange, stopRW]);
 
   // ===== Remote playback (AirPlay) =====
   useEffect(() => {
@@ -441,14 +665,8 @@ export function VHSPlayer() {
       if (!video || video.duration === 0 || video.paused) return;
 
       const progress = Math.round((video.currentTime / video.duration) * 100);
-      api.rentals.updateProgress(currentPlayingFilm, progress).catch(() => {});
+      api.rentals.updateProgress(currentPlayingFilm, progress, video.currentTime).catch(() => {});
 
-      // 80% milestone notification
-      if (progress >= 80 && !milestoneShownRef.current) {
-        milestoneShownRef.current = true;
-        setShowMilestone(true);
-        setTimeout(() => setShowMilestone(false), 3000);
-      }
     }, 30000);
 
     return () => clearInterval(interval);
@@ -462,21 +680,28 @@ export function VHSPlayer() {
     const handleEnded = () => {
       stopRW();
       setFfSpeed(0);
-      // Send final progress (100%)
+      // Send final progress (100%) + reset position to 0
       if (currentPlayingFilm) {
-        api.rentals.updateProgress(currentPlayingFilm, 100).catch(() => {});
+        api.rentals.updateProgress(currentPlayingFilm, 100, 0).catch(() => {});
       }
-      setRewindPhase('prompt');
+      // Same flow as eject — pendingEject=true since film ended
+      if (!rental?.rewindClaimed) {
+        setPendingEject(true);
+        setRewindPhase('prompt');
+      } else {
+        closePlayer();
+      }
     };
 
     video.addEventListener('ended', handleEnded);
     return () => video.removeEventListener('ended', handleEnded);
-  }, [currentPlayingFilm, stopRW]);
+  }, [currentPlayingFilm, stopRW, rental?.rewindClaimed, closePlayer]);
 
   // ===== Rewind Animation =====
   const startRewind = useCallback(() => {
     setRewindPhase('rewinding');
     setRewindProgress(0);
+    setRewindCredited(false);
     rewindStartRef.current = performance.now();
 
     const video = videoRef.current;
@@ -490,13 +715,8 @@ export function VHSPlayer() {
       setRewindProgress(progress);
 
       if (progress >= 100) {
-        // Don't transition to complete if user is writing a review
-        if (reviewContentRef.current.length > 0) {
-          setRewindProgress(100);
-          return;
-        }
-        setRewindPhase('complete');
-        // Claim rewind credit
+        // Claim rewind credit inline — no phase transition
+        setRewindCredited(true);
         if (currentPlayingFilm) {
           api.rentals.claimRewind(currentPlayingFilm)
             .then(() => { fetchMe(); })
@@ -549,22 +769,7 @@ export function VHSPlayer() {
     }
   }, [currentPlayingFilm, isAuthenticated, reviewContent, ratingDirection, ratingScreenplay, ratingActing, addCredits]);
 
-  // Transition to complete when rewind done + review finished or cleared
-  useEffect(() => {
-    if (rewindPhase !== 'rewinding' || rewindProgress < 100) return;
-    if (reviewContent.length > 0 && !reviewSuccess) return;
-    // Small delay after success so user sees the confirmation
-    const delay = reviewSuccess ? 2000 : 0;
-    const timer = setTimeout(() => {
-      setRewindPhase('complete');
-      if (currentPlayingFilm) {
-        api.rentals.claimRewind(currentPlayingFilm)
-          .then(() => { fetchMe(); })
-          .catch(() => {});
-      }
-    }, delay);
-    return () => clearTimeout(timer);
-  }, [rewindPhase, rewindProgress, reviewContent, reviewSuccess, currentPlayingFilm, fetchMe]);
+
 
   // Reset state when player closes/opens
   useEffect(() => {
@@ -582,8 +787,8 @@ export function VHSPlayer() {
       setShowMobileRemotePrompt(false);
       setRewindPhase('none');
       setRewindProgress(0);
-      milestoneShownRef.current = false;
-      setShowMilestone(false);
+      setPendingEject(false);
+      setRewindCredited(false);
       // Reset review state
       setReviewContent('');
       setRatingDirection(3);
@@ -592,17 +797,58 @@ export function VHSPlayer() {
       setReviewError(null);
       setReviewSuccess(false);
       setReviewData(null);
+      // Reset rewind-to-start
+      if (rewindToStartRafRef.current !== null) cancelAnimationFrame(rewindToStartRafRef.current);
+      setRewindingToStart(false);
+      setRewindToStartProgress(0);
+      setRewindToStartCounter(0);
+      // Reset overlay
+      setOverlayVisible(true);
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
     }
   }, [isPlayerOpen, stopRW]);
+
+  // ===== Overlay auto-hide (4s inactivity) =====
+  const resetIdleTimer = useCallback(() => {
+    setOverlayVisible(true);
+    if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+    idleTimerRef.current = setTimeout(() => {
+      setOverlayVisible(false);
+    }, 4000);
+  }, []);
+
+  useEffect(() => {
+    if (!isPlayerOpen || rewindPhase !== 'none' || rewindingToStart) return;
+
+    const onActivity = () => resetIdleTimer();
+
+    window.addEventListener('mousemove', onActivity);
+    window.addEventListener('touchstart', onActivity);
+    window.addEventListener('keydown', onActivity);
+
+    // Start initial timer
+    resetIdleTimer();
+
+    return () => {
+      window.removeEventListener('mousemove', onActivity);
+      window.removeEventListener('touchstart', onActivity);
+      window.removeEventListener('keydown', onActivity);
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+    };
+  }, [isPlayerOpen, rewindPhase, rewindingToStart, resetIdleTimer]);
 
   if (!isPlayerOpen || !rental) return null;
   const connectedTvLabel = castDeviceName || (isAirPlayConnected ? 'TV AirPlay connectée' : null);
 
   return (
-    <div className={styles.player}>
+    <div className={styles.player} style={!overlayVisible && rewindPhase === 'none' ? { cursor: 'none' } : undefined}>
       {/* Film title header */}
       {currentFilm && (
-        <div className={styles.header}>
+        <div className={styles.header} style={{
+          opacity: overlayVisible ? 1 : 0,
+          transition: 'opacity 0.4s',
+          pointerEvents: overlayVisible ? 'auto' : 'none',
+        }}>
           <span className={styles.filmTitle}>{currentFilm.title}</span>
           <span className={styles.trackIndicator}>
             {audioTrack.toUpperCase()}
@@ -618,10 +864,17 @@ export function VHSPlayer() {
         className={styles.video}
         autoPlay
         playsInline
-        onPlay={() => { setPlayerState('playing'); setShowBlueScreen(false); }}
+        onPlay={() => {
+          if (!isTransitioningRef.current) {
+            setPlayerState('playing');
+            setShowBlueScreen(false);
+          }
+        }}
         onPause={() => {
-          // Don't override rewinding state
-          if (playerState !== 'rewinding') setPlayerState('paused');
+          // Don't override rewinding/fastforwarding state or transition in progress
+          if (!isTransitioningRef.current && playerState !== 'rewinding' && playerState !== 'fastforwarding') {
+            setPlayerState('paused');
+          }
         }}
       >
         <source src={videoUrl} type="video/mp4" />
@@ -645,34 +898,11 @@ export function VHSPlayer() {
         </div>
       )}
 
-      {/* 80% milestone notification */}
-      {showMilestone && (
-        <div style={{
-          position: 'absolute',
-          top: '50%',
-          left: '50%',
-          transform: 'translate(-50%, -50%)',
-          zIndex: 30,
-          background: 'rgba(0, 0, 0, 0.88)',
-          border: '2px solid #00e5ff',
-          borderRadius: 10,
-          padding: '24px 32px',
-          textAlign: 'center',
-          fontFamily: "'Orbitron', monospace",
-          boxShadow: '0 0 30px rgba(0, 229, 255, 0.3)',
-          pointerEvents: 'none',
-        }}>
-          <div style={{ color: '#00e5ff', fontSize: '1.1rem', marginBottom: 10, letterSpacing: 2 }}>
-            80% VISIONNE
-          </div>
-          <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: '0.82rem', lineHeight: 1.6 }}>
-            Rembobinez pour +1 credit.<br />
-            Laissez une critique pour +1 credit.
-          </div>
-        </div>
-      )}
-
-      <div className={styles.rentalTimer}>
+      <div className={styles.rentalTimer} style={{
+        opacity: overlayVisible ? 1 : 0,
+        transition: 'opacity 0.4s',
+        pointerEvents: overlayVisible ? 'auto' : 'none',
+      }}>
         <RentalTimer expiresAt={rental.expiresAt} />
       </div>
 
@@ -695,26 +925,104 @@ export function VHSPlayer() {
         </div>
       )}
 
-      {/* ===== Rewind Prompt (film ended) ===== */}
+      {/* ===== Rewind to Start Overlay ===== */}
+      {rewindingToStart && (
+        <div className={styles.rewindOverlay}>
+          <div className={styles.reelContainer}>
+            <svg viewBox="0 0 200 80" className={styles.reelSvg}>
+              <circle
+                cx="50" cy="40"
+                r={8 + (rewindToStartProgress / 100) * 22}
+                fill="none"
+                stroke="#00fff7"
+                strokeWidth="2"
+                opacity="0.9"
+              />
+              <circle cx="50" cy="40" r="5" fill="#00fff7" opacity="0.3" />
+              <circle
+                cx="150" cy="40"
+                r={30 - (rewindToStartProgress / 100) * 22}
+                fill="none"
+                stroke="#00fff7"
+                strokeWidth="2"
+                opacity="0.9"
+              />
+              <circle cx="150" cy="40" r="5" fill="#00fff7" opacity="0.3" />
+              <line
+                x1={50 + 8 + (rewindToStartProgress / 100) * 22}
+                y1="40"
+                x2={150 - 30 + (rewindToStartProgress / 100) * 22}
+                y2="40"
+                stroke="#00fff7"
+                strokeWidth="1"
+                opacity="0.4"
+              />
+            </svg>
+          </div>
+          <div className={styles.rewindTapeCounter}>
+            {String(rewindToStartCounter).padStart(4, '0')}
+          </div>
+          <div className={styles.rewindBarContainer}>
+            <div className={styles.rewindBarFill} style={{ width: `${rewindToStartProgress}%` }} />
+          </div>
+          <div className={styles.rewindLabel}>REMBOBINAGE...</div>
+        </div>
+      )}
+
+      {/* ===== Rewind Prompt (STOP/EJECT at 80%+ or film ended) ===== */}
       {rewindPhase === 'prompt' && (
         <div className={styles.rewindOverlay}>
           <div className={styles.rewindPromptText}>
             BE KIND<br />REWIND
           </div>
+          <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: '0.9rem', marginBottom: 16, fontFamily: "'Orbitron', monospace", letterSpacing: 1 }}>
+            {pendingEject ? 'Rembobiner avant de partir ? +1 crédit' : 'Rembobiner pour +1 crédit ?'}
+          </div>
           <div className={styles.rewindButtons}>
             <button onClick={startRewind} className={styles.rewindBtn}>
               ◀◀ REMBOBINER
             </button>
-            <button onClick={handleEject} className={styles.ejectRewindBtn}>
-              ⏏ ÉJECTER SANS REMBOBINER
-            </button>
+            {pendingEject ? (
+              <button onClick={closePlayer} className={styles.ejectRewindBtn}>
+                ⏏ ÉJECTER
+              </button>
+            ) : (
+              <button onClick={dismissRewindPrompt} className={styles.ejectRewindBtn}>
+                NON MERCI
+              </button>
+            )}
           </div>
         </div>
       )}
 
-      {/* ===== Rewind Animation + Review ===== */}
+      {/* ===== Rewind Animation + Review Modal ===== */}
       {rewindPhase === 'rewinding' && (
         <div className={styles.rewindOverlay} style={{ justifyContent: 'flex-start', paddingTop: '3vh' }}>
+          {/* Close button */}
+          <button
+            onClick={closeRewindModal}
+            style={{
+              position: 'absolute',
+              top: 16,
+              right: 20,
+              background: 'none',
+              border: '1px solid rgba(255,255,255,0.3)',
+              color: 'rgba(255,255,255,0.7)',
+              fontSize: '1.4rem',
+              cursor: 'pointer',
+              width: 36,
+              height: 36,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: 4,
+              zIndex: 10,
+            }}
+            title="Fermer"
+          >
+            ✕
+          </button>
+
           {/* VHS Reel Animation */}
           <div className={styles.reelContainer}>
             <svg viewBox="0 0 200 80" className={styles.reelSvg}>
@@ -758,7 +1066,16 @@ export function VHSPlayer() {
           <div className={styles.rewindBarContainer}>
             <div className={styles.rewindBarFill} style={{ width: `${rewindProgress}%` }} />
           </div>
-          <div className={styles.rewindLabel}>REMBOBINAGE EN COURS...</div>
+          <div className={styles.rewindLabel}>
+            {rewindCredited ? 'REMBOBINAGE TERMINÉ' : 'REMBOBINAGE EN COURS...'}
+          </div>
+
+          {/* Credit claimed message */}
+          {rewindCredited && (
+            <div className={styles.rewindReviewSuccess} style={{ marginTop: 8, marginBottom: 4 }}>
+              <span>✓</span> MERCI ! <span className={styles.rewindCreditBonus}>+1 CRÉDIT</span>
+            </div>
+          )}
 
           {/* Review form */}
           <div className={styles.rewindReviewSection}>
@@ -830,17 +1147,6 @@ export function VHSPlayer() {
         </div>
       )}
 
-      {/* ===== Rewind Complete ===== */}
-      {rewindPhase === 'complete' && (
-        <div className={styles.rewindOverlay}>
-          <div className={styles.rewindCompleteIcon}>✓</div>
-          <div className={styles.creditMessage}>MERCI ! +1 CRÉDIT</div>
-          <button onClick={handleEject} className={styles.rewindBtn}>
-            ⏏ ÉJECTER
-          </button>
-        </div>
-      )}
-
       {showMirroringHelp && (
         <div className={styles.mirroringOverlay}>
           <div className={styles.mirroringPanel}>
@@ -878,7 +1184,12 @@ export function VHSPlayer() {
       )}
 
       {/* VCR Controls — only show when not in rewind sequence */}
-      {rewindPhase === 'none' && (
+      {rewindPhase === 'none' && !rewindingToStart && (
+        <div style={{
+          opacity: overlayVisible ? 1 : 0,
+          transition: 'opacity 0.4s',
+          pointerEvents: overlayVisible ? 'auto' : 'none',
+        }}>
         <VHSControls
           videoRef={videoRef}
           playerState={playerState}
@@ -888,6 +1199,8 @@ export function VHSPlayer() {
           ffSpeed={ffSpeed}
           onFFCycle={handleFFCycle}
           onRWCycle={handleRWCycle}
+          onRewindToStart={handleRewindToStart}
+          onResumeFromRW={resumePlayFromRW}
           audioTrack={audioTrack}
           onAudioTrackChange={handleAudioTrackChange}
           showSubtitles={showSubtitles}
@@ -907,6 +1220,7 @@ export function VHSPlayer() {
           isAirPlayConnected={isAirPlayConnected}
           remoteError={remoteError}
         />
+        </div>
       )}
     </div>
   );

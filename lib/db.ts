@@ -145,6 +145,11 @@ try {
   );
 } catch {}
 
+// Migrate: watch_position for resume playback
+try {
+  db.exec("ALTER TABLE rentals ADD COLUMN watch_position REAL DEFAULT 0");
+} catch {}
+
 // Drop obsolete chat_sessions table
 try {
   db.exec("DROP TABLE IF EXISTS chat_sessions");

@@ -13,10 +13,10 @@ export async function PATCH(
 
     const { filmId: filmIdStr } = await params;
     const filmId = parseInt(filmIdStr);
-    const { progress } = await request.json();
+    const { progress, position } = await request.json();
 
     try {
-        updateWatchProgress(user.id, filmId, progress);
+        updateWatchProgress(user.id, filmId, progress, position);
         return NextResponse.json({ ok: true });
     } catch (err) {
         return NextResponse.json({ error: (err as Error).message }, { status: 400 });

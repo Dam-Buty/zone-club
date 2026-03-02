@@ -15,6 +15,7 @@ export interface Rental {
     expires_at: string;
     is_active: boolean;
     watch_progress: number;
+    watch_position: number;
     watch_completed_at: string | null;
     extension_used: number; // SQLite boolean (0/1)
     rewind_claimed: number; // SQLite boolean (0/1)
@@ -236,7 +237,7 @@ export async function rentFilm(userId: number, filmId: number): Promise<RentalWi
     return enrichRental(rental)!;
 }
 
-export function updateWatchProgress(userId: number, filmId: number, progress: number): void {
+export function updateWatchProgress(userId: number, filmId: number, progress: number, position?: number): void {
     const clampedProgress = Math.max(0, Math.min(100, Math.round(progress)));
 
     const rental = db.prepare(`
@@ -246,7 +247,15 @@ export function updateWatchProgress(userId: number, filmId: number, progress: nu
 
     if (!rental) throw new Error('Location active non trouvée');
 
-    // Only update if progress increased (no going backward)
+    // Always update position if provided (position can go backward on rewind)
+    if (position !== undefined) {
+        const clampedPosition = Math.max(0, Number(position) || 0);
+        db.prepare(`
+            UPDATE rentals SET watch_position = ? WHERE id = ?
+        `).run(clampedPosition, rental.id);
+    }
+
+    // Only update progress if it increased (no going backward)
     if (clampedProgress <= rental.watch_progress) return;
 
     db.prepare(`

@@ -61,6 +61,7 @@ function apiRentalToRental(apiRental: ApiRentalWithFilm): Rental {
     videoUrl: apiRental.streaming_urls.vf || apiRental.streaming_urls.vo || '',
     streamingUrls: apiRental.streaming_urls,
     watchProgress: apiRental.watch_progress ?? 0,
+    watchPosition: apiRental.watch_position ?? 0,
     watchCompletedAt: apiRental.watch_completed_at ? new Date(apiRental.watch_completed_at).getTime() : null,
     extensionUsed: !!apiRental.extension_used,
     rewindClaimed: !!apiRental.rewind_claimed,

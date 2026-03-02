@@ -9,6 +9,9 @@ interface VHSEffectsProps {
 
 export function VHSEffects({ playerState, intensity = 1 }: VHSEffectsProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  // Track distortion intensity for fade transition
+  const distortionRef = useRef(0);
+  const prevStateRef = useRef<PlayerState>(playerState);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -20,6 +23,25 @@ export function VHSEffects({ playerState, intensity = 1 }: VHSEffectsProps) {
     let animationId: number;
 
     const render = () => {
+      const isDistorted = playerState === 'rewinding' || playerState === 'fastforwarding';
+      const wasDistorted = prevStateRef.current === 'rewinding' || prevStateRef.current === 'fastforwarding';
+
+      // Smooth distortion intensity (fade in/out over ~300ms at 60fps)
+      const fadeSpeed = 0.06; // ~300ms to go 0→1 at 60fps
+      if (isDistorted) {
+        distortionRef.current = Math.min(1, distortionRef.current + fadeSpeed);
+      } else {
+        distortionRef.current = Math.max(0, distortionRef.current - fadeSpeed);
+      }
+      // Update prev state only when distortion fully transitions
+      if (!isDistorted && !wasDistorted) {
+        prevStateRef.current = playerState;
+      } else if (isDistorted) {
+        prevStateRef.current = playerState;
+      }
+
+      const distortion = distortionRef.current;
+
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       // Scanlines (always present)
@@ -41,7 +63,7 @@ export function VHSEffects({ playerState, intensity = 1 }: VHSEffectsProps) {
       ctx.putImageData(imageData, 0, 0);
 
       // Tracking lines (on pause)
-      if (playerState === 'paused') {
+      if (playerState === 'paused' && distortion === 0) {
         const time = Date.now() / 100;
         for (let i = 0; i < 3; i++) {
           const y = ((time * 50 + i * 100) % canvas.height);
@@ -50,29 +72,29 @@ export function VHSEffects({ playerState, intensity = 1 }: VHSEffectsProps) {
         }
       }
 
-      // Enhanced distortion for FF/RW — thick horizontal bars + color fringing
-      if (playerState === 'rewinding' || playerState === 'fastforwarding') {
+      // Enhanced distortion for FF/RW — with fade transition
+      if (distortion > 0) {
         const time = Date.now() / 50;
 
         // Thick horizontal tracking bars (VHS tracking artifact)
         for (let i = 0; i < 20; i++) {
           const y = ((time * 80 + i * 50) % canvas.height);
-          ctx.fillStyle = `rgba(255, 255, 255, ${0.05 + Math.random() * 0.1})`;
+          ctx.fillStyle = `rgba(255, 255, 255, ${(0.05 + Math.random() * 0.1) * distortion})`;
           ctx.fillRect(0, y, canvas.width, 2 + Math.random() * 8);
         }
 
         // Color fringing (horizontal cyan/magenta shift)
-        ctx.fillStyle = 'rgba(0, 255, 255, 0.03)';
+        ctx.fillStyle = `rgba(0, 255, 255, ${0.03 * distortion})`;
         ctx.fillRect(Math.random() * 20, 0, canvas.width, canvas.height);
-        ctx.fillStyle = 'rgba(255, 0, 255, 0.02)';
+        ctx.fillStyle = `rgba(255, 0, 255, ${0.02 * distortion})`;
         ctx.fillRect(-(Math.random() * 15), 0, canvas.width, canvas.height);
 
         // Horizontal displacement bars (sections of image shifted)
         for (let i = 0; i < 5; i++) {
           const y = Math.random() * canvas.height;
           const h = 1 + Math.random() * 4;
-          const shift = (Math.random() - 0.5) * 20;
-          ctx.fillStyle = 'rgba(255, 255, 255, 0.04)';
+          const shift = (Math.random() - 0.5) * 20 * distortion;
+          ctx.fillStyle = `rgba(255, 255, 255, ${0.04 * distortion})`;
           ctx.fillRect(shift, y, canvas.width, h);
         }
       }

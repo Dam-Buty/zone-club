@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useDrag } from "@use-gesture/react";
 import { useStore } from "../../store";
 import { tmdb, type TMDBVideo } from "../../services/tmdb";
-import api, { type FilmWithRentalStatus } from "../../api";
+import api, { type FilmWithRentalStatus, type FilmRatings } from "../../api";
 import { AuthModal } from "../auth/AuthModal";
 import { ReviewModal } from "../review/ReviewModal";
 import {
@@ -350,6 +350,8 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
   const storeExtendRental = useStore((state) => state.extendRental);
   const fetchMe = useStore((state) => state.fetchMe);
   const openPlayer = useStore((state) => state.openPlayer);
+  const setSitting = useStore((state) => state.setSitting);
+  const requestPointerUnlock = useStore((state) => state.requestPointerUnlock);
   const showManager = useStore((state) => state.showManager);
   const pushEvent = useStore((state) => state.pushEvent);
   const hasSeenSwipeHint = useStore((state) => state.hasSeenVHSSwipeHint);
@@ -484,6 +486,9 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
   const [budget, setBudget] = useState<number>(0);
   const [revenue, setRevenue] = useState<number>(0);
 
+  // Club review ratings (average from user reviews)
+  const [clubRatings, setClubRatings] = useState<FilmRatings | null>(null);
+
   // Detailed credits + person modal
   const [detailedCredits, setDetailedCredits] = useState<DetailedCredits | null>(null);
   const [selectedPerson, setSelectedPerson] = useState<CreditPerson | null>(null);
@@ -528,7 +533,7 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
     }).catch(() => {});
   }, [isOpen, film?.tmdb_id]);
 
-  // Fetch detailed credits, certification, and TMDB reviews when overlay opens
+  // Fetch detailed credits, certification, TMDB reviews, and club ratings when overlay opens
   useEffect(() => {
     if (!isOpen || !film?.tmdb_id) {
       setDetailedCredits(null);
@@ -536,6 +541,7 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
       setTmdbReviews([]);
       setBudget(0);
       setRevenue(0);
+      setClubRatings(null);
       return;
     }
     const id = film.tmdb_id;
@@ -543,7 +549,11 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
     tmdb.getCertification(id).then(c => { console.log(`[VHS] Certification for tmdb_id=${id}:`, JSON.stringify(c)); setCertification(c); }).catch(e => console.warn('Certification fetch failed:', e));
     tmdb.getReviews(id).then(setTmdbReviews).catch(e => console.warn('Reviews fetch failed:', e));
     tmdb.getFilm(id).then(d => { setBudget((d as any).budget || 0); setRevenue((d as any).revenue || 0); }).catch(() => {});
-  }, [isOpen, film?.tmdb_id]);
+    // Fetch club review ratings
+    if (film.id) {
+      api.reviews.getByFilm(film.id).then(data => setClubRatings(data.ratings)).catch(() => {});
+    }
+  }, [isOpen, film?.tmdb_id, film?.id]);
 
   // Fetch person detail when a person is selected
   useEffect(() => {
@@ -584,6 +594,7 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
       setTmdbReviews([]);
       setBudget(0);
       setRevenue(0);
+      setClubRatings(null);
       if (couchPopupTimeoutRef.current) {
         clearTimeout(couchPopupTimeoutRef.current);
         couchPopupTimeoutRef.current = null;
@@ -761,8 +772,10 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
   const handleSitDown = useCallback(() => {
     if (!film) return;
     onClose();
+    setSitting(true);
+    requestPointerUnlock();
     openPlayer(film.id);
-  }, [film, onClose, openPlayer]);
+  }, [film, onClose, openPlayer, setSitting, requestPointerUnlock]);
 
   const handleReturnClick = useCallback(() => {
     setShowReturnConfirm(true);
@@ -1795,6 +1808,18 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
                 }}>
                   ★ {film.vote_average.toFixed(1)}
                 </span>
+                {clubRatings && (
+                  <span style={{
+                    marginLeft: "8px",
+                    fontSize: "0.84rem",
+                    color: "#ffd700",
+                  }}>
+                    ★ {clubRatings.overall.toFixed(1)}
+                    <span style={{ fontSize: "0.68rem", color: "rgba(255,215,0,0.6)", marginLeft: "2px" }}>
+                      ({clubRatings.count})
+                    </span>
+                  </span>
+                )}
               </div>
             </div>
 
@@ -2182,6 +2207,17 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
                 }}
               >
                 ★ {film.vote_average.toFixed(1)}
+                {clubRatings && (
+                  <span
+                    style={{ marginLeft: "10px", color: "#ffd700", fontSize: "0.95rem" }}
+                    title={`Note Zone Club (${clubRatings.count} critique${clubRatings.count > 1 ? 's' : ''})`}
+                  >
+                    ★ {clubRatings.overall.toFixed(1)}
+                    <span style={{ fontSize: "0.75rem", color: "rgba(255,215,0,0.6)", marginLeft: "2px" }}>
+                      ({clubRatings.count})
+                    </span>
+                  </span>
+                )}
                 <span
                   style={{ marginLeft: "12px", color: "rgba(255,255,255,0.5)" }}
                 >
@@ -2445,7 +2481,13 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
       {/* Review Modal */}
       <ReviewModal
         isOpen={showReviewModal}
-        onClose={() => setShowReviewModal(false)}
+        onClose={() => {
+          setShowReviewModal(false);
+          // Refresh club ratings in case a review was submitted
+          if (film?.id) {
+            api.reviews.getByFilm(film.id).then(data => setClubRatings(data.ratings)).catch(() => {});
+          }
+        }}
         film={film}
       />
     </div>
