@@ -93,13 +93,14 @@ export function WallShelf({
 
   // Callback ref: sets matrices immediately when the InstancedMesh is created/attached
   // Positions are relative to the tilt group center (SHELF_PIVOT_Y)
+  // Skip bottom plank (i=0) — cassettes moved up one row, bottom shelf empty and removed
   const plankRefCallback = useCallback((mesh: THREE.InstancedMesh | null) => {
     if (!mesh) return
-    for (let i = 0; i < ROWS + 1; i++) {
+    for (let i = 1; i < ROWS + 1; i++) {
       const y = 0.12 + i * ROW_HEIGHT - SHELF_PIVOT_Y
-      const z = SHELF_DEPTH / 2 + PLANK_DEPTH / 2  // protrude from back panel front face
+      const z = SHELF_DEPTH / 2 + PLANK_DEPTH / 2
       _tempMatrix.makeTranslation(0, y, z)
-      mesh.setMatrixAt(i, _tempMatrix)
+      mesh.setMatrixAt(i - 1, _tempMatrix)
     }
     mesh.instanceMatrix.needsUpdate = true
   }, [])
@@ -139,7 +140,7 @@ export function WallShelf({
         {/* Planches horizontales → 1 InstancedMesh */}
         <instancedMesh
           ref={plankRefCallback}
-          args={[plankGeometry, plankMaterial, ROWS + 1]}
+          args={[plankGeometry, plankMaterial, ROWS]}
           receiveShadow
         />
 

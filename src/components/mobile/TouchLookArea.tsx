@@ -14,12 +14,29 @@ export function TouchLookArea({ mobileInputRef }: TouchLookAreaProps) {
   const activeTouchRef = useRef<number | null>(null)
   const lastPosRef = useRef({ x: 0, y: 0 })
   const touchStartRef = useRef({ x: 0, y: 0, time: 0 })
+  // Pinch state
+  const pinchStartDistRef = useRef(0)
 
   useEffect(() => {
     const area = areaRef.current
     if (!area) return
 
+    const getTouchDist = (t1: Touch, t2: Touch) =>
+      Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY)
+
     const handleTouchStart = (e: TouchEvent) => {
+      // 2+ fingers → enter pinch mode
+      if (e.touches.length >= 2) {
+        const dist = getTouchDist(e.touches[0], e.touches[1])
+        pinchStartDistRef.current = dist
+        mobileInputRef.current.pinchActive = true
+        mobileInputRef.current.pinchZoomDelta = 0
+        // Cancel single-finger look tracking
+        activeTouchRef.current = null
+        return
+      }
+
+      // Single finger → normal look (only if not already tracking)
       if (activeTouchRef.current !== null) return
       const touch = e.changedTouches[0]
       activeTouchRef.current = touch.identifier
@@ -28,6 +45,16 @@ export function TouchLookArea({ mobileInputRef }: TouchLookAreaProps) {
     }
 
     const handleTouchMove = (e: TouchEvent) => {
+      // Pinch mode — compute cumulative distance delta
+      if (e.touches.length >= 2 && mobileInputRef.current.pinchActive) {
+        const dist = getTouchDist(e.touches[0], e.touches[1])
+        // Positive = fingers spread = zoom in, normalized by screen height
+        mobileInputRef.current.pinchZoomDelta =
+          (dist - pinchStartDistRef.current) / window.innerHeight
+        return
+      }
+
+      // Single finger look
       for (let i = 0; i < e.changedTouches.length; i++) {
         const touch = e.changedTouches[i]
         if (touch.identifier === activeTouchRef.current) {
@@ -44,6 +71,21 @@ export function TouchLookArea({ mobileInputRef }: TouchLookAreaProps) {
     }
 
     const handleTouchEnd = (e: TouchEvent) => {
+      // Exiting pinch mode (was 2+ fingers, now < 2)
+      if (mobileInputRef.current.pinchActive && e.touches.length < 2) {
+        mobileInputRef.current.pinchActive = false
+        mobileInputRef.current.pinchZoomDelta = 0
+        activeTouchRef.current = null
+        // If one finger remains, re-init look tracking from its current position (no jerk)
+        if (e.touches.length === 1) {
+          const remaining = e.touches[0]
+          activeTouchRef.current = remaining.identifier
+          lastPosRef.current = { x: remaining.clientX, y: remaining.clientY }
+        }
+        return
+      }
+
+      // Normal single-finger end
       for (let i = 0; i < e.changedTouches.length; i++) {
         const touch = e.changedTouches[i]
         if (touch.identifier === activeTouchRef.current) {

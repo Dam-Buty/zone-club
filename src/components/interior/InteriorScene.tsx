@@ -5,6 +5,13 @@ import { RectAreaLightTexturesLib } from 'three/addons/lights/RectAreaLightTextu
 import { useStore } from '../../store'
 import { Lighting } from './Lighting'
 
+// Poster loading progress (set by CassetteInstances)
+declare global {
+  interface Window {
+    __posterProgress?: { total: number; loaded: number }
+  }
+}
+
 // Initialize LTC textures for RectAreaLight PBR shading (must run before first render)
 if (typeof window !== 'undefined') {
   RectAreaLightTexturesLib.init();
@@ -783,7 +790,7 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
     <div style={{ position: 'fixed', inset: 0, touchAction: 'none' }}>
       <Canvas
         shadows
-        dpr={isMobile ? 1.0 : Math.min(window.devicePixelRatio, 1.5)}
+        dpr={isMobile ? Math.min(window.devicePixelRatio, 1.7) : Math.min(window.devicePixelRatio, 1.5)}
         gl={(async (props: any) => {
 
 
@@ -832,18 +839,29 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
         onCreated={(state) => {
 
 
-          // Wait for films to be loaded + first frame rendered, then signal scene ready
+          // Wait for films + poster atlas GPU uploads before dismissing loading screen
           const checkReady = () => {
             const { films } = useStore.getState()
             const totalFilms = Object.values(films).flat().length
-            if (totalFilms > 0) {
-              // Small delay for textures to upload to GPU
-              setTimeout(() => {
-                useStore.getState().setSceneReady(true)
-              }, 800)
-            } else {
+            if (totalFilms === 0) {
               requestAnimationFrame(checkReady)
+              return
             }
+            // Films loaded — now wait for poster GPU uploads to finish
+            const checkPosters = () => {
+              const progress = window.__posterProgress
+              if (progress && progress.total > 0 && progress.loaded >= progress.total) {
+                // All posters uploaded — scene is fully textured
+                useStore.getState().setSceneReady(true)
+              } else if (progress && progress.total > 0 && progress.loaded >= progress.total * 0.8) {
+                // 80%+ loaded — good enough, don't keep user waiting
+                useStore.getState().setSceneReady(true)
+              } else {
+                requestAnimationFrame(checkPosters)
+              }
+            }
+            // Give 1 frame for CassetteInstances to initialize __posterProgress
+            requestAnimationFrame(checkPosters)
           }
           checkReady()
         }}

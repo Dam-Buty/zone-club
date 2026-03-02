@@ -6,6 +6,8 @@ export interface MobileInput {
   tapInteraction: boolean // consumed once per frame
   tapScreenX: number      // screen X of tap (pixels) — for direct raycast
   tapScreenY: number      // screen Y of tap (pixels) — for direct raycast
+  pinchZoomDelta: number  // 0 = no pinch, >0 = zoom in, <0 = zoom out
+  pinchActive: boolean    // true during 2-finger gesture
 }
 
 export function createMobileInput(): MobileInput {
@@ -17,5 +19,7 @@ export function createMobileInput(): MobileInput {
     tapInteraction: false,
     tapScreenX: 0,
     tapScreenY: 0,
+    pinchZoomDelta: 0,
+    pinchActive: false,
   }
 }

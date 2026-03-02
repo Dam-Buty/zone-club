@@ -37,22 +37,22 @@ const COLLISION_ZONES: {
     cornerRadius: 0.3,
   },
   {
-    // Ilot 1 — reduced 10%: 0.756*0.9=0.68, 1.134*0.9=1.02
-    minX: -1.6 - 0.68,
-    maxX: -1.6 + 0.68,
+    // Ilot 1 — X shrunk 15cm (cassette faces), Z original (wood ends)
+    minX: -1.6 - 0.53,
+    maxX: -1.6 + 0.53,
     minZ: -1.02,
     maxZ: 1.02,
     name: "ilot",
-    cornerRadius: 0.65,
+    cornerRadius: 0.50,
   },
   {
-    // Ilot 2 — reduced 10%: 0.756*0.9=0.68, 1.134*0.9=1.02
-    minX: 0.65 - 0.68,
-    maxX: 0.65 + 0.68,
+    // Ilot 2 — X shrunk 15cm (cassette faces), Z original (wood ends)
+    minX: 0.65 - 0.53,
+    maxX: 0.65 + 0.53,
     minZ: -0.3 - 1.02,
     maxZ: -0.3 + 1.02,
     name: "ilot2",
-    cornerRadius: 0.65,
+    cornerRadius: 0.50,
   },
   {
     minX: ROOM_WIDTH / 2 - 1.2,
@@ -162,6 +162,11 @@ const _up = new THREE.Vector3(0, 1, 0);
 const _tutorialPos = new THREE.Vector3();
 const _tutorialLookAt = new THREE.Vector3();
 
+// Pinch zoom reusable objects
+const _pinchDir = new THREE.Vector3();
+const _pinchRaycaster = new THREE.Raycaster(); // default layer 0 → hits static geometry (shelves, walls)
+const _pinchSavedPos = new THREE.Vector3();
+
 // Seated camera position — world coordinates
 // Couch at world x=2.5 (reculé 30cm), 40% zoom towards TV (x=4.0): distance 1.5*0.6=0.90
 const SEATED_POSITION = new THREE.Vector3(3.452, 0.683, 1.2);
@@ -190,6 +195,16 @@ const LAZONE_WATCH_LOOKAT = new THREE.Vector3(4.2, 2.05, 3.95);
 // Mobile pitch clamp — asymmetric: 45° up, 55° down
 const MAX_PITCH_UP = (45 * Math.PI) / 180;
 const MAX_PITCH_DOWN = (55 * Math.PI) / 180;
+
+// Pinch-to-zoom constants
+const PINCH_MIN_FOV = 54;            // stronger FOV zoom + physical advance for immersive feel
+const PINCH_MAX_ADVANCE = 0.88;
+const PINCH_MIN_ADVANCE = 0.05;
+const PINCH_COLLISION_MIN = 0.30;
+const PINCH_SAFETY_FACTOR = 0.8;
+const PINCH_DETECT_DISTANCE = 2.0;
+const PINCH_SPRINGBACK_MS = 300;
+const PINCH_SENSITIVITY = 3.0;       // maps normalized pinchDelta → zoomFactor 0..1
 // OPTIMISATION: Layers Three.js pour le raycaster
 export const RAYCAST_LAYER_CASSETTE = 1;
 export const RAYCAST_LAYER_INTERACTIVE = 2;
@@ -258,6 +273,14 @@ export function Controls({
   const frameCountRef = useRef(0);
   const RAYCAST_INTERVAL = isMobile ? 3 : 3; // 20/sec both mobile & desktop
 
+  // Pinch zoom state — continuous zoom level [0..1] that always animates towards target
+  const pinchZoomRef = useRef(0);           // current zoom level
+  const pinchShelfFoundRef = useRef(false); // shelf detected at pinch start
+  const pinchSavedFovRef = useRef(0);
+  const pinchMaxAdvanceRef = useRef(0);
+  const pinchReleaseTimeRef = useRef(0);    // performance.now() at release, 0 = no spring-back
+  const pinchReleaseLevelRef = useRef(0);   // zoom level at moment of release
+
   // Configurer la caméra — portrait mode gets +10° FOV for spatial awareness
   useEffect(() => {
     camera.position.set(-3.0, 1.52, 3);
@@ -296,12 +319,15 @@ export function Controls({
     const hasOverlayOpen =
       managerVisible || selectedFilmId !== null || isTerminalOpen;
 
+    const tutorialActive = useStore.getState().tutorialStep !== null;
+
     if (pointerLockRequested === "unlock" && controlsRef.current.isLocked) {
       controlsRef.current.unlock();
     } else if (
       pointerLockRequested === "lock" &&
       !controlsRef.current.isLocked &&
-      !hasOverlayOpen
+      !hasOverlayOpen &&
+      !tutorialActive
     ) {
       controlsRef.current.lock();
     }
@@ -458,7 +484,7 @@ export function Controls({
           state.managerVisible ||
           state.selectedFilmId !== null ||
           state.isTerminalOpen;
-        if (!hasOverlayOpen) {
+        if (!hasOverlayOpen && state.tutorialStep === null) {
           controls.lock();
         }
       }
@@ -1015,6 +1041,88 @@ export function Controls({
         if (!isMobile) useStore.getState().requestPointerLock();
       }
       return; // Skip normal movement during standup
+    }
+
+    // === Pinch-to-zoom (mobile only) ===
+    if (isMobile && mobileInputRef) {
+      const input = mobileInputRef.current;
+      const cam = camera as THREE.PerspectiveCamera;
+
+      if (input.pinchActive) {
+        // Block pinch when K7 overlay is open
+        if (useStore.getState().isVHSCaseOpen) {
+          input.pinchZoomDelta = 0;
+        } else {
+          // First frame of pinch: save state + detect shelf
+          if (!pinchShelfFoundRef.current && pinchZoomRef.current < 0.001) {
+            camera.getWorldDirection(_pinchDir);
+            _pinchRaycaster.set(camera.position, _pinchDir);
+            _pinchRaycaster.far = PINCH_DETECT_DISTANCE;
+            const hits = _pinchRaycaster.intersectObjects(scene.children, true);
+            const firstHit = hits.find(h => h.distance > 0.1);
+
+            if (firstHit) {
+              _pinchSavedPos.copy(camera.position);
+              pinchSavedFovRef.current = cam.fov;
+              pinchReleaseTimeRef.current = 0; // cancel any ongoing spring-back
+
+              const distAvail = firstHit.distance - PINCH_COLLISION_MIN;
+              pinchMaxAdvanceRef.current = Math.max(
+                PINCH_MIN_ADVANCE,
+                Math.min(PINCH_MAX_ADVANCE, distAvail * PINCH_SAFETY_FACTOR),
+              );
+
+              _pinchDir.y = 0;
+              if (_pinchDir.lengthSq() > 0.01) {
+                _pinchDir.normalize();
+                pinchShelfFoundRef.current = true;
+              }
+            }
+          }
+
+          // Track zoom level instantly during pinch
+          if (pinchShelfFoundRef.current) {
+            pinchZoomRef.current = Math.max(0, Math.min(1, input.pinchZoomDelta * PINCH_SENSITIVITY));
+          }
+        }
+      } else {
+        // Fingers released — start spring-back if zoomed
+        if (pinchShelfFoundRef.current) {
+          pinchShelfFoundRef.current = false;
+          if (pinchZoomRef.current > 0.001) {
+            pinchReleaseTimeRef.current = performance.now();
+            pinchReleaseLevelRef.current = pinchZoomRef.current;
+          }
+        }
+
+        // Spring-back animation (ease-out cubic)
+        if (pinchReleaseTimeRef.current > 0) {
+          const elapsed = performance.now() - pinchReleaseTimeRef.current;
+          const t = Math.min(1, elapsed / PINCH_SPRINGBACK_MS);
+          const eased = 1 - Math.pow(1 - t, 3);
+          pinchZoomRef.current = pinchReleaseLevelRef.current * (1 - eased);
+          if (t >= 1) {
+            pinchZoomRef.current = 0;
+            pinchReleaseTimeRef.current = 0;
+          }
+        }
+      }
+
+      // Apply zoom (FOV + camera advance) when zoom level > 0
+      const zoom = pinchZoomRef.current;
+      if (zoom > 0.001) {
+        cam.fov = pinchSavedFovRef.current + (PINCH_MIN_FOV - pinchSavedFovRef.current) * zoom;
+        cam.updateProjectionMatrix();
+        camera.position.copy(_pinchSavedPos);
+        camera.position.addScaledVector(_pinchDir, pinchMaxAdvanceRef.current * zoom);
+        camera.position.y = 1.52;
+        return; // Skip movement + joystick
+      } else if (pinchSavedFovRef.current > 0 && !input.pinchActive) {
+        // Safety: restore FOV when zoom fully finished
+        cam.fov = pinchSavedFovRef.current;
+        cam.updateProjectionMatrix();
+        pinchSavedFovRef.current = 0;
+      }
     }
 
     // === Movement ===
