@@ -77,7 +77,16 @@ export function getUserReviews(userId: number): ReviewWithUser[] {
     `).all(userId) as ReviewWithUser[];
 }
 
-export function canUserReview(userId: number, filmId: number): { allowed: boolean; reason?: string } {
+export function canUserReview(userId: number, filmId: number, isAdmin?: boolean): { allowed: boolean; reason?: string } {
+    // Admin bypass — admins can always review (except duplicates)
+    if (isAdmin) {
+        const existingReview = getUserReview(userId, filmId);
+        if (existingReview) {
+            return { allowed: false, reason: 'Vous avez déjà critiqué ce film' };
+        }
+        return { allowed: true };
+    }
+
     // 1. Already reviewed this film?
     const existingReview = getUserReview(userId, filmId);
     if (existingReview) {
@@ -134,7 +143,8 @@ export function createReview(
         direction: number;
         screenplay: number;
         acting: number;
-    }
+    },
+    isAdmin?: boolean
 ): Review {
     if (content.length < MIN_REVIEW_LENGTH) {
         throw new Error(`La critique doit faire au moins ${MIN_REVIEW_LENGTH} caractères`);
@@ -146,7 +156,7 @@ export function createReview(
         }
     }
 
-    const canReview = canUserReview(userId, filmId);
+    const canReview = canUserReview(userId, filmId, isAdmin);
     if (!canReview.allowed) {
         throw new Error(canReview.reason);
     }

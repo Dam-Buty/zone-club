@@ -781,6 +781,7 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
     items.push({ label: 'MES CREDITS', color: SETTINGS_COLORS.green, action: 'credits' })
     items.push({ label: 'MON COMPTE', color: SETTINGS_COLORS.green, action: 'account' })
     items.push({ label: 'RECHERCHER UN FILM', color: SETTINGS_COLORS.pink, action: 'search' })
+    items.push({ label: 'VISITE GUIDEE', color: SETTINGS_COLORS.cyan, action: 'tutorial' })
     if (isAuthenticated) {
       items.push({ label: 'SE DECONNECTER', color: SETTINGS_COLORS.red, action: 'logout' })
     }
@@ -1279,6 +1280,16 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
             case 'search':
               useStore.getState().setPendingSettingsAction('search')
               requestPointerUnlock()
+              break
+            case 'tutorial':
+              // Start guided tour — stand up + close menus + start tutorial
+              if (isSitting) {
+                useStore.getState().setSitting(false)
+              }
+              setTvMode('idle')
+              setInteractingWithTV(false)
+              useStore.getState().setZoomedOnTV(false)
+              useStore.getState().startTutorial()
               break
             case 'logout':
               useStore.getState().logout()

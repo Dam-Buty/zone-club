@@ -15,7 +15,7 @@ export async function PATCH(
     const filmId = parseInt(filmIdStr);
     const { mode } = await request.json();
 
-    if (mode !== 'sur_place' && mode !== 'emporter') {
+    if (mode !== 'sur_place') {
         return NextResponse.json({ error: 'Mode invalide' }, { status: 400 });
     }
 

@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef, lazy, Suspense } from 'react';
 import { useStore } from './store';
 import { VHSCaseOverlay } from './components/videoclub/VHSCaseOverlay';
+import { AuthModal } from './components/auth/AuthModal';
 import { ManagerChat } from './components/manager/ManagerChat';
 import { VHSPlayer } from './components/player/VHSPlayer';
 import { preloadPosterImage } from './utils/CassetteTextureArray';
@@ -158,6 +159,8 @@ function App() {
   const isPlayerOpen = useStore(state => state.isPlayerOpen);
   const requestPointerLock = useStore(state => state.requestPointerLock);
   const isSceneReady = useStore(state => state.isSceneReady);
+  const showPostTutorialAuth = useStore(state => state.showPostTutorialAuth);
+  const dismissPostTutorialAuth = useStore(state => state.dismissPostTutorialAuth);
 
   // Transition state
   const [isTransitioning, setIsTransitioning] = useState(false);
@@ -274,6 +277,13 @@ function App() {
 
       {/* Manager Chat */}
       <ManagerChat />
+
+      {/* Post-tutorial registration modal */}
+      <AuthModal
+        isOpen={showPostTutorialAuth}
+        onClose={dismissPostTutorialAuth}
+        initialMode="register"
+      />
     </>
   );
 }

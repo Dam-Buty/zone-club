@@ -55,6 +55,10 @@ export function VHSPlayer() {
   const rewindStartRef = useRef(0);
   const rewindRafRef = useRef<number | null>(null);
 
+  // 80% milestone notification
+  const [showMilestone, setShowMilestone] = useState(false);
+  const milestoneShownRef = useRef(false);
+
   // Inline review state (during rewind)
   const [reviewContent, setReviewContentState] = useState('');
   const reviewContentRef = useRef('');
@@ -438,6 +442,13 @@ export function VHSPlayer() {
 
       const progress = Math.round((video.currentTime / video.duration) * 100);
       api.rentals.updateProgress(currentPlayingFilm, progress).catch(() => {});
+
+      // 80% milestone notification
+      if (progress >= 80 && !milestoneShownRef.current) {
+        milestoneShownRef.current = true;
+        setShowMilestone(true);
+        setTimeout(() => setShowMilestone(false), 3000);
+      }
     }, 30000);
 
     return () => clearInterval(interval);
@@ -571,6 +582,8 @@ export function VHSPlayer() {
       setShowMobileRemotePrompt(false);
       setRewindPhase('none');
       setRewindProgress(0);
+      milestoneShownRef.current = false;
+      setShowMilestone(false);
       // Reset review state
       setReviewContent('');
       setRatingDirection(3);
@@ -629,6 +642,33 @@ export function VHSPlayer() {
       {showBlueScreen && (
         <div className={styles.blueScreen}>
           <div className={styles.blueScreenText}>NO SIGNAL</div>
+        </div>
+      )}
+
+      {/* 80% milestone notification */}
+      {showMilestone && (
+        <div style={{
+          position: 'absolute',
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          zIndex: 30,
+          background: 'rgba(0, 0, 0, 0.88)',
+          border: '2px solid #00e5ff',
+          borderRadius: 10,
+          padding: '24px 32px',
+          textAlign: 'center',
+          fontFamily: "'Orbitron', monospace",
+          boxShadow: '0 0 30px rgba(0, 229, 255, 0.3)',
+          pointerEvents: 'none',
+        }}>
+          <div style={{ color: '#00e5ff', fontSize: '1.1rem', marginBottom: 10, letterSpacing: 2 }}>
+            80% VISIONNE
+          </div>
+          <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: '0.82rem', lineHeight: 1.6 }}>
+            Rembobinez pour +1 credit.<br />
+            Laissez une critique pour +1 credit.
+          </div>
         </div>
       )}
 

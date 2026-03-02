@@ -457,6 +457,7 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
     // Get camera state
     camera.getWorldPosition(_cameraWorldPos)
     camera.getWorldDirection(_cameraDir)
+    const cameraDirWithPitch = { x: _cameraDir.x, y: _cameraDir.y, z: _cameraDir.z }
 
     // Extract yaw only (ignore pitch) for stable orientation
     _euler.setFromQuaternion(camera.quaternion, 'YXZ')
@@ -504,8 +505,21 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
 
     // Position in front of camera at eye level (flat direction, fixed height)
     // On mobile, raise the case slightly so it's above the retractable bottom sheet
-    _targetPos.copy(_cameraWorldPos).addScaledVector(_cameraDir, DISTANCE_FROM_CAMERA)
-    _targetPos.y = _cameraWorldPos.y + (isMobile ? 0.12 : 0)
+    // During tutorial: use full camera direction (with pitch) so K7 is centered in viewport
+    const tutorialStep = useStore.getState().tutorialStep
+    const isTutorialK7 = tutorialStep === 2 || tutorialStep === 3
+    if (isTutorialK7) {
+      // Place K7 along the actual camera direction (including pitch)
+      _targetPos.set(
+        _cameraWorldPos.x + cameraDirWithPitch.x * DISTANCE_FROM_CAMERA,
+        _cameraWorldPos.y + cameraDirWithPitch.y * DISTANCE_FROM_CAMERA,
+        _cameraWorldPos.z + cameraDirWithPitch.z * DISTANCE_FROM_CAMERA,
+      )
+    } else {
+      _targetPos.copy(_cameraWorldPos).addScaledVector(_cameraDir, DISTANCE_FROM_CAMERA)
+      const mobileRaise = isMobile ? 0.12 : 0
+      _targetPos.y = _cameraWorldPos.y + mobileRaise
+    }
 
     // Center the case in the available viewport space (excluding right panel on desktop)
     if (!isMobile && size.width > 0) {

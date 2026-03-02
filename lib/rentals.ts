@@ -306,7 +306,7 @@ export function claimRewindCredit(userId: number, filmId: number): void {
     })();
 }
 
-export function setViewingMode(userId: number, filmId: number, mode: 'sur_place' | 'emporter'): RentalWithFilm {
+export function setViewingMode(userId: number, filmId: number, mode: 'sur_place'): RentalWithFilm {
     const rental = db.prepare(`
         SELECT * FROM rentals
         WHERE user_id = ? AND film_id = ? AND is_active = 1 AND expires_at > datetime('now')

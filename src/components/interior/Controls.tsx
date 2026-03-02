@@ -159,6 +159,8 @@ const _right = new THREE.Vector3();
 const _lookAtMatrix = new THREE.Matrix4();
 const _targetQuat = new THREE.Quaternion();
 const _up = new THREE.Vector3(0, 1, 0);
+const _tutorialPos = new THREE.Vector3();
+const _tutorialLookAt = new THREE.Vector3();
 
 // Seated camera position — world coordinates
 // Couch at world x=2.5 (reculé 30cm), 40% zoom towards TV (x=4.0): distance 1.5*0.6=0.90
@@ -316,6 +318,8 @@ export function Controls({
 
   // Interaction handler (shared between desktop click/key and mobile tap)
   const handleInteraction = useCallback(() => {
+    // Block interactions during tutorial
+    if (useStore.getState().tutorialStep !== null) return;
     // On desktop, require pointer lock (unless sitting or interacting with TV/LaZone).
     const { isSitting: sittingNow, isInteractingWithTV, isInteractingWithLaZone } = useStore.getState();
     if (!isMobile && !sittingNow && !isInteractingWithTV && !isInteractingWithLaZone && !controlsRef.current?.isLocked) return;
@@ -463,6 +467,8 @@ export function Controls({
     handleKeyDownRef.current = (event: KeyboardEvent) => {
       const tag = (event.target as HTMLElement)?.tagName;
       if (tag === 'TEXTAREA' || tag === 'INPUT') return;
+      // Block all inputs during tutorial
+      if (useStore.getState().tutorialStep !== null) return;
       const vhsOpen = useStore.getState().isVHSCaseOpen;
       if (vhsOpen) return;
 
@@ -660,6 +666,19 @@ export function Controls({
   // Main loop — movement + targeting
   useFrame((_, delta) => {
     frameCountRef.current++;
+
+    // === Tutorial camera override — lerp to waypoint, block all inputs ===
+    const tutorialTarget = useStore.getState().tutorialCameraTarget;
+    if (tutorialTarget) {
+      _tutorialPos.set(...tutorialTarget.position);
+      _tutorialLookAt.set(...tutorialTarget.lookAt);
+      camera.position.lerp(_tutorialPos, 3.0 * delta);
+      // Slerp quaternion towards lookAt target
+      _lookAtMatrix.lookAt(camera.position, _tutorialLookAt, _up);
+      _targetQuat.setFromRotationMatrix(_lookAtMatrix);
+      camera.quaternion.slerp(_targetQuat, 3.0 * delta);
+      return; // Block all other movement/raycasting
+    }
 
     // Determine if controls are active
     const isActive = isMobile ? true : !!controlsRef.current?.isLocked;
