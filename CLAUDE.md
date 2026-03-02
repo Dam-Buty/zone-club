@@ -79,8 +79,10 @@ src/
 │   ├── interior/            # 3D scene (Aisle, Cassette, Controls, Lighting, etc.)
 │   ├── exterior/            # Building exterior + idle video
 │   ├── terminal/            # TVTerminal (retro CRT interface)
-│   ├── player/              # VHSPlayer (video player)
-│   ├── ui/                  # Modals (film detail, search, auth, review)
+│   ├── player/              # VHSPlayer (video player + Google Cast)
+│   ├── tutorial/            # TutorialOverlay (guided tour, 7 steps, Rick portrait)
+│   ├── ui/                  # Modals (film detail, search, auth, review, WeeklyBonusToast)
+│   ├── videoclub/           # VHSCaseOverlay (K7 detail panel + tutorial annotations)
 │   ├── mobile/              # Touch controls + joystick
 │   └── manager/             # NPC manager avatar + chat
 ├── services/tmdb.ts         # TMDB client (frontend)
@@ -195,10 +197,14 @@ Fonctionnalites :
 ## Frontend 3D
 
 ### Composants cles
-- **Controls.tsx** : FPS controls + raycasting + collisions (ZQSD/WASD)
+- **Controls.tsx** : FPS controls + raycasting + collisions (ZQSD/WASD) + tutorial camera waypoints
 - **Cassette.tsx / CassetteInstances.tsx** : VHS interactives (InstancedMesh + DataArrayTexture)
 - **TVTerminal.tsx** : Interface CRT retro (compte, locations, admin)
-- **VHSPlayer.tsx** : Player video avec switch VF/VO/sous-titres
+- **VHSPlayer.tsx** : Player video avec switch VF/VO/sous-titres + Google Cast
+- **TutorialOverlay.tsx** : Visite guidee 7 etapes, portrait Rick, dialogues, chevrons swipe
+- **VHSCaseOverlay.tsx** : Panel K7 detail + annotations tutorial + glow cyclique
+- **VHSCaseViewer.tsx** : Positionnement 3D de la K7 (fix cameraDirWithPitch pour tutorial)
+- **WeeklyBonusToast.tsx** : Notification bonus credits hebdomadaire
 
 ### Hysteresis de selection
 Double hysteresis pour eviter le flickering aux bords des cassettes :
@@ -207,6 +213,36 @@ Double hysteresis pour eviter le flickering aux bords des cassettes :
 
 ### Collisions
 Zones definies dans Controls.tsx : `{ minX, maxX, minZ, maxZ, name }`.
+
+### Tutorial (visite guidee)
+
+Systeme de visite guidee en 7 etapes avec le manager Rick comme guide.
+
+**Architecture** :
+- `TUTORIAL_WAYPOINTS` (store) : 7 positions/lookAt camera, utilisees par Controls pour le lerp
+- `tutorialStep` (0-6 | null) : etape courante, null = tutorial inactif
+- `tutorialCameraTarget` : cible camera courante, consommee par Controls
+- `TutorialOverlay.tsx` : portraits Rick, dialogues, points d'etape, chevrons swipe
+- `VHSCaseOverlay.tsx` : annotations tutorial + glow cyclique sur les boutons (step 3)
+
+**Etapes** :
+| Step | Description | Visuel |
+|------|-------------|--------|
+| 0 | Bienvenue | Dialogue bottom |
+| 1 | Navigation | Dialogue bottom |
+| 2 | K7 ouverte, navigation | Chevrons swipe (mobile) / arrows pulse (desktop) |
+| 3 | Systeme de credits | Liste rewards +1cr, glow cyclique boutons |
+| 4 | Manager | Dialogue bottom |
+| 5 | TV/Canape | Dialogue bottom |
+| 6 | Bonne visite | Dialogue bottom |
+
+**Fin du tutorial** : teleportation waypoint[0] (entree) + modale inscription si non authentifie (`showPostTutorialAuth`)
+
+**K7 pendant tutorial** :
+- Step 2 : ouvre une K7 aleatoire via `selectFilm()`
+- Step 3 : K7 reste ouverte (no-op)
+- Step 4+ : ferme la K7
+- Positionnement : utilise `cameraDirWithPitch` (direction camera avec pitch) au lieu de la direction aplatie (Y=0)
 
 ## Performance
 
@@ -329,6 +365,14 @@ CORRECT:   useFrame → Raycast depuis (0,0) → Store Zustand → Cassette lit 
 **Identification objets 3D repetes** : Utiliser une cle basee sur la position (`cassetteKey: {shelf-type}-{position}-{row}-{col}`) plutot que l'ID de contenu (`filmId`). Stocker les deux dans `userData`.
 
 **Variables reutilisables** : Vector3, Matrix4, Frustum → HORS du composant pour eviter allocations par frame.
+
+**Direction camera aplatie (02/03/2026)** : Dans VHSCaseViewer, `_cameraDir` est aplatie (Y=0) pour un positionnement K7 horizontal stable. Toute utilisation de `_cameraDir.y` APRES l'aplatissement donne 0. Pour positionner un objet dans la direction reelle de la camera (avec pitch), sauvegarder la direction AVANT l'aplatissement.
+```
+INCORRECT: camera.getWorldDirection(_dir) → _dir.y = 0 → utiliser _dir.y (= toujours 0)
+CORRECT:   camera.getWorldDirection(_dir) → sauver {x,y,z} → _dir.y = 0 → utiliser la copie
+```
+
+**Build cache Next.js** : Un cache `.next` corrompu peut causer des `PageNotFoundError` fantomes sur des routes API valides. Toujours `rm -rf .next` avant un build de verification.
 
 ## Skills
 
