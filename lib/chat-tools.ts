@@ -146,3 +146,72 @@ export function createChatTools(userId: number) {
     }),
   };
 }
+
+export function createGuestChatTools() {
+  return {
+    get_film: tool({
+      description: 'Recupere les informations completes d\'un film depuis TMDB (synopsis, casting, realisateur, etc). Utilise quand tu veux parler en detail d\'un film specifique.',
+      inputSchema: z.object({
+        tmdb_id: z.number().describe('L\'ID TMDB du film'),
+      }),
+      execute: async ({ tmdb_id }) => {
+        const film = getFilmByTmdbId(tmdb_id);
+        if (film) {
+          return {
+            id: film.id,
+            tmdb_id: film.tmdb_id,
+            title: film.title,
+            title_original: film.title_original,
+            synopsis: film.synopsis,
+            release_year: film.release_year,
+            genres: film.genres,
+            directors: film.directors,
+            actors: film.actors,
+            runtime: film.runtime,
+            aisle: film.aisle,
+            is_available: film.is_available,
+            is_nouveaute: film.is_nouveaute,
+          };
+        }
+        const tmdbData = await fetchFullMovieData(tmdb_id);
+        return tmdbData;
+      },
+    }),
+
+    backdrop: tool({
+      description: 'Affiche un backdrop cinematique d\'un film en arriere-plan du chat. Utilise quand tu parles d\'un film specifique pour creer l\'ambiance.',
+      inputSchema: z.object({
+        tmdb_id: z.number().describe('L\'ID TMDB du film dont afficher le backdrop'),
+      }),
+      execute: async ({ tmdb_id }) => {
+        const backdrops = await getMovieBackdrops(tmdb_id);
+        if (backdrops.length === 0) {
+          return { success: false, url: null };
+        }
+        const pick = backdrops[Math.floor(Math.random() * backdrops.length)];
+        const url = getBackdropUrl(pick.file_path, 'w1280');
+        return { success: true, url };
+      },
+    }),
+
+    signup: tool({
+      description: 'Affiche le formulaire d\'inscription pour prendre la carte du club. Le formulaire apparait dans le chat, le client le remplit lui-meme. N\'appelle cet outil qu\'UNE SEULE FOIS par conversation.',
+      inputSchema: z.object({
+        message: z.string().optional().describe('Message d\'accompagnement pour le formulaire'),
+      }),
+      execute: async () => {
+        return { action: 'signup' as const, displayed: true };
+      },
+    }),
+
+    signin: tool({
+      description: 'Affiche le formulaire de connexion. Le formulaire apparait dans le chat, le client le remplit lui-meme. N\'appelle cet outil qu\'UNE SEULE FOIS par conversation.',
+      inputSchema: z.object({
+        message: z.string().optional().describe('Message d\'accompagnement pour le formulaire'),
+      }),
+      execute: async () => {
+        return { action: 'signin' as const, displayed: true };
+      },
+    }),
+  };
+}

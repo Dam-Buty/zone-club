@@ -3,6 +3,8 @@ import { isToolUIPart, getToolName } from 'ai';
 import { GenUIRentCard } from './GenUIRentCard';
 import { GenUICriticForm } from './GenUICriticForm';
 import { GenUIWatchButton } from './GenUIWatchButton';
+import { GenUISignupForm } from './GenUISignupForm';
+import { GenUISigninForm } from './GenUISigninForm';
 import styles from './ManagerChat.module.css';
 
 interface Props {
@@ -63,6 +65,16 @@ export function ChatMessageRenderer({ message }: Props) {
                   data={{ name: 'watch', filmId: output.filmId, title: output.title }}
                 />
               );
+            }
+            return null;
+          case 'signup':
+            if (output.action === 'signup') {
+              return <GenUISignupForm key={part.toolCallId} />;
+            }
+            return null;
+          case 'signin':
+            if (output.action === 'signin') {
+              return <GenUISigninForm key={part.toolCallId} />;
             }
             return null;
           default:

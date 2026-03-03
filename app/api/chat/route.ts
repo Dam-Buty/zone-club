@@ -3,8 +3,8 @@ import { after } from 'next/server';
 import { streamText, convertToModelMessages, stepCountIs } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 import { getUserFromSession, getUserFromApiKey } from '@/lib/session';
-import { buildSystemPrompt } from '@/lib/chat';
-import { createChatTools } from '@/lib/chat-tools';
+import { buildSystemPrompt, buildGuestSystemPrompt } from '@/lib/chat';
+import { createChatTools, createGuestChatTools } from '@/lib/chat-tools';
 import { db } from '@/lib/db';
 import { langfuseSpanProcessor } from '@/instrumentation';
 
@@ -18,21 +18,27 @@ const openrouter = createOpenAI({
 export async function POST(req: Request) {
   const cookieStore = await cookies();
   const user = getUserFromApiKey(req) ?? getUserFromSession(cookieStore.get('session')?.value);
-  if (!user) {
-    return new Response(JSON.stringify({ message: 'Non authentifié' }), { status: 401 });
-  }
 
   const body = await req.json();
   const { messages, events, sessionId } = body;
 
-  // Get user credits
-  const userData = db.prepare('SELECT credits FROM users WHERE id = ?').get(user.id) as { credits: number };
+  let systemPrompt: string;
+  let tools;
 
-  const systemPrompt = buildSystemPrompt({
-    userId: user.id,
-    username: user.username,
-    credits: userData.credits,
-  });
+  if (user) {
+    // Authenticated path
+    const userData = db.prepare('SELECT credits FROM users WHERE id = ?').get(user.id) as { credits: number };
+    systemPrompt = buildSystemPrompt({
+      userId: user.id,
+      username: user.username,
+      credits: userData.credits,
+    });
+    tools = createChatTools(user.id);
+  } else {
+    // Guest path
+    systemPrompt = buildGuestSystemPrompt();
+    tools = createGuestChatTools();
+  }
 
   // Inject events as system messages at the start
   const eventMessages = (events || []).map((event: string) => ({
@@ -54,8 +60,6 @@ export async function POST(req: Request) {
   // Prepend event messages
   const allMessages = [...eventMessages, ...modelMessages];
 
-  const tools = createChatTools(user.id);
-
   const result = streamText({
     model: openrouter.chat(CHAT_MODEL),
     maxOutputTokens: 800,
@@ -68,7 +72,7 @@ export async function POST(req: Request) {
       functionId: 'chat',
       metadata: {
         sessionId: sessionId || undefined,
-        userId: String(user.id),
+        userId: user ? String(user.id) : 'guest',
       },
     },
   });
