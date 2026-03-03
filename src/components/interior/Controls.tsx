@@ -209,7 +209,7 @@ const PINCH_SENSITIVITY = 3.0;       // maps normalized pinchDelta → zoomFacto
 export const RAYCAST_LAYER_CASSETTE = 1;
 export const RAYCAST_LAYER_INTERACTIVE = 2;
 
-type InteractiveTarget = "manager" | "bell" | "tv" | "couch" | "lazone" | null;
+type InteractiveTarget = "manager" | "bell" | "tv" | "couch" | "lazone" | "board" | "boardNote" | null;
 
 export function Controls({
   onCassetteClick,
@@ -246,6 +246,8 @@ export function Controls({
 
   // Cible interactive actuelle
   const targetedInteractiveRef = useRef<InteractiveTarget>(null);
+  const targetedBoardNoteIdRef = useRef<number | null>(null);
+  const targetedBoardCellRef = useRef<{ row: number; col: number } | null>(null);
 
   // Sitting state tracking for standup animation
   const wasSittingRef = useRef(false);
@@ -398,6 +400,24 @@ export function Controls({
       } else {
         useStore.getState().setInteractingWithLaZone(true);
       }
+      return;
+    }
+    if (interactive === "boardNote") {
+      const noteId = targetedBoardNoteIdRef.current;
+      if (noteId !== null) {
+        useStore.getState().openBoardNote(noteId);
+        if (!isMobile) requestPointerUnlock();
+      }
+      return;
+    }
+    if (interactive === "board") {
+      const cell = targetedBoardCellRef.current;
+      if (cell) {
+        useStore.getState().openBoardCreate(cell.row, cell.col);
+      } else {
+        useStore.getState().openBoardCreate();
+      }
+      if (!isMobile) requestPointerUnlock();
       return;
     }
 
@@ -807,6 +827,27 @@ export function Controls({
                 handled = true;
                 break;
               }
+              if (obj.userData?.isBoardNote) {
+                useStore.getState().openBoardNote(obj.userData.noteId);
+                handled = true;
+                break;
+              }
+              if (obj.userData?.isBoard) {
+                // Compute grid cell from tap intersection
+                let boardGroup: THREE.Object3D = obj;
+                while (boardGroup.parent && !boardGroup.userData?.isBoardGroup) {
+                  boardGroup = boardGroup.parent;
+                }
+                const localPt = boardGroup.worldToLocal(intersect.point.clone());
+                const col = Math.round((localPt.x / 1.6 + 0.5) * 7);
+                const row = Math.round((0.5 - localPt.y / 1.0) * 5);
+                useStore.getState().openBoardCreate(
+                  Math.max(0, Math.min(5, row)),
+                  Math.max(0, Math.min(7, col)),
+                );
+                handled = true;
+                break;
+              }
               if (obj.userData?.filmId && obj.userData?.cassetteKey) {
                 setTargetedFilm(obj.userData.filmId, obj.userData.cassetteKey);
                 onCassetteClick?.(obj.userData.filmId);
@@ -874,6 +915,27 @@ export function Controls({
               foundInteractive = "tv";
               break;
             }
+            if (obj.userData?.isBoardNote) {
+              foundInteractive = "boardNote";
+              targetedBoardNoteIdRef.current = obj.userData.noteId;
+              break;
+            }
+            if (obj.userData?.isBoard) {
+              foundInteractive = "board";
+              // Compute grid cell from intersection point
+              let boardGroup: THREE.Object3D = obj;
+              while (boardGroup.parent && !boardGroup.userData?.isBoardGroup) {
+                boardGroup = boardGroup.parent;
+              }
+              const localPt = boardGroup.worldToLocal(intersect.point.clone());
+              const col = Math.round((localPt.x / 1.6 + 0.5) * 7);
+              const row = Math.round((0.5 - (localPt.y - 0.64) / 1.0) * 5);
+              targetedBoardCellRef.current = {
+                row: Math.max(0, Math.min(5, row)),
+                col: Math.max(0, Math.min(7, col)),
+              };
+              break;
+            }
             if (obj.userData?.filmId && obj.userData?.cassetteKey) {
               foundFilmId = obj.userData.filmId;
               foundCassetteKey = obj.userData.cassetteKey;
@@ -884,6 +946,12 @@ export function Controls({
           if (foundInteractive || foundFilmId !== null) break;
         }
 
+        if (foundInteractive !== "boardNote") {
+          targetedBoardNoteIdRef.current = null;
+        }
+        if (foundInteractive !== "board") {
+          targetedBoardCellRef.current = null;
+        }
         targetedInteractiveRef.current = foundInteractive;
 
         // Sync to store (only on change to avoid re-renders)

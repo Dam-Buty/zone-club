@@ -3,6 +3,7 @@ import { useStore } from './store';
 import { VHSCaseOverlay } from './components/videoclub/VHSCaseOverlay';
 import { AuthModal } from './components/auth/AuthModal';
 import { ManagerChat } from './components/manager/ManagerChat';
+import BoardOverlay from './components/board/BoardOverlay';
 import { VHSPlayer } from './components/player/VHSPlayer';
 import { preloadPosterImage } from './utils/CassetteTextureArray';
 import api from './api';
@@ -253,11 +254,13 @@ function App() {
   }, [isSceneReady]);
 
 
-  // Restore auth session from cookie on mount
+  // Restore auth session from cookie on mount + load board notes
   const fetchMe = useStore(state => state.fetchMe);
+  const fetchBoardNotes = useStore(state => state.fetchBoardNotes);
   useEffect(() => {
     fetchMe();
-  }, [fetchMe]);
+    fetchBoardNotes();
+  }, [fetchMe, fetchBoardNotes]);
 
   // Block native browser zoom (Ctrl+scroll on desktop, pinch on mobile fallback)
   useEffect(() => {
@@ -379,6 +382,9 @@ function App() {
 
       {/* Manager Chat */}
       <ManagerChat />
+
+      {/* Board overlay (sticky notes) */}
+      <BoardOverlay />
 
       {/* Post-tutorial registration modal */}
       <AuthModal

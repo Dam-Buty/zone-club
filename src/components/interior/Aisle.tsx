@@ -4,6 +4,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { useGLTF, useTexture } from '@react-three/drei'
 import { generateKentTileTextures } from '../../utils/KentTileTexture'
 import { LaZoneCRT } from './LaZoneCRT'
+import { BoardMesh } from './BoardMesh'
 
 // Composant pour chargement async des modèles 3D
 function AsyncModel({ url, position, scale = 1, rotation = [0, 0, 0] }: {
@@ -35,6 +36,7 @@ function AsyncModel({ url, position, scale = 1, rotation = [0, 0, 0] }: {
 }
 // Preload shelf model at module level (downloaded at JS parse time, not component mount)
 useGLTF.preload('/models/shelf.glb', true)
+useGLTF.preload('/models/board.glb', true)
 
 import { useKTX2Textures } from '../../hooks/useKTX2Textures'
 import { WallShelf, SHELF_DEPTH, SHELF_TILT, SHELF_PIVOT_Y } from './WallShelf'
@@ -971,6 +973,15 @@ export const Aisle = memo(function Aisle({ films }: AisleProps) {
         position={[ROOM_WIDTH / 2 - 0.275, 0, 1.2]}
         rotation={[0, -Math.PI / 2, 0]}
       />
+
+      {/* ===== BOARD — behind TV, against wall (interactive) ===== */}
+      <Suspense fallback={null}>
+        <BoardMesh
+          position={[ROOM_WIDTH / 2 - 0.02, 1.25, 1.4]}
+          scale={0.7}
+          rotation={[0, -Math.PI / 2, 0]}
+        />
+      </Suspense>
 
       {/* ===== DÉTAILS DU SOL — Paillasson d'entrée ===== */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[-ROOM_WIDTH / 2 + 1.33, 0.005, ROOM_DEPTH / 2 - 0.8]}>

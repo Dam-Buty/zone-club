@@ -171,4 +171,24 @@ try {
   );
 } catch {}
 
+// Board notes table (safe with IF NOT EXISTS in schema.sql, but migration for existing DBs)
+try {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS board_notes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      content TEXT NOT NULL,
+      color TEXT NOT NULL DEFAULT 'yellow' CHECK(color IN ('yellow', 'pink', 'blue', 'green')),
+      grid_row INTEGER NOT NULL,
+      grid_col INTEGER NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      UNIQUE(grid_row, grid_col)
+    )
+  `);
+  db.exec(
+    "CREATE INDEX IF NOT EXISTS idx_board_notes_user ON board_notes(user_id)",
+  );
+} catch {}
+
 export default db;

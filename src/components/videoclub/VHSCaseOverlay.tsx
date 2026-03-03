@@ -1957,6 +1957,8 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
                           color: "rgba(255,255,255,0.6)",
                           lineHeight: 1.5,
                           fontStyle: "italic",
+                          maxHeight: "25vh",
+                          overflowY: "auto",
                         }}>
                           &ldquo;{r.content}&rdquo;
                         </div>
@@ -2283,6 +2285,8 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
                         color: "rgba(255,255,255,0.8)",
                         lineHeight: 1.5,
                         fontStyle: "italic",
+                        maxHeight: "30vh",
+                        overflowY: "auto",
                       }}>
                         "{r.content}"
                       </div>

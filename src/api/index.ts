@@ -371,6 +371,41 @@ export const me = {
   },
 };
 
+// ============ BOARD ============
+
+export interface ApiBoardNote {
+  id: number;
+  user_id: number;
+  content: string;
+  color: 'yellow' | 'pink' | 'blue' | 'green';
+  grid_row: number;
+  grid_col: number;
+  created_at: string;
+  username: string;
+}
+
+export interface BoardCapacity {
+  total: number;
+  used: number;
+}
+
+export const board = {
+  async getAll(): Promise<{ notes: ApiBoardNote[]; capacity: BoardCapacity }> {
+    return request('/api/board');
+  },
+
+  async create(content: string, color: string, gridRow?: number, gridCol?: number): Promise<{ note: ApiBoardNote }> {
+    return request('/api/board', {
+      method: 'POST',
+      body: JSON.stringify({ content, color, grid_row: gridRow, grid_col: gridCol }),
+    });
+  },
+
+  async delete(noteId: number): Promise<void> {
+    await request(`/api/board/${noteId}`, { method: 'DELETE' });
+  },
+};
+
 // ============ ADMIN ============
 
 export interface AdminStats {
@@ -467,6 +502,7 @@ export const api = {
   genres,
   me,
   filmRequests,
+  board,
   admin,
 };
 
