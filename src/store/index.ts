@@ -773,26 +773,22 @@ export const useStore = create<VideoClubState>()(
         if (current === null) return;
         const next = current + 1;
         if (next >= TUTORIAL_WAYPOINTS.length) {
-          // Teleport back to entrance + show registration
-          const isAuth = get().isAuthenticated;
+          // Teleport back to entrance
           set({
             tutorialStep: null,
             tutorialCameraTarget: TUTORIAL_WAYPOINTS[0],
             hasCompletedTutorial: true,
-            showPostTutorialAuth: !isAuth,
           });
         } else {
           set({ tutorialStep: next, tutorialCameraTarget: TUTORIAL_WAYPOINTS[next] });
         }
       },
       skipTutorial: () => {
-        // Teleport back to entrance + show registration
-        const isAuth = get().isAuthenticated;
+        // Teleport back to entrance
         set({
           tutorialStep: null,
           tutorialCameraTarget: TUTORIAL_WAYPOINTS[0],
           hasCompletedTutorial: true,
-          showPostTutorialAuth: !isAuth,
         });
       },
       dismissPostTutorialAuth: () => {
