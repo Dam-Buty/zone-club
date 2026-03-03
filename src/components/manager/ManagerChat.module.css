@@ -427,6 +427,79 @@
   text-shadow: 0 0 8px rgba(255, 246, 0, 0.5);
 }
 
+/* ====== GenUI auth forms ====== */
+
+.genUIAuthHeader {
+  font-weight: 600;
+  color: var(--color-neon-cyan, #00fff7);
+  font-size: 0.85rem;
+  margin-bottom: 8px;
+}
+
+.genUIAuthForm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.genUIAuthInput {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  padding: 8px 12px;
+  color: white;
+  font-size: 0.85rem;
+  font-family: var(--font-body, "Inter", sans-serif);
+}
+
+.genUIAuthInput:focus {
+  outline: none;
+  border-color: var(--color-neon-cyan, #00fff7);
+  box-shadow: 0 0 8px rgba(0, 255, 247, 0.2);
+}
+
+.genUIAuthInput:disabled {
+  opacity: 0.5;
+}
+
+.genUIPassphraseLabel {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.genUIPassphrase {
+  display: block;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(0, 255, 247, 0.3);
+  border-radius: 6px;
+  padding: 10px 12px;
+  color: var(--color-neon-cyan, #00fff7);
+  font-size: 0.85rem;
+  word-break: break-all;
+  user-select: all;
+}
+
+.genUIPassphraseActions {
+  display: flex;
+  gap: 8px;
+}
+
+.genUIButtonSecondary {
+  background: transparent;
+  border: 1px solid rgba(0, 255, 247, 0.5);
+  border-radius: 6px;
+  padding: 8px 16px;
+  color: var(--color-neon-cyan, #00fff7);
+  font-weight: 600;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.genUIButtonSecondary:hover {
+  background: rgba(0, 255, 247, 0.1);
+}
+
 /* Mobile responsive */
 @media (max-width: 640px) {
   .overlay {

@@ -34,6 +34,14 @@ export interface CreditsData {
   reason: string;
 }
 
+export interface GenUISignupData {
+  name: 'signup';
+}
+
+export interface GenUISigninData {
+  name: 'signin';
+}
+
 export interface SessionData {
   name: 'session';
   sessionId: number;
@@ -45,4 +53,6 @@ export type ChatAnnotation =
   | GenUIWatchData
   | BackdropData
   | CreditsData
+  | GenUISignupData
+  | GenUISigninData
   | SessionData;

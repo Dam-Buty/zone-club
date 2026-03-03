@@ -27,6 +27,8 @@ export function ManagerChat() {
 
   const { messages, sendMessage, status, error } = useChat({});
 
+  const isAuthenticated = useStore(s => s.isAuthenticated);
+
   // Process side-effects from tool outputs (backdrop, credits)
   useEffect(() => {
     for (const msg of messages) {
@@ -50,6 +52,15 @@ export function ManagerChat() {
       }
     }
   }, [messages, setChatBackdrop, fetchMe]);
+
+  // Refresh user data when auth state changes mid-conversation (signup/signin inline)
+  const prevAuthRef = useRef(isAuthenticated);
+  useEffect(() => {
+    if (isAuthenticated && !prevAuthRef.current) {
+      fetchMe();
+    }
+    prevAuthRef.current = isAuthenticated;
+  }, [isAuthenticated, fetchMe]);
 
   const isLoading = status === 'streaming' || status === 'submitted';
 
@@ -153,7 +164,7 @@ export function ManagerChat() {
           {error && (
             <div className={`${styles.message} ${styles.managerMessage}`}>
               <span className={styles.messageText}>
-                *grommelle* ... La ligne est coupee. Reessaie.
+                *grommelle* ... Y'a un probleme technique. Reessaie.
               </span>
             </div>
           )}
