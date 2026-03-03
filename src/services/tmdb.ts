@@ -286,11 +286,8 @@ export const tmdb = {
         .slice(0, 2)
         .map((r: { author?: string; content?: string }) => {
           let content = (r.content || '').replace(/[#*_~`\r\n]+/g, ' ').trim();
-          const match = content.match(/^[^.!?]{10,}[.!?]/);
-          if (match && match[0].length <= 150) {
-            content = match[0];
-          } else if (content.length > 120) {
-            content = content.substring(0, 117) + '...';
+          if (content.length > 600) {
+            content = content.substring(0, 597) + '...';
           }
           return { author: r.author || 'Critique', content };
         });

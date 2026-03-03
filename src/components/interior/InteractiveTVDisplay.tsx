@@ -1828,7 +1828,7 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
 
       {/* Indicateur si films disponibles */}
       {rentedFilms.length > 0 && tvMode === 'idle' && indicatorTexture && (
-        <mesh position={[0, 1.58, 0.2]}>
+        <mesh position={[0, 1.15, 0.16]}>
           <planeGeometry args={[0.35, 0.06]} />
           <meshBasicMaterial map={indicatorTexture} transparent toneMapped={false} />
         </mesh>

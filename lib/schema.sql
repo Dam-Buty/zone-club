@@ -145,6 +145,20 @@ CREATE TABLE IF NOT EXISTS user_facts (
 );
 CREATE INDEX IF NOT EXISTS idx_user_facts_user ON user_facts(user_id);
 
+-- Board notes (sticky notes on cork board)
+CREATE TABLE IF NOT EXISTS board_notes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    content TEXT NOT NULL,
+    color TEXT NOT NULL DEFAULT 'yellow' CHECK(color IN ('yellow', 'pink', 'blue', 'green')),
+    grid_row INTEGER NOT NULL,
+    grid_col INTEGER NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    UNIQUE(grid_row, grid_col)
+);
+CREATE INDEX IF NOT EXISTS idx_board_notes_user ON board_notes(user_id);
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_rentals_user ON rentals(user_id);
 CREATE INDEX IF NOT EXISTS idx_rentals_film ON rentals(film_id);

@@ -608,6 +608,10 @@ function UIOverlays({ isMobile }: { isMobile: boolean }) {
           hint = 'Parler [E]'
         } else if (targetedInteractive === 'lazone') {
           hint = 'La Zone [E]'
+        } else if (targetedInteractive === 'boardNote') {
+          hint = 'Lire [E]'
+        } else if (targetedInteractive === 'board') {
+          hint = 'Ecrire [E]'
         }
         if (!hint) return null
         return (

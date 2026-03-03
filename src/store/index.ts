@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Film, Rental, AisleType, SceneType, MemberLevel, AuthUser, LocalUser } from '../types';
-import api, { type ApiRentalWithFilm, type ApiFilm, type ReviewWithUser, type ApiReturnRequest, type WeeklyBonusStatus } from '../api';
+import api, { type ApiRentalWithFilm, type ApiFilm, type ReviewWithUser, type ApiReturnRequest, type WeeklyBonusStatus, type ApiBoardNote, type BoardCapacity } from '../api';
 import { preloadPosterImage } from '../utils/CassetteTextureArray';
 import { fetchVHSCoverData } from '../utils/VHSCoverGenerator';
 
@@ -255,6 +255,17 @@ interface VideoClubState {
   dismissPostTutorialAuth: () => void;
   setShowInstallPrompt: (show: boolean) => void;
   dismissInstallPrompt: () => void;
+
+  // Board (sticky notes)
+  boardOverlayMode: 'create' | 'detail' | null;
+  boardNotes: ApiBoardNote[];
+  boardCapacity: BoardCapacity | null;
+  selectedBoardNoteId: number | null;
+  boardCreateCell: { row: number; col: number } | null;
+  openBoardCreate: (row?: number, col?: number) => void;
+  openBoardNote: (noteId: number) => void;
+  closeBoard: () => void;
+  fetchBoardNotes: () => Promise<void>;
 }
 
 export const useStore = create<VideoClubState>()(
@@ -793,6 +804,31 @@ export const useStore = create<VideoClubState>()(
       },
       dismissPostTutorialAuth: () => {
         set({ showPostTutorialAuth: false, tutorialCameraTarget: null });
+      },
+
+      // Board (sticky notes)
+      boardOverlayMode: null,
+      boardNotes: [],
+      boardCapacity: null,
+      selectedBoardNoteId: null,
+      boardCreateCell: null,
+      openBoardCreate: (row?: number, col?: number) => {
+        set({
+          boardOverlayMode: 'create',
+          boardCreateCell: row !== undefined && col !== undefined ? { row, col } : null,
+        });
+      },
+      openBoardNote: (noteId) => {
+        set({ boardOverlayMode: 'detail', selectedBoardNoteId: noteId });
+      },
+      closeBoard: () => set({ boardOverlayMode: null, selectedBoardNoteId: null, boardCreateCell: null }),
+      fetchBoardNotes: async () => {
+        try {
+          const { notes, capacity } = await api.board.getAll();
+          set({ boardNotes: notes, boardCapacity: capacity });
+        } catch {
+          // silently fail
+        }
       },
     }),
     {
