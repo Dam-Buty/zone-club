@@ -703,6 +703,15 @@ export function Controls({
       _lookAtMatrix.lookAt(camera.position, _tutorialLookAt, _up);
       _targetQuat.setFromRotationMatrix(_lookAtMatrix);
       camera.quaternion.slerp(_targetQuat, 3.0 * delta);
+
+      // Clear target once camera has converged (tutorial ended, post-teleport)
+      if (useStore.getState().tutorialStep === null) {
+        const dist = camera.position.distanceTo(_tutorialPos);
+        if (dist < 0.05) {
+          useStore.setState({ tutorialCameraTarget: null });
+        }
+      }
+
       return; // Block all other movement/raycasting
     }
 
