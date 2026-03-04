@@ -257,10 +257,33 @@ function App() {
   // Restore auth session from cookie on mount + load board notes
   const fetchMe = useStore(state => state.fetchMe);
   const fetchBoardNotes = useStore(state => state.fetchBoardNotes);
+  const openPlayer = useStore(state => state.openPlayer);
   useEffect(() => {
     fetchMe();
     fetchBoardNotes();
   }, [fetchMe, fetchBoardNotes]);
+
+  // ===== Deep link: ?castEnded=filmId (from push notification) =====
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const castEndedFilmId = params.get('castEnded');
+    if (!castEndedFilmId) return;
+
+    // Clean URL
+    const url = new URL(window.location.href);
+    url.searchParams.delete('castEnded');
+    window.history.replaceState({}, '', url.pathname + url.search);
+
+    const filmId = parseInt(castEndedFilmId, 10);
+    if (isNaN(filmId)) return;
+
+    // Ensure we're in interior scene and open the player for this film
+    setScene('interior');
+    // Delay slightly to let scene mount
+    setTimeout(() => {
+      openPlayer(filmId);
+    }, 500);
+  }, [setScene, openPlayer]);
 
   // Block native browser zoom (Ctrl+scroll on desktop, pinch on mobile fallback)
   useEffect(() => {

@@ -525,6 +525,137 @@
   background: rgba(0, 255, 247, 0.16);
 }
 
+/* ===== Casting Overlay ===== */
+.castingOverlay {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at center, rgba(0, 10, 20, 0.92) 0%, rgba(0, 0, 0, 0.97) 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  z-index: 6;
+}
+
+.castingIcon {
+  font-size: 3.5rem;
+  filter: drop-shadow(0 0 12px rgba(0, 255, 247, 0.4));
+  margin-bottom: 4px;
+}
+
+.castingTitle {
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  color: var(--color-neon-cyan);
+  text-shadow: var(--glow-cyan);
+  letter-spacing: 0.12em;
+  text-align: center;
+}
+
+.castingTimer {
+  font-family: 'Courier New', monospace;
+  font-size: 2rem;
+  color: #00ff88;
+  text-shadow: 0 0 16px rgba(0, 255, 136, 0.5);
+  letter-spacing: 0.15em;
+  font-weight: bold;
+}
+
+.castingBarContainer {
+  width: 320px;
+  max-width: 80%;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+  overflow: hidden;
+  border: 1px solid rgba(0, 255, 247, 0.15);
+}
+
+.castingBarFill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--color-neon-cyan), #00ff88);
+  border-radius: 3px;
+  box-shadow: 0 0 6px rgba(0, 255, 247, 0.4);
+  transition: width 1s linear;
+}
+
+.castingPercent {
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  color: rgba(0, 255, 247, 0.7);
+  letter-spacing: 0.1em;
+}
+
+.castingHint {
+  font-family: 'Courier New', monospace;
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.45);
+  text-align: center;
+  margin-top: 16px;
+  line-height: 1.4;
+  max-width: 360px;
+}
+
+.castingPushPrompt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-top: 20px;
+  padding: 14px 20px;
+  background: rgba(0, 255, 247, 0.06);
+  border: 1px solid rgba(0, 255, 247, 0.2);
+  border-radius: 6px;
+  max-width: 380px;
+}
+
+.castingPushText {
+  font-family: 'Courier New', monospace;
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.7);
+  text-align: center;
+  line-height: 1.4;
+}
+
+.castingPushActions {
+  display: flex;
+  gap: 10px;
+}
+
+.castingPushBtn {
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  color: #00140f;
+  background: #00ff88;
+  border: 1px solid #00ff88;
+  border-radius: 4px;
+  padding: 7px 16px;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+
+.castingPushBtn:hover {
+  background: #6dffbf;
+}
+
+.castingPushDismiss {
+  font-family: var(--font-display);
+  font-size: 0.68rem;
+  color: rgba(255, 255, 255, 0.6);
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  padding: 7px 12px;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+
+.castingPushDismiss:hover {
+  border-color: rgba(255, 255, 255, 0.4);
+  color: rgba(255, 255, 255, 0.85);
+}
+
 @keyframes flicker {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.8; }

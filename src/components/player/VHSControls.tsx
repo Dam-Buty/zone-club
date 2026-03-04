@@ -34,6 +34,13 @@ interface VHSControlsProps {
   isAirPlayAvailable: boolean;
   isAirPlayConnected: boolean;
   remoteError: string | null;
+  // Casting remote state
+  isCasting: boolean;
+  remoteCastTime: number;
+  remoteCastDuration: number;
+  remoteCastPaused: boolean;
+  onRemotePlayOrPause: () => void;
+  onRemoteStop: () => void;
 }
 
 function formatTime(seconds: number): string {
@@ -82,6 +89,12 @@ export function VHSControls({
   isAirPlayAvailable,
   isAirPlayConnected,
   remoteError,
+  isCasting,
+  remoteCastTime,
+  remoteCastDuration,
+  remoteCastPaused,
+  onRemotePlayOrPause,
+  onRemoteStop,
 }: VHSControlsProps) {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -110,7 +123,17 @@ export function VHSControls({
     };
   }, [videoRef]);
 
+  // Use remote times when casting
+  const displayTime = isCasting ? remoteCastTime : currentTime;
+  const displayDuration = isCasting ? remoteCastDuration : duration;
+
   const togglePlay = useCallback(() => {
+    // Delegate to remote when casting
+    if (isCasting) {
+      onRemotePlayOrPause();
+      return;
+    }
+
     const video = videoRef.current;
     if (!video) return;
 
@@ -127,7 +150,7 @@ export function VHSControls({
       video.play();
       onStateChange('playing');
     }
-  }, [videoRef, playerState, onStateChange, onResumeFromRW]);
+  }, [videoRef, playerState, onStateChange, onResumeFromRW, isCasting, onRemotePlayOrPause]);
 
   const toggleMute = useCallback(() => {
     const video = videoRef.current;
@@ -152,6 +175,7 @@ export function VHSControls({
 
   // State indicator text
   const stateLabel = (() => {
+    if (playerState === 'casting') return isCasting && remoteCastPaused ? 'CAST PAUSE' : 'CAST';
     if (playerState === 'fastforwarding') return `FF x${ffSpeed}`;
     if (playerState === 'rewinding') return `REW x${ffSpeed}`;
     if (playerState === 'paused') return 'PAUSE';
@@ -167,32 +191,32 @@ export function VHSControls({
         <div className={styles.vcrLeft}>
           <div className={styles.tapeCounter}>
             <span className={styles.tapeCounterLabel}>COUNTER</span>
-            <span className={styles.tapeCounterValue}>{formatTapeCounter(currentTime, duration)}</span>
+            <span className={styles.tapeCounterValue}>{formatTapeCounter(displayTime, displayDuration)}</span>
           </div>
           <div className={styles.timeDisplay}>
-            {formatTime(currentTime)} / {formatTime(duration)}
+            {formatTime(displayTime)} / {formatTime(displayDuration)}
           </div>
         </div>
 
         {/* Center: VCR transport buttons */}
         <div className={styles.vcrTransport}>
-          <button onClick={onRewindToStart} className={styles.vcrBtn} title="Rembobiner au début [R]">
+          <button onClick={onRewindToStart} className={styles.vcrBtn} title="Rembobiner au début [R]" disabled={isCasting}>
             <span className={styles.vcrIcon}>⏮</span>
             <span className={styles.vcrLabel}>REW</span>
           </button>
-          <button onClick={onRWCycle} className={`${styles.vcrBtn} ${playerState === 'rewinding' ? styles.vcrBtnActive : ''}`} title="Rembobiner [←]">
+          <button onClick={onRWCycle} className={`${styles.vcrBtn} ${playerState === 'rewinding' ? styles.vcrBtnActive : ''}`} title="Rembobiner [←]" disabled={isCasting}>
             <span className={styles.vcrIcon}>◀◀</span>
             <span className={styles.vcrLabel}>BACK</span>
           </button>
-          <button onClick={togglePlay} className={`${styles.vcrBtn} ${styles.vcrPlayBtn} ${playerState === 'playing' ? styles.vcrBtnActive : ''}`} title="Lecture [Espace]">
+          <button onClick={togglePlay} className={`${styles.vcrBtn} ${styles.vcrPlayBtn} ${(playerState === 'playing' || (isCasting && !remoteCastPaused)) ? styles.vcrBtnActive : ''}`} title="Lecture [Espace]">
             <span className={styles.vcrIcon}>▶</span>
             <span className={styles.vcrLabel}>PLAY</span>
           </button>
-          <button onClick={onFFCycle} className={`${styles.vcrBtn} ${playerState === 'fastforwarding' ? styles.vcrBtnActive : ''}`} title="Avance rapide [→]">
+          <button onClick={onFFCycle} className={`${styles.vcrBtn} ${playerState === 'fastforwarding' ? styles.vcrBtnActive : ''}`} title="Avance rapide [→]" disabled={isCasting}>
             <span className={styles.vcrIcon}>▶▶</span>
             <span className={styles.vcrLabel}>FF</span>
           </button>
-          <button onClick={onStop} className={styles.vcrBtn} title="Stop [S]">
+          <button onClick={isCasting ? onRemoteStop : onStop} className={styles.vcrBtn} title="Stop [S]">
             <span className={styles.vcrIcon} style={{ fontSize: '1.4rem' }}>■</span>
             <span className={styles.vcrLabel}>STOP</span>
           </button>
