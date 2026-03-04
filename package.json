@@ -15,6 +15,7 @@
     "test:player-flow": "node scripts/test-player-flow.mjs",
     "test:phase": "node --test \"tests/**/*.test.mjs\"",
     "test:phase:full": "npm run test:phase && npm run build",
+    "docker:build": "docker compose build app",
     "deploy": "docker compose down app && sudo rm -rf .next && npm run build && docker compose up -d app"
   },
   "dependencies": {
