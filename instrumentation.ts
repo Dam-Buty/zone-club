@@ -23,7 +23,5 @@ export async function register() {
         startRadarrPoller();
         const { recoverPendingTranscodes } = await import('./lib/transcoder');
         recoverPendingTranscodes();
-        const { startCastSessionChecker } = await import('./lib/cast-session-checker');
-        startCastSessionChecker();
     }
 }

@@ -52,10 +52,6 @@ export function VHSPlayer() {
   const [isAirPlayConnected, setIsAirPlayConnected] = useState(false);
   const [showMobileRemotePrompt, setShowMobileRemotePrompt] = useState(false);
 
-  // Push notification state
-  const [pushSubscribed, setPushSubscribed] = useState(false);
-  const [pushPromptDismissed, setPushPromptDismissed] = useState(false);
-
   // Overlay auto-hide (4s inactivity)
   const [overlayVisible, setOverlayVisible] = useState(true);
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -715,28 +711,6 @@ export function VHSPlayer() {
     openMirroringFallback('generic');
   }, [isCastReady, hasCastDevices, isCastConnected, isAirPlaySupported, handleCastCurrentVideo, handleAirPlayPicker, openMirroringFallback]);
 
-  // Push notification subscription handler
-  const handleEnablePushNotifications = useCallback(async () => {
-    try {
-      const permission = await Notification.requestPermission();
-      if (permission !== 'granted') return;
-
-      const reg = await navigator.serviceWorker.ready;
-      const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-      if (!vapidKey) return;
-
-      const subscription = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: vapidKey,
-      });
-
-      await api.pushSubscribe.subscribe(subscription.toJSON() as PushSubscriptionJSON);
-      setPushSubscribed(true);
-    } catch {
-      // Permission denied or push not supported
-    }
-  }, []);
-
   // Mobile prompt when player opens
   useEffect(() => {
     if (isPlayerOpen && isMobile) {
@@ -770,46 +744,6 @@ export function VHSPlayer() {
 
     return () => clearInterval(interval);
   }, [isPlayerOpen, currentPlayingFilm, playerState, remoteCastMediaLoaded, remoteCastDuration, getRemoteCurrentTime]);
-
-  // ===== Check push subscription status =====
-  useEffect(() => {
-    if (!isPlayerOpen || !('Notification' in window)) return;
-    setPushSubscribed(Notification.permission === 'granted');
-  }, [isPlayerOpen]);
-
-  // ===== Cast Session API calls =====
-  useEffect(() => {
-    if (playerState !== 'casting' || !currentPlayingFilm) return;
-
-    // Create cast session when entering casting mode
-    const duration = remoteCastDuration || castDurationRef.current;
-    if (duration > 0) {
-      api.castSessions.create(currentPlayingFilm, duration, getRemoteCurrentTime()).catch(() => {});
-    }
-
-    return () => {
-      // End cast session when leaving casting mode
-      if (currentPlayingFilm) {
-        api.castSessions.end(currentPlayingFilm).catch(() => {});
-      }
-    };
-  // Only run on playerState transitions, not on every remoteCastDuration change
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [playerState === 'casting', currentPlayingFilm]);
-
-  // Update cast session position every 30s (alongside progress reporting)
-  useEffect(() => {
-    if (playerState !== 'casting' || !currentPlayingFilm) return;
-
-    const interval = setInterval(() => {
-      const remoteTime = getRemoteCurrentTime();
-      if (remoteTime > 0) {
-        api.castSessions.updatePosition(currentPlayingFilm, remoteTime).catch(() => {});
-      }
-    }, 30000);
-
-    return () => clearInterval(interval);
-  }, [playerState, currentPlayingFilm, getRemoteCurrentTime]);
 
   // ===== Page Visibility API (background resilience during cast) =====
   useEffect(() => {
@@ -1152,32 +1086,9 @@ export function VHSPlayer() {
               </div>
             </>
           )}
-          {/* Push notification prompt — shown once at first cast */}
-          {isAuthenticated && !pushSubscribed && !pushPromptDismissed && 'Notification' in window && (
-            <div className={styles.castingPushPrompt}>
-              <span className={styles.castingPushText}>
-                Activer les notifications pour etre prevenu quand le film est termine ?
-              </span>
-              <div className={styles.castingPushActions}>
-                <button className={styles.castingPushBtn} onClick={handleEnablePushNotifications}>
-                  Activer
-                </button>
-                <button className={styles.castingPushDismiss} onClick={() => setPushPromptDismissed(true)}>
-                  Non merci
-                </button>
-              </div>
-            </div>
-          )}
-          {pushSubscribed && (
-            <div className={styles.castingHint}>
-              Vous pouvez quitter l&apos;app. Une notification vous previendra.
-            </div>
-          )}
-          {!isAuthenticated && (
-            <div className={styles.castingHint}>
-              Connectez-vous pour recevoir une notification quand le film est termine.
-            </div>
-          )}
+          <div className={styles.castingHint}>
+            Vous pouvez minimiser l&apos;app. La lecture reprendra automatiquement a votre retour.
+          </div>
         </div>
       )}
 
