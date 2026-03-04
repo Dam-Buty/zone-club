@@ -1,8 +1,11 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 const GOOGLE_CAST_SDK_URL = 'https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1';
 
 type CastState = 'NO_DEVICES_AVAILABLE' | 'NOT_CONNECTED' | 'CONNECTING' | 'CONNECTED' | 'UNKNOWN';
+
+// Remote player state from Cast SDK
+export type RemotePlayerState = 'IDLE' | 'PLAYING' | 'PAUSED' | 'BUFFERING' | 'UNKNOWN';
 
 interface CastMediaMetadata {
   title?: string;
@@ -32,6 +35,39 @@ interface CastContextInstance {
   requestSession: () => Promise<void>;
 }
 
+// RemotePlayer / RemotePlayerController interfaces (Cast SDK)
+interface RemotePlayer {
+  currentTime: number;
+  duration: number;
+  isPaused: boolean;
+  playerState: string | null;
+  isMediaLoaded: boolean;
+  isConnected: boolean;
+  volumeLevel: number;
+  isMuted: boolean;
+}
+
+interface RemotePlayerController {
+  addEventListener: (eventType: string, handler: () => void) => void;
+  removeEventListener: (eventType: string, handler: () => void) => void;
+  playOrPause: () => void;
+  stop: () => void;
+  seek: () => void;
+  setVolumeLevel: () => void;
+  muteOrUnmute: () => void;
+}
+
+interface RemotePlayerChangedEventType {
+  CURRENT_TIME_CHANGED: string;
+  DURATION_CHANGED: string;
+  IS_PAUSED_CHANGED: string;
+  PLAYER_STATE_CHANGED: string;
+  IS_MEDIA_LOADED_CHANGED: string;
+  IS_CONNECTED_CHANGED: string;
+  VOLUME_LEVEL_CHANGED: string;
+  IS_MUTED_CHANGED: string;
+}
+
 interface CastFrameworkNamespace {
   CastContext: {
     getInstance: () => CastContextInstance;
@@ -39,6 +75,9 @@ interface CastFrameworkNamespace {
   CastContextEventType: {
     CAST_STATE_CHANGED: string;
   };
+  RemotePlayer: new () => RemotePlayer;
+  RemotePlayerController: new (player: RemotePlayer) => RemotePlayerController;
+  RemotePlayerEventType: RemotePlayerChangedEventType;
 }
 
 interface CastNamespace {
@@ -98,6 +137,15 @@ function normalizeCastState(rawState: string | undefined): CastState {
   return 'UNKNOWN';
 }
 
+function normalizePlayerState(raw: string | null): RemotePlayerState {
+  if (!raw) return 'UNKNOWN';
+  if (raw === 'IDLE') return 'IDLE';
+  if (raw === 'PLAYING') return 'PLAYING';
+  if (raw === 'PAUSED') return 'PAUSED';
+  if (raw === 'BUFFERING') return 'BUFFERING';
+  return 'UNKNOWN';
+}
+
 function loadCastSdk(): Promise<boolean> {
   if (castSdkPromise) return castSdkPromise;
 
@@ -153,11 +201,27 @@ export function useGoogleCast({ enabled, receiverApplicationId }: UseGoogleCastO
   const [castState, setCastState] = useState<CastState>('UNKNOWN');
   const [connectedDeviceName, setConnectedDeviceName] = useState<string | null>(null);
 
+  // Remote player state — throttled to avoid re-render storm
+  const [remoteCurrentTime, setRemoteCurrentTime] = useState(0);
+  const [remoteDuration, setRemoteDuration] = useState(0);
+  const [remoteIsPaused, setRemoteIsPaused] = useState(true);
+  const [remotePlayerState, setRemotePlayerState] = useState<RemotePlayerState>('UNKNOWN');
+  const [remoteIsMediaLoaded, setRemoteIsMediaLoaded] = useState(false);
+
+  // Refs for RemotePlayer instances (persist across renders)
+  const remotePlayerRef = useRef<RemotePlayer | null>(null);
+  const remoteControllerRef = useRef<RemotePlayerController | null>(null);
+
+  // Throttle ref for currentTime (fires ~1/s from Cast SDK)
+  const remoteTimeRef = useRef(0);
+  const throttleTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   useEffect(() => {
     if (!enabled) return;
 
     let isCancelled = false;
     let cleanupListener: (() => void) | null = null;
+    let cleanupRemote: (() => void) | null = null;
 
     loadCastSdk().then((loaded) => {
       if (isCancelled || !loaded) return;
@@ -178,6 +242,65 @@ export function useGoogleCast({ enabled, receiverApplicationId }: UseGoogleCastO
       const initialDeviceName = context.getCurrentSession?.()?.getCastDevice?.()?.friendlyName || null;
       setConnectedDeviceName(initialDeviceName);
 
+      // ===== RemotePlayer Setup =====
+      const player = new cast.framework.RemotePlayer();
+      const controller = new cast.framework.RemotePlayerController(player);
+      remotePlayerRef.current = player;
+      remoteControllerRef.current = controller;
+
+      const eventTypes = cast.framework.RemotePlayerEventType;
+
+      // Throttled currentTime: store in ref, flush to state every 1s
+      const onCurrentTimeChanged = () => {
+        remoteTimeRef.current = player.currentTime;
+      };
+
+      throttleTimerRef.current = setInterval(() => {
+        setRemoteCurrentTime(remoteTimeRef.current);
+      }, 1000);
+
+      const onDurationChanged = () => setRemoteDuration(player.duration);
+      const onIsPausedChanged = () => setRemoteIsPaused(player.isPaused);
+      const onPlayerStateChanged = () => setRemotePlayerState(normalizePlayerState(player.playerState));
+      const onIsMediaLoadedChanged = () => setRemoteIsMediaLoaded(player.isMediaLoaded);
+      const onIsConnectedChanged = () => {
+        if (!player.isConnected) {
+          // Reset remote state on disconnect
+          setRemoteIsMediaLoaded(false);
+          setRemotePlayerState('UNKNOWN');
+          setRemoteDuration(0);
+          setRemoteCurrentTime(0);
+          remoteTimeRef.current = 0;
+        }
+      };
+
+      controller.addEventListener(eventTypes.CURRENT_TIME_CHANGED, onCurrentTimeChanged);
+      controller.addEventListener(eventTypes.DURATION_CHANGED, onDurationChanged);
+      controller.addEventListener(eventTypes.IS_PAUSED_CHANGED, onIsPausedChanged);
+      controller.addEventListener(eventTypes.PLAYER_STATE_CHANGED, onPlayerStateChanged);
+      controller.addEventListener(eventTypes.IS_MEDIA_LOADED_CHANGED, onIsMediaLoadedChanged);
+      controller.addEventListener(eventTypes.IS_CONNECTED_CHANGED, onIsConnectedChanged);
+
+      cleanupRemote = () => {
+        controller.removeEventListener(eventTypes.CURRENT_TIME_CHANGED, onCurrentTimeChanged);
+        controller.removeEventListener(eventTypes.DURATION_CHANGED, onDurationChanged);
+        controller.removeEventListener(eventTypes.IS_PAUSED_CHANGED, onIsPausedChanged);
+        controller.removeEventListener(eventTypes.PLAYER_STATE_CHANGED, onPlayerStateChanged);
+        controller.removeEventListener(eventTypes.IS_MEDIA_LOADED_CHANGED, onIsMediaLoadedChanged);
+        controller.removeEventListener(eventTypes.IS_CONNECTED_CHANGED, onIsConnectedChanged);
+        if (throttleTimerRef.current) clearInterval(throttleTimerRef.current);
+      };
+
+      // Read initial remote state if already connected
+      if (player.isMediaLoaded) {
+        setRemoteCurrentTime(player.currentTime);
+        setRemoteDuration(player.duration);
+        setRemoteIsPaused(player.isPaused);
+        setRemotePlayerState(normalizePlayerState(player.playerState));
+        setRemoteIsMediaLoaded(true);
+        remoteTimeRef.current = player.currentTime;
+      }
+
       const handleStateChange = (event: { castState?: string }) => {
         const nextState = normalizeCastState(event.castState);
         setCastState(nextState);
@@ -194,6 +317,10 @@ export function useGoogleCast({ enabled, receiverApplicationId }: UseGoogleCastO
     return () => {
       isCancelled = true;
       cleanupListener?.();
+      cleanupRemote?.();
+      remotePlayerRef.current = null;
+      remoteControllerRef.current = null;
+      if (throttleTimerRef.current) clearInterval(throttleTimerRef.current);
     };
   }, [enabled, receiverApplicationId]);
 
@@ -237,6 +364,34 @@ export function useGoogleCast({ enabled, receiverApplicationId }: UseGoogleCastO
     }
   }, []);
 
+  // Remote controls — mutate RemotePlayer fields then call controller methods
+  const remotePlayOrPause = useCallback(() => {
+    remoteControllerRef.current?.playOrPause();
+  }, []);
+
+  const remoteStop = useCallback(() => {
+    remoteControllerRef.current?.stop();
+  }, []);
+
+  const remoteSeek = useCallback((time: number) => {
+    const player = remotePlayerRef.current;
+    if (player) {
+      player.currentTime = time;
+      remoteControllerRef.current?.seek();
+    }
+  }, []);
+
+  const remoteSetVolume = useCallback((level: number) => {
+    const player = remotePlayerRef.current;
+    if (player) {
+      player.volumeLevel = level;
+      remoteControllerRef.current?.setVolumeLevel();
+    }
+  }, []);
+
+  // Get latest remote time from ref (for non-rendering reads)
+  const getRemoteCurrentTime = useCallback(() => remoteTimeRef.current, []);
+
   return {
     isReady,
     castState,
@@ -244,5 +399,17 @@ export function useGoogleCast({ enabled, receiverApplicationId }: UseGoogleCastO
     isConnected: castState === 'CONNECTED',
     connectedDeviceName,
     castMedia,
+    // Remote state
+    remoteCurrentTime,
+    remoteDuration,
+    remoteIsPaused,
+    remotePlayerState,
+    remoteIsMediaLoaded,
+    // Remote controls
+    remotePlayOrPause,
+    remoteStop,
+    remoteSeek,
+    remoteSetVolume,
+    getRemoteCurrentTime,
   };
 }

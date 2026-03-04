@@ -41,6 +41,7 @@
     "tailwindcss": "^4.1.18",
     "three": "^0.182.0",
     "uuid": "^13.0.0",
+    "web-push": "^3.6.7",
     "zustand": "^5.0.10"
   },
   "devDependencies": {
@@ -54,6 +55,7 @@
     "@types/react": "^19.2.10",
     "@types/react-dom": "^19.2.3",
     "@types/uuid": "^10.0.0",
+    "@types/web-push": "^3.6.4",
     "@webgpu/types": "^0.1.69",
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",
