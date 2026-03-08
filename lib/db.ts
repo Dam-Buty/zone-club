@@ -191,4 +191,45 @@ try {
   );
 } catch {}
 
+// Cast sessions table (Chromecast tracking)
+try {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS cast_sessions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      film_id INTEGER NOT NULL,
+      rental_id INTEGER,
+      started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      duration_seconds REAL NOT NULL,
+      last_position REAL DEFAULT 0,
+      estimated_end_at DATETIME NOT NULL,
+      notified INTEGER DEFAULT 0,
+      ended INTEGER DEFAULT 0,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (film_id) REFERENCES films(id) ON DELETE CASCADE
+    )
+  `);
+  db.exec(
+    "CREATE INDEX IF NOT EXISTS idx_cast_sessions_user ON cast_sessions(user_id)",
+  );
+} catch {}
+
+// Push subscriptions table (Web Push notifications)
+try {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS push_subscriptions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      endpoint TEXT NOT NULL UNIQUE,
+      p256dh TEXT NOT NULL,
+      auth TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+  `);
+  db.exec(
+    "CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user ON push_subscriptions(user_id)",
+  );
+} catch {}
+
 export default db;
