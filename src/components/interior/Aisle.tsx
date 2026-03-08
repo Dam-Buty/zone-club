@@ -288,7 +288,8 @@ function computeIslandShelfCassettes(
   rotation: [number, number, number],
   filmsLeft: Film[],
   filmsRight: Film[],
-  keyPrefix = 'island'
+  keyPrefix = 'island',
+  repeatWhenShort = true
 ): CassetteInstanceData[] {
   if (filmsLeft.length === 0 && filmsRight.length === 0) return []
 
@@ -306,7 +307,11 @@ function computeIslandShelfCassettes(
       const col = index % ISLAND_CASSETTES_PER_ROW
       if (row >= ISLAND_ROWS) continue
 
-      const filmIndex = index % Math.max(films.length, 1)
+      if (!repeatWhenShort && index >= films.length) break
+
+      const filmIndex = repeatWhenShort
+        ? index % Math.max(films.length, 1)
+        : index
       const film = films[filmIndex]
       if (!film) continue
 
@@ -518,13 +523,13 @@ export const Aisle = memo(function Aisle({ films }: AisleProps) {
   const actionSlice = useMemo(() => filmsByGenre.action.slice(0, 30), [filmsByGenre.action])
   const drameSlice = useMemo(() => filmsByGenre.drame.slice(0, 22), [filmsByGenre.drame])
   const comedieSlice = useMemo(() => filmsByGenre.comedie.slice(0, 28), [filmsByGenre.comedie])
-  const sfSlice = useMemo(() => filmsByGenre.sf.slice(0, 24), [filmsByGenre.sf])
+  const sfSlice = useMemo(
+    () => filmsByGenre.sf.slice(0, ISLAND_CASSETTES_PER_ROW * ISLAND_ROWS),
+    [filmsByGenre.sf]
+  )
   const classiquesSlice = useMemo(() => filmsByGenre.classiques.slice(0, 24), [filmsByGenre.classiques])
   // Island 2: SF (left side) + Classiques (right side)
-  const sfIslandLeft = useMemo(() => {
-    const half = Math.ceil(sfSlice.length / 2)
-    return sfSlice.slice(0, half)
-  }, [sfSlice])
+  const sfIslandLeft = useMemo(() => sfSlice, [sfSlice])
   const classiquesIslandRight = useMemo(() => {
     return classiquesSlice
   }, [classiquesSlice])
@@ -592,7 +597,7 @@ export const Aisle = memo(function Aisle({ films }: AisleProps) {
     ))
     // IslandShelf 2: SF (left) + Classiques (right)
     all.push(...computeIslandShelfCassettes(
-      [0.65, 0, -0.3], [0, 0, 0], sfIslandLeft, classiquesIslandRight, 'island2'
+      [0.65, 0, -0.3], [0, 0, 0], sfIslandLeft, classiquesIslandRight, 'island2', false
     ))
 
     return all
