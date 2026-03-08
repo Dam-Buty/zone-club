@@ -597,64 +597,6 @@
   max-width: 360px;
 }
 
-.castingPushPrompt {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  margin-top: 20px;
-  padding: 14px 20px;
-  background: rgba(0, 255, 247, 0.06);
-  border: 1px solid rgba(0, 255, 247, 0.2);
-  border-radius: 6px;
-  max-width: 380px;
-}
-
-.castingPushText {
-  font-family: 'Courier New', monospace;
-  font-size: 0.78rem;
-  color: rgba(255, 255, 255, 0.7);
-  text-align: center;
-  line-height: 1.4;
-}
-
-.castingPushActions {
-  display: flex;
-  gap: 10px;
-}
-
-.castingPushBtn {
-  font-family: var(--font-display);
-  font-size: 0.72rem;
-  color: #00140f;
-  background: #00ff88;
-  border: 1px solid #00ff88;
-  border-radius: 4px;
-  padding: 7px 16px;
-  letter-spacing: 0.08em;
-  cursor: pointer;
-}
-
-.castingPushBtn:hover {
-  background: #6dffbf;
-}
-
-.castingPushDismiss {
-  font-family: var(--font-display);
-  font-size: 0.68rem;
-  color: rgba(255, 255, 255, 0.6);
-  background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 4px;
-  padding: 7px 12px;
-  letter-spacing: 0.06em;
-  cursor: pointer;
-}
-
-.castingPushDismiss:hover {
-  border-color: rgba(255, 255, 255, 0.4);
-  color: rgba(255, 255, 255, 0.85);
-}
 
 @keyframes flicker {
   0%, 100% { opacity: 1; }

@@ -771,46 +771,6 @@ export function VHSPlayer() {
     return () => clearInterval(interval);
   }, [isPlayerOpen, currentPlayingFilm, playerState, remoteCastMediaLoaded, remoteCastDuration, getRemoteCurrentTime]);
 
-  // ===== Check push subscription status =====
-  useEffect(() => {
-    if (!isPlayerOpen || !('Notification' in window)) return;
-    setPushSubscribed(Notification.permission === 'granted');
-  }, [isPlayerOpen]);
-
-  // ===== Cast Session API calls =====
-  useEffect(() => {
-    if (playerState !== 'casting' || !currentPlayingFilm) return;
-
-    // Create cast session when entering casting mode
-    const duration = remoteCastDuration || castDurationRef.current;
-    if (duration > 0) {
-      api.castSessions.create(currentPlayingFilm, duration, getRemoteCurrentTime()).catch(() => {});
-    }
-
-    return () => {
-      // End cast session when leaving casting mode
-      if (currentPlayingFilm) {
-        api.castSessions.end(currentPlayingFilm).catch(() => {});
-      }
-    };
-  // Only run on playerState transitions, not on every remoteCastDuration change
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [playerState === 'casting', currentPlayingFilm]);
-
-  // Update cast session position every 30s (alongside progress reporting)
-  useEffect(() => {
-    if (playerState !== 'casting' || !currentPlayingFilm) return;
-
-    const interval = setInterval(() => {
-      const remoteTime = getRemoteCurrentTime();
-      if (remoteTime > 0) {
-        api.castSessions.updatePosition(currentPlayingFilm, remoteTime).catch(() => {});
-      }
-    }, 30000);
-
-    return () => clearInterval(interval);
-  }, [playerState, currentPlayingFilm, getRemoteCurrentTime]);
-
   // ===== Page Visibility API (background resilience during cast) =====
   useEffect(() => {
     if (playerState !== 'casting' || !currentPlayingFilm) return;
@@ -1152,32 +1112,9 @@ export function VHSPlayer() {
               </div>
             </>
           )}
-          {/* Push notification prompt — shown once at first cast */}
-          {isAuthenticated && !pushSubscribed && !pushPromptDismissed && 'Notification' in window && (
-            <div className={styles.castingPushPrompt}>
-              <span className={styles.castingPushText}>
-                Activer les notifications pour etre prevenu quand le film est termine ?
-              </span>
-              <div className={styles.castingPushActions}>
-                <button className={styles.castingPushBtn} onClick={handleEnablePushNotifications}>
-                  Activer
-                </button>
-                <button className={styles.castingPushDismiss} onClick={() => setPushPromptDismissed(true)}>
-                  Non merci
-                </button>
-              </div>
-            </div>
-          )}
-          {pushSubscribed && (
-            <div className={styles.castingHint}>
-              Vous pouvez quitter l&apos;app. Une notification vous previendra.
-            </div>
-          )}
-          {!isAuthenticated && (
-            <div className={styles.castingHint}>
-              Connectez-vous pour recevoir une notification quand le film est termine.
-            </div>
-          )}
+          <div className={styles.castingHint}>
+            Vous pouvez minimiser l&apos;app. La lecture reprendra automatiquement a votre retour.
+          </div>
         </div>
       )}
 
