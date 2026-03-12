@@ -32,7 +32,6 @@ export const ISLAND_SHELF_FIRST_PLANK_BASE_Y = FIRST_PLANK_BASE_Y
 
 // Medium oak for the shelving family: warmer and browner than beige/sand.
 const SHELF_COLOR = '#a07850'
-const ROUGHNESS = 0.52
 const METALNESS = 0      // pur diélectrique
 // Géométrie partagée pour les planches et le panneau supérieur — arêtes franches
 const SHARED_ISLAND_PLANK_GEOM = new THREE.BoxGeometry(0.098, 0.018, ISLAND_LENGTH - 0.1)
