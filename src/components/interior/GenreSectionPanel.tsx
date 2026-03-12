@@ -1,9 +1,9 @@
-import { useMemo, useEffect, useRef, Suspense, memo } from 'react'
-import { useFrame } from '@react-three/fiber'
+import { useMemo, useEffect, useRef, memo } from 'react'
+import { useFrame, useLoader } from '@react-three/fiber'
 import * as THREE from 'three'
 import { Text3D, Center } from '@react-three/drei'
-
-const NEON_FONT_URL = '/fonts/caveat-bold.typeface.json'
+import { TTFLoader } from 'three/examples/jsm/loaders/TTFLoader.js'
+import type { FontData } from '@react-three/drei'
 
 // OPTIMISATION: Consolidated animation registry — 7 useFrame → 1 useFrame
 // Each GenreSectionPanel registers its refs here; GenrePanelAnimator iterates once per frame.
@@ -12,7 +12,6 @@ interface PanelAnimEntry {
   neonRef: React.RefObject<THREE.Mesh | null>
   borderMatRef: React.MutableRefObject<THREE.MeshStandardMaterial | null>
   neonIntensity: number
-  hanging: boolean
   timeRef: React.MutableRefObject<number>
 }
 const panelRegistry = new Map<string, PanelAnimEntry>()
@@ -22,21 +21,14 @@ export function GenrePanelAnimator() {
     panelRegistry.forEach((entry) => {
       entry.timeRef.current += delta
 
-      const t = entry.timeRef.current
-
-      if (entry.hanging && entry.groupRef.current) {
-        entry.groupRef.current.rotation.z = Math.sin(t * 0.5) * 0.02
-      }
-
-      const flicker = 1.0 + Math.sin(t * 8) * 0.03 + Math.sin(t * 23) * 0.02
-
+      // No flicker — static emissive avoids SSGI temporal noise
       if (entry.neonRef.current) {
         const mat = entry.neonRef.current.material as THREE.MeshStandardMaterial
-        mat.emissiveIntensity = entry.neonIntensity * flicker
+        mat.emissiveIntensity = entry.neonIntensity
       }
 
       if (entry.borderMatRef.current) {
-        entry.borderMatRef.current.emissiveIntensity = entry.neonIntensity * 0.6 * flicker
+        entry.borderMatRef.current.emissiveIntensity = entry.neonIntensity * BORDER_EMISSIVE_SCALE
       }
     })
   })
@@ -51,51 +43,54 @@ interface GenreSectionPanelProps {
   color: string
   width?: number
   hanging?: boolean
+  /** Multiplier for neon intensity (default 1.0). Use <1 to dim background panels. */
+  intensityScale?: number
 }
 
 // OPTIMISATION: Géométries et matériaux partagés (identiques pour les 5 panneaux)
-const BORDER_TUBE_GEOM = new THREE.CylinderGeometry(0.006, 0.006, 1, 5)
-const CHAIN_GEOM = new THREE.CylinderGeometry(0.008, 0.008, 1, 4) // scale Y par panneau
-const CORNER_GEOM = new THREE.CylinderGeometry(0.02, 0.02, 0.01, 5)
+const BORDER_TUBE_GEOM = new THREE.CylinderGeometry(0.006, 0.006, 1, 14)
+const CHAIN_GEOM = new THREE.CylinderGeometry(0.008, 0.008, 1, 6) // scale Y par panneau
+const CORNER_GEOM = new THREE.CylinderGeometry(0.02, 0.02, 0.01, 12)
 CORNER_GEOM.rotateX(Math.PI / 2)
 const SHARED_CHAIN_MAT = new THREE.MeshStandardMaterial({ color: '#666666', metalness: 0.8, roughness: 0.3 })
 const SHARED_BAR_MAT = new THREE.MeshStandardMaterial({ color: '#333333', metalness: 0.7, roughness: 0.4 })
 const SHARED_CORNER_MAT = new THREE.MeshStandardMaterial({ color: '#888888', metalness: 0.9, roughness: 0.2 })
-const SHARED_FRAME_MAT = new THREE.MeshStandardMaterial({ color: '#0a0a0a', roughness: 0.9, metalness: 0.0 })
+const SHARED_FRAME_MAT = new THREE.MeshStandardMaterial({ color: '#060606', roughness: 0.94, metalness: 0.0, envMapIntensity: 0 })
+const BORDER_EMISSIVE_SCALE = 0.56
 
-// Composant interne : texte 3D néon (nécessite Suspense pour le chargement de la police)
-function NeonText3D({
+function NeonTextMesh({
   text,
   color,
   meshRef,
   intensity,
+  width,
 }: {
   text: string
   color: string
   meshRef: React.RefObject<THREE.Mesh | null>
   intensity: number
+  width: number
 }) {
-  // Extrusion simple sans bevel — le bevel créait des artefacts (trous/découpes)
-  // sur la police manuscrite Caveat dont les chemins sont trop complexes.
-  // L'effet néon vient de emissive + bloom, pas de la rondeur du mesh.
+  const font = useLoader(TTFLoader, '/fonts/Caveat-Bold.ttf') as unknown as FontData
+
   return (
     <Center>
       <Text3D
         ref={meshRef}
-        font={NEON_FONT_URL}
-        size={0.119}
-        height={0.025}
+        font={font}
+        size={width * 0.119}
+        height={0.022}
+        curveSegments={12}
         bevelEnabled={false}
-        curveSegments={6}
         letterSpacing={0.02}
       >
         {text}
         <meshStandardMaterial
-          color={color}
+          color="#ffffff"
           emissive={color}
           emissiveIntensity={intensity}
-          roughness={0.15}
-          metalness={0.05}
+          roughness={0.28}
+          metalness={0.04}
           toneMapped={false}
         />
       </Text3D>
@@ -110,28 +105,27 @@ export const GenreSectionPanel = memo(function GenreSectionPanel({
   color,
   width = 1.5,
   hanging = true,
+  intensityScale = 1.0,
 }: GenreSectionPanelProps) {
   const groupRef = useRef<THREE.Group>(null)
-  const neonRef = useRef<THREE.Mesh>(null)
+  const neonRef = useRef<THREE.Mesh | null>(null)
   const borderMatRef = useRef<THREE.MeshStandardMaterial>(null)
   const timeRef = useRef(0)
 
   // Compenser l'intensité émissive selon la luminance perceptuelle de la couleur.
-  // Le bloom (threshold=0.9) utilise la luminance : les couleurs sombres (violet, rouge, magenta)
-  // ne déclenchaient pas le bloom contrairement au jaune/vert.
-  // Divisé par 2 pour un rendu plus doux et subtil.
+  // intensityScale allows dimming background panels for depth hierarchy.
   const neonIntensity = useMemo(() => {
     const c = new THREE.Color(color)
     const luminance = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b
-    return THREE.MathUtils.clamp(1.17 / luminance, 1.17, 4.05) * 0.5
-  }, [color])
+    return THREE.MathUtils.clamp(0.70 / luminance, 0.70, 2.4) * intensityScale
+  }, [color, intensityScale])
 
   // Matériau partagé pour les tubes du cadre
   const borderMaterial = useMemo(() => {
     return new THREE.MeshStandardMaterial({
       color: new THREE.Color(color),
       emissive: new THREE.Color(color),
-      emissiveIntensity: neonIntensity * 0.6,
+      emissiveIntensity: neonIntensity * BORDER_EMISSIVE_SCALE,
       toneMapped: false,
       roughness: 0.3,
     })
@@ -152,7 +146,6 @@ export const GenreSectionPanel = memo(function GenreSectionPanel({
       neonRef,
       borderMatRef,
       neonIntensity,
-      hanging,
       timeRef,
     })
     return () => { panelRegistry.delete(registryKey) }
@@ -160,6 +153,10 @@ export const GenreSectionPanel = memo(function GenreSectionPanel({
 
   const height = width * 0.25
   const depth = 0.02
+  const ceilingBarY = 0.438
+  const chainBottomY = height * 0.50
+  const chainLength = ceilingBarY - chainBottomY
+  const chainCenterY = chainBottomY + chainLength * 0.5
 
   // Dimensions du cadre néon
   const borderW = width * 0.92
@@ -171,9 +168,9 @@ export const GenreSectionPanel = memo(function GenreSectionPanel({
         {/* Chaînes de suspension — géométrie/matériau partagés */}
         {hanging && (
           <>
-            <mesh position={[-width * 0.35, height * 0.7, 0]} geometry={CHAIN_GEOM} material={SHARED_CHAIN_MAT} scale={[1, height * 0.5, 1]} />
-            <mesh position={[width * 0.35, height * 0.7, 0]} geometry={CHAIN_GEOM} material={SHARED_CHAIN_MAT} scale={[1, height * 0.5, 1]} />
-            <mesh position={[0, height * 0.95, 0]} material={SHARED_BAR_MAT}>
+            <mesh position={[-width * 0.35, chainCenterY, 0]} geometry={CHAIN_GEOM} material={SHARED_CHAIN_MAT} scale={[1, chainLength, 1]} />
+            <mesh position={[width * 0.35, chainCenterY, 0]} geometry={CHAIN_GEOM} material={SHARED_CHAIN_MAT} scale={[1, chainLength, 1]} />
+            <mesh position={[0, ceilingBarY, 0]} material={SHARED_BAR_MAT}>
               <boxGeometry args={[width * 0.8, 0.02, 0.02]} />
             </mesh>
           </>
@@ -187,16 +184,15 @@ export const GenreSectionPanel = memo(function GenreSectionPanel({
           <boxGeometry args={[width + 0.04, height + 0.04, depth]} />
         </mesh>
 
-        {/* Texte néon 3D — tubes avec bevel arrondi */}
+        {/* Texte néon */}
         <group position={[0, 0, depth / 2 + 0.005]}>
-          <Suspense fallback={null}>
-            <NeonText3D
-              text={genre.toUpperCase()}
-              color={color}
-              meshRef={neonRef}
-              intensity={neonIntensity}
-            />
-          </Suspense>
+          <NeonTextMesh
+            text={genre}
+            color={color}
+            meshRef={neonRef}
+            intensity={neonIntensity}
+            width={width}
+          />
         </group>
 
         {/* Cadre néon — tubes cylindriques formant un rectangle */}
@@ -257,10 +253,20 @@ export const GENRE_CONFIG = {
     color: '#ff6600', // Orange suspense
     altIds: [9648, 80], // Mystery, Crime (includes policier)
   },
+  policier: {
+    id: 80,
+    color: '#4fc3f7', // Bleu acier enquête
+    altIds: [9648],
+  },
   action: {
     id: 28,
     color: '#ff4444', // Rouge explosif
     altIds: [12, 10752], // Adventure, War
+  },
+  aventure: {
+    id: 12,
+    color: '#ff9f1c', // Orange aventurier
+    altIds: [],
   },
   comedie: {
     id: 35,
@@ -291,6 +297,11 @@ export const GENRE_CONFIG = {
     id: 16,
     color: '#ff8800', // Orange cartoon
     altIds: [10751], // Family
+  },
+  romance: {
+    id: 10749,
+    color: '#ff5c8a', // Rose sentimental
+    altIds: [],
   },
 } as const
 

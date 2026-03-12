@@ -259,11 +259,58 @@ function NeonTubesInstanced() {
   )
 }
 
+// Neon halo PointLights — one per genre panel, tints cassettes below.
+// Positions derived from GenreSectionPanel placements in Aisle.tsx (panelY - 0.3).
+// Colors are panel colors desaturated 30%.
+interface NeonHaloConfig {
+  position: [number, number, number]
+  color: string
+  intensity: number
+}
+
+const NEON_HALO_CONFIGS: NeonHaloConfig[] = [
+  // Left wall panels (facing +X)
+  { position: [-4.18, 1.94, -2.67], color: '#66cc88', intensity: 0.5 },  // Horreur
+  { position: [-4.18, 1.94, -1.02], color: '#cc66aa', intensity: 0.5 },  // Bizarre
+  { position: [-4.18, 1.94,  0.51], color: '#7abbd4', intensity: 0.5 },  // Policier
+  { position: [-4.18, 1.94,  2.07], color: '#cc8844', intensity: 0.5 },  // Thriller
+  // Back wall panels (facing +Z)
+  { position: [-3.16, 1.94, -3.93], color: '#cc7766', intensity: 0.5 },  // Action
+  { position: [-1.35, 1.94, -3.93], color: '#ccaa66', intensity: 0.5 },  // Aventure
+  { position: [ 0.60, 1.94, -3.93], color: '#ccaa66', intensity: 0.5 },  // Anim & Cie
+  { position: [ 1.91, 1.94, -3.93], color: '#9977cc', intensity: 0.5 },  // Drame
+  // Right wall panels (facing -X)
+  { position: [ 4.18, 1.94, -2.53], color: '#cccc77', intensity: 0.5 },  // Comédie
+  { position: [ 4.18, 1.94, -0.47], color: '#cc8899', intensity: 0.5 },  // Romance
+  // Island hanging panels
+  { position: [ 0.13, 1.94,  0.00], color: '#66aacc', intensity: 0.4 },  // SF
+  { position: [ 0.17, 1.94,  0.00], color: '#bbaa77', intensity: 0.4 },  // Classiques
+]
+
+function NeonHaloLights() {
+  return (
+    <>
+      {NEON_HALO_CONFIGS.map((config, i) => (
+        <pointLight
+          key={`halo-${i}`}
+          position={config.position}
+          color={config.color}
+          intensity={config.intensity}
+          distance={2.5}
+          decay={2.0}
+          castShadow={false}
+        />
+      ))}
+    </>
+  )
+}
+
 // Architecture éclairage :
 // 1. IBL + hemisphere: low-cost base readability
 // 2. Desktop-only practicals: full-width ceiling rows + wall bounce + aisle shaping
 // 3. One cached shadow caster: contact and grounding
 // 4. Emissive tube meshes + bloom: perceived neon energy
+// 5. Neon halo PointLights: colored tints from genre panels onto cassettes
 function OptimizedLighting({ isMobile = false }: { isMobile?: boolean }) {
   const shadowMapSize = isMobile ? 256 : 512
   const dirLightRef = useRef<THREE.DirectionalLight>(null!)
@@ -306,6 +353,25 @@ function OptimizedLighting({ isMobile = false }: { isMobile?: boolean }) {
           <ShelfGrazers />
           <IslandSideFills />
           <ComptoirLight />
+          <NeonHaloLights />
+          {/* Comptoir accent — warm spot above service area */}
+          <pointLight
+            position={[2.4, 1.78, 3.22]}
+            color="#ffcc88"
+            intensity={0.5}
+            distance={3.0}
+            decay={2.0}
+            castShadow={false}
+          />
+          {/* CRT ambient — cold blue glow from TV screen */}
+          <pointLight
+            position={[4.225, 0.85, 1.35]}
+            color="#445566"
+            intensity={0.3}
+            distance={2.0}
+            decay={2.0}
+            castShadow={false}
+          />
           {/* Back wall wash (Étape 3: fill light de lecture) */}
           <rectAreaLight
             position={[0, 1.92, -2.72]}
