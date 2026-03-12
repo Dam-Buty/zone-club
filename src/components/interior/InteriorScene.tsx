@@ -837,7 +837,7 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
           renderer.shadowMap.enabled = true
           renderer.shadowMap.type = isMobile ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap
           renderer.toneMapping = THREE.ACESFilmicToneMapping
-          renderer.toneMappingExposure = 0.90
+          renderer.toneMappingExposure = 0.82
           console.log(
             `[Canvas] WebGPU renderer initialized — shadows: ${isMobile ? 'PCF' : 'PCFSoft'}, dpr: ${isMobile ? '≤1.5' : '≤2'}`
           )
