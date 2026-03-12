@@ -711,7 +711,7 @@ export const Aisle = memo(function Aisle({ films, filmsByAisle }: AisleProps) {
           map={ceilingTextures.map}
           normalMap={ceilingTextures.normalMap}
           roughnessMap={ceilingTextures.roughnessMap}
-          color="#b0a898"
+          color="#c0b8b0"
           roughness={0.95}
           normalScale={[0.6, 0.6] as unknown as THREE.Vector2}
         />

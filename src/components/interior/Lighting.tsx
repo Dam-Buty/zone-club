@@ -399,7 +399,15 @@ function OptimizedLighting({ isMobile = false }: { isMobile?: boolean }) {
             intensity={0.75}
             color="#ffe0c0"
           />
-
+          {/* Ceiling bounce — subtle upward fill so ceiling plane isn't black */}
+          <rectAreaLight
+            position={[0, 0.5, 0]}
+            rotation={[Math.PI / 2, 0, 0]}
+            width={7.0}
+            height={5.0}
+            intensity={0.15}
+            color="#e8ddd0"
+          />
         </>
       )}
 
