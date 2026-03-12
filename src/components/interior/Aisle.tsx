@@ -39,22 +39,34 @@ useGLTF.preload('/models/shelf.glb', true)
 useGLTF.preload('/models/board.glb', true)
 
 import { useKTX2Textures } from '../../hooks/useKTX2Textures'
-import { WallShelf, SHELF_DEPTH, SHELF_TILT, SHELF_PIVOT_Y } from './WallShelf'
-import { IslandShelf } from './IslandShelf'
+import { WallShelf, SHELF_DEPTH, SHELF_TILT, SHELF_PIVOT_Y, WALL_SHELF_ROWS } from './WallShelf'
+import {
+  IslandShelf,
+  ISLAND_SHELF_BASE_WIDTH,
+  ISLAND_SHELF_CASSETTE_ROWS,
+  ISLAND_SHELF_CASSETTE_TILT,
+  ISLAND_SHELF_FIRST_PLANK_BASE_Y,
+  ISLAND_SHELF_HEIGHT,
+  ISLAND_SHELF_PLANK_OFFSET,
+  ISLAND_SHELF_PLANK_THICKNESS,
+  ISLAND_SHELF_ROW_HEIGHT,
+  ISLAND_SHELF_TOP_WIDTH,
+} from './IslandShelf'
 import { CassetteInstances } from './CassetteInstances'
 import { CASSETTE_DIMENSIONS, CASSETTE_COLORS } from './Cassette'
-import { GenreSectionPanel, GenrePanelAnimator, GENRE_CONFIG, filterFilmsByGenre } from './GenreSectionPanel'
+import { GenreSectionPanel, GenrePanelAnimator, GENRE_CONFIG } from './GenreSectionPanel'
 import { PosterWall } from './Poster'
 import { Storefront } from './Storefront'
 import { InteractiveTVDisplay } from './InteractiveTVDisplay'
 import { Manager3D } from './Manager3D'
 import { ServiceBell } from './ServiceBell'
 import { DustParticles } from './DustParticles'
-import type { Film } from '../../types'
+import type { Film, AisleType } from '../../types'
 import type { CassetteInstanceData } from '../../utils/CassetteTextureArray'
 
 interface AisleProps {
   films: Film[]
+  filmsByAisle: Record<AisleType, Film[]>
 }
 
 // Dimensions de la pièce (basées sur le plan PDF, réduites de 30%)
@@ -174,12 +186,16 @@ function MergedWalls({ wallTextures, roomWidth, roomDepth, roomHeight }: {
   }, [roomWidth, roomDepth, roomHeight])
 
   const material = useMemo(() => {
-    const next = new THREE.MeshStandardMaterial({ color: '#1e1e28' })
-    next.map = wallTextures.map
-    next.normalMap = wallTextures.normalMap
-    next.roughnessMap = wallTextures.roughnessMap
-    next.aoMap = wallTextures.aoMap ?? null
-    next.normalScale.set(0.6, 0.6)
+    // Interior walls should read as painted smooth plaster, not raw concrete.
+    // Keep the warm storefront-inspired hue, but drop the heavy PBR relief.
+    const next = new THREE.MeshPhysicalMaterial({
+      color: '#d4b080',
+      roughness: 0.38,
+      metalness: 0.0,
+      envMapIntensity: 0.70,
+      clearcoat: 0.22,
+      clearcoatRoughness: 0.45,
+    })
     return next
   }, [wallTextures])
 
@@ -204,34 +220,80 @@ const DESK_VHS_MAT = new THREE.MeshStandardMaterial({ color: '#1a1a1a', roughnes
 // (mount → useEffect → callback → wait-for-all-6 → setState → re-render).
 
 // WallShelf constants (must match WallShelf.tsx — SHELF_DEPTH, SHELF_TILT, SHELF_PIVOT_Y imported)
-const PLANK_DEPTH = 0.10  // must match WallShelf.tsx PLANK_DEPTH
-const WALL_ROWS = 5
-const WALL_ROW_HEIGHT = CASSETTE_DIMENSIONS.height + 0.12
+const PLANK_DEPTH = 0.07  // must match WallShelf.tsx PLANK_DEPTH
+const WALL_ROWS = WALL_SHELF_ROWS
+const WALL_ROW_HEIGHT = CASSETTE_DIMENSIONS.height + 0.04  // must match WallShelf.tsx ROW_HEIGHT
 const WALL_CASSETTE_SPACING = CASSETTE_DIMENSIONS.width + 0.02
 
 // Pre-computed tilt quaternion for cassette positioning (same tilt as WallShelf inner group)
 const _tiltQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(-SHELF_TILT, 0, 0))
 
-// IslandShelf constants (must match IslandShelf.tsx)
-const ISLAND_ROWS = 4
-const ISLAND_CASSETTES_PER_ROW = 12
-const ISLAND_ROW_HEIGHT = CASSETTE_DIMENSIONS.height + 0.08
-const ISLAND_HEIGHT_CONST = 1.4
-const ISLAND_BASE_WIDTH = 0.55
-const ISLAND_TOP_WIDTH = 0.35
-const ISLAND_CASSETTE_TILT = 0.15
+// IslandShelf constants — sourced from IslandShelf.tsx so cassette placement
+// stays locked to the real shelf geometry.
+const ISLAND_ROWS = ISLAND_SHELF_CASSETTE_ROWS
+const ISLAND_CASSETTES_PER_ROW = 21
 const ISLAND_CASSETTE_SPACING = CASSETTE_DIMENSIONS.width + 0.02
+const SECTION_GAP = 0.12
+
+function dedupeFilms(films: Film[]): Film[] {
+  const seen = new Set<number>()
+  return films.filter((film) => {
+    if (seen.has(film.id)) return false
+    seen.add(film.id)
+    return true
+  })
+}
+
+
+function expandFilmsByStock(films: Film[]): Film[] {
+  const expanded: Film[] = []
+
+  for (const film of films) {
+    const copies = Math.max(1, film.stock ?? 1)
+    for (let copy = 0; copy < copies; copy++) {
+      expanded.push(film)
+    }
+  }
+
+  return expanded
+}
+
+function buildDisplaySequence(films: Film[], capacity: number, repeatWhenShort = true, maxCopies = Infinity): Film[] {
+  if (films.length === 0 || capacity <= 0) return []
+
+  let expanded: Film[]
+  if (maxCopies < Infinity) {
+    expanded = []
+    const counts = new Map<number, number>()
+    for (const film of expandFilmsByStock(films)) {
+      const c = counts.get(film.id) ?? 0
+      if (c < maxCopies) { expanded.push(film); counts.set(film.id, c + 1) }
+    }
+  } else {
+    expanded = expandFilmsByStock(films)
+  }
+  if (expanded.length === 0) return []
+
+  if (!repeatWhenShort && expanded.length <= capacity) {
+    return expanded
+  }
+
+  return Array.from({ length: capacity }, (_, index) => expanded[index % expanded.length])
+}
 
 function computeWallShelfCassettes(
   position: [number, number, number],
   rotation: [number, number, number],
   length: number,
-  films: Film[]
+  films: Film[],
+  repeatWhenShort = true,
+  maxCopies = 1
 ): CassetteInstanceData[] {
   if (films.length === 0) return []
 
   const cassettesPerRow = Math.floor((length - 0.1) / WALL_CASSETTE_SPACING)
   const totalCapacity = cassettesPerRow * WALL_ROWS
+  const displayFilms = buildDisplaySequence(films, totalCapacity, repeatWhenShort, maxCopies)
   const data: CassetteInstanceData[] = []
 
   const baseQuat = new THREE.Quaternion().setFromEuler(
@@ -246,12 +308,14 @@ function computeWallShelfCassettes(
     const col = index % cassettesPerRow
     if (row >= WALL_ROWS) continue
 
-    const filmIndex = index % Math.max(films.length, 1)
-    const film = films[filmIndex]
+    const film = displayFilms[index]
     if (!film) continue
 
     const localX = (col - cassettesPerRow / 2 + 0.5) * WALL_CASSETTE_SPACING
-    const localY = 0.25 + (row + 1) * WALL_ROW_HEIGHT  // skip bottom shelf (not visible)
+    // Align with WallShelf planks: plank i at y = 0.12 + i * ROW_HEIGHT
+    // K7 sit on planks i=2..6 (i=1 is bottom, not visible). Cassette center = plankY + 0.0125 + height/2
+    const plankI = row + 1
+    const localY = 0.12 + plankI * WALL_ROW_HEIGHT + 0.0125 + CASSETTE_DIMENSIONS.height / 2
     const localZ = SHELF_DEPTH / 2 + PLANK_DEPTH / 2  // centered on the plank
 
     // Apply tilt: translate to pivot, rotate, translate back
@@ -266,7 +330,7 @@ function computeWallShelfCassettes(
 
     const cassetteKey = `wall-${position[0].toFixed(1)}-${position[2].toFixed(1)}-${row}-${col}`
     const posterUrl = film.poster_path
-      ? `https://image.tmdb.org/t/p/w200${film.poster_path}`
+      ? `https://image.tmdb.org/t/p/w185${film.poster_path}`
       : null
 
     data.push({
@@ -288,7 +352,9 @@ function computeIslandShelfCassettes(
   rotation: [number, number, number],
   filmsLeft: Film[],
   filmsRight: Film[],
-  keyPrefix = 'island'
+  keyPrefix = 'island',
+  repeatWhenShort = true,
+  maxCopies = 1
 ): CassetteInstanceData[] {
   if (filmsLeft.length === 0 && filmsRight.length === 0) return []
 
@@ -300,51 +366,52 @@ function computeIslandShelfCassettes(
   )
   const parentPos = new THREE.Vector3(position[0], position[1], position[2])
 
-  const addCassettes = (films: Film[], side: 'left' | 'right') => {
+  const addCassettes = (films: Film[], side: 'left' | 'right', maxCopies = 1) => {
+    const displayFilms = buildDisplaySequence(films, totalCapacityPerSide, repeatWhenShort, maxCopies)
+    const sideTilt = side === 'left' ? -ISLAND_SHELF_CASSETTE_TILT : ISLAND_SHELF_CASSETTE_TILT
+    const sideTiltQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, sideTilt))
+    const sideFaceQuat = new THREE.Quaternion().setFromEuler(
+      new THREE.Euler(0, side === 'left' ? Math.PI / 2 : -Math.PI / 2, 0)
+    )
+    const faceQuat = sideTiltQuat.clone().multiply(sideFaceQuat)
+    const plankNormal = new THREE.Vector3(0, 1, 0).applyQuaternion(sideTiltQuat)
+
     for (let index = 0; index < totalCapacityPerSide; index++) {
       const row = Math.floor(index / ISLAND_CASSETTES_PER_ROW)
       const col = index % ISLAND_CASSETTES_PER_ROW
       if (row >= ISLAND_ROWS) continue
 
-      const filmIndex = index % Math.max(films.length, 1)
-      const film = films[filmIndex]
+      const film = displayFilms[index]
       if (!film) continue
 
-      const y = 0.34 + row * ISLAND_ROW_HEIGHT
-      const widthAtHeight = ISLAND_BASE_WIDTH - (ISLAND_BASE_WIDTH - ISLAND_TOP_WIDTH) * (y / ISLAND_HEIGHT_CONST)
+      const plankIndex = row + 1
+      const plankY = ISLAND_SHELF_FIRST_PLANK_BASE_Y + plankIndex * ISLAND_SHELF_ROW_HEIGHT
+      const widthAtHeight = ISLAND_SHELF_BASE_WIDTH - (ISLAND_SHELF_BASE_WIDTH - ISLAND_SHELF_TOP_WIDTH) * (plankY / ISLAND_SHELF_HEIGHT)
 
-      let localX: number
-      let groupRotY: number
-      let groupRotZ: number
-      if (side === 'left') {
-        localX = -widthAtHeight / 2 - 0.06
-        groupRotY = Math.PI / 2
-        groupRotZ = -ISLAND_CASSETTE_TILT
-      } else {
-        localX = widthAtHeight / 2 + 0.06
-        groupRotY = -Math.PI / 2
-        groupRotZ = ISLAND_CASSETTE_TILT
-      }
+      const plankCenterX =
+        side === 'left'
+          ? -widthAtHeight / 2 - ISLAND_SHELF_PLANK_OFFSET
+          : widthAtHeight / 2 + ISLAND_SHELF_PLANK_OFFSET
       const localZ = (col - ISLAND_CASSETTES_PER_ROW / 2 + 0.5) * ISLAND_CASSETTE_SPACING
+      const worldQuat = parentQuat.clone().multiply(faceQuat)
 
-      const groupQuat = new THREE.Quaternion().setFromEuler(
-        new THREE.Euler(0, groupRotY, groupRotZ)
+      const localPos = new THREE.Vector3(plankCenterX, plankY, localZ)
+      localPos.addScaledVector(
+        plankNormal,
+        ISLAND_SHELF_PLANK_THICKNESS / 2 + CASSETTE_DIMENSIONS.height / 2 + 0.002
       )
-      const worldQuat = parentQuat.clone().multiply(groupQuat)
-
-      const worldPos = new THREE.Vector3(localX, y, localZ)
-      worldPos.applyQuaternion(parentQuat)
-      worldPos.add(parentPos)
+      localPos.applyQuaternion(parentQuat)
+      localPos.add(parentPos)
 
       const cassetteKey = `${keyPrefix}-${side}-${row}-${col}`
       const posterUrl = film.poster_path
-        ? `https://image.tmdb.org/t/p/w200${film.poster_path}`
+        ? `https://image.tmdb.org/t/p/w185${film.poster_path}`
         : null
 
       data.push({
         cassetteKey,
         filmId: film.id,
-        worldPosition: worldPos,
+        worldPosition: localPos,
         worldQuaternion: worldQuat,
         hoverOffsetZ: -0.08,
         posterUrl,
@@ -353,30 +420,35 @@ function computeIslandShelfCassettes(
     }
   }
 
-  addCassettes(filmsLeft, 'left')
-  addCassettes(filmsRight, 'right')
+  addCassettes(filmsLeft, 'left', maxCopies)
+  addCassettes(filmsRight, 'right', maxCopies)
 
   return data
 }
 
-export const Aisle = memo(function Aisle({ films }: AisleProps) {
-  // ===== FILMS POUR NOUVEAUTÉS (ÎLOT CENTRAL) =====
-  // Uses films from the store's "nouveautes" aisle (already fetched in App.tsx alongside other aisles).
-  // No separate TMDB fetch — avoids a second allCassetteData recomputation that caused
-  // the visual glitch (cassettes appear → go black → reload).
-  const nouveautesFilms = useMemo(() => {
-    const currentYear = new Date().getFullYear()
-    const tenYearsAgo = currentYear - 10
-
-    return [...films]
-      .filter(f => {
-        if (!f.release_date) return true
-        const releaseYear = new Date(f.release_date).getFullYear()
-        return releaseYear >= tenYearsAgo
-      })
-      .sort((a, b) => (b.vote_average || 0) - (a.vote_average || 0))
-      .slice(0, 30)
-  }, [films])
+export const Aisle = memo(function Aisle({ films, filmsByAisle }: AisleProps) {
+  // ===== DISTRIBUTION PAR SECTION =====
+  // Chaque section affiche exactement les films assignés à son allée en DB.
+  // Pas de dérivation automatique — l'admin assigne manuellement via l'interface.
+  const {
+    nouveautesFilms, horreurSlice, sfSlice, classiquesSlice, bizarreSlice,
+    animationSlice, actionSlice, aventureSlice, thrillerSlice, policierSlice,
+    comedieSlice, romanceSlice, drameSlice,
+  } = useMemo(() => ({
+    nouveautesFilms: dedupeFilms(filmsByAisle.nouveautes),
+    horreurSlice: dedupeFilms(filmsByAisle.horreur),
+    sfSlice: dedupeFilms(filmsByAisle.sf),
+    classiquesSlice: dedupeFilms(filmsByAisle.classiques),
+    bizarreSlice: dedupeFilms(filmsByAisle.bizarre),
+    animationSlice: dedupeFilms(filmsByAisle.animation),
+    actionSlice: dedupeFilms(filmsByAisle.action),
+    aventureSlice: dedupeFilms(filmsByAisle.aventure),
+    thrillerSlice: dedupeFilms(filmsByAisle.thriller),
+    policierSlice: dedupeFilms(filmsByAisle.policier),
+    comedieSlice: dedupeFilms(filmsByAisle.comedie),
+    romanceSlice: dedupeFilms(filmsByAisle.romance),
+    drameSlice: dedupeFilms(filmsByAisle.drame),
+  }), [filmsByAisle])
 
   // Poster image preloading is handled at module level in App.tsx
   // (starts as soon as TMDB API data arrives, before the user enters the store).
@@ -387,8 +459,8 @@ export const Aisle = memo(function Aisle({ films }: AisleProps) {
   // Sol — Carrelage Kent octogone+cabochon noir 33×33cm (procédural Canvas2D)
   // 9m / 0.33m ≈ 27 carreaux en X, 8.5m / 0.33m ≈ 26 en Y
   const floorTextures = useMemo(() => generateKentTileTextures(27, 26, 256, 6), [])
-  // Textures PBR - Murs (plâtre peint, tiling adapté par mur)
-  const wallTextures = usePBRTextures('/textures/wall', 4, 2, true)
+  // Textures PBR - Murs (alignées sur la matière perçue depuis la devanture)
+  const wallTextures = usePBRTextures('/textures/storefront', 4, 1.5, true)
   // Textures PBR - Bois (pour comptoir)
   const woodTextures = usePBRTextures('/textures/wood', 2, 1)
 
@@ -494,40 +566,9 @@ export const Aisle = memo(function Aisle({ films }: AisleProps) {
     }
   }, [ceilingTextures])
 
-  // ===== FILTRER LES FILMS PAR GENRE =====
-  // Memoize each genre slice individually to avoid new array refs on every render
-  const filmsByGenre = useMemo(() => {
-    const horreur = filterFilmsByGenre(films, 'horreur')
-    const thriller = filterFilmsByGenre(films, 'thriller')
-    const action = filterFilmsByGenre(films, 'action')
-    const comedie = filterFilmsByGenre(films, 'comedie')
-    const drame = filterFilmsByGenre(films, 'drame')
-    const sf = filterFilmsByGenre(films, 'sf')
-    const classiques = filterFilmsByGenre(films, 'classiques')
-      .filter(f => {
-        if (!f.release_date) return false
-        return new Date(f.release_date).getFullYear() < 1990
-      })
-
-    return { horreur, thriller, action, comedie, drame, sf, classiques }
-  }, [films])
-
-  // Memoize sliced film arrays to prevent new refs each render (avoids infinite useEffect loops)
-  const horreurSlice = useMemo(() => filmsByGenre.horreur.slice(0, 25), [filmsByGenre.horreur])
-  const thrillerSlice = useMemo(() => filmsByGenre.thriller.slice(0, 18), [filmsByGenre.thriller])
-  const actionSlice = useMemo(() => filmsByGenre.action.slice(0, 30), [filmsByGenre.action])
-  const drameSlice = useMemo(() => filmsByGenre.drame.slice(0, 22), [filmsByGenre.drame])
-  const comedieSlice = useMemo(() => filmsByGenre.comedie.slice(0, 28), [filmsByGenre.comedie])
-  const sfSlice = useMemo(() => filmsByGenre.sf.slice(0, 24), [filmsByGenre.sf])
-  const classiquesSlice = useMemo(() => filmsByGenre.classiques.slice(0, 24), [filmsByGenre.classiques])
-  // Island 2: SF (left side) + Classiques (right side)
-  const sfIslandLeft = useMemo(() => {
-    const half = Math.ceil(sfSlice.length / 2)
-    return sfSlice.slice(0, half)
-  }, [sfSlice])
-  const classiquesIslandRight = useMemo(() => {
-    return classiquesSlice
-  }, [classiquesSlice])
+  // Îlot 2: SF + Classiques
+  const sfIslandLeft = useMemo(() => sfSlice, [sfSlice])
+  const classiquesIslandRight = useMemo(() => classiquesSlice, [classiquesSlice])
   const nouveautesLeft = useMemo(() => {
     const half = Math.ceil(nouveautesFilms.length / 2)
     return nouveautesFilms.slice(0, half)
@@ -544,6 +585,34 @@ export const Aisle = memo(function Aisle({ films }: AisleProps) {
       .slice(0, 12)
       .map(f => f.poster_path)
   }, [films])
+
+  const leftLongLength = (3.5 - SECTION_GAP) / 2
+  const leftLongOffset = leftLongLength / 2 + SECTION_GAP / 2
+  const leftMediumLength = (2.5 - SECTION_GAP) / 2
+  const leftMediumOffset = leftMediumLength / 2 + SECTION_GAP / 2
+  const leftEqualSectionLength = (leftLongLength + leftMediumLength) / 2
+  const leftEqualSectionOffset = leftEqualSectionLength / 2 + SECTION_GAP / 2
+  const horreurExtraWidth = WALL_CASSETTE_SPACING
+  const horreurLength = leftEqualSectionLength + horreurExtraWidth
+  const horreurCenterZ = -1.80 - leftEqualSectionOffset - horreurExtraWidth / 2
+  const bizarreCenterZ = -1.80 + leftEqualSectionOffset
+  const northLongLength = (3.5 - SECTION_GAP) / 2
+  const northLongOffset = northLongLength / 2 + SECTION_GAP / 2
+  const northMediumLength = (2.5 - SECTION_GAP) / 2
+  const northMediumOffset = northMediumLength / 2 + SECTION_GAP / 2
+  const rightLongLength = (4 - SECTION_GAP) / 2
+  const rightLongOffset = rightLongLength / 2 + SECTION_GAP / 2
+  // Keep wall panels close to the wall, but still in front of the wall-shelf planks.
+  // Shelf front face from wall = WALL_SHELF_OFFSET + SHELF_DEPTH/2 + PLANK_DEPTH - PLANK_OVERLAP.
+  // Add a small safety margin so the suspended sign does not get hidden behind the K7 rows.
+  const wallPanelInset = WALL_SHELF_OFFSET + SHELF_DEPTH / 2 + PLANK_DEPTH - 0.005 + 0.06
+  const panelWidthLong = 1.215
+  const panelWidthMedium = 1.0125
+  const panelWidthPolar = 1.12
+  const panelWidthIsland = 1.44
+  const panelWidthBizarre = 1.42
+  const wallPanelY = 2.36 * 0.95
+  const islandPanelY = 2.36 * 0.95
 
   // Storefront vitrine posters — handpicked iconic films (right-to-left from inside = left-to-right local)
   // Top row (6): Shining, Scream, Parasite, Back to the Future, Die Hard, Terminator 2
@@ -566,38 +635,58 @@ export const Aisle = memo(function Aisle({ films }: AisleProps) {
   const allCassetteData = useMemo(() => {
     const all: CassetteInstanceData[] = []
 
-    // WallShelf: Horreur (Z=-1.80: moved back 0.26 to eliminate 17cm overlap with Thriller shelf)
+    // WallShelf: Horreur + Bizarre
     all.push(...computeWallShelfCassettes(
-      [-ROOM_WIDTH / 2 + WALL_SHELF_OFFSET, 0, -1.80], [0, Math.PI / 2, 0], 3.5, horreurSlice
+      [-ROOM_WIDTH / 2 + WALL_SHELF_OFFSET, 0, horreurCenterZ], [0, Math.PI / 2, 0], horreurLength, horreurSlice
     ))
-    // WallShelf: Thriller
     all.push(...computeWallShelfCassettes(
-      [-ROOM_WIDTH / 2 + WALL_SHELF_OFFSET, 0, 1.29], [0, Math.PI / 2, 0], 2.5, thrillerSlice
+      [-ROOM_WIDTH / 2 + WALL_SHELF_OFFSET, 0, bizarreCenterZ], [0, Math.PI / 2, 0], leftEqualSectionLength, bizarreSlice
     ))
-    // WallShelf: Action
+
+    // WallShelf: Polar + Thriller (positions inverted)
     all.push(...computeWallShelfCassettes(
-      [-2.25, 0, -ROOM_DEPTH / 2 + WALL_SHELF_OFFSET], [0, 0, 0], 3.5, actionSlice
+      [-ROOM_WIDTH / 2 + WALL_SHELF_OFFSET, 0, 1.29 - leftEqualSectionOffset], [0, Math.PI / 2, 0], leftEqualSectionLength, policierSlice
     ))
-    // WallShelf: Drame
     all.push(...computeWallShelfCassettes(
-      [1.25, 0, -ROOM_DEPTH / 2 + WALL_SHELF_OFFSET], [0, 0, 0], 2.5, drameSlice
+      [-ROOM_WIDTH / 2 + WALL_SHELF_OFFSET, 0, 1.29 + leftEqualSectionOffset], [0, Math.PI / 2, 0], leftEqualSectionLength, thrillerSlice
     ))
-    // WallShelf: Comédie
+
+    // WallShelf: Action + Aventure
     all.push(...computeWallShelfCassettes(
-      [ROOM_WIDTH / 2 - WALL_SHELF_OFFSET, 0, -1.5], [0, -Math.PI / 2, 0], 4, comedieSlice
+      [-2.25 - northLongOffset, 0, -ROOM_DEPTH / 2 + WALL_SHELF_OFFSET], [0, 0, 0], northLongLength, actionSlice
     ))
-    // IslandShelf: Nouveautés
+    all.push(...computeWallShelfCassettes(
+      [-2.25 + northLongOffset, 0, -ROOM_DEPTH / 2 + WALL_SHELF_OFFSET], [0, 0, 0], northLongLength, aventureSlice
+    ))
+
+    // WallShelf: Animation + Drame (positions inverted)
+    all.push(...computeWallShelfCassettes(
+      [1.25 - northMediumOffset, 0, -ROOM_DEPTH / 2 + WALL_SHELF_OFFSET], [0, 0, 0], northMediumLength, animationSlice
+    ))
+    all.push(...computeWallShelfCassettes(
+      [1.25 + northMediumOffset, 0, -ROOM_DEPTH / 2 + WALL_SHELF_OFFSET], [0, 0, 0], northMediumLength, drameSlice
+    ))
+
+    // WallShelf: Comédie + Romance
+    all.push(...computeWallShelfCassettes(
+      [ROOM_WIDTH / 2 - WALL_SHELF_OFFSET, 0, -1.5 - rightLongOffset], [0, -Math.PI / 2, 0], rightLongLength, comedieSlice
+    ))
+    all.push(...computeWallShelfCassettes(
+      [ROOM_WIDTH / 2 - WALL_SHELF_OFFSET, 0, -1.5 + rightLongOffset], [0, -Math.PI / 2, 0], rightLongLength, romanceSlice
+    ))
+
+    // IslandShelf: Nouveautés (2 copies per film)
     all.push(...computeIslandShelfCassettes(
-      [-1.6, 0, 0], [0, 0, 0], nouveautesLeft, nouveautesRight
+      [-2.1, 0, 0], [0, 0, 0], nouveautesLeft, nouveautesRight, 'island', true, 2
     ))
     // IslandShelf 2: SF (left) + Classiques (right)
     all.push(...computeIslandShelfCassettes(
-      [0.65, 0, -0.3], [0, 0, 0], sfIslandLeft, classiquesIslandRight, 'island2'
+      [0.15, 0, 0], [0, 0, 0], sfIslandLeft, classiquesIslandRight, 'island2'
     ))
 
     return all
   // ROOM_WIDTH & ROOM_DEPTH in deps: ensures recomputation when room dimensions change (HMR cache fix)
-  }, [horreurSlice, thrillerSlice, actionSlice, drameSlice, comedieSlice, nouveautesLeft, nouveautesRight, sfIslandLeft, classiquesIslandRight, ROOM_WIDTH, ROOM_DEPTH])
+  }, [actionSlice, animationSlice, aventureSlice, bizarreCenterZ, bizarreSlice, classiquesIslandRight, comedieSlice, drameSlice, horreurCenterZ, horreurLength, horreurSlice, leftEqualSectionLength, northLongLength, northLongOffset, northMediumLength, northMediumOffset, nouveautesLeft, nouveautesRight, policierSlice, rightLongLength, rightLongOffset, romanceSlice, sfIslandLeft, ROOM_WIDTH, ROOM_DEPTH])
 
   return (
     <group>
@@ -607,10 +696,10 @@ export const Aisle = memo(function Aisle({ films }: AisleProps) {
         <meshStandardMaterial
           map={floorTextures.map}
           normalMap={floorTextures.normalMap}
-          color="#d8d0cc"
-          roughness={0.12}
+          color="#c8c0b8"
+          roughness={0.13}
           metalness={0.02}
-          envMapIntensity={0.4}
+          envMapIntensity={0.55}
           normalScale={[0.8, 0.8] as unknown as THREE.Vector2}
         />
       </mesh>
@@ -622,8 +711,8 @@ export const Aisle = memo(function Aisle({ films }: AisleProps) {
           map={ceilingTextures.map}
           normalMap={ceilingTextures.normalMap}
           roughnessMap={ceilingTextures.roughnessMap}
-          color="#c8c0b8"
-          roughness={0.92}
+          color="#b0a898"
+          roughness={0.95}
           normalScale={[0.6, 0.6] as unknown as THREE.Vector2}
         />
       </mesh>
@@ -650,68 +739,124 @@ export const Aisle = memo(function Aisle({ films }: AisleProps) {
       <GenrePanelAnimator />
 
       {/* ========================================= */}
-      {/* ===== SECTION HORREUR - MUR GAUCHE ===== */}
+      {/* ===== SECTION HORREUR + BIZARRE - MUR GAUCHE ===== */}
       {/* ========================================= */}
       <group>
-        {/* Panneau HORREUR suspendu - reculé avec le meuble */}
+        {/* Panneau HORREUR suspendu */}
         <GenreSectionPanel
-          genre="HORREUR"
-          position={[-ROOM_WIDTH / 2 + 1.14, 2.07, -1.19]}
+          genre="Horreur"
+          position={[-ROOM_WIDTH / 2 + wallPanelInset, wallPanelY, horreurCenterZ]}
           rotation={[0, Math.PI / 2, 0]}
           color={GENRE_CONFIG.horreur.color}
-          width={1.8}
+          width={panelWidthLong}
           hanging={true}
+          intensityScale={0.85}
         />
 
-        {/* Étagères Horreur - mur gauche (reculé vers le fond pour ne plus chevaucher Thriller) */}
-        <WallShelf
-          position={[-ROOM_WIDTH / 2 + WALL_SHELF_OFFSET, 0, -1.80]}
+        <GenreSectionPanel
+          genre="Bizarre"
+          position={[-ROOM_WIDTH / 2 + wallPanelInset, wallPanelY, bizarreCenterZ]}
           rotation={[0, Math.PI / 2, 0]}
-          length={3.5}
+          color={GENRE_CONFIG.bizarre.color}
+          width={panelWidthBizarre}
+          hanging={true}
+          intensityScale={0.9}
+        />
+
+        {/* Étagères Horreur */}
+        <WallShelf
+          position={[-ROOM_WIDTH / 2 + WALL_SHELF_OFFSET, 0, horreurCenterZ]}
+          rotation={[0, Math.PI / 2, 0]}
+          length={horreurLength}
+          woodTextures={woodTextures}
+        />
+
+        {/* Étagères Bizarre */}
+        <WallShelf
+          position={[-ROOM_WIDTH / 2 + WALL_SHELF_OFFSET, 0, bizarreCenterZ]}
+          rotation={[0, Math.PI / 2, 0]}
+          length={leftEqualSectionLength}
+          woodTextures={woodTextures}
         />
       </group>
 
       {/* ========================================== */}
-      {/* ===== SECTION THRILLER - MUR GAUCHE ===== */}
+      {/* ===== SECTION THRILLER + POLICIER - MUR GAUCHE ===== */}
       {/* ========================================== */}
       <group>
-        {/* Panneau THRILLER suspendu - décalé vers la facade */}
         <GenreSectionPanel
-          genre="THRILLER"
-          position={[-ROOM_WIDTH / 2 + 1.14, 2.07, 1.58]}
+          genre="Polar"
+          position={[-ROOM_WIDTH / 2 + wallPanelInset, wallPanelY, 1.29 - leftEqualSectionOffset]}
+          rotation={[0, Math.PI / 2, 0]}
+          color={GENRE_CONFIG.policier.color}
+          width={panelWidthPolar}
+          hanging={true}
+        />
+
+        <GenreSectionPanel
+          genre="Thriller"
+          position={[-ROOM_WIDTH / 2 + wallPanelInset, wallPanelY, 1.29 + leftEqualSectionOffset]}
           rotation={[0, Math.PI / 2, 0]}
           color={GENRE_CONFIG.thriller.color}
-          width={1.5}
+          width={panelWidthMedium}
           hanging={true}
         />
 
-        {/* Étagères Thriller - mur gauche */}
+        {/* Étagères Thriller */}
         <WallShelf
-          position={[-ROOM_WIDTH / 2 + WALL_SHELF_OFFSET, 0, 1.29]}
+          position={[-ROOM_WIDTH / 2 + WALL_SHELF_OFFSET, 0, 1.29 - leftEqualSectionOffset]}
           rotation={[0, Math.PI / 2, 0]}
-          length={2.5}
+          length={leftEqualSectionLength}
+          woodTextures={woodTextures}
+        />
+
+        {/* Étagères Policier */}
+        <WallShelf
+          position={[-ROOM_WIDTH / 2 + WALL_SHELF_OFFSET, 0, 1.29 + leftEqualSectionOffset]}
+          rotation={[0, Math.PI / 2, 0]}
+          length={leftEqualSectionLength}
+          woodTextures={woodTextures}
         />
       </group>
 
       {/* ======================================== */}
-      {/* ===== SECTION ACTION - MUR DU FOND ===== */}
+      {/* ===== SECTION ACTION + AVENTURE - MUR DU FOND ===== */}
       {/* ======================================== */}
       <group>
-        {/* Panneau ACTION suspendu - reculé de 5% */}
         <GenreSectionPanel
-          genre="ACTION"
-          position={[-2.25, 2.07, -ROOM_DEPTH / 2 + 1.14]}
+          genre="Action"
+          position={[-2.25 - northLongOffset, wallPanelY, -ROOM_DEPTH / 2 + wallPanelInset]}
           rotation={[0, 0, 0]}
           color={GENRE_CONFIG.action.color}
-          width={1.8}
+          width={panelWidthLong}
           hanging={true}
+          intensityScale={0.80}
         />
 
-        {/* Étagères Action - partie gauche du mur du fond */}
-        <WallShelf
-          position={[-2.25, 0, -ROOM_DEPTH / 2 + WALL_SHELF_OFFSET]}
+        <GenreSectionPanel
+          genre="Aventure"
+          position={[-2.25 + northLongOffset, wallPanelY, -ROOM_DEPTH / 2 + wallPanelInset]}
           rotation={[0, 0, 0]}
-          length={3.5}
+          color={GENRE_CONFIG.aventure.color}
+          width={panelWidthLong}
+          hanging={true}
+          intensityScale={0.82}
+        />
+
+        {/* Étagères Action */}
+        <WallShelf
+          position={[-2.25 - northLongOffset, 0, -ROOM_DEPTH / 2 + WALL_SHELF_OFFSET]}
+          rotation={[0, 0, 0]}
+          length={northLongLength}
+          woodTextures={woodTextures}
+        />
+
+        {/* Étagères Aventure */}
+        <WallShelf
+          position={[-2.25 + northLongOffset, 0, -ROOM_DEPTH / 2 + WALL_SHELF_OFFSET]}
+          rotation={[0, 0, 0]}
+          length={northLongLength}
+          woodTextures={woodTextures}
         />
       </group>
 
@@ -733,95 +878,135 @@ export const Aisle = memo(function Aisle({ films }: AisleProps) {
       </group>
 
       {/* ======================================= */}
-      {/* ===== SECTION DRAME - MUR DU FOND ===== */}
+      {/* ===== SECTION DRAME + ANIMATION - MUR DU FOND ===== */}
       {/* ======================================= */}
       <group>
-        {/* Panneau DRAME suspendu - reculé de 5% */}
         <GenreSectionPanel
-          genre="DRAME"
-          position={[1.25, 2.07, -ROOM_DEPTH / 2 + 1.14]}
+          genre="Anim & Cie"
+          position={[1.25 - northMediumOffset, wallPanelY, -ROOM_DEPTH / 2 + wallPanelInset]}
           rotation={[0, 0, 0]}
-          color={GENRE_CONFIG.drame.color}
-          width={1.5}
+          color={GENRE_CONFIG.animation.color}
+          width={panelWidthMedium}
           hanging={true}
+          intensityScale={0.85}
         />
 
-        {/* Étagères Drame - partie droite du mur du fond (avant la porte) */}
-        <WallShelf
-          position={[1.25, 0, -ROOM_DEPTH / 2 + WALL_SHELF_OFFSET]}
+        <GenreSectionPanel
+          genre="Drame"
+          position={[1.25 + northMediumOffset, wallPanelY, -ROOM_DEPTH / 2 + wallPanelInset]}
           rotation={[0, 0, 0]}
-          length={2.5}
+          color={GENRE_CONFIG.drame.color}
+          width={panelWidthMedium}
+          hanging={true}
+          intensityScale={0.80}
+        />
+
+        {/* Étagères Drame */}
+        <WallShelf
+          position={[1.25 - northMediumOffset, 0, -ROOM_DEPTH / 2 + WALL_SHELF_OFFSET]}
+          rotation={[0, 0, 0]}
+          length={northMediumLength}
+          woodTextures={woodTextures}
+        />
+
+        {/* Étagères Animation */}
+        <WallShelf
+          position={[1.25 + northMediumOffset, 0, -ROOM_DEPTH / 2 + WALL_SHELF_OFFSET]}
+          rotation={[0, 0, 0]}
+          length={northMediumLength}
+          woodTextures={woodTextures}
         />
       </group>
 
       {/* ========================================= */}
-      {/* ===== SECTION COMÉDIE - MUR DROIT ===== */}
+      {/* ===== SECTION COMÉDIE + ROMANCE - MUR DROIT ===== */}
       {/* ========================================= */}
       <group>
-        {/* Panneau COMÉDIE suspendu - reculé de 5% */}
         <GenreSectionPanel
-          genre="COMÉDIE"
-          position={[ROOM_WIDTH / 2 - 1.14, 2.07, -1.5]}
+          genre="Comédie"
+          position={[ROOM_WIDTH / 2 - wallPanelInset, wallPanelY, -1.5 - rightLongOffset]}
           rotation={[0, -Math.PI / 2, 0]}
           color={GENRE_CONFIG.comedie.color}
-          width={1.8}
+          width={panelWidthLong}
           hanging={true}
         />
 
-        {/* Étagères Comédie - mur droit partie nord */}
-        <WallShelf
-          position={[ROOM_WIDTH / 2 - WALL_SHELF_OFFSET, 0, -1.5]}
+        <GenreSectionPanel
+          genre="Romance"
+          position={[ROOM_WIDTH / 2 - wallPanelInset, wallPanelY, -1.5 + rightLongOffset]}
           rotation={[0, -Math.PI / 2, 0]}
-          length={4}
+          color={GENRE_CONFIG.romance.color}
+          width={panelWidthLong}
+          hanging={true}
+          intensityScale={0.84}
+        />
+
+        {/* Étagères Comédie */}
+        <WallShelf
+          position={[ROOM_WIDTH / 2 - WALL_SHELF_OFFSET, 0, -1.5 - rightLongOffset]}
+          rotation={[0, -Math.PI / 2, 0]}
+          length={rightLongLength}
+          woodTextures={woodTextures}
+        />
+
+        {/* Étagères Romance */}
+        <WallShelf
+          position={[ROOM_WIDTH / 2 - WALL_SHELF_OFFSET, 0, -1.5 + rightLongOffset]}
+          rotation={[0, -Math.PI / 2, 0]}
+          length={rightLongLength}
+          woodTextures={woodTextures}
         />
       </group>
 
       {/* ===== ÎLOT CENTRAL - NOUVEAUTÉS (MEILLEURS FILMS TMDB) ===== */}
       {/* Top films TMDB des 10 dernières années par note (fallback: catalogue local) */}
       <IslandShelf
-        position={[-1.6, 0, 0]}
+        position={[-2.1, 0, 0]}
+        woodTextures={woodTextures}
       />
 
       {/* Panneau NOUVEAUTÉS double face — fixé au plafond au-dessus de l'îlot */}
       {/* Face visible depuis la droite (+X) */}
       <GenreSectionPanel
-        genre="NOUVEAUTÉS"
-        position={[-1.58, 2.07, 0]}
+        genre="Nouveautés"
+        position={[-2.08, islandPanelY, 0]}
         rotation={[0, Math.PI / 2, 0]}
         color="#ff00ff"
-        width={1.6}
+        width={panelWidthIsland}
         hanging={true}
       />
       {/* Face visible depuis la gauche (-X) */}
       <GenreSectionPanel
-        genre="NOUVEAUTÉS"
-        position={[-1.62, 2.07, 0]}
+        genre="Nouveautés"
+        position={[-2.12, islandPanelY, 0]}
         rotation={[0, -Math.PI / 2, 0]}
         color="#ff00ff"
-        width={1.6}
+        width={panelWidthIsland}
         hanging={true}
       />
 
       {/* ===== ÎLOT 2 - SF + CLASSIQUES ===== */}
       <IslandShelf
-        position={[0.65, 0, -0.3]}
+        position={[0.15, 0, 0]}
+        woodTextures={woodTextures}
       />
       {/* Panneau SF — fixé au plafond */}
       <GenreSectionPanel
-        genre="SF"
-        position={[0.63, 2.07, -0.3]}
+        genre="Sf"
+        position={[0.13, islandPanelY, 0]}
         rotation={[0, -Math.PI / 2, 0]}
         color="#00ccff"
-        width={1.6}
+        width={panelWidthIsland}
         hanging={true}
+        intensityScale={0.90}
       />
       {/* Panneau CLASSIQUES — fixé au plafond */}
       <GenreSectionPanel
-        genre="CLASSIQUES"
-        position={[0.67, 2.07, -0.3]}
+        genre="Classiques"
+        position={[0.17, islandPanelY, 0]}
         rotation={[0, Math.PI / 2, 0]}
         color="#d4af37"
-        width={1.6}
+        width={panelWidthIsland}
         hanging={true}
       />
 
@@ -831,22 +1016,26 @@ export const Aisle = memo(function Aisle({ films }: AisleProps) {
         {/* Comptoir simple — longueur 2.7m, largeur 0.49m */}
         <mesh position={[0, 0.5, 0]} castShadow receiveShadow>
           <boxGeometry args={[2.7, 1, 0.49]} />
-          <meshStandardMaterial
+          <meshPhysicalMaterial
             map={woodTextures.map}
             normalMap={woodTextures.normalMap}
             roughnessMap={woodTextures.roughnessMap}
-            color="#4a3a2a"
+            color="#6b4c33"
+            roughness={0.25}
+            clearcoat={0.45}
+            clearcoatRoughness={0.12}
             normalScale={[0.7, 0.7] as unknown as THREE.Vector2}
           />
         </mesh>
         <mesh position={[0, 1.05, 0]} castShadow receiveShadow>
           <boxGeometry args={[2.7, 0.05, 0.63]} />
-          <meshStandardMaterial
+          <meshPhysicalMaterial
             map={woodTextures.map}
             normalMap={woodTextures.normalMap}
             roughnessMap={woodTextures.roughnessMap}
-            color="#2a2018"
-            roughness={0.4}
+            color="#3d2a1a"
+            roughness={0.20}
+            clearcoat={0.50}
             normalScale={[0.7, 0.7] as unknown as THREE.Vector2}
           />
         </mesh>
@@ -855,7 +1044,7 @@ export const Aisle = memo(function Aisle({ films }: AisleProps) {
         <group position={[0.8, 1.08, 0]}>
           <mesh position={[0, 0.1, 0]}>
             <boxGeometry args={[0.35, 0.2, 0.3]} />
-            <meshStandardMaterial color="#333333" roughness={0.5} metalness={0.3} />
+            <meshStandardMaterial color="#2a2a2e" metalness={0.15} roughness={0.35} />
           </mesh>
           <mesh position={[0, 0.25, 0.05]}>
             <boxGeometry args={[0.25, 0.08, 0.02]} />
@@ -874,7 +1063,7 @@ export const Aisle = memo(function Aisle({ films }: AisleProps) {
         <group position={[-0.9, 1.08, -0.1]}>
           <mesh position={[0, 0.12, 0]}>
             <boxGeometry args={[0.3, 0.22, 0.2]} />
-            <meshStandardMaterial color="#222222" roughness={0.4} />
+            <meshStandardMaterial color="#1a1a20" metalness={0.10} roughness={0.30} />
           </mesh>
           <mesh position={[0, 0.12, 0.11]}>
             <planeGeometry args={[0.25, 0.18]} />
@@ -1019,15 +1208,6 @@ export const Aisle = memo(function Aisle({ films }: AisleProps) {
           rotation={[0, 0, -Math.PI / 12]}
         />
       </Suspense>
-
-      {/* Lumière chaude projetée sur Pulp Fiction depuis la lampe */}
-      <pointLight
-        position={[-ROOM_WIDTH / 2 + 0.15, 1.55, 3.33]}
-        color="#ffaa66"
-        intensity={6.4}
-        distance={2.5}
-        decay={2.5}
-      />
 
       {/* ===== TOUTES LES CASSETTES — InstancedMesh avec atlas 2D ===== */}
       {allCassetteData.length > 0 && (

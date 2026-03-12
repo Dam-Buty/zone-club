@@ -1,94 +1,74 @@
 import { useCallback, useMemo, useEffect } from 'react'
-import * as THREE from 'three'
-import { useTexture } from '@react-three/drei'
-import { useKTX2Textures } from '../../hooks/useKTX2Textures'
+import * as THREE from 'three/webgpu'
 import { CASSETTE_DIMENSIONS } from './Cassette'
 
 interface WallShelfProps {
   position: [number, number, number]
   rotation?: [number, number, number]
   length: number  // Longueur de l'étagère
+  woodTextures: Record<string, THREE.Texture>
 }
 
-const ROWS = 5
-const ROW_HEIGHT = CASSETTE_DIMENSIONS.height + 0.12  // Hauteur entre rangées
-export const SHELF_HEIGHT = 2.4
+const ROWS = 6
+const ROW_HEIGHT = CASSETTE_DIMENSIONS.height + 0.04  // Hauteur entre rangées (serré, juste au-dessus des K7)
 export const SHELF_DEPTH = 0.095  // back panel depth (halved from 0.19)
-const PLANK_DEPTH = 0.10           // shelf planks protrude forward from back panel
+export const WALL_SHELF_ROWS = ROWS
+const PLANK_DEPTH = 0.07           // shelf planks protrude forward from back panel (-30%)
+const PLANK_THICKNESS = 0.025
+const TOP_PLANK_TOP_Y = 0.12 + ROWS * ROW_HEIGHT + PLANK_THICKNESS / 2
+// Back panel extends 1cm above the top of the highest cassette
+const CASSETTE_CLEARANCE = 0.0125 + CASSETTE_DIMENSIONS.height + 0.01  // plank gap + K7 + 1cm
+export const SHELF_HEIGHT = TOP_PLANK_TOP_Y + CASSETTE_CLEARANCE
 export const SHELF_TILT = 0.087  // ~5° backward lean (thicker at bottom, thinner at top)
-export const SHELF_PIVOT_Y = SHELF_HEIGHT / 2 + 0.1  // tilt pivot = shelf vertical center (1.3m)
+export const SHELF_PIVOT_Y = SHELF_HEIGHT / 2 + 0.1  // tilt pivot = shelf vertical center
 
-// Set to true once KTX2 textures have been generated via scripts/convert-textures-ktx2.sh
-const USE_KTX2 = true
+// Planches chevauchent le panneau arrière de 5mm pour éliminer le vide visible
+const PLANK_OVERLAP = 0.005
 
-// OPTIMISATION: Géométrie partagée pour les séparateurs (identiques dans toutes les étagères)
+// Géométrie partagée pour les séparateurs — arêtes franches
 const SHARED_DIVIDER_GEOM = new THREE.BoxGeometry(0.02, SHELF_HEIGHT - 0.1, 0.02)
 
 const _tempMatrix = new THREE.Matrix4()
 
-// Hook selector: KTX2 or JPEG wood textures based on USE_KTX2 flag
-// Using a compile-time constant function swap to avoid conditional hook calls
-function useWoodTexturesJPEG(): Record<string, THREE.Texture> {
-  return useTexture({
-    map: '/textures/wood/color.jpg',
-    normalMap: '/textures/wood/normal.jpg',
-    roughnessMap: '/textures/wood/roughness.jpg',
-  }) as Record<string, THREE.Texture>
-}
-function useWoodTexturesKTX2(): Record<string, THREE.Texture> {
-  return useKTX2Textures('/textures/wood', 2, 1.5)
-}
-const useWoodTextures = USE_KTX2 ? useWoodTexturesKTX2 : useWoodTexturesJPEG
+// wallShelfMaterial imported from IslandShelf.tsx
 
 export function WallShelf({
   position,
   rotation = [0, 0, 0],
   length,
+  woodTextures,
 }: WallShelfProps) {
   const dividerCount = Math.floor(length / 1) + 1
 
-  // Textures bois PBR (KTX2 or JPEG depending on USE_KTX2 flag)
-  const woodTextures = useWoodTextures()
+  const shelfMap = useMemo(() => {
+    const map = (woodTextures.map as THREE.Texture).clone()
+    map.wrapS = THREE.RepeatWrapping
+    map.wrapT = THREE.RepeatWrapping
+    map.repeat.set(Math.max(length / 0.55, 1), Math.max(SHELF_HEIGHT / 0.28, 1))
+    map.anisotropy = 16
+    map.colorSpace = THREE.SRGBColorSpace
+    map.needsUpdate = true
+    return map
+  }, [woodTextures, length])
 
-  useMemo(() => {
-    if (USE_KTX2) return // KTX2 hook handles configuration
-    Object.entries(woodTextures).forEach(([key, tex]) => {
-      const t = tex as THREE.Texture
-      t.wrapS = THREE.RepeatWrapping
-      t.wrapT = THREE.RepeatWrapping
-      t.repeat.set(2, 1.5)
-      t.anisotropy = 16
-      t.colorSpace = key === 'map' ? THREE.SRGBColorSpace : THREE.LinearSRGBColorSpace
-    })
-  }, [woodTextures])
+  const shelfMaterial = useMemo(() => new THREE.MeshPhysicalMaterial({
+    map: shelfMap,
+    color: '#a07850',
+    roughness: 0.22,
+    metalness: 0.0,
+    envMapIntensity: 0.50,
+    clearcoat: 0.42,
+    clearcoatRoughness: 0.12,
+  }), [shelfMap])
 
-  // OPTIMISATION: 3 matériaux partagés
-  const backMaterial = useMemo(() => new THREE.MeshStandardMaterial({
-    map: woodTextures.map as THREE.Texture,
-    normalMap: woodTextures.normalMap as THREE.Texture,
-    roughnessMap: woodTextures.roughnessMap as THREE.Texture,
-    color: '#8a7560',
-    normalScale: new THREE.Vector2(0.9, 0.9),
-  }), [woodTextures])
+  // Back panel — hard edges, no rounded profile
+  const backPanelGeometry = useMemo(() =>
+    new THREE.BoxGeometry(length, SHELF_HEIGHT, SHELF_DEPTH),
+  [length])
 
-  const plankMaterial = useMemo(() => new THREE.MeshStandardMaterial({
-    map: woodTextures.map as THREE.Texture,
-    normalMap: woodTextures.normalMap as THREE.Texture,
-    roughnessMap: woodTextures.roughnessMap as THREE.Texture,
-    color: '#7a6550',
-    normalScale: new THREE.Vector2(0.9, 0.9),
-  }), [woodTextures])
-
-  const dividerMaterial = useMemo(() => new THREE.MeshStandardMaterial({
-    map: woodTextures.map as THREE.Texture,
-    normalMap: woodTextures.normalMap as THREE.Texture,
-    roughnessMap: woodTextures.roughnessMap as THREE.Texture,
-    color: '#6a5540',
-    normalScale: new THREE.Vector2(0.9, 0.9),
-  }), [woodTextures])
-
+  // Planches — pleine largeur, arêtes franches
   const plankGeometry = useMemo(() =>
-    new THREE.BoxGeometry(length - 0.05, 0.025, PLANK_DEPTH),
+    new THREE.BoxGeometry(length, PLANK_THICKNESS, PLANK_DEPTH),
   [length])
 
   // Callback ref: sets matrices immediately when the InstancedMesh is created/attached
@@ -98,7 +78,8 @@ export function WallShelf({
     if (!mesh) return
     for (let i = 1; i < ROWS + 1; i++) {
       const y = 0.12 + i * ROW_HEIGHT - SHELF_PIVOT_Y
-      const z = SHELF_DEPTH / 2 + PLANK_DEPTH / 2
+      // Plank overlaps back panel by PLANK_OVERLAP to eliminate visible gap
+      const z = SHELF_DEPTH / 2 + PLANK_DEPTH / 2 - PLANK_OVERLAP
       _tempMatrix.makeTranslation(0, y, z)
       mesh.setMatrixAt(i - 1, _tempMatrix)
     }
@@ -121,33 +102,35 @@ export function WallShelf({
 
   useEffect(() => {
     return () => {
-      backMaterial.dispose()
-      plankMaterial.dispose()
-      dividerMaterial.dispose()
+      backPanelGeometry.dispose()
       plankGeometry.dispose()
     }
-  }, [backMaterial, plankMaterial, dividerMaterial, plankGeometry])
+  }, [backPanelGeometry, plankGeometry])
+
+  useEffect(() => {
+    return () => {
+      shelfMaterial.dispose()
+      shelfMap.dispose()
+    }
+  }, [shelfMaterial, shelfMap])
 
   return (
     <group position={position} rotation={rotation}>
       {/* Tilt group: pivot at shelf center height, ~5° backward lean */}
       <group position={[0, SHELF_PIVOT_Y, 0]} rotation={[-SHELF_TILT, 0, 0]}>
-        {/* Structure principale — centered at tilt pivot */}
-        <mesh castShadow receiveShadow material={backMaterial}>
-          <boxGeometry args={[length, SHELF_HEIGHT, SHELF_DEPTH]} />
-        </mesh>
+        <mesh castShadow receiveShadow material={shelfMaterial} geometry={backPanelGeometry} />
 
-        {/* Planches horizontales → 1 InstancedMesh */}
+        {/* Planches horizontales → 1 InstancedMesh, arêtes franches */}
         <instancedMesh
           ref={plankRefCallback}
-          args={[plankGeometry, plankMaterial, ROWS]}
+          args={[plankGeometry, shelfMaterial, ROWS]}
           receiveShadow
         />
 
-        {/* Séparateurs verticaux → 1 InstancedMesh */}
+        {/* Séparateurs verticaux → 1 InstancedMesh, arêtes franches */}
         <instancedMesh
           ref={dividerRefCallback}
-          args={[SHARED_DIVIDER_GEOM, dividerMaterial, dividerCount]}
+          args={[SHARED_DIVIDER_GEOM, shelfMaterial, dividerCount]}
           receiveShadow
         />
       </group>
