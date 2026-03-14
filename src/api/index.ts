@@ -440,6 +440,42 @@ export const board = {
   },
 };
 
+// ============ CAST SESSIONS ============
+
+export const castSessions = {
+  async create(filmId: number, durationSeconds: number, currentPosition: number): Promise<{ session: unknown }> {
+    return request('/api/cast-sessions', {
+      method: 'POST',
+      body: JSON.stringify({ filmId, durationSeconds, currentPosition }),
+    });
+  },
+
+  async updatePosition(filmId: number, currentPosition: number): Promise<{ ok: boolean }> {
+    return request('/api/cast-sessions', {
+      method: 'PATCH',
+      body: JSON.stringify({ filmId, currentPosition }),
+    });
+  },
+
+  async end(filmId: number): Promise<{ ok: boolean }> {
+    return request('/api/cast-sessions', {
+      method: 'DELETE',
+      body: JSON.stringify({ filmId }),
+    });
+  },
+};
+
+// ============ PUSH SUBSCRIBE ============
+
+export const pushSubscribe = {
+  async subscribe(subscription: PushSubscriptionJSON): Promise<{ ok: boolean }> {
+    return request('/api/push-subscribe', {
+      method: 'POST',
+      body: JSON.stringify({ subscription }),
+    });
+  },
+};
+
 // ============ ADMIN ============
 
 export interface AdminStats {
@@ -538,6 +574,8 @@ export const api = {
   filmRequests,
   board,
   admin,
+  castSessions,
+  pushSubscribe,
 };
 
 export default api;

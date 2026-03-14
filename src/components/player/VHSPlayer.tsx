@@ -52,6 +52,10 @@ export function VHSPlayer() {
   const [isAirPlayConnected, setIsAirPlayConnected] = useState(false);
   const [showMobileRemotePrompt, setShowMobileRemotePrompt] = useState(false);
 
+  // Push notification state
+  const [pushSubscribed, setPushSubscribed] = useState(false);
+  const [pushPromptDismissed, setPushPromptDismissed] = useState(false);
+
   // Overlay auto-hide (4s inactivity)
   const [overlayVisible, setOverlayVisible] = useState(true);
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -710,6 +714,28 @@ export function VHSPlayer() {
     }
     openMirroringFallback('generic');
   }, [isCastReady, hasCastDevices, isCastConnected, isAirPlaySupported, handleCastCurrentVideo, handleAirPlayPicker, openMirroringFallback]);
+
+  // Push notification subscription handler
+  const handleEnablePushNotifications = useCallback(async () => {
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') return;
+
+      const reg = await navigator.serviceWorker.ready;
+      const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+      if (!vapidKey) return;
+
+      const subscription = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: vapidKey,
+      });
+
+      await api.pushSubscribe.subscribe(subscription.toJSON() as PushSubscriptionJSON);
+      setPushSubscribed(true);
+    } catch {
+      // Permission denied or push not supported
+    }
+  }, []);
 
   // Mobile prompt when player opens
   useEffect(() => {
