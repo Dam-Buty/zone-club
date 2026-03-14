@@ -2,191 +2,30 @@ import { useRef, useEffect } from 'react'
 import * as THREE from 'three/webgpu'
 import { color as tslColor, float } from 'three/tsl'
 
-interface CeilingLightConfig {
-  position: [number, number, number]
-  width: number
-  height: number
-  intensity: number
-}
-
-// Three long ceiling runs align with the visible neon tubes so floor reflections
-// read in the same direction as the practical fixtures.
-const CEILING_LIGHT_CONFIGS: CeilingLightConfig[] = [
-  { position: [-2.57, 2.68, 0.0], width: 0.18, height: 6.95, intensity: 2.8 },
-  { position: [0.08, 2.68, 0.0], width: 0.18, height: 7.1, intensity: 3.2 },
-  { position: [2.63, 2.68, 0.0], width: 0.18, height: 6.95, intensity: 2.8 },
+// 3 ceiling tube RectAreaLights — 1 per aisle, centered above walkways
+// Small area (0.12×1.4m) = focused light = no cosine-falloff two-tone
+const CEILING_LIGHT_POSITIONS: [number, number, number][] = [
+  [-3.3, 2.7, 0],
+  [-1.0, 2.7, 0],
+  [ 2.3, 2.7, 0],
+  [ 3.8, 2.7, 0],
 ]
 
 function CeilingTubeLights() {
   return (
     <>
-      {CEILING_LIGHT_CONFIGS.map((config, i) => (
+      {CEILING_LIGHT_POSITIONS.map(([x, y, z], i) => (
         <rectAreaLight
           key={`ceiling-tube-${i}`}
-          position={config.position}
+          position={[x, y - 0.02, z]}
           rotation={[-Math.PI / 2, 0, 0]}
-          width={config.width}
-          height={config.height}
-          intensity={config.intensity}
-          color="#ffe4c4"
+          width={0.4}
+          height={7.0}
+          intensity={4.0}
+          color="#f0f5ff"
         />
       ))}
     </>
-  )
-}
-
-function VitrineColdLight() {
-  return (
-    <rectAreaLight
-      position={[0.5, 1.4, 4.15]}
-      rotation={[0, Math.PI, 0]}
-      width={5.0}
-      height={2.2}
-      intensity={1.8}
-      color="#5577aa"
-    />
-  )
-}
-
-function IslandTopKiss() {
-  return (
-    <>
-      <rectAreaLight
-        position={[-1.38, 1.92, 0]}
-        rotation={[-Math.PI / 2, 0, 0]}
-        width={3.25}
-        height={0.18}
-        intensity={0.77}
-        color="#fff3e5"
-      />
-      <rectAreaLight
-        position={[1.02, 1.92, 0]}
-        rotation={[-Math.PI / 2, 0, 0]}
-        width={3.05}
-        height={0.18}
-        intensity={0.70}
-        color="#edf6ff"
-      />
-    </>
-  )
-}
-
-// Shelf grazers — thin RectAreaLights near shelf tops, angled slightly downward
-// to "caress" VHS cassette faces for readability (retail merchandising technique)
-function ShelfGrazers() {
-  return (
-    <>
-      {/* Back wall grazer (Action + Drame shelves) — facing +Z, tilted ~20° down */}
-      <rectAreaLight
-        position={[0, 1.95, -3.95]}
-        rotation={[-(20 * Math.PI / 180), 0, 0]}
-        width={4.0}
-        height={0.16}
-        intensity={0.85}
-        color="#ffefdd"
-      />
-      {/* Left wall grazer (Horreur + Thriller shelves) — facing +X, tilted ~20° down */}
-      <rectAreaLight
-        position={[-4.2, 1.95, -0.2]}
-        rotation={[-(20 * Math.PI / 180), Math.PI / 2, 0]}
-        width={4.5}
-        height={0.16}
-        intensity={0.85}
-        color="#ffefdd"
-      />
-      {/* Right wall grazer (Comédie shelves) — facing -X, tilted ~20° down */}
-      <rectAreaLight
-        position={[4.2, 1.95, -1.5]}
-        rotation={[-(20 * Math.PI / 180), -Math.PI / 2, 0]}
-        width={3.8}
-        height={0.16}
-        intensity={0.75}
-        color="#ffefdd"
-      />
-    </>
-  )
-}
-
-// Island side fills — low-intensity RectAreaLights at mid-height facing the K7 faces
-function IslandSideFills() {
-  return (
-    <>
-      {/* Island 1 (Nouveautés X=-2.1): left face fill */}
-      <rectAreaLight
-        position={[-2.70, 0.9, 0]}
-        rotation={[0, Math.PI / 2, 0]}
-        width={3.2}
-        height={0.8}
-        intensity={0.42}
-        color="#fff5ea"
-      />
-      {/* Island 1: right face fill (inner aisle — reduced to avoid wash-out) */}
-      <rectAreaLight
-        position={[-1.50, 0.9, 0]}
-        rotation={[0, -Math.PI / 2, 0]}
-        width={3.2}
-        height={0.8}
-        intensity={0.22}
-        color="#fff5ea"
-      />
-      {/* Island 2 (SF/Classiques X=0.15): left face fill (inner aisle — reduced) */}
-      <rectAreaLight
-        position={[-0.45, 0.9, 0]}
-        rotation={[0, Math.PI / 2, 0]}
-        width={3.2}
-        height={0.8}
-        intensity={0.22}
-        color="#fff5ea"
-      />
-      {/* Island 2: right face fill */}
-      <rectAreaLight
-        position={[0.75, 0.9, 0]}
-        rotation={[0, -Math.PI / 2, 0]}
-        width={3.2}
-        height={0.8}
-        intensity={0.35}
-        color="#fff5ea"
-      />
-    </>
-  )
-}
-
-// Comptoir overhead — warm work light above the manager's counter
-function ComptoirLight() {
-  return (
-    <>
-      {/* Comptoir + manager area */}
-      <rectAreaLight
-        position={[2.2, 2.1, 3.0]}
-        rotation={[-Math.PI / 2, 0, 0]}
-        width={3.0}
-        height={1.2}
-        intensity={1.2}
-        color="#ffd8b0"
-      />
-      {/* TV + couch area fill */}
-      <rectAreaLight
-        position={[3.5, 2.1, 1.5]}
-        rotation={[-Math.PI / 2, 0, 0]}
-        width={2.0}
-        height={1.5}
-        intensity={0.7}
-        color="#ffe8d0"
-      />
-    </>
-  )
-}
-
-function PrivateDoorLift() {
-  return (
-    <group position={[2.9, 2.18, -4.02]} rotation={[0, Math.PI, 0]}>
-      <rectAreaLight
-        width={2.2}
-        height={0.82}
-        intensity={0.42}
-        color="#f4efe6"
-      />
-    </group>
   )
 }
 
@@ -200,7 +39,7 @@ const SHARED_NEON_TUBE_MAT = new THREE.MeshStandardNodeMaterial({
   metalness: 0.05,
   toneMapped: false,
 })
-// Static emissive — no flicker to avoid SSGI temporal noise amplification
+// Static emissive via TSL (WebGPU)
 SHARED_NEON_TUBE_MAT.emissiveNode = tslColor('#fff5e6').mul(float(3.0))
 const SHARED_NEON_FIXTURE_MAT = new THREE.MeshStandardMaterial({
   color: '#666666',
@@ -208,18 +47,19 @@ const SHARED_NEON_FIXTURE_MAT = new THREE.MeshStandardMaterial({
   metalness: 0.3,
 })
 
-// Positions des 9 néons (grille 3×3 au plafond)
+// 16 neon tubes — 4 columns × 4 Z rows
+// Columns: left wall=-3.3, center-left=-1.0, center-right=2.3, right wall=3.8
 const NEON_POSITIONS: [number, number, number][] = [
-  [-3, 2.7, -3], [0, 2.7, -3], [3, 2.7, -3],
-  [-3, 2.7, 0],  [0, 2.7, 0],  [3, 2.7, 0],
-  [-3, 2.7, 3],  [0, 2.7, 3],  [3, 2.7, 3],
+  [-3.3, 2.7, -3.0], [-1.0, 2.7, -3.0], [2.3, 2.7, -3.0], [3.8, 2.7, -3.0],
+  [-3.3, 2.7, -1.0], [-1.0, 2.7, -1.0], [2.3, 2.7, -1.0], [3.8, 2.7, -1.0],
+  [-3.3, 2.7,  1.5], [-1.0, 2.7,  1.5], [2.3, 2.7,  1.5], [3.8, 2.7,  1.5],
+  [-3.3, 2.7,  3.0], [-1.0, 2.7,  3.0], [2.3, 2.7,  3.0], [3.8, 2.7,  3.0],
 ]
 
-// Matrices pré-calculées pour les tubes (rotation 90° sur Z) et fixtures (offset Y +0.04)
 const _tempMatrix = new THREE.Matrix4()
 const _tubeRotation = new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI / 2, 0, 0))
 
-// OPTIMISATION: 9 NeonTubes → 2 InstancedMesh (tube + fixture) = 18→2 draw calls
+// 9 NeonTubes → 2 InstancedMesh (tube + fixture) = 2 draw calls
 function NeonTubesInstanced() {
   const tubeRef = useRef<THREE.InstancedMesh>(null!)
   const fixtureRef = useRef<THREE.InstancedMesh>(null!)
@@ -259,63 +99,12 @@ function NeonTubesInstanced() {
   )
 }
 
-// Neon halo PointLights — one per genre panel, tints cassettes below.
-// Positions derived from GenreSectionPanel placements in Aisle.tsx (panelY - 0.3).
-// Colors are panel colors desaturated 30%.
-interface NeonHaloConfig {
-  position: [number, number, number]
-  color: string
-  intensity: number
-}
-
-const NEON_HALO_CONFIGS: NeonHaloConfig[] = [
-  // Left wall panels (facing +X)
-  { position: [-4.18, 1.94, -2.67], color: '#66cc88', intensity: 0.5 },  // Horreur
-  { position: [-4.18, 1.94, -1.02], color: '#cc66aa', intensity: 0.5 },  // Bizarre
-  { position: [-4.18, 1.94,  0.51], color: '#7abbd4', intensity: 0.5 },  // Policier
-  { position: [-4.18, 1.94,  2.07], color: '#cc8844', intensity: 0.5 },  // Thriller
-  // Back wall panels (facing +Z)
-  { position: [-3.16, 1.94, -3.93], color: '#cc7766', intensity: 0.5 },  // Action
-  { position: [-1.35, 1.94, -3.93], color: '#ccaa66', intensity: 0.5 },  // Aventure
-  { position: [ 0.60, 1.94, -3.93], color: '#ccaa66', intensity: 0.5 },  // Anim & Cie
-  { position: [ 1.91, 1.94, -3.93], color: '#9977cc', intensity: 0.5 },  // Drame
-  // Right wall panels (facing -X)
-  { position: [ 4.18, 1.94, -2.53], color: '#cccc77', intensity: 0.5 },  // Comédie
-  { position: [ 4.18, 1.94, -0.47], color: '#cc8899', intensity: 0.5 },  // Romance
-  // Island hanging panels
-  { position: [ 0.13, 1.94,  0.00], color: '#66aacc', intensity: 0.4 },  // SF
-  { position: [ 0.17, 1.94,  0.00], color: '#bbaa77', intensity: 0.4 },  // Classiques
-]
-
-function NeonHaloLights() {
-  return (
-    <>
-      {NEON_HALO_CONFIGS.map((config, i) => (
-        <pointLight
-          key={`halo-${i}`}
-          position={config.position}
-          color={config.color}
-          intensity={config.intensity}
-          distance={2.5}
-          decay={2.0}
-          castShadow={false}
-        />
-      ))}
-    </>
-  )
-}
-
-// Architecture éclairage :
-// 1. IBL + hemisphere: low-cost base readability
-// 2. Desktop-only practicals: full-width ceiling rows + wall bounce + aisle shaping
-// 3. One cached shadow caster: contact and grounding
-// 4. Emissive tube meshes + bloom: perceived neon energy
-// 5. Neon halo PointLights: colored tints from genre panels onto cassettes
+// Architecture: main branch base lighting (no two-tone) + vitrine cold light
 function OptimizedLighting({ isMobile = false }: { isMobile?: boolean }) {
-  const shadowMapSize = isMobile ? 256 : 512
+  const shadowMapSize = isMobile ? 256 : 1024
   const dirLightRef = useRef<THREE.DirectionalLight>(null!)
 
-  // SHADOW CACHING: scène statique → on rend le shadow map UNE FOIS puis on le gèle
+  // SHADOW CACHING: scène statique → render shadow map ONCE then freeze
   useEffect(() => {
     const light = dirLightRef.current
     if (!light) return
@@ -336,33 +125,83 @@ function OptimizedLighting({ isMobile = false }: { isMobile?: boolean }) {
 
   return (
     <>
-      {/* COUCHE 1 : Ambiance */}
+      {/* Hemisphere ambient fill */}
       <hemisphereLight
-        color={isMobile ? '#fcf4ea' : '#f5e8d4'}
-        groundColor={isMobile ? '#ae8d75' : '#5a4030'}
-        intensity={isMobile ? 1.05 : 0.30}
+        color="#fff8f0"
+        groundColor="#8a8078"
+        intensity={isMobile ? 0.5 : 0.28}
       />
 
-      {/* Desktop-only direct lights */}
+      {/* Desktop-only per-fragment lights */}
       {!isMobile && (
         <>
-          <VitrineColdLight />
+          {/* 3 ceiling tube RectAreaLights (small 0.12×1.4m) */}
           <CeilingTubeLights />
-          <IslandTopKiss />
-          <PrivateDoorLift />
-          <ShelfGrazers />
-          <IslandSideFills />
-          <ComptoirLight />
-          <NeonHaloLights />
-          {/* Comptoir accent — warm spot above service area */}
+
+          {/* Comptoir tube — aligned on neon [3, 2.7, 3] */}
+          <rectAreaLight
+            position={[3, 2.68, 3]}
+            rotation={[-Math.PI / 2, 0, 0]}
+            width={0.12}
+            height={1.4}
+            intensity={8.0}
+            color="#fff5e6"
+          />
+
+          {/* Left aisle fill — illuminates left island faces + left wall K7s */}
           <pointLight
-            position={[2.4, 1.78, 3.22]}
-            color="#ffcc88"
-            intensity={0.5}
-            distance={3.0}
-            decay={2.0}
+            position={[-3.0, 1.5, 0]}
+            intensity={0.8}
+            color="#fff5e6"
+            distance={4}
+            decay={2}
             castShadow={false}
           />
+
+          {/* Vitrine cold light — faces backward toward street (rotation PI = -Z) */}
+          <rectAreaLight
+            position={[0.5, 1.4, 4.15]}
+            rotation={[0, Math.PI, 0]}
+            width={5.0}
+            height={2.2}
+            intensity={1.0}
+            color="#5577aa"
+          />
+
+          {/* Ceiling bounce — single upward fill for ceiling illumination */}
+          <rectAreaLight position={[0, 0.1, 0]} rotation={[Math.PI / 2, 0, 0]} width={3.0} height={2.5} intensity={0.80} color="#e8ddd0" />
+
+          {/* Comptoir overhead — single warm work light above counter area */}
+          <rectAreaLight position={[2.8, 2.1, 2.5]} rotation={[-Math.PI / 2, 0, 0]} width={3.0} height={2.0} intensity={1.0} color="#ffd8b0" />
+
+          {/* Genre panel lights — colored wash from neon panels onto nearby shelves */}
+          {/* PointLights at Y=1.55 (upper-mid shelf), large radius, even color wash */}
+          {[
+            // Left wall
+            { p: [-3.8, 1.86, -2.67], c: '#66cc88' },  // Horreur
+            { p: [-3.8, 1.86, -1.02], c: '#cc66aa' },  // Bizarre
+            { p: [-3.8, 1.86,  0.51], c: '#7abbd4' },  // Policier
+            { p: [-3.8, 1.86,  2.07], c: '#cc8844' },  // Thriller
+            // Back wall
+            { p: [-3.16, 1.86, -3.55], c: '#cc7766' },  // Action
+            { p: [-1.35, 1.86, -3.55], c: '#ccaa66' },  // Aventure
+            { p: [ 0.60, 1.86, -3.55], c: '#ccaa66' },  // Anim & Cie
+            { p: [ 1.91, 1.86, -3.55], c: '#9977cc' },  // Drame
+            // Right wall
+            { p: [ 3.8, 1.86, -2.53], c: '#cccc77' },  // Comédie
+            { p: [ 3.8, 1.86, -0.47], c: '#cc8899' },  // Romance
+          ].map((h, i) => (
+            <pointLight
+              key={`genre-${i}`}
+              position={h.p as [number, number, number]}
+              color={h.c}
+              intensity={0.35}
+              distance={2.5}
+              decay={1.0}
+              castShadow={false}
+            />
+          ))}
+
           {/* CRT ambient — cold blue glow from TV screen */}
           <pointLight
             position={[4.225, 0.85, 1.35]}
@@ -372,65 +211,38 @@ function OptimizedLighting({ isMobile = false }: { isMobile?: boolean }) {
             decay={2.0}
             castShadow={false}
           />
-          {/* Back wall wash (Étape 3: fill light de lecture) */}
-          <rectAreaLight
-            position={[0, 1.92, -2.72]}
-            rotation={[0, 0, 0]}
-            width={4.6}
-            height={0.92}
-            intensity={1.1}
-            color="#ffe0c0"
-          />
-          {/* Left wall warm wash */}
-          <rectAreaLight
-            position={[-3.1, 1.84, 0.05]}
-            rotation={[0, -Math.PI / 2, 0]}
-            width={4.2}
-            height={0.86}
-            intensity={0.8}
-            color="#ffe0c0"
-          />
-          {/* Right shelf wash (Étape 3: fill light de lecture) */}
-          <rectAreaLight
-            position={[3.0, 1.82, -0.05]}
-            rotation={[0, Math.PI / 2, 0]}
-            width={3.8}
-            height={0.82}
-            intensity={0.75}
-            color="#ffe0c0"
-          />
-          {/* Ceiling bounce — subtle upward fill so ceiling plane isn't black */}
-          <rectAreaLight
-            position={[0, 0.5, 0]}
-            rotation={[Math.PI / 2, 0, 0]}
-            width={7.0}
-            height={5.0}
-            intensity={0.15}
-            color="#e8ddd0"
-          />
+
+          {/* Private door lift — faces backward into back wall */}
+          <group position={[2.9, 2.18, -4.02]} rotation={[0, Math.PI, 0]}>
+            <rectAreaLight
+              width={2.2}
+              height={0.82}
+              intensity={0.42}
+              color="#f4efe6"
+            />
+          </group>
         </>
       )}
 
-      {/* Single cached shadow caster */}
+      {/* Angled DirectionalLight — 42° from vertical, illuminates tops AND sides */}
       <directionalLight
         ref={dirLightRef}
-        position={[0.35, 5.8, 0.15]}
-        intensity={0.70}
-        color="#e0e4ee"
+        position={[2, 4, 5]}
+        intensity={1.4}
+        color="#f0f5ff"
         castShadow
-        shadow-mapSize-width={shadowMapSize * 2}
-        shadow-mapSize-height={shadowMapSize * 2}
-        shadow-camera-left={-8}
-        shadow-camera-right={8}
-        shadow-camera-top={8}
-        shadow-camera-bottom={-8}
+        shadow-mapSize-width={shadowMapSize}
+        shadow-mapSize-height={shadowMapSize}
+        shadow-camera-left={-10}
+        shadow-camera-right={10}
+        shadow-camera-top={10}
+        shadow-camera-bottom={-10}
         shadow-camera-near={0.1}
         shadow-camera-far={12}
         shadow-bias={-0.0003}
-        shadow-normalBias={0.02}
       />
 
-      {/* Emissive fixtures */}
+      {/* 9 emissive neon tubes (glow via bloom) */}
       <NeonTubesInstanced />
     </>
   )

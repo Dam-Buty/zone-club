@@ -4,16 +4,13 @@ import { PointerLockControls as PointerLockControlsImpl } from "three/addons/con
 import * as THREE from "three";
 import { useStore } from "../../store";
 import type { MobileInput } from "../../types/mobile";
+import { ROOM_WIDTH, ROOM_DEPTH } from "./constants";
 
 interface ControlsProps {
   onCassetteClick?: (filmId: number) => void;
   isMobile?: boolean;
   mobileInputRef?: MutableRefObject<MobileInput>;
 }
-
-// Dimensions de la pièce
-const ROOM_WIDTH = 9;
-const ROOM_DEPTH = 8.5;
 
 // Marge de collision — rayon de protection ~0.35m
 const COLLISION_MARGIN = 0.07;
@@ -31,26 +28,26 @@ const COLLISION_ZONES: {
   {
     minX: ROOM_WIDTH / 2 - 2.3 - 1.35 - 0.3,
     maxX: ROOM_WIDTH / 2 - 2.3 + 1.35 + 0.3,
-    minZ: ROOM_DEPTH / 2 - 1.28 - 0.5,
-    maxZ: ROOM_DEPTH / 2 - 1.28 + 0.5,
+    minZ: ROOM_DEPTH / 2 - 1.08 - 0.5,
+    maxZ: ROOM_DEPTH / 2 - 1.08 + 0.5,
     name: "comptoir",
     cornerRadius: 0.3,
   },
   {
-    // Ilot 1 — X shrunk 15cm (cassette faces), Z original (wood ends)
-    minX: -1.6 - 0.53,
-    maxX: -1.6 + 0.53,
-    minZ: -1.02,
-    maxZ: 1.02,
+    // Ilot 1 — ISLAND_LENGTH=4.1, center X=-2.1, Z=0
+    minX: -2.1 - 0.53,
+    maxX: -2.1 + 0.53,
+    minZ: 0 - 1.9,
+    maxZ: 0 + 1.9,
     name: "ilot",
     cornerRadius: 0.50,
   },
   {
-    // Ilot 2 — X shrunk 15cm (cassette faces), Z original (wood ends)
-    minX: 0.65 - 0.53,
-    maxX: 0.65 + 0.53,
-    minZ: -0.3 - 1.02,
-    maxZ: -0.3 + 1.02,
+    // Ilot 2 — ISLAND_LENGTH=4.1, center X=0.15, Z=0
+    minX: 0.15 - 0.53,
+    maxX: 0.15 + 0.53,
+    minZ: 0 - 1.9,
+    maxZ: 0 + 1.9,
     name: "ilot2",
     cornerRadius: 0.50,
   },
@@ -290,7 +287,7 @@ export function Controls({
     camera.far = 15;
     if (!isMobile) {
       if (camera instanceof THREE.PerspectiveCamera) {
-        camera.fov = 70;
+        camera.fov = 60;
         camera.updateProjectionMatrix();
       }
       return;
@@ -423,6 +420,7 @@ export function Controls({
 
     const targetedFilmId = useStore.getState().targetedFilmId;
     if (targetedFilmId !== null) {
+      useStore.getState().setTargetedFilm(null, null);
       onCassetteClick?.(targetedFilmId);
       if (!isMobile) requestPointerUnlock();
     }
@@ -811,7 +809,7 @@ export function Controls({
                 handled = true;
                 break;
               }
-              if (obj.userData?.isCouch) {
+              if (obj.userData?.isCouch && intersect.distance <= 2.5) {
                 if (!useStore.getState().isSitting) {
                   useStore.getState().setSitting(true);
                 }
@@ -849,8 +847,12 @@ export function Controls({
                 break;
               }
               if (obj.userData?.filmId && obj.userData?.cassetteKey) {
-                setTargetedFilm(obj.userData.filmId, obj.userData.cassetteKey);
-                onCassetteClick?.(obj.userData.filmId);
+                if (obj.userData?.isDeskCassette) {
+                  useStore.getState().setShowDeskFilmPicker(true);
+                } else {
+                  setTargetedFilm(obj.userData.filmId, obj.userData.cassetteKey);
+                  onCassetteClick?.(obj.userData.filmId);
+                }
                 handled = true;
                 break;
               }
@@ -907,7 +909,7 @@ export function Controls({
               foundInteractive = "lazone";
               break;
             }
-            if (obj.userData?.isCouch) {
+            if (obj.userData?.isCouch && intersect.distance <= 2.5) {
               foundInteractive = "couch";
               break;
             }

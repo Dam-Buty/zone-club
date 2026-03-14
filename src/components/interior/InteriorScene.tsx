@@ -35,6 +35,7 @@ import { MobileOnboarding } from '../mobile/MobileOnboarding'
 import { BenchmarkSampler, BenchmarkOverlay } from './BenchmarkMode'
 import TutorialOverlay from '../tutorial/TutorialOverlay'
 import WeeklyBonusToast from '../ui/WeeklyBonusToast'
+import { DeskFilmPicker } from './DeskFilmPicker'
 
 // Error Boundary pour capturer les erreurs dans le canvas 3D
 interface ErrorBoundaryState {
@@ -704,6 +705,9 @@ function UIOverlays({ isMobile }: { isMobile: boolean }) {
 
       {/* Weekly bonus toast */}
       <WeeklyBonusToast />
+
+      {/* Desk film picker — mobile only */}
+      <DeskFilmPicker />
     </>
   )
 }
@@ -787,10 +791,11 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
     return combined
   }, [films])
 
+  const deskFilms = useStore(state => state.deskFilms)
   const selectedFilm = useMemo(() => {
     if (!selectedFilmId) return null
-    return allFilms.find(f => f.id === selectedFilmId) || null
-  }, [selectedFilmId, allFilms])
+    return allFilms.find(f => f.id === selectedFilmId) || deskFilms.find(f => f.id === selectedFilmId) || null
+  }, [selectedFilmId, allFilms, deskFilms])
 
   return (
     <div style={{ position: 'fixed', inset: 0, touchAction: 'none' }}>

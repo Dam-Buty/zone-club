@@ -5,6 +5,8 @@ import { useGLTF, useTexture } from '@react-three/drei'
 import { generateKentTileTextures } from '../../utils/KentTileTexture'
 import { LaZoneCRT } from './LaZoneCRT'
 import { BoardMesh } from './BoardMesh'
+import { DeskCassettes } from './DeskCassettes'
+import { useStore } from '../../store'
 
 // Composant pour chargement async des modèles 3D
 function AsyncModel({ url, position, scale = 1, rotation = [0, 0, 0] }: {
@@ -210,10 +212,6 @@ function MergedWalls({ wallTextures, roomWidth, roomDepth, roomHeight }: {
 
   return <mesh geometry={geometry} material={material} receiveShadow />
 }
-
-// Shared VHS tape geometry & material for desk pile and storage cabinet
-const DESK_VHS_GEO = new THREE.BoxGeometry(0.168, 0.03, 0.228)
-const DESK_VHS_MAT = new THREE.MeshStandardMaterial({ color: '#1a1a1a', roughness: 0.4 })
 
 // ===== CASSETTE POSITION PRE-COMPUTATION =====
 // Pure functions that compute cassette instance data synchronously in useMemo,
@@ -493,6 +491,12 @@ function computeIslandShelfCassettes(
 }
 
 export const Aisle = memo(function Aisle({ films, filmsByAisle }: AisleProps) {
+  const deskFilms = useStore(s => s.deskFilms)
+  const fetchDeskFilms = useStore(s => s.fetchDeskFilms)
+
+  // Fetch desk films on mount
+  useEffect(() => { fetchDeskFilms() }, [fetchDeskFilms])
+
   // ===== DISTRIBUTION PAR SECTION =====
   // Chaque section affiche exactement les films assignés à son allée en DB.
   // Pas de dérivation automatique — l'admin assigne manuellement via l'interface.
@@ -764,9 +768,9 @@ export const Aisle = memo(function Aisle({ films, filmsByAisle }: AisleProps) {
           map={floorTextures.map}
           normalMap={floorTextures.normalMap}
           color="#c8c0b8"
-          roughness={0.13}
+          roughness={0.28}
           metalness={0.02}
-          envMapIntensity={0.55}
+          envMapIntensity={0.35}
           normalScale={[0.8, 0.8] as unknown as THREE.Vector2}
         />
       </mesh>
@@ -778,7 +782,7 @@ export const Aisle = memo(function Aisle({ films, filmsByAisle }: AisleProps) {
           map={ceilingTextures.map}
           normalMap={ceilingTextures.normalMap}
           roughnessMap={ceilingTextures.roughnessMap}
-          color="#c0b8b0"
+          color="#e0d8d0"
           roughness={0.95}
           normalScale={[0.6, 0.6] as unknown as THREE.Vector2}
         />
@@ -1094,21 +1098,22 @@ export const Aisle = memo(function Aisle({ films, filmsByAisle }: AisleProps) {
             normalScale={[0.7, 0.7] as unknown as THREE.Vector2}
           />
         </mesh>
-        <mesh position={[0, 1.05, 0]} castShadow receiveShadow>
+        <mesh position={[0, 1.025, 0]} castShadow receiveShadow>
           <boxGeometry args={[2.7, 0.05, 0.63]} />
           <meshPhysicalMaterial
             map={woodTextures.map}
             normalMap={woodTextures.normalMap}
             roughnessMap={woodTextures.roughnessMap}
             color="#3d2a1a"
-            roughness={0.20}
-            clearcoat={0.50}
+            roughness={0.45}
+            clearcoat={0.25}
+            clearcoatRoughness={0.30}
             normalScale={[0.7, 0.7] as unknown as THREE.Vector2}
           />
         </mesh>
 
         {/* Caisse enregistreuse */}
-        <group position={[0.8, 1.08, 0]}>
+        <group position={[0.8, 1.055, 0]}>
           <mesh position={[0, 0.1, 0]}>
             <boxGeometry args={[0.35, 0.2, 0.3]} />
             <meshStandardMaterial color="#2a2a2e" metalness={0.15} roughness={0.35} />
@@ -1124,26 +1129,13 @@ export const Aisle = memo(function Aisle({ films, filmsByAisle }: AisleProps) {
         </group>
 
         {/* Sonnette sur le comptoir */}
-        <ServiceBell position={[0.2, 1.08, 0.25]} rotation={[0, Math.PI, 0]} />
+        <ServiceBell position={[0.2, 1.055, 0.25]} rotation={[0, Math.PI, 0]} />
 
-        {/* Moniteur de surveillance */}
-        <group position={[-0.9, 1.08, -0.1]}>
-          <mesh position={[0, 0.12, 0]}>
-            <boxGeometry args={[0.3, 0.22, 0.2]} />
-            <meshStandardMaterial color="#1a1a20" metalness={0.10} roughness={0.30} />
-          </mesh>
-          <mesh position={[0, 0.12, 0.11]}>
-            <planeGeometry args={[0.25, 0.18]} />
-            <meshStandardMaterial color="#1a1a2a" emissive="#0044aa" emissiveIntensity={0.2} />
-          </mesh>
-        </group>
+        {/* Minitel 1982 — Sketchfab model offset: center ~(17, 5, -6), needs compensation */}
+        <AsyncModel url="/models/minitel_1982-france.glb" position={[-0.571, 1.047, -0.01]} scale={0.025} rotation={[0, Math.PI, 0]} />
 
-        {/* Pile de 3 K7 VHS noires empilées à plat */}
-        <group position={[-0.3, 1.08, 0.15]}>
-          {[0, 1, 2].map((i) => (
-            <mesh key={`return-${i}`} position={[0, i * 0.032, 0]} rotation={[0, [-0.08, 0.05, -0.12][i], 0]} geometry={DESK_VHS_GEO} material={DESK_VHS_MAT} />
-          ))}
-        </group>
+        {/* Pile de 3 K7 VHS — derniers films rendus */}
+        <DeskCassettes films={deskFilms} position={[0.24, 1.055, -0.04]} />
 
         {/* RICK - Le Gérant 3D */}
         <Manager3D position={[0, 0, 0.8]} rotation={[0, Math.PI, 0]} />
