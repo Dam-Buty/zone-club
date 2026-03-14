@@ -11,7 +11,7 @@ interface WallShelfProps {
 
 const ROWS = 6
 const ROW_HEIGHT = CASSETTE_DIMENSIONS.height + 0.04  // Hauteur entre rangées (serré, juste au-dessus des K7)
-export const SHELF_DEPTH = 0.095  // back panel depth (halved from 0.19)
+export const SHELF_DEPTH = 0.02  // thin backing board (2cm, like real furniture)
 export const WALL_SHELF_ROWS = ROWS
 const PLANK_DEPTH = 0.07           // shelf planks protrude forward from back panel (-30%)
 const PLANK_THICKNESS = 0.025
@@ -19,7 +19,8 @@ const TOP_PLANK_TOP_Y = 0.12 + ROWS * ROW_HEIGHT + PLANK_THICKNESS / 2
 // Back panel extends 1cm above the top of the highest cassette
 const CASSETTE_CLEARANCE = 0.0125 + CASSETTE_DIMENSIONS.height + 0.01  // plank gap + K7 + 1cm
 export const SHELF_HEIGHT = TOP_PLANK_TOP_Y + CASSETTE_CLEARANCE
-export const SHELF_TILT = 0.087  // ~5° backward lean (thicker at bottom, thinner at top)
+// ~10° backward lean — +10cm bottom offset vs original 5° (top goes slightly more into wall, invisible)
+export const SHELF_TILT = 0.179
 export const SHELF_PIVOT_Y = SHELF_HEIGHT / 2 + 0.1  // tilt pivot = shelf vertical center
 
 // Planches chevauchent le panneau arrière de 5mm pour éliminer le vide visible
@@ -51,15 +52,38 @@ export function WallShelf({
     return map
   }, [woodTextures, length])
 
+  const shelfNormalMap = useMemo(() => {
+    if (!woodTextures.normalMap) return null
+    const nmap = (woodTextures.normalMap as THREE.Texture).clone()
+    nmap.wrapS = THREE.RepeatWrapping
+    nmap.wrapT = THREE.RepeatWrapping
+    nmap.repeat.set(Math.max(length / 0.55, 1), Math.max(SHELF_HEIGHT / 0.28, 1))
+    nmap.needsUpdate = true
+    return nmap
+  }, [woodTextures, length])
+
+  const shelfRoughnessMap = useMemo(() => {
+    if (!woodTextures.roughnessMap) return null
+    const rmap = (woodTextures.roughnessMap as THREE.Texture).clone()
+    rmap.wrapS = THREE.RepeatWrapping
+    rmap.wrapT = THREE.RepeatWrapping
+    rmap.repeat.set(Math.max(length / 0.55, 1), Math.max(SHELF_HEIGHT / 0.28, 1))
+    rmap.needsUpdate = true
+    return rmap
+  }, [woodTextures, length])
+
   const shelfMaterial = useMemo(() => new THREE.MeshPhysicalMaterial({
     map: shelfMap,
+    normalMap: shelfNormalMap,
+    roughnessMap: shelfRoughnessMap,
     color: '#a07850',
-    roughness: 0.22,
+    roughness: 0.55,
     metalness: 0.0,
-    envMapIntensity: 0.50,
-    clearcoat: 0.42,
-    clearcoatRoughness: 0.12,
-  }), [shelfMap])
+    envMapIntensity: 0.25,
+    clearcoat: 0.10,
+    clearcoatRoughness: 0.40,
+    normalScale: new THREE.Vector2(0.9, 0.9),
+  }), [shelfMap, shelfNormalMap, shelfRoughnessMap])
 
   // Back panel — hard edges, no rounded profile
   const backPanelGeometry = useMemo(() =>
@@ -111,6 +135,8 @@ export function WallShelf({
     return () => {
       shelfMaterial.dispose()
       shelfMap.dispose()
+      shelfNormalMap?.dispose()
+      shelfRoughnessMap?.dispose()
     }
   }, [shelfMaterial, shelfMap])
 

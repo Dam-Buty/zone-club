@@ -13,7 +13,7 @@ const ROWS = 5
 const ROW_HEIGHT = CASSETTE_DIMENSIONS.height + 0.04  // serré, juste au-dessus des K7
 const ISLAND_HEIGHT = 1.40
 const ISLAND_LENGTH = 4.1
-const BASE_WIDTH = 0.44
+const BASE_WIDTH = 0.54
 const TOP_WIDTH = 0.12  // convergence doublée (~6.5° par côté vs ~3.3° avant)
 const CASSETTE_TILT = Math.atan2((BASE_WIDTH - TOP_WIDTH) / 2, ISLAND_HEIGHT)
 const PLANK_THICKNESS = 0.018
@@ -30,11 +30,16 @@ export const ISLAND_SHELF_PLANK_THICKNESS = PLANK_THICKNESS
 export const ISLAND_SHELF_PLANK_OFFSET = PLANK_OFFSET
 export const ISLAND_SHELF_FIRST_PLANK_BASE_Y = FIRST_PLANK_BASE_Y
 
+// Socle sous l'îlot — surélève la structure sans toucher aux K7/planches
+const PEDESTAL_HEIGHT = 0.10
+export const ISLAND_SHELF_PEDESTAL_HEIGHT = PEDESTAL_HEIGHT
+const SHARED_PEDESTAL_GEOM = new THREE.BoxGeometry(BASE_WIDTH, PEDESTAL_HEIGHT, ISLAND_LENGTH)
+
 // Medium oak for the shelving family: warmer and browner than beige/sand.
 const SHELF_COLOR = '#a07850'
 const METALNESS = 0      // pur diélectrique
 // Géométrie partagée pour les planches et le panneau supérieur — arêtes franches
-const SHARED_ISLAND_PLANK_GEOM = new THREE.BoxGeometry(0.098, 0.018, ISLAND_LENGTH - 0.1)
+const SHARED_ISLAND_PLANK_GEOM = new THREE.BoxGeometry(0.16, 0.018, ISLAND_LENGTH - 0.1)
 const SHARED_TOP_PANEL_GEOM = new THREE.BoxGeometry(TOP_WIDTH + 0.04, 0.03, ISLAND_LENGTH)
 
 const _tempMatrix = new THREE.Matrix4()
@@ -136,20 +141,32 @@ export function IslandShelf({
 
   return (
     <group position={position} rotation={rotation}>
-      {/* Structure trapézoïdale centrale — bois, arêtes franches */}
-      <mesh geometry={trapezoidGeometry} castShadow receiveShadow material={shelfMaterial} />
-
-      {/* Planches → 1 InstancedMesh, arêtes franches */}
-      <instancedMesh
-        ref={plankRef}
-        args={[SHARED_ISLAND_PLANK_GEOM, shelfMaterial, (ROWS - 1) * 2]}
+      {/* Socle — surélève l'ensemble de PEDESTAL_HEIGHT */}
+      <mesh
+        position={[0, PEDESTAL_HEIGHT / 2, 0]}
+        geometry={SHARED_PEDESTAL_GEOM}
+        material={shelfMaterial}
+        castShadow
         receiveShadow
       />
 
-      {/* Cassettes are now rendered via CassetteInstances in Aisle */}
+      {/* Contenu surélevé au-dessus du socle */}
+      <group position={[0, PEDESTAL_HEIGHT, 0]}>
+        {/* Structure trapézoïdale centrale — bois, arêtes franches */}
+        <mesh geometry={trapezoidGeometry} castShadow receiveShadow material={shelfMaterial} />
 
-      {/* Panneau supérieur — flush avec la structure, arêtes franches */}
-      <mesh position={[0, ISLAND_HEIGHT + 0.005, 0]} castShadow receiveShadow material={shelfMaterial} geometry={SHARED_TOP_PANEL_GEOM} />
+        {/* Planches → 1 InstancedMesh, arêtes franches */}
+        <instancedMesh
+          ref={plankRef}
+          args={[SHARED_ISLAND_PLANK_GEOM, shelfMaterial, (ROWS - 1) * 2]}
+          receiveShadow
+        />
+
+        {/* Cassettes are now rendered via CassetteInstances in Aisle */}
+
+        {/* Panneau supérieur — flush avec la structure, arêtes franches */}
+        <mesh position={[0, ISLAND_HEIGHT + 0.005, 0]} castShadow receiveShadow material={shelfMaterial} geometry={SHARED_TOP_PANEL_GEOM} />
+      </group>
     </group>
   )
 }

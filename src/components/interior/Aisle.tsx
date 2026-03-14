@@ -47,6 +47,7 @@ import {
   ISLAND_SHELF_CASSETTE_TILT,
   ISLAND_SHELF_FIRST_PLANK_BASE_Y,
   ISLAND_SHELF_HEIGHT,
+  ISLAND_SHELF_PEDESTAL_HEIGHT,
   ISLAND_SHELF_PLANK_OFFSET,
   ISLAND_SHELF_PLANK_THICKNESS,
   ISLAND_SHELF_ROW_HEIGHT,
@@ -73,7 +74,7 @@ interface AisleProps {
 const ROOM_WIDTH = 9  // x axis
 const ROOM_DEPTH = 8.5 // z axis
 const ROOM_HEIGHT = 2.8
-const WALL_SHELF_OFFSET = 0.15 // distance from wall to shelf center (accounts for depth + tilt)
+const WALL_SHELF_OFFSET = 0.18 // distance from wall to shelf center (accounts for depth + increased tilt)
 
 // Set to true once KTX2 textures have been generated via scripts/convert-textures-ktx2.sh
 // KTX2 UASTC = 4x less VRAM, hardware decompression, zero shader cost
@@ -225,7 +226,18 @@ const WALL_ROWS = WALL_SHELF_ROWS
 const WALL_ROW_HEIGHT = CASSETTE_DIMENSIONS.height + 0.04  // must match WallShelf.tsx ROW_HEIGHT
 const WALL_CASSETTE_SPACING = CASSETTE_DIMENSIONS.width + 0.02
 
-// Pre-computed tilt quaternion for cassette positioning (same tilt as WallShelf inner group)
+// Per-row tilt angles (radians) — bottom rows tilted more forward for better lighting
+// Extra lean on top of SHELF_TILT: row 0 +10°, row 1 +7°, row 2 +5°, rest +0°
+const WALL_ROW_TILTS = [
+  SHELF_TILT + 10 * Math.PI / 180,  // row 0 — SHELF_TILT + 10°
+  SHELF_TILT + 7 * Math.PI / 180,   // row 1 — SHELF_TILT + 7°
+  SHELF_TILT + 5 * Math.PI / 180,   // row 2 — SHELF_TILT + 5°
+  SHELF_TILT,                        // row 3
+  SHELF_TILT,                        // row 4
+  SHELF_TILT,                        // row 5
+]
+const _rowTiltQuats = WALL_ROW_TILTS.map(t => new THREE.Quaternion().setFromEuler(new THREE.Euler(-t, 0, 0)))
+// Keep original tilt quat for shelf-level transforms (pivot etc.)
 const _tiltQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(-SHELF_TILT, 0, 0))
 
 // IslandShelf constants — sourced from IslandShelf.tsx so cassette placement
@@ -234,6 +246,15 @@ const ISLAND_ROWS = ISLAND_SHELF_CASSETTE_ROWS
 const ISLAND_CASSETTES_PER_ROW = 21
 const ISLAND_CASSETTE_SPACING = CASSETTE_DIMENSIONS.width + 0.02
 const SECTION_GAP = 0.12
+
+// Per-row extra tilts for island shelves (same pattern as wall shelves)
+// Extra outward lean: row 0 +10°, row 1 +7°, row 2 +5°, row 3 +0°
+const ISLAND_ROW_EXTRA_TILTS = [
+  10 * Math.PI / 180,  // row 0 (bottom)
+  7 * Math.PI / 180,   // row 1
+  5 * Math.PI / 180,   // row 2
+  0,                    // row 3 (top)
+]
 
 function dedupeFilms(films: Film[]): Film[] {
   const seen = new Set<number>()
@@ -299,9 +320,10 @@ function computeWallShelfCassettes(
   const baseQuat = new THREE.Quaternion().setFromEuler(
     new THREE.Euler(rotation[0], rotation[1], rotation[2])
   )
-  // Combined quaternion: parent rotation × shelf tilt
-  const parentQuat = baseQuat.clone().multiply(_tiltQuat)
   const parentPos = new THREE.Vector3(position[0], position[1], position[2])
+
+  // Pre-compute per-row world quaternions (baseQuat × rowTiltQuat)
+  const rowWorldQuats = _rowTiltQuats.map(rq => baseQuat.clone().multiply(rq))
 
   for (let index = 0; index < totalCapacity; index++) {
     const row = Math.floor(index / cassettesPerRow)
@@ -318,11 +340,22 @@ function computeWallShelfCassettes(
     const localY = 0.12 + plankI * WALL_ROW_HEIGHT + 0.0125 + CASSETTE_DIMENSIONS.height / 2
     const localZ = SHELF_DEPTH / 2 + PLANK_DEPTH / 2  // centered on the plank
 
-    // Apply tilt: translate to pivot, rotate, translate back
-    // Tilt pivot is at (0, SHELF_PIVOT_Y, 0) in shelf local space
+    // Position uses SHELF tilt (5°) so K7 base stays on the plank
     const tiltedPos = new THREE.Vector3(localX, localY - SHELF_PIVOT_Y, localZ)
     tiltedPos.applyQuaternion(_tiltQuat)
     tiltedPos.y += SHELF_PIVOT_Y
+
+    // Pivot correction: K7 center shifts when tilted more from its base on the plank
+    // Extra lean beyond shelf tilt — K7 pivots from bottom edge, not center
+    const extraTilt = (WALL_ROW_TILTS[row] ?? SHELF_TILT) - SHELF_TILT
+    if (extraTilt > 0) {
+      const halfH = CASSETTE_DIMENSIONS.height / 2
+      tiltedPos.y += (Math.cos(extraTilt) - 1) * halfH
+      tiltedPos.z -= Math.sin(extraTilt) * halfH
+      // Forward nudge: prevent K7 top from clipping into back panel
+      const topClip = Math.sin(extraTilt) * CASSETTE_DIMENSIONS.height - (localZ - SHELF_DEPTH / 2)
+      if (topClip > 0) tiltedPos.z += topClip + 0.008  // +8mm clearance
+    }
 
     // Then apply parent rotation + translation to world space
     tiltedPos.applyQuaternion(baseQuat)
@@ -333,11 +366,13 @@ function computeWallShelfCassettes(
       ? `https://image.tmdb.org/t/p/w185${film.poster_path}`
       : null
 
+    const worldQuat = rowWorldQuats[row] ?? rowWorldQuats[rowWorldQuats.length - 1]
+
     data.push({
       cassetteKey,
       filmId: film.id,
       worldPosition: tiltedPos,
-      worldQuaternion: parentQuat.clone(),
+      worldQuaternion: worldQuat.clone(),
       hoverOffsetZ: 0.08,
       posterUrl,
       fallbackColor: CASSETTE_COLORS[film.id % CASSETTE_COLORS.length],
@@ -368,13 +403,31 @@ function computeIslandShelfCassettes(
 
   const addCassettes = (films: Film[], side: 'left' | 'right', maxCopies = 1) => {
     const displayFilms = buildDisplaySequence(films, totalCapacityPerSide, repeatWhenShort, maxCopies)
-    const sideTilt = side === 'left' ? -ISLAND_SHELF_CASSETTE_TILT : ISLAND_SHELF_CASSETTE_TILT
-    const sideTiltQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, sideTilt))
+    const baseSideTilt = side === 'left' ? -ISLAND_SHELF_CASSETTE_TILT : ISLAND_SHELF_CASSETTE_TILT
+    const sign = side === 'left' ? -1 : 1
     const sideFaceQuat = new THREE.Quaternion().setFromEuler(
       new THREE.Euler(0, side === 'left' ? Math.PI / 2 : -Math.PI / 2, 0)
     )
-    const faceQuat = sideTiltQuat.clone().multiply(sideFaceQuat)
-    const plankNormal = new THREE.Vector3(0, 1, 0).applyQuaternion(sideTiltQuat)
+
+    // Base tilt — used to position K7 base on the plank surface
+    const baseSideTiltQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, baseSideTilt))
+    const basePlankNormal = new THREE.Vector3(0, 1, 0).applyQuaternion(baseSideTiltQuat)
+
+    // Slope surface geometry (trapezoid face) — for clipping prevention
+    const θ = ISLAND_SHELF_CASSETTE_TILT
+    const slopeOutward = new THREE.Vector3(sign * Math.cos(θ), Math.sin(θ), 0)
+    const slopeBasePoint = new THREE.Vector3(sign * ISLAND_SHELF_BASE_WIDTH / 2, 0, 0)
+
+    // Pre-compute per-row quaternions, normals, and inner-face direction
+    const rowData = ISLAND_ROW_EXTRA_TILTS.map(extra => {
+      const rowSideTilt = baseSideTilt + sign * extra
+      const rowSideTiltQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, rowSideTilt))
+      const rowFaceQuat = rowSideTiltQuat.clone().multiply(sideFaceQuat)
+      const rowPlankNormal = new THREE.Vector3(0, 1, 0).applyQuaternion(rowSideTiltQuat)
+      // Direction from K7 center toward slope (local +Z face after faceQuat)
+      const innerDir = new THREE.Vector3(0, 0, 1).applyQuaternion(rowFaceQuat)
+      return { rowFaceQuat, rowPlankNormal, innerDir }
+    })
 
     for (let index = 0; index < totalCapacityPerSide; index++) {
       const row = Math.floor(index / ISLAND_CASSETTES_PER_ROW)
@@ -393,13 +446,26 @@ function computeIslandShelfCassettes(
           ? -widthAtHeight / 2 - ISLAND_SHELF_PLANK_OFFSET
           : widthAtHeight / 2 + ISLAND_SHELF_PLANK_OFFSET
       const localZ = (col - ISLAND_CASSETTES_PER_ROW / 2 + 0.5) * ISLAND_CASSETTE_SPACING
-      const worldQuat = parentQuat.clone().multiply(faceQuat)
+      const { rowFaceQuat, rowPlankNormal, innerDir } = rowData[row] ?? rowData[rowData.length - 1]
+      const worldQuat = parentQuat.clone().multiply(rowFaceQuat)
 
+      // Position: K7 base sits on plank surface, center offset along per-row tilt direction
       const localPos = new THREE.Vector3(plankCenterX, plankY, localZ)
-      localPos.addScaledVector(
-        plankNormal,
-        ISLAND_SHELF_PLANK_THICKNESS / 2 + CASSETTE_DIMENSIONS.height / 2 + 0.002
-      )
+      // Base on plank surface (using base plank normal — plank doesn't change angle)
+      localPos.addScaledVector(basePlankNormal, ISLAND_SHELF_PLANK_THICKNESS / 2 + 0.002)
+      // Center offset along per-row tilted normal (K7 pivots from base)
+      localPos.addScaledVector(rowPlankNormal, CASSETTE_DIMENSIONS.height / 2)
+
+      // Clearance: push K7 outward so inner-top corner rests ON the slope surface
+      // inner-top corner = K7 top + half-depth toward slope
+      const innerTopX = localPos.x + rowPlankNormal.x * CASSETTE_DIMENSIONS.height / 2 + innerDir.x * CASSETTE_DIMENSIONS.depth / 2
+      const innerTopY = localPos.y + rowPlankNormal.y * CASSETTE_DIMENSIONS.height / 2 + innerDir.y * CASSETTE_DIMENSIONS.depth / 2
+      const perpDist = (innerTopX - slopeBasePoint.x) * slopeOutward.x + (innerTopY - slopeBasePoint.y) * slopeOutward.y
+      if (perpDist < 0.001) {
+        const correction = 0.001 - perpDist
+        localPos.addScaledVector(slopeOutward, correction)
+      }
+
       localPos.applyQuaternion(parentQuat)
       localPos.add(parentPos)
 
@@ -594,8 +660,8 @@ export const Aisle = memo(function Aisle({ films, filmsByAisle }: AisleProps) {
   const leftEqualSectionOffset = leftEqualSectionLength / 2 + SECTION_GAP / 2
   const horreurExtraWidth = WALL_CASSETTE_SPACING
   const horreurLength = leftEqualSectionLength + horreurExtraWidth
-  const horreurCenterZ = -1.80 - leftEqualSectionOffset - horreurExtraWidth / 2
-  const bizarreCenterZ = -1.80 + leftEqualSectionOffset
+  const horreurCenterZ = -2.20 - leftEqualSectionOffset - horreurExtraWidth / 2
+  const bizarreCenterZ = -2.20 + leftEqualSectionOffset
   const northLongLength = (3.5 - SECTION_GAP) / 2
   const northLongOffset = northLongLength / 2 + SECTION_GAP / 2
   const northMediumLength = (2.5 - SECTION_GAP) / 2
@@ -645,10 +711,10 @@ export const Aisle = memo(function Aisle({ films, filmsByAisle }: AisleProps) {
 
     // WallShelf: Polar + Thriller (positions inverted)
     all.push(...computeWallShelfCassettes(
-      [-ROOM_WIDTH / 2 + WALL_SHELF_OFFSET, 0, 1.29 - leftEqualSectionOffset], [0, Math.PI / 2, 0], leftEqualSectionLength, policierSlice
+      [-ROOM_WIDTH / 2 + WALL_SHELF_OFFSET, 0, 0.89 - leftEqualSectionOffset], [0, Math.PI / 2, 0], leftEqualSectionLength, policierSlice
     ))
     all.push(...computeWallShelfCassettes(
-      [-ROOM_WIDTH / 2 + WALL_SHELF_OFFSET, 0, 1.29 + leftEqualSectionOffset], [0, Math.PI / 2, 0], leftEqualSectionLength, thrillerSlice
+      [-ROOM_WIDTH / 2 + WALL_SHELF_OFFSET, 0, 0.89 + leftEqualSectionOffset], [0, Math.PI / 2, 0], leftEqualSectionLength, thrillerSlice
     ))
 
     // WallShelf: Action + Aventure
@@ -676,12 +742,13 @@ export const Aisle = memo(function Aisle({ films, filmsByAisle }: AisleProps) {
     ))
 
     // IslandShelf: Nouveautés (2 copies per film)
+    // Y offset = PEDESTAL_HEIGHT because cassettes sit on the lifted shelf above the pedestal
     all.push(...computeIslandShelfCassettes(
-      [-2.1, 0, 0], [0, 0, 0], nouveautesLeft, nouveautesRight, 'island', true, 2
+      [-2.1, ISLAND_SHELF_PEDESTAL_HEIGHT, 0], [0, 0, 0], nouveautesLeft, nouveautesRight, 'island', true, 2
     ))
     // IslandShelf 2: SF (left) + Classiques (right)
     all.push(...computeIslandShelfCassettes(
-      [0.15, 0, 0], [0, 0, 0], sfIslandLeft, classiquesIslandRight, 'island2'
+      [0.15, ISLAND_SHELF_PEDESTAL_HEIGHT, 0], [0, 0, 0], sfIslandLeft, classiquesIslandRight, 'island2'
     ))
 
     return all
@@ -786,7 +853,7 @@ export const Aisle = memo(function Aisle({ films, filmsByAisle }: AisleProps) {
       <group>
         <GenreSectionPanel
           genre="Polar"
-          position={[-ROOM_WIDTH / 2 + wallPanelInset, wallPanelY, 1.29 - leftEqualSectionOffset]}
+          position={[-ROOM_WIDTH / 2 + wallPanelInset, wallPanelY, 0.89 - leftEqualSectionOffset]}
           rotation={[0, Math.PI / 2, 0]}
           color={GENRE_CONFIG.policier.color}
           width={panelWidthPolar}
@@ -795,7 +862,7 @@ export const Aisle = memo(function Aisle({ films, filmsByAisle }: AisleProps) {
 
         <GenreSectionPanel
           genre="Thriller"
-          position={[-ROOM_WIDTH / 2 + wallPanelInset, wallPanelY, 1.29 + leftEqualSectionOffset]}
+          position={[-ROOM_WIDTH / 2 + wallPanelInset, wallPanelY, 0.89 + leftEqualSectionOffset]}
           rotation={[0, Math.PI / 2, 0]}
           color={GENRE_CONFIG.thriller.color}
           width={panelWidthMedium}
@@ -804,7 +871,7 @@ export const Aisle = memo(function Aisle({ films, filmsByAisle }: AisleProps) {
 
         {/* Étagères Thriller */}
         <WallShelf
-          position={[-ROOM_WIDTH / 2 + WALL_SHELF_OFFSET, 0, 1.29 - leftEqualSectionOffset]}
+          position={[-ROOM_WIDTH / 2 + WALL_SHELF_OFFSET, 0, 0.89 - leftEqualSectionOffset]}
           rotation={[0, Math.PI / 2, 0]}
           length={leftEqualSectionLength}
           woodTextures={woodTextures}
@@ -812,7 +879,7 @@ export const Aisle = memo(function Aisle({ films, filmsByAisle }: AisleProps) {
 
         {/* Étagères Policier */}
         <WallShelf
-          position={[-ROOM_WIDTH / 2 + WALL_SHELF_OFFSET, 0, 1.29 + leftEqualSectionOffset]}
+          position={[-ROOM_WIDTH / 2 + WALL_SHELF_OFFSET, 0, 0.89 + leftEqualSectionOffset]}
           rotation={[0, Math.PI / 2, 0]}
           length={leftEqualSectionLength}
           woodTextures={woodTextures}
