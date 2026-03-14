@@ -35,6 +35,7 @@ import { MobileOnboarding } from '../mobile/MobileOnboarding'
 import { BenchmarkSampler, BenchmarkOverlay } from './BenchmarkMode'
 import TutorialOverlay from '../tutorial/TutorialOverlay'
 import WeeklyBonusToast from '../ui/WeeklyBonusToast'
+import { DeskFilmPicker } from './DeskFilmPicker'
 
 // Error Boundary pour capturer les erreurs dans le canvas 3D
 interface ErrorBoundaryState {
@@ -93,6 +94,7 @@ function LoadingFallback() {
 // Memoized 3D scene content
 const SceneContent = memo(function SceneContent({
   films,
+  filmsByAisle,
   onCassetteClick,
   selectedFilm,
   isMobile,
@@ -100,6 +102,7 @@ const SceneContent = memo(function SceneContent({
   benchmarkMode,
 }: {
   films: import('../../types').Film[]
+  filmsByAisle: Record<import('../../types').AisleType, import('../../types').Film[]>
   onCassetteClick?: (filmId: number) => void
   selectedFilm: import('../../types').Film | null
   isMobile: boolean
@@ -111,10 +114,10 @@ const SceneContent = memo(function SceneContent({
       <Environment
         files="/textures/env/indoor_night.hdr"
         background={false}
-        environmentIntensity={0.3}
+        environmentIntensity={0.12}
       />
       <Lighting isMobile={isMobile} />
-      <Aisle films={films} />
+      <Aisle films={films} filmsByAisle={filmsByAisle} />
       <Controls
         onCassetteClick={onCassetteClick}
         isMobile={isMobile}
@@ -702,6 +705,9 @@ function UIOverlays({ isMobile }: { isMobile: boolean }) {
 
       {/* Weekly bonus toast */}
       <WeeklyBonusToast />
+
+      {/* Desk film picker — mobile only */}
+      <DeskFilmPicker />
     </>
   )
 }
@@ -785,10 +791,11 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
     return combined
   }, [films])
 
+  const deskFilms = useStore(state => state.deskFilms)
   const selectedFilm = useMemo(() => {
     if (!selectedFilmId) return null
-    return allFilms.find(f => f.id === selectedFilmId) || null
-  }, [selectedFilmId, allFilms])
+    return allFilms.find(f => f.id === selectedFilmId) || deskFilms.find(f => f.id === selectedFilmId) || null
+  }, [selectedFilmId, allFilms, deskFilms])
 
   return (
     <div style={{ position: 'fixed', inset: 0, touchAction: 'none' }}>
@@ -802,6 +809,8 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
           // requestAdapter() calls that can interfere on some systems.
           const renderer = new THREE.WebGPURenderer({
             ...props as THREE.WebGPURendererParameters,
+            // Desktop relies on post-process AA, so keep MSAA off to avoid extra cost.
+            antialias: false,
           })
 
           await renderer.init()
@@ -833,7 +842,7 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
           renderer.shadowMap.enabled = true
           renderer.shadowMap.type = isMobile ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap
           renderer.toneMapping = THREE.ACESFilmicToneMapping
-          renderer.toneMappingExposure = 1.08
+          renderer.toneMappingExposure = 0.82
           console.log(
             `[Canvas] WebGPU renderer initialized — shadows: ${isMobile ? 'PCF' : 'PCFSoft'}, dpr: ${isMobile ? '≤1.5' : '≤2'}`
           )
@@ -854,11 +863,13 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
             // Films loaded — now wait for poster GPU uploads to finish
             const checkPosters = () => {
               const progress = window.__posterProgress
-              if (progress && progress.total > 0 && progress.loaded >= progress.total) {
+              if (!progress) {
+                requestAnimationFrame(checkPosters)
+              } else if (progress.total === 0 || progress.loaded >= progress.total) {
                 // All posters uploaded — scene is fully textured
                 useStore.getState().setSceneReady(true)
-              } else if (progress && progress.total > 0 && progress.loaded >= progress.total * 0.8) {
-                // 80%+ loaded — good enough, don't keep user waiting
+              } else if (isMobile && progress.total > 0 && progress.loaded >= progress.total * 0.9) {
+                // Mobile can enter slightly earlier to keep startup time acceptable
                 useStore.getState().setSceneReady(true)
               } else {
                 requestAnimationFrame(checkPosters)
@@ -874,6 +885,7 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
           <Suspense fallback={<LoadingFallback />}>
             <SceneContent
               films={allFilms}
+              filmsByAisle={films}
               onCassetteClick={onCassetteClick}
               selectedFilm={selectedFilm}
               isMobile={isMobile}

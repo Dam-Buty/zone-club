@@ -14,6 +14,8 @@ export interface Film {
   tagline?: string;
   production_companies?: { id: number; name: string; logo_path: string | null }[];
   is_available?: boolean;
+  aisle?: AisleType | null;
+  is_nouveaute?: boolean;
   stock?: number;
   active_rentals?: number;
   directors?: string[];
@@ -25,7 +27,7 @@ export interface Genre {
   name: string;
 }
 
-export type AisleType = 'nouveautes' | 'action' | 'horreur' | 'comedie' | 'drame' | 'thriller' | 'policier' | 'sf' | 'animation' | 'classiques';
+export type AisleType = 'nouveautes' | 'action' | 'aventure' | 'horreur' | 'comedie' | 'drame' | 'thriller' | 'policier' | 'sf' | 'animation' | 'classiques' | 'bizarre' | 'romance';
 
 // Streaming URLs from backend
 export interface StreamingUrls {

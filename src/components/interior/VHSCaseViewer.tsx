@@ -146,6 +146,9 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
       if (child instanceof THREE.PointLight) {
         savedLights.push({ light: child, intensity: child.intensity })
         child.intensity *= 0.7
+      } else if (child instanceof THREE.RectAreaLight) {
+        savedLights.push({ light: child, intensity: child.intensity })
+        child.intensity *= 0.72
       } else if (child instanceof THREE.DirectionalLight) {
         savedLights.push({ light: child, intensity: child.intensity })
         child.intensity *= 0.6

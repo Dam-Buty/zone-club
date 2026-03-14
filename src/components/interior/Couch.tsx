@@ -3,7 +3,7 @@ import * as THREE from 'three'
 import { useGLTF } from '@react-three/drei'
 import { RAYCAST_LAYER_INTERACTIVE } from './Controls'
 
-useGLTF.preload('/models/couch.glb', true)
+useGLTF.preload('/models/leather_couch.glb', true)
 
 interface CouchProps {
   position: [number, number, number]
@@ -13,7 +13,7 @@ interface CouchProps {
 
 export function Couch({ position, rotation = [0, 0, 0], onSit }: CouchProps) {
   const groupRef = useRef<THREE.Group>(null)
-  const { scene: glbScene } = useGLTF('/models/couch.glb', true)
+  const { scene: glbScene } = useGLTF('/models/leather_couch.glb', true)
 
   // Clone scene + materials (per memory: GLB clone shares materials by reference)
   const clonedScene = useRef<THREE.Group | null>(null)
@@ -59,18 +59,16 @@ export function Couch({ position, rotation = [0, 0, 0], onSit }: CouchProps) {
 
   return (
     <group ref={groupRef} position={position} rotation={rotation}>
-      {/* GLB model: bounds X[-1,1] Y[-0.45,0.45] Z[-0.40,0.40] */}
-      {/* Scale 0.858 (+30% from 0.66) → ~1.72m wide, 0.77m high, 0.69m deep */}
-      {/* Y offset 0.45*0.858=0.386 to sit on floor */}
+      {/* leather_couch.glb: scale 0.98 (+15% from 0.85) → ~1.98m wide, 0.81m high, 0.91m deep */}
       <primitive
         object={clonedScene.current!}
-        scale={0.858}
-        position={[0, 0.386, 0]}
+        scale={0.98}
+        position={[0, 0, 0]}
         onClick={handleClick}
       />
-      {/* Invisible click zone (slightly larger for easier targeting) */}
-      <mesh position={[0, 0.30, 0]} onClick={handleClick} visible={false}>
-        <boxGeometry args={[1.2, 0.5, 0.6]} />
+      {/* Invisible click zone (scaled +15%) */}
+      <mesh position={[0, 0.40, 0]} onClick={handleClick} visible={false}>
+        <boxGeometry args={[1.7, 0.7, 0.8]} />
         <meshBasicMaterial transparent opacity={0} />
       </mesh>
     </group>

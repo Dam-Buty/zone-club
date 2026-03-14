@@ -6,8 +6,7 @@ import { ManagerChat } from './components/manager/ManagerChat';
 import BoardOverlay from './components/board/BoardOverlay';
 import { VHSPlayer } from './components/player/VHSPlayer';
 import { preloadPosterImage } from './utils/CassetteTextureArray';
-import api from './api';
-import type { ApiFilm } from './api';
+import api, { apiFilmToFilm } from './api';
 import type { AisleType, Film } from './types';
 
 // PWA: global ref for deferred install prompt
@@ -52,31 +51,7 @@ _interiorImport.then(() => {
 // Starts API fetches immediately when JS loads (before React mounts).
 // Once data arrives, preloads all poster images into the shared cache.
 // By the time the user clicks "enter store", both data AND images are ready.
-const AISLES: AisleType[] = ['nouveautes', 'action', 'horreur', 'comedie', 'drame', 'thriller', 'policier', 'sf', 'animation', 'classiques'];
-
-function apiFilmToFilm(f: ApiFilm): Film {
-  const extractPath = (url: string | null) => {
-    if (!url) return null;
-    const m = url.match(/\/t\/p\/\w+(\/.+)$/);
-    return m ? m[1] : null;
-  };
-
-  return {
-    id: f.id,
-    tmdb_id: f.tmdb_id,
-    title: f.title,
-    overview: f.synopsis || '',
-    poster_path: extractPath(f.poster_url),
-    backdrop_path: extractPath(f.backdrop_url),
-    release_date: f.release_year ? `${f.release_year}-01-01` : '',
-    runtime: f.runtime,
-    vote_average: 0, // fetched from TMDB at runtime in fetchVHSCoverData
-    genres: f.genres,
-    is_available: f.is_available,
-    stock: f.stock ?? 2,
-    active_rentals: f.active_rentals ?? 0,
-  };
-}
+const AISLES: AisleType[] = ['nouveautes', 'action', 'aventure', 'horreur', 'comedie', 'drame', 'thriller', 'policier', 'sf', 'animation', 'classiques', 'bizarre', 'romance'];
 
 type PrefetchResult = { aisle: AisleType; films: Film[] } | null;
 
@@ -99,7 +74,7 @@ _prefetchPromise.then((results) => {
     if (!result) continue;
     for (const film of result.films) {
       if (film.poster_path) {
-        preloadPosterImage(`https://image.tmdb.org/t/p/w200${film.poster_path}`);
+        preloadPosterImage(`/api/poster/w185${film.poster_path}`);
       }
     }
   }

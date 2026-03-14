@@ -28,6 +28,9 @@ npm-debug.log*
 *.png
 !public/**/*.png
 
+# Poster proxy cache
+.poster-cache/
+
 # SvelteKit remnants
 backend-zone-club/
 

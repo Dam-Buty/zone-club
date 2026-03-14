@@ -798,7 +798,7 @@ export function VHSPlayer() {
     if (playerState !== 'casting' || !('mediaSession' in navigator)) return;
 
     const posterUrl = currentFilm?.poster_path
-      ? `https://image.tmdb.org/t/p/w200${currentFilm.poster_path}`
+      ? `/api/poster/w200${currentFilm.poster_path}`
       : undefined;
 
     navigator.mediaSession.metadata = new MediaMetadata({

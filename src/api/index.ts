@@ -2,6 +2,8 @@
  * API Service pour communiquer avec le backend Zone Club
  */
 
+import type { Film } from '../types';
+
 const API_BASE = '';
 
 // Types correspondant au backend
@@ -307,6 +309,34 @@ export interface ApiReturnRequest {
   requester_name?: string;
 }
 
+// Convertit un ApiFilm (backend) en Film (frontend)
+// Extrait les paths TMDB depuis les URLs complètes
+function extractTmdbPath(url: string | null): string | null {
+  if (!url) return null;
+  const match = url.match(/\/t\/p\/\w+(\/.+)$/);
+  return match ? match[1] : null;
+}
+
+export function apiFilmToFilm(apiFilm: ApiFilm): Film {
+  return {
+    id: apiFilm.id,
+    tmdb_id: apiFilm.tmdb_id,
+    title: apiFilm.title,
+    overview: apiFilm.synopsis || '',
+    poster_path: extractTmdbPath(apiFilm.poster_url),
+    backdrop_path: extractTmdbPath(apiFilm.backdrop_url),
+    release_date: apiFilm.release_year ? `${apiFilm.release_year}-01-01` : '',
+    runtime: apiFilm.runtime,
+    vote_average: 0,
+    genres: apiFilm.genres,
+    is_available: apiFilm.is_available,
+    aisle: apiFilm.aisle as Film['aisle'],
+    is_nouveaute: apiFilm.is_nouveaute,
+    stock: apiFilm.stock ?? 2,
+    active_rentals: apiFilm.active_rentals ?? 0,
+  };
+}
+
 export const films = {
   async getByGenre(slug: string): Promise<{ genre: ApiGenre; films: ApiFilm[] }> {
     return request(`/api/films/genre/${slug}`);
@@ -322,6 +352,10 @@ export const films = {
 
   async getAll(): Promise<ApiFilm[]> {
     return request('/api/films');
+  },
+
+  async getDeskDisplay(): Promise<ApiFilm[]> {
+    return request('/api/films/desk-display');
   },
 };
 

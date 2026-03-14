@@ -12,10 +12,13 @@ interface CassetteProps {
   hoverOffsetZ?: number  // Direction du hover: +0.08 pour mur (défaut), -0.08 pour îlot
 }
 
-// Dimensions d'une cassette VHS (en mètres) - augmentées de 20%
-const CASSETTE_WIDTH = 0.168   // 0.14 * 1.2
-const CASSETTE_HEIGHT = 0.228  // 0.19 * 1.2
-const CASSETTE_DEPTH = 0.03    // 0.025 * 1.2
+// Legacy: the Cassette component below is no longer rendered (replaced by CassetteInstances).
+// This file is kept for its exported constants (CASSETTE_DIMENSIONS, CASSETTE_COLORS).
+
+// Dimensions d'une cassette VHS (en mètres) - ratio réel 1.79:1 (18.8×10.5cm), scale 1.2
+const CASSETTE_WIDTH = 0.127   // 10.5cm * 1.2 ≈ 12.7cm
+const CASSETTE_HEIGHT = 0.228  // 18.8cm * 1.2 ≈ 22.8cm (inchangé)
+const CASSETTE_DEPTH = 0.03    // 2.5cm * 1.2 = 3.0cm (inchangé)
 
 // Export des dimensions pour les autres composants
 export const CASSETTE_DIMENSIONS = {
@@ -51,9 +54,9 @@ export const Cassette = memo(function Cassette({ position, film, cassetteKey, ho
     return CASSETTE_COLORS[film.id % CASSETTE_COLORS.length]
   }, [film.id])
 
-  // URL du poster TMDB — w200 suffisant pour cassettes ~10cm
+  // URL du poster TMDB — w342 keeps angled shelves readable once inside the room
   const posterUrl = film.poster_path
-    ? `https://image.tmdb.org/t/p/w200${film.poster_path}`
+    ? `/api/poster/w342${film.poster_path}`
     : null
 
   // Charger la texture via cache global (déduplique les posters identiques entre cassettes)

@@ -177,7 +177,7 @@ function PersonModal({ person, detail, loading, onClose }: {
   onClose: () => void;
 }) {
   const photoUrl = person.profile_path
-    ? `https://image.tmdb.org/t/p/w342${person.profile_path}`
+    ? `/api/poster/w342${person.profile_path}`
     : null;
 
   return (

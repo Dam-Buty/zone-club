@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Film, Rental, AisleType, SceneType, MemberLevel, AuthUser, LocalUser } from '../types';
-import api, { type ApiRentalWithFilm, type ApiFilm, type ReviewWithUser, type ApiReturnRequest, type WeeklyBonusStatus, type ApiBoardNote, type BoardCapacity } from '../api';
+import api, { apiFilmToFilm, type ApiRentalWithFilm, type ApiFilm, type ReviewWithUser, type ApiReturnRequest, type WeeklyBonusStatus, type ApiBoardNote, type BoardCapacity } from '../api';
 import { preloadPosterImage } from '../utils/CassetteTextureArray';
 import { fetchVHSCoverData } from '../utils/VHSCoverGenerator';
 
@@ -23,33 +23,6 @@ function calculateLevel(totalRentals: number): MemberLevel {
   if (totalRentals >= 25) return 'or';
   if (totalRentals >= 10) return 'argent';
   return 'bronze';
-}
-
-// Extract TMDB path from full poster URL
-// e.g. "https://image.tmdb.org/t/p/w500/xxx.jpg" → "/xxx.jpg"
-function extractTmdbPath(url: string | null): string | null {
-  if (!url) return null;
-  const match = url.match(/\/t\/p\/\w+(\/.+)$/);
-  return match ? match[1] : null;
-}
-
-// Convertit un ApiFilm en Film frontend
-function apiFilmToFilm(apiFilm: ApiFilm): Film {
-  return {
-    id: apiFilm.id,
-    tmdb_id: apiFilm.tmdb_id,
-    title: apiFilm.title,
-    overview: apiFilm.synopsis || '',
-    poster_path: extractTmdbPath(apiFilm.poster_url),
-    backdrop_path: extractTmdbPath(apiFilm.backdrop_url),
-    release_date: apiFilm.release_year ? `${apiFilm.release_year}-01-01` : '',
-    runtime: apiFilm.runtime,
-    vote_average: 0, // fetched from TMDB at runtime in fetchVHSCoverData
-    genres: apiFilm.genres,
-    is_available: apiFilm.is_available,
-    stock: apiFilm.stock ?? 2,
-    active_rentals: apiFilm.active_rentals ?? 0,
-  };
 }
 
 // Convertit un ApiRentalWithFilm en Rental frontend
@@ -255,6 +228,12 @@ interface VideoClubState {
   dismissPostTutorialAuth: () => void;
   setShowInstallPrompt: (show: boolean) => void;
   dismissInstallPrompt: () => void;
+
+  // Desk display (3 recently returned films on manager counter)
+  deskFilms: Film[];
+  fetchDeskFilms: () => Promise<void>;
+  showDeskFilmPicker: boolean;
+  setShowDeskFilmPicker: (show: boolean) => void;
 
   // Board (sticky notes)
   boardOverlayMode: 'create' | 'detail' | null;
@@ -536,12 +515,12 @@ export const useStore = create<VideoClubState>()(
       setScene: (scene) => set({ currentScene: scene, isSceneReady: scene !== 'interior' }),
       setAisle: (aisle) => set({ currentAisle: aisle }),
       selectFilm: (filmId) => {
-        set({ selectedFilmId: filmId });
+        set({ selectedFilmId: filmId, targetedFilmId: null, targetedCassetteKey: null });
         // Pre-fetch VHS cover data at click time (before VHSCaseViewer mounts)
         // fetchVHSCoverData checks its own cache — no double-fetch risk
         if (filmId !== null) {
           const allFilms = Object.values(get().films).flat();
-          const film = allFilms.find(f => f.id === filmId);
+          const film = allFilms.find(f => f.id === filmId) || get().deskFilms.find(f => f.id === filmId);
           if (film) fetchVHSCoverData(film).catch(() => {});
         }
       },
@@ -550,6 +529,7 @@ export const useStore = create<VideoClubState>()(
       films: {
         nouveautes: [],
         action: [],
+        aventure: [],
         horreur: [],
         comedie: [],
         drame: [],
@@ -558,6 +538,8 @@ export const useStore = create<VideoClubState>()(
         sf: [],
         animation: [],
         classiques: [],
+        bizarre: [],
+        romance: [],
       },
       filmRentalCounts: {},
       setFilmRentalCounts: (filmId, stock, activeRentals) =>
@@ -581,13 +563,13 @@ export const useStore = create<VideoClubState>()(
         })),
 
       loadFilmsFromApi: async () => {
-        const aisles: AisleType[] = ['nouveautes', 'action', 'horreur', 'comedie', 'drame', 'thriller', 'policier', 'sf', 'animation', 'classiques'];
+        const aisles: AisleType[] = ['nouveautes', 'action', 'aventure', 'horreur', 'comedie', 'drame', 'thriller', 'policier', 'sf', 'animation', 'classiques', 'bizarre', 'romance'];
         try {
           const results = await Promise.all(
             aisles.map(aisle => api.films.getByAisle(aisle).catch(() => ({ aisle, films: [] })))
           );
           const filmsMap: Record<AisleType, Film[]> = {
-            nouveautes: [], action: [], horreur: [], comedie: [], drame: [], thriller: [], policier: [], sf: [], animation: [], classiques: [],
+            nouveautes: [], action: [], aventure: [], horreur: [], comedie: [], drame: [], thriller: [], policier: [], sf: [], animation: [], classiques: [], bizarre: [], romance: [],
           };
           const rentalCounts: Record<number, { stock: number; activeRentals: number }> = {};
           for (const { aisle, films: aisleFilms } of results) {
@@ -605,6 +587,19 @@ export const useStore = create<VideoClubState>()(
           console.error('Erreur chargement films:', error);
         }
       },
+
+      // Desk display
+      deskFilms: [],
+      fetchDeskFilms: async () => {
+        try {
+          const apiFilms = await api.films.getDeskDisplay();
+          set({ deskFilms: apiFilms.map(apiFilmToFilm) });
+        } catch {
+          // Silently fail — desk will show empty
+        }
+      },
+      showDeskFilmPicker: false,
+      setShowDeskFilmPicker: (show) => set({ showDeskFilmPicker: show }),
 
       // Manager IA
       managerVisible: false,
@@ -639,7 +634,7 @@ export const useStore = create<VideoClubState>()(
           const film = allFilms.find(f => f.id === filmId);
           if (film) {
             if (film.poster_path) {
-              preloadPosterImage(`https://image.tmdb.org/t/p/w500${film.poster_path}`);
+              preloadPosterImage(`/api/poster/w500${film.poster_path}`);
             }
             // Prefetch all VHS cover data (TMDB + images) while user aims
             // fetchVHSCoverData has its own cache — no duplicate requests

@@ -908,6 +908,7 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
                   <option value="all">ALLÉE</option>
                   <option value="no-aisle">SANS ALLÉE</option>
                   <option value="action">ACTION</option>
+                  <option value="aventure">AVENTURE</option>
                   <option value="horreur">HORREUR</option>
                   <option value="comedie">COMEDIE</option>
                   <option value="drame">DRAME</option>
@@ -916,6 +917,8 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
                   <option value="sf">SF</option>
                   <option value="animation">ANIMATION</option>
                   <option value="classiques">CLASSIQUES</option>
+                  <option value="bizarre">BIZARRE</option>
+                  <option value="romance">ROMANCE</option>
                 </select>
                 <select
                   className={styles.filterSelect}
@@ -974,6 +977,7 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
                         <option value="">ALLÉE...</option>
                         <option value="--">--</option>
                         <option value="action">ACTION</option>
+                        <option value="aventure">AVENTURE</option>
                         <option value="horreur">HORREUR</option>
                         <option value="comedie">COMEDIE</option>
                         <option value="drame">DRAME</option>
@@ -982,6 +986,8 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
                         <option value="sf">SF</option>
                         <option value="animation">ANIMATION</option>
                         <option value="classiques">CLASSIQUES</option>
+                        <option value="bizarre">BIZARRE</option>
+                        <option value="romance">ROMANCE</option>
                       </select>
                       <button
                         className={`${styles.bulkBtn} ${styles.bulkBtnGreen}`}
@@ -1078,6 +1084,7 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
                       >
                         <option value="">--</option>
                         <option value="action">ACTION</option>
+                        <option value="aventure">AVENTURE</option>
                         <option value="horreur">HORREUR</option>
                         <option value="comedie">COMEDIE</option>
                         <option value="drame">DRAME</option>
@@ -1086,6 +1093,8 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
                         <option value="sf">SF</option>
                         <option value="animation">ANIMATION</option>
                         <option value="classiques">CLASSIQUES</option>
+                        <option value="bizarre">BIZARRE</option>
+                        <option value="romance">ROMANCE</option>
                       </select>
                       <button
                         className={`${styles.adminToggleBtn} ${film.is_nouveaute ? styles.adminToggleNew : styles.adminToggleOff}`}

@@ -2,7 +2,7 @@ import type { Film, CreditPerson, DetailedCredits, PersonDetail } from '../types
 
 const API_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY;
 const BASE_URL = 'https://api.themoviedb.org/3';
-const IMAGE_BASE = 'https://image.tmdb.org/t/p';
+const IMAGE_BASE = '/api/poster';
 
 // ---- Response cache (session-lifetime, avoids redundant TMDB network calls) ----
 const _tmdbCache = new Map<string, { data: unknown; ts: number }>();

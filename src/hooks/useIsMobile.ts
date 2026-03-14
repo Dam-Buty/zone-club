@@ -12,11 +12,6 @@ function check(): boolean {
   return (mqlCoarse?.matches ?? false) || (mqlWidth?.matches ?? false)
 }
 
-/** Non-reactive getter for use outside React (event handlers, refs). */
-export function getIsMobile(): boolean {
-  return check()
-}
-
 /** Reactive hook — re-renders when device class changes. */
 export function useIsMobile(): boolean {
   const [isMobile, setIsMobile] = useState(check)

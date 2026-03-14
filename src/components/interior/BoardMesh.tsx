@@ -16,10 +16,10 @@ const NOTE_Z = 0.03      // offset in front of board surface
 const GRID_Y_OFFSET = 0.64  // shift grid up (~45cm world @ scale 0.7)
 
 const NOTE_COLORS: Record<string, string> = {
-  yellow: '#fff9c4',
-  pink: '#f8bbd0',
-  blue: '#b3e5fc',
-  green: '#c8e6c9',
+  yellow: '#d4c878',
+  pink: '#c4829a',
+  blue: '#7ab0c8',
+  green: '#8ab88d',
 }
 
 function createNoteTexture(note: ApiBoardNote): THREE.CanvasTexture {
@@ -136,10 +136,39 @@ const BoardNote3D = memo(function BoardNote3D({ note }: { note: ApiBoardNote }) 
       userData={{ isBoardNote: true, noteId: note.id }}
     >
       <planeGeometry args={[NOTE_W, NOTE_H]} />
-      <meshBasicMaterial map={texture} toneMapped={false} />
+      <meshStandardMaterial map={texture} roughness={0.85} metalness={0} />
     </mesh>
   )
 })
+
+// Label texture "Ecrivez/Lisez un Post-it" — matches couch label style (cyan glow)
+const LABEL_TEX = (() => {
+  const W = 768, H = 128
+  const canvas = document.createElement('canvas')
+  canvas.width = W
+  canvas.height = H
+  const ctx = canvas.getContext('2d')!
+
+  const FONT = '"Courier New", Courier, monospace'
+
+  // Text
+  ctx.font = `bold 38px ${FONT}`
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.shadowColor = '#00ffff'
+  ctx.shadowBlur = 8
+  ctx.fillStyle = '#00ffff'
+  ctx.fillText('Ecrivez / Lisez un Post-it', W / 2, 40)
+
+  // Arrow ▼
+  ctx.font = `bold 54px ${FONT}`
+  ctx.shadowBlur = 10
+  ctx.fillText('\u25BC', W / 2, 95)
+
+  const tex = new THREE.CanvasTexture(canvas)
+  tex.needsUpdate = true
+  return tex
+})()
 
 interface BoardMeshProps {
   position: [number, number, number]
@@ -176,6 +205,11 @@ export const BoardMesh = memo(function BoardMesh({ position, scale, rotation }: 
       {boardNotes.map(note => (
         <BoardNote3D key={note.id} note={note} />
       ))}
+      {/* Label above board */}
+      <mesh position={[0, 1.55, 0.03]}>
+        <planeGeometry args={[2.0, 0.35]} />
+        <meshBasicMaterial map={LABEL_TEX} transparent toneMapped={false} depthWrite={false} />
+      </mesh>
     </group>
   )
 })

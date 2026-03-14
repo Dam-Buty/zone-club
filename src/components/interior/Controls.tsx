@@ -4,16 +4,13 @@ import { PointerLockControls as PointerLockControlsImpl } from "three/addons/con
 import * as THREE from "three";
 import { useStore } from "../../store";
 import type { MobileInput } from "../../types/mobile";
+import { ROOM_WIDTH, ROOM_DEPTH } from "./constants";
 
 interface ControlsProps {
   onCassetteClick?: (filmId: number) => void;
   isMobile?: boolean;
   mobileInputRef?: MutableRefObject<MobileInput>;
 }
-
-// Dimensions de la pièce
-const ROOM_WIDTH = 9;
-const ROOM_DEPTH = 8.5;
 
 // Marge de collision — rayon de protection ~0.35m
 const COLLISION_MARGIN = 0.07;
@@ -31,26 +28,26 @@ const COLLISION_ZONES: {
   {
     minX: ROOM_WIDTH / 2 - 2.3 - 1.35 - 0.3,
     maxX: ROOM_WIDTH / 2 - 2.3 + 1.35 + 0.3,
-    minZ: ROOM_DEPTH / 2 - 1.28 - 0.5,
-    maxZ: ROOM_DEPTH / 2 - 1.28 + 0.5,
+    minZ: ROOM_DEPTH / 2 - 1.08 - 0.5,
+    maxZ: ROOM_DEPTH / 2 - 1.08 + 0.5,
     name: "comptoir",
     cornerRadius: 0.3,
   },
   {
-    // Ilot 1 — X shrunk 15cm (cassette faces), Z original (wood ends)
-    minX: -1.6 - 0.53,
-    maxX: -1.6 + 0.53,
-    minZ: -1.02,
-    maxZ: 1.02,
+    // Ilot 1 — ISLAND_LENGTH=4.1, center X=-2.2, Z=-0.2
+    minX: -2.2 - 0.53,
+    maxX: -2.2 + 0.53,
+    minZ: -0.2 - 1.9,
+    maxZ: -0.2 + 1.9,
     name: "ilot",
     cornerRadius: 0.50,
   },
   {
-    // Ilot 2 — X shrunk 15cm (cassette faces), Z original (wood ends)
-    minX: 0.65 - 0.53,
-    maxX: 0.65 + 0.53,
-    minZ: -0.3 - 1.02,
-    maxZ: -0.3 + 1.02,
+    // Ilot 2 — ISLAND_LENGTH=4.1, center X=0.05, Z=-0.2
+    minX: 0.05 - 0.53,
+    maxX: 0.05 + 0.53,
+    minZ: -0.2 - 1.9,
+    maxZ: -0.2 + 1.9,
     name: "ilot2",
     cornerRadius: 0.50,
   },
@@ -63,7 +60,7 @@ const COLLISION_ZONES: {
   },
   {
     minX: -ROOM_WIDTH / 2,
-    maxX: -ROOM_WIDTH / 2 + 0.8,
+    maxX: -ROOM_WIDTH / 2 + 0.6,
     minZ: -ROOM_DEPTH / 2,
     maxZ: ROOM_DEPTH / 2,
     name: "etagere-gauche",
@@ -72,11 +69,11 @@ const COLLISION_ZONES: {
     minX: -ROOM_WIDTH / 2,
     maxX: ROOM_WIDTH / 2 - 1.5,
     minZ: -ROOM_DEPTH / 2,
-    maxZ: -ROOM_DEPTH / 2 + 0.8,
+    maxZ: -ROOM_DEPTH / 2 + 0.6,
     name: "etagere-fond",
   },
   {
-    minX: ROOM_WIDTH / 2 - 0.8,
+    minX: ROOM_WIDTH / 2 - 0.6,
     maxX: ROOM_WIDTH / 2,
     minZ: -ROOM_DEPTH / 2,
     maxZ: 0.5,
@@ -290,7 +287,7 @@ export function Controls({
     camera.far = 15;
     if (!isMobile) {
       if (camera instanceof THREE.PerspectiveCamera) {
-        camera.fov = 70;
+        camera.fov = 60;
         camera.updateProjectionMatrix();
       }
       return;
@@ -423,6 +420,7 @@ export function Controls({
 
     const targetedFilmId = useStore.getState().targetedFilmId;
     if (targetedFilmId !== null) {
+      useStore.getState().setTargetedFilm(null, null);
       onCassetteClick?.(targetedFilmId);
       if (!isMobile) requestPointerUnlock();
     }
@@ -771,7 +769,7 @@ export function Controls({
           _tapNDC.set(ndcX, ndcY);
 
           raycasterRef.current.setFromCamera(_tapNDC, camera);
-          raycasterRef.current.far = 6;
+          raycasterRef.current.far = 4;
           const intersects = raycasterRef.current.intersectObjects(
             scene.children,
             true,
@@ -811,7 +809,7 @@ export function Controls({
                 handled = true;
                 break;
               }
-              if (obj.userData?.isCouch) {
+              if (obj.userData?.isCouch && intersect.distance <= 3.0) {
                 if (!useStore.getState().isSitting) {
                   useStore.getState().setSitting(true);
                 }
@@ -849,8 +847,12 @@ export function Controls({
                 break;
               }
               if (obj.userData?.filmId && obj.userData?.cassetteKey) {
-                setTargetedFilm(obj.userData.filmId, obj.userData.cassetteKey);
-                onCassetteClick?.(obj.userData.filmId);
+                if (obj.userData?.isDeskCassette) {
+                  useStore.getState().setShowDeskFilmPicker(true);
+                } else {
+                  setTargetedFilm(obj.userData.filmId, obj.userData.cassetteKey);
+                  onCassetteClick?.(obj.userData.filmId);
+                }
                 handled = true;
                 break;
               }
@@ -868,7 +870,7 @@ export function Controls({
 
       if (isActive && shouldRaycast) {
         raycasterRef.current.setFromCamera(SCREEN_CENTER, camera);
-        raycasterRef.current.far = 6;
+        raycasterRef.current.far = 4;
         const intersects = raycasterRef.current.intersectObjects(
           scene.children,
           true,
@@ -907,7 +909,7 @@ export function Controls({
               foundInteractive = "lazone";
               break;
             }
-            if (obj.userData?.isCouch) {
+            if (obj.userData?.isCouch && intersect.distance <= 3.0) {
               foundInteractive = "couch";
               break;
             }
@@ -1100,9 +1102,9 @@ export function Controls({
     // === Standup transition — land behind the couch (couch at world X≈2.88) ===
     if (wasSittingRef.current) {
       const standingY = 1.52;
-      const targetX = 2.4; // ~50cm behind couch, well outside TV collision zone
+      const targetX = 2.0; // well clear of TV collision zone (expanded minX=2.95)
       const targetZ = 1.2; // same Z as couch/TV
-      const alpha = Math.min(1, SIT_TRANSITION_SPEED * delta);
+      const alpha = Math.min(1, 8.0 * delta); // faster than sit transition
       camera.position.x = THREE.MathUtils.lerp(camera.position.x, targetX, alpha);
       camera.position.y = THREE.MathUtils.lerp(camera.position.y, standingY, alpha);
       camera.position.z = THREE.MathUtils.lerp(camera.position.z, targetZ, alpha);
@@ -1111,7 +1113,7 @@ export function Controls({
       _lookAtMatrix.lookAt(camera.position, standTarget, _up);
       _targetQuat.setFromRotationMatrix(_lookAtMatrix);
       camera.quaternion.slerp(_targetQuat, alpha);
-      if (Math.abs(camera.position.y - standingY) < 0.01) {
+      if (Math.abs(camera.position.y - standingY) < 0.05) {
         camera.position.set(targetX, standingY, targetZ);
         wasSittingRef.current = false;
         // Re-acquire pointer lock so movement resumes (desktop only)

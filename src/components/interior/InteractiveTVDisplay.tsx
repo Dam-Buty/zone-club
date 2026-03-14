@@ -503,11 +503,13 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
       t.anisotropy = 16
       t.colorSpace = key === 'map' ? THREE.SRGBColorSpace : THREE.LinearSRGBColorSpace
     })
-    return new THREE.MeshStandardMaterial({
+    return new THREE.MeshPhysicalMaterial({
       map: woodTextures.map as THREE.Texture,
       normalMap: woodTextures.normalMap as THREE.Texture,
       roughnessMap: woodTextures.roughnessMap as THREE.Texture,
-      color: '#2a2018',
+      color: '#5a3f28',
+      roughness: 0.25,
+      clearcoat: 0.40,
       normalScale: new THREE.Vector2(0.7, 0.7),
     })
   }, [woodTextures])

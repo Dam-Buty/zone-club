@@ -168,7 +168,7 @@ function VitrinePoster({ posterPath, position, width, height }: {
   height: number
 }) {
   const posterUrl = posterPath
-    ? `https://image.tmdb.org/t/p/w500${posterPath}`
+    ? `/api/poster/w500${posterPath}`
     : null
 
   const texture = useMemo(() => {
@@ -221,14 +221,15 @@ export function Storefront({ position, roomWidth, roomHeight, posterPaths }: Sto
     })
   }, [wallTextures])
 
-  const wallMaterial = useMemo(() => new THREE.MeshStandardMaterial({
-    map: wallTextures.map as THREE.Texture,
-    normalMap: wallTextures.normalMap as THREE.Texture,
-    roughnessMap: wallTextures.roughnessMap as THREE.Texture,
-    aoMap: wallTextures.aoMap as THREE.Texture,
-    color: '#2a2a35',
-    normalScale: new THREE.Vector2(0.6, 0.6),
-  }), [wallTextures])
+  // Match MergedWalls material — uniform painted smooth plaster across all walls
+  const wallMaterial = useMemo(() => new THREE.MeshPhysicalMaterial({
+    color: '#d4b080',
+    roughness: 0.38,
+    metalness: 0.0,
+    envMapIntensity: 0.70,
+    clearcoat: 0.22,
+    clearcoatRoughness: 0.45,
+  }), [])
 
   // Exterior backdrop (exterior.jpeg — placed at real 3D depth behind wall for geometric parallax)
   const exteriorTex = useTexture('/exterior.webp')
