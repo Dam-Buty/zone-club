@@ -246,12 +246,12 @@ const ISLAND_CASSETTE_SPACING = CASSETTE_DIMENSIONS.width + 0.02
 const SECTION_GAP = 0.12
 
 // Per-row extra tilts for island shelves (same pattern as wall shelves)
-// Extra outward lean: row 0 +10°, row 1 +7°, row 2 +5°, row 3 +0°
+// Extra outward lean: row 0 +10°, row 1 +7°, row 2 +8°, row 3 +5°
 const ISLAND_ROW_EXTRA_TILTS = [
   10 * Math.PI / 180,  // row 0 (bottom)
   7 * Math.PI / 180,   // row 1
-  5 * Math.PI / 180,   // row 2
-  0,                    // row 3 (top)
+  8 * Math.PI / 180,   // row 2
+  5 * Math.PI / 180,   // row 3 (top)
 ]
 
 function dedupeFilms(films: Film[]): Film[] {

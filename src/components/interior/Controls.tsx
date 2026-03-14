@@ -60,7 +60,7 @@ const COLLISION_ZONES: {
   },
   {
     minX: -ROOM_WIDTH / 2,
-    maxX: -ROOM_WIDTH / 2 + 0.8,
+    maxX: -ROOM_WIDTH / 2 + 0.6,
     minZ: -ROOM_DEPTH / 2,
     maxZ: ROOM_DEPTH / 2,
     name: "etagere-gauche",
@@ -69,11 +69,11 @@ const COLLISION_ZONES: {
     minX: -ROOM_WIDTH / 2,
     maxX: ROOM_WIDTH / 2 - 1.5,
     minZ: -ROOM_DEPTH / 2,
-    maxZ: -ROOM_DEPTH / 2 + 0.8,
+    maxZ: -ROOM_DEPTH / 2 + 0.6,
     name: "etagere-fond",
   },
   {
-    minX: ROOM_WIDTH / 2 - 0.8,
+    minX: ROOM_WIDTH / 2 - 0.6,
     maxX: ROOM_WIDTH / 2,
     minZ: -ROOM_DEPTH / 2,
     maxZ: 0.5,

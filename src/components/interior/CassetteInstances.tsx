@@ -248,7 +248,7 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
     // Base emissive: self-illumination so tilted poster faces stay readable.
     // Hover highlight applies ONLY on outline border (not full surface).
     const hoverEmissive = currentEmissiveBuffer.toAttribute().mul(outlineMask)
-    mat.emissiveNode = hoverEmissive.add(cappedColor.mul(float(0.12)))
+    mat.emissiveNode = hoverEmissive.add(cappedColor.mul(float(0.20)))
 
     return mat
   }, [atlas, currentHoverZBuffer, currentEmissiveBuffer, currentRentedOutBuffer])

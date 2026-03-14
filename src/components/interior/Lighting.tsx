@@ -131,7 +131,7 @@ function OptimizedLighting({ isMobile = false }: { isMobile?: boolean }) {
       {/* Hemisphere ambient fill */}
       <hemisphereLight
         color="#fff8f0"
-        groundColor="#8a8078"
+        groundColor="#a09890"
         intensity={isMobile ? 0.5 : 0.28}
       />
 
@@ -147,24 +147,34 @@ function OptimizedLighting({ isMobile = false }: { isMobile?: boolean }) {
             rotation={[-Math.PI / 2, 0, 0]}
             width={0.12}
             height={1.4}
-            intensity={8.0}
+            intensity={3.0}
             color="#fff5e6"
           />
 
-          {/* Left aisle fill — illuminates left island faces + left wall K7s */}
-          <pointLight
-            position={[-3.0, 1.5, 0]}
-            intensity={0.8}
-            color="#fff5e6"
-            distance={4}
-            decay={2}
-            castShadow={false}
+          {/* Island overhead lights — ceiling-level RectAreaLights above each island */}
+          {/* Island 1 (Nouveautés) at X≈-2.1 */}
+          <rectAreaLight
+            position={[-2.1, 2.68, 0]}
+            rotation={[-Math.PI / 2, 0, 0]}
+            width={0.6}
+            height={4.0}
+            intensity={1.8}
+            color="#f0f5ff"
+          />
+          {/* Island 2 (SF/Classiques) at X≈0.15 */}
+          <rectAreaLight
+            position={[0.15, 2.68, 0]}
+            rotation={[-Math.PI / 2, 0, 0]}
+            width={0.6}
+            height={4.0}
+            intensity={1.8}
+            color="#f0f5ff"
           />
 
           {/* Center aisle fill — illuminates right face of island 1 + left face of island 2 */}
           <pointLight
-            position={[-1.0, 1.5, 0]}
-            intensity={0.7}
+            position={[-1.0, 1.5, 1.0]}
+            intensity={1.0}
             color="#fff5e6"
             distance={4}
             decay={2}
@@ -174,11 +184,70 @@ function OptimizedLighting({ isMobile = false }: { isMobile?: boolean }) {
           {/* Right aisle fill — illuminates right face of island 2 */}
           <pointLight
             position={[2.3, 1.5, 0]}
-            intensity={0.7}
+            intensity={1.0}
             color="#fff5e6"
             distance={4}
             decay={2}
             castShadow={false}
+          />
+
+          {/* Front-of-store fill — covers Z>0 between islands and entrance */}
+          <pointLight
+            position={[0, 1.5, 2.0]}
+            intensity={0.8}
+            color="#fff5e6"
+            distance={4}
+            decay={2}
+            castShadow={false}
+          />
+
+          {/* Center aisle fill (back) — covers Z<0 between the two islands */}
+          <pointLight
+            position={[-1.0, 1.5, -2.5]}
+            intensity={0.8}
+            color="#fff5e6"
+            distance={4}
+            decay={2}
+            castShadow={false}
+          />
+
+          {/* Back wall cross-aisle — illuminates back ends of both islands */}
+          <pointLight
+            position={[0, 1.5, -3.2]}
+            intensity={0.8}
+            color="#fff5e6"
+            distance={4}
+            decay={2}
+            castShadow={false}
+          />
+
+          {/* Wall wash lights — positioned in aisles, facing walls to illuminate K7 front faces */}
+          {/* Left wall wash — faces +X toward left wall shelves */}
+          <rectAreaLight
+            position={[-3.0, 1.4, 0]}
+            rotation={[0, Math.PI / 2, 0]}
+            width={7.0}
+            height={2.0}
+            intensity={0.6}
+            color="#fff5e6"
+          />
+          {/* Back wall wash — faces +Z toward back wall shelves */}
+          <rectAreaLight
+            position={[0, 1.4, -3.0]}
+            rotation={[0, 0, 0]}
+            width={7.0}
+            height={2.0}
+            intensity={0.6}
+            color="#fff5e6"
+          />
+          {/* Right wall wash — faces -X toward right wall shelves */}
+          <rectAreaLight
+            position={[3.0, 1.4, 0]}
+            rotation={[0, -Math.PI / 2, 0]}
+            width={7.0}
+            height={2.0}
+            intensity={0.6}
+            color="#fff5e6"
           />
 
           {/* Vitrine cold light — faces backward toward street (rotation PI = -Z) */}
@@ -192,48 +261,11 @@ function OptimizedLighting({ isMobile = false }: { isMobile?: boolean }) {
           />
 
           {/* Ceiling bounce — single upward fill for ceiling illumination */}
-          <rectAreaLight position={[0, 0.1, 0]} rotation={[Math.PI / 2, 0, 0]} width={3.0} height={2.5} intensity={0.80} color="#e8ddd0" />
+          <rectAreaLight position={[0, 0.1, 0]} rotation={[Math.PI / 2, 0, 0]} width={3.0} height={2.5} intensity={1.40} color="#e8ddd0" />
 
           {/* Comptoir overhead — single warm work light above counter area */}
           <rectAreaLight position={[2.8, 2.1, 2.5]} rotation={[-Math.PI / 2, 0, 0]} width={3.0} height={2.0} intensity={1.0} color="#ffd8b0" />
 
-          {/* Genre panel lights — colored wash from neon panels onto nearby shelves */}
-          {/* PointLights at Y=1.55 (upper-mid shelf), large radius, even color wash */}
-          {[
-            // Left wall
-            { p: [-3.8, 1.86, -2.67], c: '#66cc88' },  // Horreur
-            { p: [-3.8, 1.86, -1.02], c: '#cc66aa' },  // Bizarre
-            { p: [-3.8, 1.86,  0.51], c: '#7abbd4' },  // Policier
-            { p: [-3.8, 1.86,  2.07], c: '#cc8844' },  // Thriller
-            // Back wall
-            { p: [-3.16, 1.86, -3.55], c: '#cc7766' },  // Action
-            { p: [-1.35, 1.86, -3.55], c: '#ccaa66' },  // Aventure
-            { p: [ 0.60, 1.86, -3.55], c: '#ccaa66' },  // Anim & Cie
-            { p: [ 1.91, 1.86, -3.55], c: '#9977cc' },  // Drame
-            // Right wall
-            { p: [ 3.8, 1.86, -2.53], c: '#cccc77' },  // Comédie
-            { p: [ 3.8, 1.86, -0.47], c: '#cc8899' },  // Romance
-          ].map((h, i) => (
-            <pointLight
-              key={`genre-${i}`}
-              position={h.p as [number, number, number]}
-              color={h.c}
-              intensity={0.35}
-              distance={2.5}
-              decay={1.0}
-              castShadow={false}
-            />
-          ))}
-
-          {/* CRT ambient — cold blue glow from TV screen */}
-          <pointLight
-            position={[4.225, 0.85, 1.35]}
-            color="#445566"
-            intensity={0.3}
-            distance={2.0}
-            decay={2.0}
-            castShadow={false}
-          />
 
           {/* Private door lift — faces backward into back wall */}
           <group position={[2.9, 2.18, -4.02]} rotation={[0, Math.PI, 0]}>
