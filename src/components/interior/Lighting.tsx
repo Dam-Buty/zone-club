@@ -132,7 +132,7 @@ function OptimizedLighting({ isMobile = false }: { isMobile?: boolean }) {
       <hemisphereLight
         color="#fff8f0"
         groundColor="#a09890"
-        intensity={isMobile ? 0.5 : 0.28}
+        intensity={isMobile ? 0.65 : 0.28}
       />
 
       {/* Desktop-only per-fragment lights */}
@@ -191,9 +191,9 @@ function OptimizedLighting({ isMobile = false }: { isMobile?: boolean }) {
             castShadow={false}
           />
 
-          {/* Front-of-store fill — covers Z>0 between islands and entrance */}
+          {/* Front-of-store fill — centered between the two islands */}
           <pointLight
-            position={[0, 1.5, 2.0]}
+            position={[-1.0, 1.5, 2.0]}
             intensity={0.8}
             color="#fff5e6"
             distance={4}
@@ -211,9 +211,9 @@ function OptimizedLighting({ isMobile = false }: { isMobile?: boolean }) {
             castShadow={false}
           />
 
-          {/* Back wall cross-aisle — illuminates back ends of both islands */}
+          {/* Back wall cross-aisle — centered between the two islands */}
           <pointLight
-            position={[0, 1.5, -3.2]}
+            position={[-1.0, 1.5, -3.2]}
             intensity={0.8}
             color="#fff5e6"
             distance={4}
@@ -277,6 +277,18 @@ function OptimizedLighting({ isMobile = false }: { isMobile?: boolean }) {
             />
           </group>
         </>
+      )}
+
+      {/* Mobile-only: single PointLight between the two islands */}
+      {isMobile && (
+        <pointLight
+          position={[-1.0, 1.8, 0]}
+          intensity={1.2}
+          color="#fff5e6"
+          distance={5}
+          decay={2}
+          castShadow={false}
+        />
       )}
 
       {/* Angled DirectionalLight — 42° from vertical, illuminates tops AND sides */}

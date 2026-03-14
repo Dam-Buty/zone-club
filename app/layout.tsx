@@ -35,8 +35,21 @@ export default function RootLayout({
                 <link rel="preload" href="/textures/wood/color.ktx2" as="fetch" crossOrigin="anonymous" />
                 <link rel="preload" href="/textures/wood/normal.ktx2" as="fetch" crossOrigin="anonymous" />
                 <link rel="preload" href="/textures/wood/roughness.ktx2" as="fetch" crossOrigin="anonymous" />
-                {/* Prefetch non-critical but useful models */}
+                {/* Preload PBR textures — storefront + floor (visible on scene load) */}
+                <link rel="preload" href="/textures/storefront/color.ktx2" as="fetch" crossOrigin="anonymous" />
+                <link rel="preload" href="/textures/storefront/normal.ktx2" as="fetch" crossOrigin="anonymous" />
+                <link rel="preload" href="/textures/storefront/roughness.ktx2" as="fetch" crossOrigin="anonymous" />
+                <link rel="preload" href="/textures/storefront/ao.ktx2" as="fetch" crossOrigin="anonymous" />
+                <link rel="preload" href="/textures/floor/color.ktx2" as="fetch" crossOrigin="anonymous" />
+                <link rel="preload" href="/textures/floor/normal.ktx2" as="fetch" crossOrigin="anonymous" />
+                <link rel="preload" href="/textures/floor/roughness.ktx2" as="fetch" crossOrigin="anonymous" />
+                {/* Prefetch GLB models — low priority, downloaded when bandwidth is free (K7s load first) */}
+                <link rel="prefetch" href="/models/board.glb" />
+                <link rel="prefetch" href="/models/leather_couch.glb" />
+                <link rel="prefetch" href="/models/crt_tv.glb" />
                 <link rel="prefetch" href="/models/rick.glb" />
+                <link rel="prefetch" href="/models/fire_extinguisher.glb" />
+                <link rel="prefetch" href="/models/minitel_1982-france.glb" />
             </head>
             <body>{children}</body>
         </html>

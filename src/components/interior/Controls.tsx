@@ -809,7 +809,7 @@ export function Controls({
                 handled = true;
                 break;
               }
-              if (obj.userData?.isCouch && intersect.distance <= 2.5) {
+              if (obj.userData?.isCouch && intersect.distance <= 3.0) {
                 if (!useStore.getState().isSitting) {
                   useStore.getState().setSitting(true);
                 }
@@ -909,7 +909,7 @@ export function Controls({
               foundInteractive = "lazone";
               break;
             }
-            if (obj.userData?.isCouch && intersect.distance <= 2.5) {
+            if (obj.userData?.isCouch && intersect.distance <= 3.0) {
               foundInteractive = "couch";
               break;
             }
@@ -1102,9 +1102,9 @@ export function Controls({
     // === Standup transition — land behind the couch (couch at world X≈2.88) ===
     if (wasSittingRef.current) {
       const standingY = 1.52;
-      const targetX = 2.4; // ~50cm behind couch, well outside TV collision zone
+      const targetX = 2.0; // well clear of TV collision zone (expanded minX=2.95)
       const targetZ = 1.2; // same Z as couch/TV
-      const alpha = Math.min(1, SIT_TRANSITION_SPEED * delta);
+      const alpha = Math.min(1, 8.0 * delta); // faster than sit transition
       camera.position.x = THREE.MathUtils.lerp(camera.position.x, targetX, alpha);
       camera.position.y = THREE.MathUtils.lerp(camera.position.y, standingY, alpha);
       camera.position.z = THREE.MathUtils.lerp(camera.position.z, targetZ, alpha);
@@ -1113,7 +1113,7 @@ export function Controls({
       _lookAtMatrix.lookAt(camera.position, standTarget, _up);
       _targetQuat.setFromRotationMatrix(_lookAtMatrix);
       camera.quaternion.slerp(_targetQuat, alpha);
-      if (Math.abs(camera.position.y - standingY) < 0.01) {
+      if (Math.abs(camera.position.y - standingY) < 0.05) {
         camera.position.set(targetX, standingY, targetZ);
         wasSittingRef.current = false;
         // Re-acquire pointer lock so movement resumes (desktop only)

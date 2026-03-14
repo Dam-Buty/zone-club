@@ -39,6 +39,8 @@ function AsyncModel({ url, position, scale = 1, rotation = [0, 0, 0] }: {
 // Preload shelf model at module level (downloaded at JS parse time, not component mount)
 useGLTF.preload('/models/shelf.glb', true)
 useGLTF.preload('/models/board.glb', true)
+useGLTF.preload('/models/fire_extinguisher.glb', true)
+useGLTF.preload('/models/minitel_1982-france.glb', true)
 
 import { useKTX2Textures } from '../../hooks/useKTX2Textures'
 import { WallShelf, SHELF_DEPTH, SHELF_TILT, SHELF_PIVOT_Y, WALL_SHELF_ROWS } from './WallShelf'
@@ -775,7 +777,7 @@ export const Aisle = memo(function Aisle({ films, filmsByAisle }: AisleProps) {
           map={floorTextures.map}
           normalMap={floorTextures.normalMap}
           color="#c8c0b8"
-          roughness={0.28}
+          roughness={0.38}
           metalness={0.02}
           envMapIntensity={0.35}
           normalScale={[0.8, 0.8] as unknown as THREE.Vector2}
