@@ -5,6 +5,7 @@ import {
   texture, uv, attribute,
   Fn, instanceIndex, deltaTime, instancedArray,
   uniform, mix, min, vec3, vec2, positionLocal, float, step,
+  abs, cos, sin,
 } from 'three/tsl'
 import { CassetteTextureAtlas, type CassetteInstanceData } from '../../utils/CassetteTextureArray'
 import { useStore } from '../../store'
@@ -94,7 +95,7 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
   const {
     atlas, instanceIdToKey, instanceIdToFilmId,
     atlasRectData, urlToSlot,
-    hysteresisStates,
+    hysteresisStates, hoverTiltBuffer,
     targetHoverZBuffer, targetEmissiveBuffer,
     currentHoverZBuffer, currentEmissiveBuffer,
     targetRentedOutBuffer, currentRentedOutBuffer,
@@ -129,10 +130,12 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
 
     // Build per-instance atlasRect (vec4: uOffset, vOffset, uScale, vScale)
     const _atlasRectData = new Float32Array(count * 4)
+    const _hoverTiltData = new Float32Array(count)
     const fallbackRect = _atlas.getSlotRect(FALLBACK_SLOT)
 
     for (let i = 0; i < count; i++) {
       const inst = currentInstances[i]
+      _hoverTiltData[i] = inst.hoverTiltAngle
       let rect: [number, number, number, number]
       if (!inst.posterUrl) {
         rect = fallbackRect
@@ -145,6 +148,13 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
       _atlasRectData[base + 1] = rect[1]
       _atlasRectData[base + 2] = rect[2]
       _atlasRectData[base + 3] = rect[3]
+    }
+
+    // Static per-instance tilt angle (storage buffer, filled once)
+    const hoverTiltBuf = instancedArray(count, 'float')
+    const hoverTiltArr = hoverTiltBuf.value.array as Float32Array
+    for (let i = 0; i < count; i++) {
+      hoverTiltArr[i] = currentInstances[i].hoverTiltAngle
     }
 
     // GPU storage buffers for animation (instancedArray = StorageInstancedBufferAttribute)
@@ -185,6 +195,7 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
       atlasRectData: _atlasRectData,
       urlToSlot: _urlToSlot,
       hysteresisStates: hStates,
+      hoverTiltBuffer: hoverTiltBuf,
       targetHoverZBuffer: tarHoverZ,
       targetEmissiveBuffer: tarEmissive,
       currentHoverZBuffer: curHoverZ,
@@ -206,7 +217,7 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
   // TSL material — 2D atlas texture with UV remapping per instance
   const material = useMemo(() => {
     const mat = new THREE.MeshStandardNodeMaterial()
-    mat.roughness = 0.10                       // Glossy plastic sleeve — tight specular point
+    mat.roughness = 0.85                       // Matte plastic sleeve
     mat.metalness = 0.0
 
     // Per-instance atlas rect: vec4(uOffset, vOffset, uScale, vScale)
@@ -234,7 +245,15 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
     mat.colorNode = cappedColor
 
     const hoverZ = currentHoverZBuffer.toAttribute()
-    mat.positionNode = positionLocal.add(vec3(0, 0, hoverZ))
+    // Per-instance hover tilt: bottom rows lean back (10°), top rows lean forward (15°)
+    const perTilt = hoverTiltBuffer.element(instanceIndex)
+    const hoverProgress = abs(hoverZ).div(float(0.088)).clamp(0, 1)
+    const tiltAngle = hoverProgress.mul(perTilt)
+    const cosA = cos(tiltAngle)
+    const sinA = sin(tiltAngle)
+    const rotatedY = positionLocal.y.mul(cosA).sub(positionLocal.z.mul(sinA))
+    const rotatedZ = positionLocal.y.mul(sinA).add(positionLocal.z.mul(cosA))
+    mat.positionNode = vec3(positionLocal.x, rotatedY, rotatedZ).add(vec3(0, 0, hoverZ))
 
     // Outline mask from box UVs: 1.0 on edges, 0.0 in center
     const border = float(0.012)

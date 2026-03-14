@@ -229,7 +229,7 @@ const WALL_CASSETTE_SPACING = CASSETTE_DIMENSIONS.width + 0.02
 // Per-row tilt angles (radians) — bottom rows tilted more forward for better lighting
 // Extra lean on top of SHELF_TILT: row 0 +10°, row 1 +7°, row 2 +5°, rest +0°
 const WALL_ROW_TILTS = [
-  SHELF_TILT + 10 * Math.PI / 180,  // row 0 — SHELF_TILT + 10°
+  SHELF_TILT + 15 * Math.PI / 180,  // row 0 — SHELF_TILT + 15°
   SHELF_TILT + 7 * Math.PI / 180,   // row 1 — SHELF_TILT + 7°
   SHELF_TILT + 5 * Math.PI / 180,   // row 2 — SHELF_TILT + 5°
   SHELF_TILT,                        // row 3
@@ -363,17 +363,26 @@ function computeWallShelfCassettes(
 
     const cassetteKey = `wall-${position[0].toFixed(1)}-${position[2].toFixed(1)}-${row}-${col}`
     const posterUrl = film.poster_path
-      ? `https://image.tmdb.org/t/p/w185${film.poster_path}`
+      ? `/api/poster/w185${film.poster_path}`
       : null
 
     const worldQuat = rowWorldQuats[row] ?? rowWorldQuats[rowWorldQuats.length - 1]
+
+    // Hover tilt: bottom row leans back 10°, top row leans forward 15°, middle rows lean back 10°
+    const LEAN_BACK = -(10 * Math.PI / 180)
+    const LEAN_FWD_15 =  (15 * Math.PI / 180)
+    const LEAN_FWD_10 =  (10 * Math.PI / 180)
+    const tiltAngle = row === WALL_ROWS - 1 ? LEAN_FWD_15
+      : row === WALL_ROWS - 2 ? LEAN_FWD_10
+      : LEAN_BACK
 
     data.push({
       cassetteKey,
       filmId: film.id,
       worldPosition: tiltedPos,
       worldQuaternion: worldQuat.clone(),
-      hoverOffsetZ: 0.088,
+      hoverOffsetZ: row === 0 ? 0.16 : 0.088,  // bottom row: stronger pop-out
+      hoverTiltAngle: tiltAngle,
       posterUrl,
       fallbackColor: CASSETTE_COLORS[film.id % CASSETTE_COLORS.length],
     })
@@ -471,15 +480,24 @@ function computeIslandShelfCassettes(
 
       const cassetteKey = `${keyPrefix}-${side}-${row}-${col}`
       const posterUrl = film.poster_path
-        ? `https://image.tmdb.org/t/p/w185${film.poster_path}`
+        ? `/api/poster/w185${film.poster_path}`
         : null
+
+      // Island tilt: signs flipped vs wall (hoverZ < 0 for islands)
+      const ISLAND_LEAN_BACK =  (10 * Math.PI / 180)
+      const ISLAND_LEAN_FWD_15 = -(15 * Math.PI / 180)
+      const ISLAND_LEAN_FWD_10 = -(10 * Math.PI / 180)
+      const islandTilt = row === ISLAND_ROWS - 1 ? ISLAND_LEAN_FWD_15
+        : row === ISLAND_ROWS - 2 ? ISLAND_LEAN_FWD_10
+        : ISLAND_LEAN_BACK
 
       data.push({
         cassetteKey,
         filmId: film.id,
         worldPosition: localPos,
         worldQuaternion: worldQuat,
-        hoverOffsetZ: -0.088,
+        hoverOffsetZ: row === 0 ? -0.114 : -0.088,  // bottom row: 30% stronger pop-out
+        hoverTiltAngle: islandTilt,
         posterUrl,
         fallbackColor: CASSETTE_COLORS[film.id % CASSETTE_COLORS.length],
       })
@@ -750,11 +768,11 @@ export const Aisle = memo(function Aisle({ films, filmsByAisle }: AisleProps) {
     // IslandShelf: Nouveautés (2 copies per film)
     // Y offset = PEDESTAL_HEIGHT because cassettes sit on the lifted shelf above the pedestal
     all.push(...computeIslandShelfCassettes(
-      [-2.1, ISLAND_SHELF_PEDESTAL_HEIGHT, 0], [0, 0, 0], nouveautesLeft, nouveautesRight, 'island', true, 2
+      [-2.2, ISLAND_SHELF_PEDESTAL_HEIGHT, -0.2], [0, 0, 0], nouveautesLeft, nouveautesRight, 'island', true, 2
     ))
     // IslandShelf 2: SF (left) + Classiques (right)
     all.push(...computeIslandShelfCassettes(
-      [0.15, ISLAND_SHELF_PEDESTAL_HEIGHT, 0], [0, 0, 0], sfIslandLeft, classiquesIslandRight, 'island2'
+      [0.05, ISLAND_SHELF_PEDESTAL_HEIGHT, -0.2], [0, 0, 0], sfIslandLeft, classiquesIslandRight, 'island2'
     ))
 
     // DEBUG: count cassettes per section
@@ -762,8 +780,6 @@ export const Aisle = memo(function Aisle({ films, filmsByAisle }: AisleProps) {
     const islandRight = all.filter(c => c.cassetteKey.startsWith('island-right'))
     const island2Left = all.filter(c => c.cassetteKey.startsWith('island2-left'))
     const island2Right = all.filter(c => c.cassetteKey.startsWith('island2-right'))
-    console.log(`[DEBUG] Island cassettes: nouveautés L=${islandLeft.length} R=${islandRight.length}, SF/Classiques L=${island2Left.length} R=${island2Right.length}, TOTAL=${all.length}`)
-
     return all
   // ROOM_WIDTH & ROOM_DEPTH in deps: ensures recomputation when room dimensions change (HMR cache fix)
   }, [actionSlice, animationSlice, aventureSlice, bizarreCenterZ, bizarreSlice, classiquesIslandRight, comedieSlice, drameSlice, horreurCenterZ, horreurLength, horreurSlice, leftEqualSectionLength, northLongLength, northLongOffset, northMediumLength, northMediumOffset, nouveautesLeft, nouveautesRight, policierSlice, rightLongLength, rightLongOffset, romanceSlice, sfIslandLeft, ROOM_WIDTH, ROOM_DEPTH])
@@ -1041,7 +1057,7 @@ export const Aisle = memo(function Aisle({ films, filmsByAisle }: AisleProps) {
       {/* ===== ÎLOT CENTRAL - NOUVEAUTÉS (MEILLEURS FILMS TMDB) ===== */}
       {/* Top films TMDB des 10 dernières années par note (fallback: catalogue local) */}
       <IslandShelf
-        position={[-2.1, 0, 0]}
+        position={[-2.2, 0, -0.2]}
         woodTextures={woodTextures}
       />
 
@@ -1049,7 +1065,7 @@ export const Aisle = memo(function Aisle({ films, filmsByAisle }: AisleProps) {
       {/* Face visible depuis la droite (+X) */}
       <GenreSectionPanel
         genre="Nouveautés"
-        position={[-2.08, islandPanelY, 0]}
+        position={[-2.18, islandPanelY, -0.2]}
         rotation={[0, Math.PI / 2, 0]}
         color="#ff00ff"
         width={panelWidthIsland}
@@ -1058,7 +1074,7 @@ export const Aisle = memo(function Aisle({ films, filmsByAisle }: AisleProps) {
       {/* Face visible depuis la gauche (-X) */}
       <GenreSectionPanel
         genre="Nouveautés"
-        position={[-2.12, islandPanelY, 0]}
+        position={[-2.22, islandPanelY, -0.2]}
         rotation={[0, -Math.PI / 2, 0]}
         color="#ff00ff"
         width={panelWidthIsland}
@@ -1067,13 +1083,13 @@ export const Aisle = memo(function Aisle({ films, filmsByAisle }: AisleProps) {
 
       {/* ===== ÎLOT 2 - SF + CLASSIQUES ===== */}
       <IslandShelf
-        position={[0.15, 0, 0]}
+        position={[0.05, 0, -0.2]}
         woodTextures={woodTextures}
       />
       {/* Panneau SF — fixé au plafond */}
       <GenreSectionPanel
         genre="Sf"
-        position={[0.13, islandPanelY, 0]}
+        position={[0.03, islandPanelY, -0.2]}
         rotation={[0, -Math.PI / 2, 0]}
         color="#00ccff"
         width={panelWidthIsland}
@@ -1083,7 +1099,7 @@ export const Aisle = memo(function Aisle({ films, filmsByAisle }: AisleProps) {
       {/* Panneau CLASSIQUES — fixé au plafond */}
       <GenreSectionPanel
         genre="Classiques"
-        position={[0.17, islandPanelY, 0]}
+        position={[0.07, islandPanelY, -0.2]}
         rotation={[0, Math.PI / 2, 0]}
         color="#d4af37"
         width={panelWidthIsland}

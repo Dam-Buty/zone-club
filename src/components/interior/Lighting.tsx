@@ -132,7 +132,7 @@ function OptimizedLighting({ isMobile = false }: { isMobile?: boolean }) {
       <hemisphereLight
         color="#fff8f0"
         groundColor="#a09890"
-        intensity={isMobile ? 0.65 : 0.28}
+        intensity={isMobile ? 0.65 : 0.35}
       />
 
       {/* Desktop-only per-fragment lights */}
@@ -152,18 +152,18 @@ function OptimizedLighting({ isMobile = false }: { isMobile?: boolean }) {
           />
 
           {/* Island overhead lights — ceiling-level RectAreaLights above each island */}
-          {/* Island 1 (Nouveautés) at X≈-2.1 */}
+          {/* Island 1 (Nouveautés) at X≈-2.2 */}
           <rectAreaLight
-            position={[-2.1, 2.68, 0]}
+            position={[-2.2, 2.68, -0.2]}
             rotation={[-Math.PI / 2, 0, 0]}
             width={0.6}
             height={4.0}
             intensity={1.8}
             color="#f0f5ff"
           />
-          {/* Island 2 (SF/Classiques) at X≈0.15 */}
+          {/* Island 2 (SF/Classiques) at X≈0.05 */}
           <rectAreaLight
-            position={[0.15, 2.68, 0]}
+            position={[0.05, 2.68, -0.2]}
             rotation={[-Math.PI / 2, 0, 0]}
             width={0.6}
             height={4.0}
@@ -181,12 +181,12 @@ function OptimizedLighting({ isMobile = false }: { isMobile?: boolean }) {
             color="#fff5e6"
           />
 
-          {/* Center aisle fill — illuminates right face of island 1 + left face of island 2 */}
+          {/* Front center fill — merged from 2 close PointLights */}
           <pointLight
-            position={[-1.0, 1.5, 1.0]}
-            intensity={1.0}
+            position={[-0.7, 1.5, 1.5]}
+            intensity={1.2}
             color="#fff5e6"
-            distance={4}
+            distance={5}
             decay={2}
             castShadow={false}
           />
@@ -201,38 +201,26 @@ function OptimizedLighting({ isMobile = false }: { isMobile?: boolean }) {
             castShadow={false}
           />
 
-          {/* Front-of-store fill — between islands, slightly right to reach island 2 */}
+          {/* Back center fill — merged from 2 close PointLights */}
           <pointLight
-            position={[-0.5, 1.5, 2.0]}
-            intensity={0.8}
+            position={[-0.7, 1.5, -2.8]}
+            intensity={1.0}
             color="#fff5e6"
-            distance={4}
-            decay={2}
-            castShadow={false}
-          />
-
-          {/* Center aisle fill (back) — covers Z<0 between the two islands */}
-          <pointLight
-            position={[-1.0, 1.5, -2.5]}
-            intensity={0.8}
-            color="#fff5e6"
-            distance={4}
-            decay={2}
-            castShadow={false}
-          />
-
-          {/* Back wall cross-aisle — between islands */}
-          <pointLight
-            position={[-0.5, 1.5, -3.2]}
-            intensity={0.8}
-            color="#fff5e6"
-            distance={4}
+            distance={5}
             decay={2}
             castShadow={false}
           />
 
           {/* Wall wash lights — positioned in aisles, facing walls to illuminate K7 front faces */}
-          {/* Left wall wash removed — replaced by left aisle island wash above */}
+          {/* Left wall wash — faces -X toward left wall shelves */}
+          <rectAreaLight
+            position={[-3.0, 1.4, 0]}
+            rotation={[0, Math.PI / 2, 0]}
+            width={7.0}
+            height={2.0}
+            intensity={0.6}
+            color="#fff5e6"
+          />
           {/* Back wall wash — faces +Z toward back wall shelves */}
           <rectAreaLight
             position={[0, 1.4, -3.0]}
@@ -269,15 +257,7 @@ function OptimizedLighting({ isMobile = false }: { isMobile?: boolean }) {
           <rectAreaLight position={[2.8, 2.1, 2.5]} rotation={[-Math.PI / 2, 0, 0]} width={3.0} height={2.0} intensity={1.0} color="#ffd8b0" />
 
 
-          {/* Private door lift — faces backward into back wall */}
-          <group position={[2.9, 2.18, -4.02]} rotation={[0, Math.PI, 0]}>
-            <rectAreaLight
-              width={2.2}
-              height={0.82}
-              intensity={0.42}
-              color="#f4efe6"
-            />
-          </group>
+          {/* Private door lift removed — budget traded for left aisle island wash */}
         </>
       )}
 

@@ -634,7 +634,7 @@ export const useStore = create<VideoClubState>()(
           const film = allFilms.find(f => f.id === filmId);
           if (film) {
             if (film.poster_path) {
-              preloadPosterImage(`https://image.tmdb.org/t/p/w500${film.poster_path}`);
+              preloadPosterImage(`/api/poster/w500${film.poster_path}`);
             }
             // Prefetch all VHS cover data (TMDB + images) while user aims
             // fetchVHSCoverData has its own cache — no duplicate requests

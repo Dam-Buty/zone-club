@@ -34,20 +34,20 @@ const COLLISION_ZONES: {
     cornerRadius: 0.3,
   },
   {
-    // Ilot 1 — ISLAND_LENGTH=4.1, center X=-2.1, Z=0
-    minX: -2.1 - 0.53,
-    maxX: -2.1 + 0.53,
-    minZ: 0 - 1.9,
-    maxZ: 0 + 1.9,
+    // Ilot 1 — ISLAND_LENGTH=4.1, center X=-2.2, Z=-0.2
+    minX: -2.2 - 0.53,
+    maxX: -2.2 + 0.53,
+    minZ: -0.2 - 1.9,
+    maxZ: -0.2 + 1.9,
     name: "ilot",
     cornerRadius: 0.50,
   },
   {
-    // Ilot 2 — ISLAND_LENGTH=4.1, center X=0.15, Z=0
-    minX: 0.15 - 0.53,
-    maxX: 0.15 + 0.53,
-    minZ: 0 - 1.9,
-    maxZ: 0 + 1.9,
+    // Ilot 2 — ISLAND_LENGTH=4.1, center X=0.05, Z=-0.2
+    minX: 0.05 - 0.53,
+    maxX: 0.05 + 0.53,
+    minZ: -0.2 - 1.9,
+    maxZ: -0.2 + 1.9,
     name: "ilot2",
     cornerRadius: 0.50,
   },
@@ -769,7 +769,7 @@ export function Controls({
           _tapNDC.set(ndcX, ndcY);
 
           raycasterRef.current.setFromCamera(_tapNDC, camera);
-          raycasterRef.current.far = 6;
+          raycasterRef.current.far = 4;
           const intersects = raycasterRef.current.intersectObjects(
             scene.children,
             true,
@@ -870,7 +870,7 @@ export function Controls({
 
       if (isActive && shouldRaycast) {
         raycasterRef.current.setFromCamera(SCREEN_CENTER, camera);
-        raycasterRef.current.far = 6;
+        raycasterRef.current.far = 4;
         const intersects = raycasterRef.current.intersectObjects(
           scene.children,
           true,

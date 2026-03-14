@@ -74,7 +74,7 @@ _prefetchPromise.then((results) => {
     if (!result) continue;
     for (const film of result.films) {
       if (film.poster_path) {
-        preloadPosterImage(`https://image.tmdb.org/t/p/w185${film.poster_path}`);
+        preloadPosterImage(`/api/poster/w185${film.poster_path}`);
       }
     }
   }

@@ -168,7 +168,7 @@ function VitrinePoster({ posterPath, position, width, height }: {
   height: number
 }) {
   const posterUrl = posterPath
-    ? `https://image.tmdb.org/t/p/w500${posterPath}`
+    ? `/api/poster/w500${posterPath}`
     : null
 
   const texture = useMemo(() => {

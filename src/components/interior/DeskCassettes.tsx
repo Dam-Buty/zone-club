@@ -42,7 +42,7 @@ export function DeskCassettes({ films, position }: DeskCassettesProps) {
 
     films.forEach((film, i) => {
       if (!film.poster_path || i >= 3) return
-      const url = `https://image.tmdb.org/t/p/w185${film.poster_path}`
+      const url = `/api/poster/w185${film.poster_path}`
       loader.load(url, (tex) => {
         tex.colorSpace = THREE.SRGBColorSpace
         tex.needsUpdate = true

@@ -81,7 +81,7 @@ export function DeskFilmPicker() {
           >
             {film.poster_path ? (
               <img
-                src={`https://image.tmdb.org/t/p/w92${film.poster_path}`}
+                src={`/api/poster/w92${film.poster_path}`}
                 alt={film.title}
                 style={{
                   width: '40px',

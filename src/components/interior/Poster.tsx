@@ -28,7 +28,7 @@ export function Poster({
   index = 0,
 }: PosterProps) {
   const posterUrl = posterPath
-    ? `https://image.tmdb.org/t/p/w500${posterPath}`
+    ? `/api/poster/w500${posterPath}`
     : null
 
   // Utiliser le TextureCache global (déduplique les posters identiques)

@@ -56,7 +56,7 @@ export const Cassette = memo(function Cassette({ position, film, cassetteKey, ho
 
   // URL du poster TMDB — w342 keeps angled shelves readable once inside the room
   const posterUrl = film.poster_path
-    ? `https://image.tmdb.org/t/p/w342${film.poster_path}`
+    ? `/api/poster/w342${film.poster_path}`
     : null
 
   // Charger la texture via cache global (déduplique les posters identiques entre cassettes)

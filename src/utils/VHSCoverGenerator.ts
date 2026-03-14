@@ -230,7 +230,7 @@ async function resolveStudioLogoUrl(company: {
 
   // 3. TMDB logo_path from movie endpoint
   if (company.logo_path) {
-    return `https://image.tmdb.org/t/p/w500${company.logo_path}`;
+    return `/api/poster/w500${company.logo_path}`;
   }
 
   // 4. Fallback: fetch from /company/{id}

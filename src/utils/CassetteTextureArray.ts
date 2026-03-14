@@ -69,6 +69,7 @@ export interface CassetteInstanceData {
   worldPosition: THREE.Vector3
   worldQuaternion: THREE.Quaternion
   hoverOffsetZ: number
+  hoverTiltAngle: number  // per-instance tilt (radians) applied during hover
   posterUrl: string | null
   fallbackColor: string
 }
