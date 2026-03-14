@@ -232,15 +232,7 @@ function OptimizedLighting({ isMobile = false }: { isMobile?: boolean }) {
           />
 
           {/* Wall wash lights — positioned in aisles, facing walls to illuminate K7 front faces */}
-          {/* Left wall wash — faces +X toward left wall shelves */}
-          <rectAreaLight
-            position={[-3.0, 1.4, 0]}
-            rotation={[0, Math.PI / 2, 0]}
-            width={7.0}
-            height={2.0}
-            intensity={0.6}
-            color="#fff5e6"
-          />
+          {/* Left wall wash removed — replaced by left aisle island wash above */}
           {/* Back wall wash — faces +Z toward back wall shelves */}
           <rectAreaLight
             position={[0, 1.4, -3.0]}
