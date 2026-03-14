@@ -116,7 +116,7 @@ async function main() {
     // Build mapping: tmdb_id → { aisle, is_nouveaute }
     // A film can appear in multiple aisles in the JSON; pick the first non-nouveautes one
     const aisleMap = new Map<number, { aisle: string | null; is_nouveaute: boolean }>();
-    const AISLES = ['action', 'horreur', 'sf', 'comedie', 'classiques', 'bizarre'];
+    const AISLES = ['action', 'horreur', 'sf', 'comedie', 'classiques', 'bizarre', 'thriller', 'policier', 'animation', 'drame'];
 
     for (const [aisleKey, ids] of Object.entries(filmsJson)) {
         for (const id of ids) {

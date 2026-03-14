@@ -17,8 +17,8 @@ import * as THREE from 'three'
  * uploading only 240KB per poster instead of the full ~13MB atlas.
  */
 
-const POSTER_WIDTH = 200
-const POSTER_HEIGHT = 300
+const POSTER_WIDTH = 256
+const POSTER_HEIGHT = 384
 const BYTES_PER_PIXEL = 4
 const POSTER_ROW_BYTES = POSTER_WIDTH * BYTES_PER_PIXEL
 
@@ -48,7 +48,14 @@ export function preloadPosterImage(url: string): Promise<HTMLImageElement> {
     const img = new Image()
     img.crossOrigin = 'anonymous'
     img.onload = () => resolve(img)
-    img.onerror = reject
+    img.onerror = () => {
+      // Retry once with cache-bust to bypass stale non-CORS cached responses
+      const retry = new Image()
+      retry.crossOrigin = 'anonymous'
+      retry.onload = () => resolve(retry)
+      retry.onerror = reject
+      retry.src = url + (url.includes('?') ? '&' : '?') + 'cb=1'
+    }
     img.src = url
   })
 
@@ -93,9 +100,9 @@ export class CassetteTextureAtlas {
     this.texture = new THREE.DataTexture(this.data, this.atlasWidth, this.atlasHeight)
     this.texture.format = THREE.RGBAFormat
     this.texture.type = THREE.UnsignedByteType
-    this.texture.minFilter = THREE.LinearFilter
+    this.texture.minFilter = THREE.LinearMipmapLinearFilter
     this.texture.magFilter = THREE.LinearFilter
-    this.texture.generateMipmaps = false
+    this.texture.generateMipmaps = true
     this.texture.flipY = false
     this.texture.colorSpace = THREE.SRGBColorSpace
     this._dirty = true
@@ -104,15 +111,18 @@ export class CassetteTextureAtlas {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   setRenderer(renderer: any): void {
     this._renderer = renderer
+    try {
+      const maxAnisotropy = typeof renderer.getMaxAnisotropy === 'function'
+        ? renderer.getMaxAnisotropy()
+        : 1
+      this.texture.anisotropy = Math.min(16, Math.max(1, maxAnisotropy))
+    } catch {
+      this.texture.anisotropy = 1
+    }
   }
 
   isGPUReady(): boolean {
-    if (!this._renderer) return false
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const backend = (this._renderer as any).backend
-      return !!(backend?.device && backend.get?.(this.texture)?.texture)
-    } catch { return false }
+    return !!this._renderer
   }
 
   /**
@@ -138,32 +148,6 @@ export class CassetteTextureAtlas {
       const pixels = extractPosterPixels(img)
       const col = slot % this.cols
       const row = Math.floor(slot / this.cols)
-
-      if (this._renderer) {
-        try {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const backend = (this._renderer as any).backend
-          if (backend?.device && backend.get) {
-            const device = backend.device as GPUDevice
-            const texData = backend.get(this.texture)
-            if (texData?.texture) {
-              device.queue.writeTexture(
-                {
-                  texture: texData.texture,
-                  origin: { x: col * POSTER_WIDTH, y: row * POSTER_HEIGHT, z: 0 },
-                },
-                pixels as unknown as ArrayBufferView<ArrayBuffer>,
-                { bytesPerRow: POSTER_ROW_BYTES, rowsPerImage: POSTER_HEIGHT },
-                { width: POSTER_WIDTH, height: POSTER_HEIGHT, depthOrArrayLayers: 1 }
-              )
-              this.loadedSlots.add(slot)
-              return
-            }
-          }
-        } catch {
-          // GPU not ready — fall through to CPU path
-        }
-      }
 
       this.copyPixelsToAtlas(pixels, col, row)
       this.loadedSlots.add(slot)

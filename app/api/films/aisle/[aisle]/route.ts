@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getFilmsByAisle, getNouveautes } from '@/lib/films';
 import { db } from '@/lib/db';
 
-const VALID_AISLES = ['action', 'horreur', 'sf', 'comedie', 'classiques', 'bizarre', 'drame', 'thriller', 'policier', 'animation'];
+const VALID_AISLES = ['action', 'aventure', 'horreur', 'sf', 'comedie', 'classiques', 'bizarre', 'drame', 'thriller', 'policier', 'animation', 'romance'];
 
 function enrichFilmsWithStock(films: { id: number; stock?: number }[]) {
     if (films.length === 0) return films;

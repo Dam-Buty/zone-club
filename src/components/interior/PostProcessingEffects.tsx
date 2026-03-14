@@ -48,35 +48,18 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
       // ===== DESKTOP PIPELINE =====
       // Scene MRT → SSGI (temporal) → Bloom → DoF → Vignette → FXAA
 
-      // 1. Scene pass avec MRT
+      // 1. Scene pass (no MRT — SSGI disabled)
       const scenePass = pass(scene, camera)
-      scenePass.setMRT(mrt({
-        output: output,
-        normal: normalView,
-      }))
-
       const scenePassColor = scenePass.getTextureNode('output')
-      const scenePassNormal = scenePass.getTextureNode('normal')
-      const scenePassDepth = scenePass.getTextureNode('depth')
 
-      // 2. SSGI — temporal filtering for multi-frame accumulation (cleaner than spatial denoise)
-      const ssgiPass = ssgi(scenePassColor, scenePassDepth, scenePassNormal, camera)
-      ssgiPass.radius.value = 1.8
-      ssgiPass.giIntensity.value = 0.9
-      ssgiPass.aoIntensity.value = 0.45
-      ssgiPass.sliceCount.value = 2
-      ssgiPass.stepCount.value = 8
-      ssgiPass.thickness.value = 1.5
-      ssgiPass.useTemporalFiltering = true
+      // SSGI disabled — too expensive (~3× frame time)
+      // TODO: re-enable with lower settings or on high-end GPUs only
 
-      const ssgiTexture = ssgiPass.getTextureNode()
-      const withSSGI = scenePassColor.mul(ssgiTexture.a).add(ssgiTexture.rgb)
-
-      // 3. Bloom — tighter threshold so ceiling bounce stays clean around emissive signs
+      // 3. Bloom
       const bloomStrength = uniform(isVHSCaseOpen ? 0.0 : bloomBaseStrength)
       bloomStrengthRef.current = bloomStrength
-      const bloomPass = bloom(withSSGI, 0.32, bloomStrength, 0.70)
-      const withBloom = withSSGI.add(bloomPass)
+      const bloomPass = bloom(scenePassColor, 0.32, bloomStrength, 0.70)
+      const withBloom = scenePassColor.add(bloomPass)
 
       // 4. Conditional DoF — only when VHS case viewer is open
       let postBloom = withBloom

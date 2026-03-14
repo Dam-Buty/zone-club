@@ -241,7 +241,7 @@ const _tiltQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(-SHELF_TIL
 // IslandShelf constants — sourced from IslandShelf.tsx so cassette placement
 // stays locked to the real shelf geometry.
 const ISLAND_ROWS = ISLAND_SHELF_CASSETTE_ROWS
-const ISLAND_CASSETTES_PER_ROW = 21
+const ISLAND_CASSETTES_PER_ROW = 27
 const ISLAND_CASSETTE_SPACING = CASSETTE_DIMENSIONS.width + 0.02
 const SECTION_GAP = 0.12
 
@@ -371,7 +371,7 @@ function computeWallShelfCassettes(
       filmId: film.id,
       worldPosition: tiltedPos,
       worldQuaternion: worldQuat.clone(),
-      hoverOffsetZ: 0.08,
+      hoverOffsetZ: 0.088,
       posterUrl,
       fallbackColor: CASSETTE_COLORS[film.id % CASSETTE_COLORS.length],
     })
@@ -477,7 +477,7 @@ function computeIslandShelfCassettes(
         filmId: film.id,
         worldPosition: localPos,
         worldQuaternion: worldQuat,
-        hoverOffsetZ: -0.08,
+        hoverOffsetZ: -0.088,
         posterUrl,
         fallbackColor: CASSETTE_COLORS[film.id % CASSETTE_COLORS.length],
       })
@@ -754,6 +754,13 @@ export const Aisle = memo(function Aisle({ films, filmsByAisle }: AisleProps) {
     all.push(...computeIslandShelfCassettes(
       [0.15, ISLAND_SHELF_PEDESTAL_HEIGHT, 0], [0, 0, 0], sfIslandLeft, classiquesIslandRight, 'island2'
     ))
+
+    // DEBUG: count cassettes per section
+    const islandLeft = all.filter(c => c.cassetteKey.startsWith('island-left'))
+    const islandRight = all.filter(c => c.cassetteKey.startsWith('island-right'))
+    const island2Left = all.filter(c => c.cassetteKey.startsWith('island2-left'))
+    const island2Right = all.filter(c => c.cassetteKey.startsWith('island2-right'))
+    console.log(`[DEBUG] Island cassettes: nouveautés L=${islandLeft.length} R=${islandRight.length}, SF/Classiques L=${island2Left.length} R=${island2Right.length}, TOTAL=${all.length}`)
 
     return all
   // ROOM_WIDTH & ROOM_DEPTH in deps: ensures recomputation when room dimensions change (HMR cache fix)

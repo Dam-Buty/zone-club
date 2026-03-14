@@ -49,13 +49,20 @@ interface GenreSectionPanelProps {
 
 // OPTIMISATION: Géométries et matériaux partagés (identiques pour les 5 panneaux)
 const BORDER_TUBE_GEOM = new THREE.CylinderGeometry(0.006, 0.006, 1, 14)
-const CHAIN_GEOM = new THREE.CylinderGeometry(0.008, 0.008, 1, 6) // scale Y par panneau
-const CORNER_GEOM = new THREE.CylinderGeometry(0.02, 0.02, 0.01, 12)
+const CHAIN_GEOM = new THREE.BoxGeometry(0.022, 1, 0.003) // flat metal straps (wider = survives FXAA)
+const CORNER_GEOM = new THREE.CylinderGeometry(0.012, 0.012, 0.014, 6) // hex bolt shape
 CORNER_GEOM.rotateX(Math.PI / 2)
-const SHARED_CHAIN_MAT = new THREE.MeshStandardMaterial({ color: '#666666', metalness: 0.8, roughness: 0.3 })
-const SHARED_BAR_MAT = new THREE.MeshStandardMaterial({ color: '#333333', metalness: 0.7, roughness: 0.4 })
-const SHARED_CORNER_MAT = new THREE.MeshStandardMaterial({ color: '#888888', metalness: 0.9, roughness: 0.2 })
-const SHARED_FRAME_MAT = new THREE.MeshStandardMaterial({ color: '#060606', roughness: 0.94, metalness: 0.0, envMapIntensity: 0 })
+// Bezel edge strips — thin L-profile around panel perimeter
+const BEZEL_GEOM_H = new THREE.BoxGeometry(1, 0.018, 0.025) // horizontal (scaled per panel)
+const BEZEL_GEOM_V = new THREE.BoxGeometry(0.018, 1, 0.025) // vertical (scaled per panel)
+// Materials — industrial painted sheet metal look
+const SHARED_CHAIN_MAT = new THREE.MeshStandardMaterial({ color: '#4a4a4a', metalness: 0.85, roughness: 0.35 })
+const SHARED_BAR_MAT = new THREE.MeshStandardMaterial({ color: '#2a2a2a', metalness: 0.75, roughness: 0.35 })
+const SHARED_CORNER_MAT = new THREE.MeshStandardMaterial({ color: '#555555', metalness: 0.92, roughness: 0.18 })
+// Panel body: dark anthracite brushed metal, not dead-flat black plastic
+const SHARED_FRAME_MAT = new THREE.MeshStandardMaterial({ color: '#1a1a1e', roughness: 0.65, metalness: 0.20, envMapIntensity: 0.08 })
+// Bezel: slightly lighter metal edge — gives panel a real enclosure look
+const SHARED_BEZEL_MAT = new THREE.MeshStandardMaterial({ color: '#2e2e32', roughness: 0.40, metalness: 0.55, envMapIntensity: 0.12 })
 const BORDER_EMISSIVE_SCALE = 0.56
 
 function NeonTextMesh({
@@ -152,8 +159,8 @@ export const GenreSectionPanel = memo(function GenreSectionPanel({
   }, [registryKey, neonIntensity, hanging])
 
   const height = width * 0.25
-  const depth = 0.02
-  const ceilingBarY = 0.438
+  const depth = 0.03 // slightly thicker enclosure (was 0.02)
+  const ceilingBarY = 0.548  // flush with ceiling (2.8 - panelY 2.242 - bar half-height)
   const chainBottomY = height * 0.50
   const chainLength = ceilingBarY - chainBottomY
   const chainCenterY = chainBottomY + chainLength * 0.5
@@ -162,26 +169,41 @@ export const GenreSectionPanel = memo(function GenreSectionPanel({
   const borderW = width * 0.92
   const borderH = height * 0.85
 
+  // Bezel frame dimensions (metal edge around panel)
+  const bezelW = width + 0.04
+  const bezelH = height + 0.04
+
   return (
     <group position={position} rotation={rotation}>
       <group ref={groupRef}>
         {/* Chaînes de suspension — géométrie/matériau partagés */}
         {hanging && (
           <>
-            <mesh position={[-width * 0.35, chainCenterY, 0]} geometry={CHAIN_GEOM} material={SHARED_CHAIN_MAT} scale={[1, chainLength, 1]} />
-            <mesh position={[width * 0.35, chainCenterY, 0]} geometry={CHAIN_GEOM} material={SHARED_CHAIN_MAT} scale={[1, chainLength, 1]} />
-            <mesh position={[0, ceilingBarY, 0]} material={SHARED_BAR_MAT}>
+            <mesh frustumCulled={false} position={[-width * 0.35, chainCenterY, 0]} geometry={CHAIN_GEOM} material={SHARED_CHAIN_MAT} scale={[1, chainLength, 1]} />
+            <mesh frustumCulled={false} position={[width * 0.35, chainCenterY, 0]} geometry={CHAIN_GEOM} material={SHARED_CHAIN_MAT} scale={[1, chainLength, 1]} />
+            <mesh frustumCulled={false} position={[0, ceilingBarY, 0]} material={SHARED_BAR_MAT}>
               <boxGeometry args={[width * 0.8, 0.02, 0.02]} />
             </mesh>
           </>
         )}
 
-        {/* PointLight retiré — 7 panel lights = 54% du coût per-fragment.
-            L'émissive + bloom suffit pour l'effet néon. Gain: ~5-10 FPS sur M1 Air */}
-
-        {/* Cadre du panneau - plastique noir mat (matériau partagé) */}
+        {/* Caisson panneau — tôle anthracite brossée + cadre métal (2 meshes) */}
         <mesh position={[0, 0, -depth / 2]} material={SHARED_FRAME_MAT} castShadow>
-          <boxGeometry args={[width + 0.04, height + 0.04, depth]} />
+          <boxGeometry args={[bezelW, bezelH, depth]} />
+        </mesh>
+
+        {/* Cadre métal — 4 baguettes L-profile autour du panneau */}
+        <mesh position={[0, bezelH / 2, 0]} material={SHARED_BEZEL_MAT} scale={[bezelW + 0.006, 1, 1]}>
+          <boxGeometry args={[1, 0.018, 0.025]} />
+        </mesh>
+        <mesh position={[0, -bezelH / 2, 0]} material={SHARED_BEZEL_MAT} scale={[bezelW + 0.006, 1, 1]}>
+          <boxGeometry args={[1, 0.018, 0.025]} />
+        </mesh>
+        <mesh position={[-bezelW / 2, 0, 0]} material={SHARED_BEZEL_MAT} scale={[1, bezelH + 0.006, 1]}>
+          <boxGeometry args={[0.018, 1, 0.025]} />
+        </mesh>
+        <mesh position={[bezelW / 2, 0, 0]} material={SHARED_BEZEL_MAT} scale={[1, bezelH + 0.006, 1]}>
+          <boxGeometry args={[0.018, 1, 0.025]} />
         </mesh>
 
         {/* Texte néon */}

@@ -136,7 +136,7 @@ const BoardNote3D = memo(function BoardNote3D({ note }: { note: ApiBoardNote }) 
       userData={{ isBoardNote: true, noteId: note.id }}
     >
       <planeGeometry args={[NOTE_W, NOTE_H]} />
-      <meshBasicMaterial map={texture} toneMapped={false} />
+      <meshStandardMaterial map={texture} roughness={0.92} metalness={0} />
     </mesh>
   )
 })

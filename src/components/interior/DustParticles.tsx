@@ -1,13 +1,10 @@
 import { useRef, useMemo } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
+import { ROOM_WIDTH, ROOM_HEIGHT, ROOM_DEPTH } from './constants'
 
-// Room bounds (match Aisle.tsx)
-const ROOM_W = 9
-const ROOM_H = 2.8
-const ROOM_D = 8.5
-const HALF_W = ROOM_W / 2
-const HALF_D = ROOM_D / 2
+const HALF_W = ROOM_WIDTH / 2
+const HALF_D = ROOM_DEPTH / 2
 
 interface DustParticlesProps {
   count?: number
@@ -23,9 +20,9 @@ export function DustParticles({ count = 250 }: DustParticlesProps) {
     for (let i = 0; i < count; i++) {
       const i3 = i * 3
       // Random position within the room volume
-      pos[i3 + 0] = (Math.random() - 0.5) * ROOM_W
-      pos[i3 + 1] = Math.random() * ROOM_H
-      pos[i3 + 2] = (Math.random() - 0.5) * ROOM_D
+      pos[i3 + 0] = (Math.random() - 0.5) * ROOM_WIDTH
+      pos[i3 + 1] = Math.random() * ROOM_HEIGHT
+      pos[i3 + 2] = (Math.random() - 0.5) * ROOM_DEPTH
       // Very slow initial velocities — brownian drift
       vel[i3 + 0] = (Math.random() - 0.5) * 0.002
       vel[i3 + 1] = Math.random() * 0.001 + 0.0002 // slight upward bias (warm air convection)
@@ -42,10 +39,10 @@ export function DustParticles({ count = 250 }: DustParticlesProps) {
       size: 0.01,
       sizeAttenuation: true,
       transparent: true,
-      opacity: 0.35,
+      opacity: 0.12,
       depthWrite: false,
       color: '#fffaf0',
-      blending: THREE.AdditiveBlending,
+      blending: THREE.NormalBlending,
     })
   }, [])
 
@@ -73,8 +70,8 @@ export function DustParticles({ count = 250 }: DustParticlesProps) {
       // Wrap at room boundaries (seamless re-entry from opposite side)
       if (positions[i3 + 0] < -HALF_W) positions[i3 + 0] = HALF_W
       if (positions[i3 + 0] > HALF_W) positions[i3 + 0] = -HALF_W
-      if (positions[i3 + 1] > ROOM_H) positions[i3 + 1] = 0.05
-      if (positions[i3 + 1] < 0) positions[i3 + 1] = ROOM_H - 0.05
+      if (positions[i3 + 1] > ROOM_HEIGHT) positions[i3 + 1] = 0.05
+      if (positions[i3 + 1] < 0) positions[i3 + 1] = ROOM_HEIGHT - 0.05
       if (positions[i3 + 2] < -HALF_D) positions[i3 + 2] = HALF_D
       if (positions[i3 + 2] > HALF_D) positions[i3 + 2] = -HALF_D
     }

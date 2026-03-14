@@ -48,7 +48,7 @@ function slugify(text: string): string {
         .replace(/(^-|-$)/g, '');
 }
 
-function parseFilm(row: any): Film {
+export function parseFilm(row: any): Film {
     return {
         ...row,
         genres: JSON.parse(row.genres || '[]'),
@@ -57,6 +57,41 @@ function parseFilm(row: any): Film {
         is_nouveaute: !!row.is_nouveaute,
         is_available: !!row.is_available
     };
+}
+
+// TMDB genre ID → aisle mapping (first matching genre wins)
+const TMDB_GENRE_TO_AISLE: Record<number, string> = {
+    28: 'action',       // Action
+    12: 'aventure',     // Adventure
+    16: 'animation',    // Animation
+    35: 'comedie',      // Comedy
+    80: 'policier',     // Crime
+    18: 'drame',        // Drama
+    14: 'aventure',     // Fantasy → aventure
+    36: 'drame',        // History → drame
+    27: 'horreur',      // Horror
+    10402: 'bizarre',   // Music → bizarre
+    9648: 'policier',   // Mystery → policier
+    10749: 'romance',   // Romance
+    878: 'sf',          // Science Fiction
+    53: 'thriller',     // Thriller
+    10752: 'action',    // War → action
+    37: 'bizarre',      // Western → bizarre
+}
+
+/**
+ * Auto-assign aisle based on TMDB genres.
+ * Uses first matching genre (TMDB orders by relevance).
+ * Films released before 1980 go to 'classiques'.
+ * Returns null if no genre matches.
+ */
+export function autoAssignAisle(genres: { id: number }[], releaseYear?: number | null): string | null {
+    if (releaseYear && releaseYear < 1980) return 'classiques'
+    for (const genre of genres) {
+        const aisle = TMDB_GENRE_TO_AISLE[genre.id]
+        if (aisle) return aisle
+    }
+    return null
 }
 
 export function getFilmTier(film: Film): RentalTier {
@@ -80,11 +115,15 @@ export async function addFilmFromTmdb(tmdbId: number): Promise<Film> {
         `).run(genre.name, slugify(genre.name), genre.id);
     }
 
+    const aisle = autoAssignAisle(tmdbData.genres, tmdbData.release_year);
+    const isNouveaute = tmdbData.release_year ? tmdbData.release_year >= 2015 : false;
+
     const stmt = db.prepare(`
         INSERT INTO films (
             tmdb_id, title, title_original, synopsis, release_year,
-            poster_url, backdrop_url, genres, directors, actors, runtime
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            poster_url, backdrop_url, genres, directors, actors, runtime,
+            aisle, is_nouveaute
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const result = stmt.run(
@@ -98,7 +137,9 @@ export async function addFilmFromTmdb(tmdbId: number): Promise<Film> {
         JSON.stringify(tmdbData.genres),
         JSON.stringify(tmdbData.directors),
         JSON.stringify(tmdbData.actors),
-        tmdbData.runtime
+        tmdbData.runtime,
+        aisle,
+        isNouveaute ? 1 : 0
     );
 
     const filmId = result.lastInsertRowid as number;

@@ -4,24 +4,27 @@ import { color as tslColor, float } from 'three/tsl'
 
 // 3 ceiling tube RectAreaLights — 1 per aisle, centered above walkways
 // Small area (0.12×1.4m) = focused light = no cosine-falloff two-tone
-const CEILING_LIGHT_POSITIONS: [number, number, number][] = [
-  [-3.3, 2.7, 0],
-  [-1.0, 2.7, 0],
-  [ 2.3, 2.7, 0],
-  [ 3.8, 2.7, 0],
+// Ceiling tubes: wall-aisle tubes at full intensity, center tubes reduced
+// to prevent poster burn on island shelves (islands at X=-2.1 and X=0.15
+// receive light from all directions — center tubes are the main culprit).
+const CEILING_LIGHTS: { pos: [number, number, number]; intensity: number }[] = [
+  { pos: [-3.3, 2.7, 0], intensity: 4.0 },  // left wall aisle — full
+  { pos: [-1.0, 2.7, 0], intensity: 2.5 },  // center-left (near island 1) — reduced
+  { pos: [ 2.3, 2.7, 0], intensity: 2.5 },  // center-right (near island 2) — reduced
+  { pos: [ 3.8, 2.7, 0], intensity: 4.0 },  // right wall / counter — full
 ]
 
 function CeilingTubeLights() {
   return (
     <>
-      {CEILING_LIGHT_POSITIONS.map(([x, y, z], i) => (
+      {CEILING_LIGHTS.map(({ pos: [x, y, z], intensity }, i) => (
         <rectAreaLight
           key={`ceiling-tube-${i}`}
           position={[x, y - 0.02, z]}
           rotation={[-Math.PI / 2, 0, 0]}
           width={0.4}
           height={7.0}
-          intensity={4.0}
+          intensity={intensity}
           color="#f0f5ff"
         />
       ))}
@@ -152,6 +155,26 @@ function OptimizedLighting({ isMobile = false }: { isMobile?: boolean }) {
           <pointLight
             position={[-3.0, 1.5, 0]}
             intensity={0.8}
+            color="#fff5e6"
+            distance={4}
+            decay={2}
+            castShadow={false}
+          />
+
+          {/* Center aisle fill — illuminates right face of island 1 + left face of island 2 */}
+          <pointLight
+            position={[-1.0, 1.5, 0]}
+            intensity={0.7}
+            color="#fff5e6"
+            distance={4}
+            decay={2}
+            castShadow={false}
+          />
+
+          {/* Right aisle fill — illuminates right face of island 2 */}
+          <pointLight
+            position={[2.3, 1.5, 0]}
+            intensity={0.7}
             color="#fff5e6"
             distance={4}
             decay={2}
