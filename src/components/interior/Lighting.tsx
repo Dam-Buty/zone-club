@@ -171,6 +171,16 @@ function OptimizedLighting({ isMobile = false }: { isMobile?: boolean }) {
             color="#f0f5ff"
           />
 
+          {/* Left aisle island wash — faces +X toward left face of island 1 */}
+          <rectAreaLight
+            position={[-3.2, 1.2, 0]}
+            rotation={[0, -Math.PI / 2, 0]}
+            width={5.0}
+            height={1.8}
+            intensity={0.8}
+            color="#fff5e6"
+          />
+
           {/* Center aisle fill — illuminates right face of island 1 + left face of island 2 */}
           <pointLight
             position={[-1.0, 1.5, 1.0]}
@@ -191,9 +201,9 @@ function OptimizedLighting({ isMobile = false }: { isMobile?: boolean }) {
             castShadow={false}
           />
 
-          {/* Front-of-store fill — centered between the two islands */}
+          {/* Front-of-store fill — between islands, slightly right to reach island 2 */}
           <pointLight
-            position={[-1.0, 1.5, 2.0]}
+            position={[-0.5, 1.5, 2.0]}
             intensity={0.8}
             color="#fff5e6"
             distance={4}
@@ -211,9 +221,9 @@ function OptimizedLighting({ isMobile = false }: { isMobile?: boolean }) {
             castShadow={false}
           />
 
-          {/* Back wall cross-aisle — centered between the two islands */}
+          {/* Back wall cross-aisle — between islands */}
           <pointLight
-            position={[-1.0, 1.5, -3.2]}
+            position={[-0.5, 1.5, -3.2]}
             intensity={0.8}
             color="#fff5e6"
             distance={4}
