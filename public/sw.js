@@ -1,6 +1,6 @@
 // Service Worker — cache-first for 3D assets, stale-while-revalidate for API data
 // Bump VERSION on every deploy to invalidate stale caches
-const VERSION = 'v1'
+const VERSION = 'v2'
 const CACHE_NAME = `zone-club-${VERSION}`
 
 // Assets to pre-cache on install (critical path)
@@ -47,12 +47,7 @@ function getStrategy(url) {
     return 'cache-first'
   }
 
-  // Film catalog API — stale-while-revalidate (data may change, serve fast)
-  if (path.startsWith('/api/films/')) {
-    return 'stale-while-revalidate'
-  }
-
-  // Everything else — network only
+  // Everything else (including /api/films/ — data changes on admin edits)
   return 'network-only'
 }
 
