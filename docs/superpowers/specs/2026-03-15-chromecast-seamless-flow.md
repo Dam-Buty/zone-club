@@ -87,6 +87,15 @@ openPlayer: (filmId) => {
 },
 ```
 
+Clear dans `closePlayer()` :
+```typescript
+closePlayer: () => set({ isPlayerOpen: false, currentPlayingFilm: null, activeCastFilmId: null }),
+```
+
+Note : `activeCastFilmId` n'est PAS dans `partialize` — il ne sera pas persiste en localStorage. Le cleanup se fait a deux niveaux : dans `closePlayer` (store, immediat) et dans le useEffect player-close de VHSPlayer (qui appelle aussi `api.castSessions.end()`).
+
+Note : les appels `api.castSessions.*` echouent silencieusement (`.catch(() => {})`) si l'utilisateur n'est pas authentifie (401). C'est le comportement voulu.
+
 ### 2. Auto-detect cast session au mount (VHSPlayer.tsx)
 
 Nouveau useEffect :
@@ -94,18 +103,26 @@ Nouveau useEffect :
 ```typescript
 useEffect(() => {
   if (!isPlayerOpen) return;
+  // remoteCastMediaLoaded = alias for remoteIsMediaLoaded from useGoogleCast hook
   if (isCastConnected && remoteCastMediaLoaded && playerState !== 'casting') {
     // Cast SDK auto-reconnected — switch to remote mode
     const video = videoRef.current;
     if (video && !video.paused) video.pause();
     setPlayerState('casting');
+    setActiveCastFilmId(currentPlayingFilm);
     castFilmIdRef.current = currentPlayingFilm ?? null;
     castDurationRef.current = remoteCastDuration || 0;
+    // Create cast session for tracking (if authenticated, silently fails otherwise)
+    if (currentPlayingFilm) {
+      api.castSessions.create(currentPlayingFilm, remoteCastDuration || 0, getRemoteCurrentTime()).catch(() => {});
+    }
   }
 }, [isPlayerOpen, isCastConnected, remoteCastMediaLoaded]);
 ```
 
 Scenario : utilisateur ouvre le player, le Cast SDK detecte une session active (ORIGIN_SCOPED), `useGoogleCast` synce `isConnected=true` + `isMediaLoaded=true`, ce useEffect bascule automatiquement en mode casting.
+
+**Limitation connue — session externe quand le player est ferme** : `useGoogleCast` est instancie dans VHSPlayer avec `enabled: isPlayerOpen`. Quand le player est ferme, le hook est desactive et ne detecte pas les sessions Cast actives. Si un utilisateur caste depuis un autre onglet/appareil puis revient avec le player ferme, `activeCastFilmId` ne sera pas set et le guard `openPlayer` ne bloquera pas. Ce cas est architecturalement hors scope sans remonter le hook a un niveau superieur (App.tsx), ce qui est un changement trop lourd pour ce scope. Le scenario couvert est : l'utilisateur caste depuis le player, quitte l'app, revient et rouvre le player.
 
 ### 3. Integrer cast_sessions API (VHSPlayer.tsx)
 
@@ -155,7 +172,7 @@ if (currentPlayingFilm) {
 }
 ```
 
-3. **Stop explicite** (handleStop quand `playerState === 'casting'`) — ajouter les memes appels.
+3. **Stop explicite** (`handleStop` — quand `playerState === 'casting'`, la fonction appelle `remoteStop()` puis montre le rewind prompt ou le blue screen). Inserer `setActiveCastFilmId(null)` et `api.castSessions.end()` juste apres `remoteStop()`, avant les branches conditionnelles (rewind prompt vs blue screen).
 
 #### Au close du player (useEffect lignes 963-1000)
 
