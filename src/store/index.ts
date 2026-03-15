@@ -112,6 +112,10 @@ interface VideoClubState {
   openPlayer: (filmId: number) => void;
   closePlayer: () => void;
 
+  // Cast tracking (ephemeral — not persisted)
+  activeCastFilmId: number | null;
+  setActiveCastFilmId: (filmId: number | null) => void;
+
   // Targeting (pour le hover via raycasting central)
   targetedFilmId: number | null;
   targetedCassetteKey: string | null;
@@ -618,10 +622,14 @@ export const useStore = create<VideoClubState>()(
       // Player
       isPlayerOpen: false,
       currentPlayingFilm: null,
+      activeCastFilmId: null,
+      setActiveCastFilmId: (filmId) => set({ activeCastFilmId: filmId }),
       openPlayer: (filmId) => {
+        const { activeCastFilmId } = get();
+        if (activeCastFilmId !== null && activeCastFilmId !== filmId) return;
         set({ isPlayerOpen: true, currentPlayingFilm: filmId, managerVisible: false, chatBackdropUrl: null });
       },
-      closePlayer: () => set({ isPlayerOpen: false, currentPlayingFilm: null }),
+      closePlayer: () => set({ isPlayerOpen: false, currentPlayingFilm: null, activeCastFilmId: null }),
 
       // Targeting
       targetedFilmId: null,
