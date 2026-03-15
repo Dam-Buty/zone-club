@@ -357,7 +357,9 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
   const hasSeenSwipeHint = useStore((state) => state.hasSeenVHSSwipeHint);
   const setHasSeenSwipeHint = useStore((state) => state.setHasSeenVHSSwipeHint);
   const tutorialStep = useStore((state) => state.tutorialStep);
+  const activeCastFilmId = useStore((state) => state.activeCastFilmId);
   const isTutorialActive = tutorialStep !== null;
+  const isCastBlocked = activeCastFilmId !== null && activeCastFilmId !== film?.id;
 
   const [isRenting, setIsRenting] = useState(false);
   const [rentSuccess, setRentSuccess] = useState(false);
@@ -1081,18 +1083,24 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
           {earlyHint}
           {renderDesktopRewindStatus()}
           {renderDesktopExtensionButton()}
-          <button
-            onClick={handleSitDown}
-            style={sideButtonStyle("#00fff7", "#ffffff", {
-              width: "100%",
-              justifyContent: "center",
-              background: "linear-gradient(135deg, rgba(0,255,247,0.3), rgba(0,200,255,0.3))",
-              boxShadow: "0 0 16px rgba(0,255,247,0.35)",
-              fontSize: "1.28rem",
-            })}
-          >
-            🛋️ S'INSTALLER ET REGARDER
-          </button>
+          {isCastBlocked ? (
+            <div style={{ color: '#ff6b6b', fontSize: '0.75rem', fontFamily: "'Orbitron', monospace", textAlign: 'center', padding: '8px 0' }}>
+              DIFFUSION EN COURS — ARRÊTEZ D'ABORD
+            </div>
+          ) : (
+            <button
+              onClick={handleSitDown}
+              style={sideButtonStyle("#00fff7", "#ffffff", {
+                width: "100%",
+                justifyContent: "center",
+                background: "linear-gradient(135deg, rgba(0,255,247,0.3), rgba(0,200,255,0.3))",
+                boxShadow: "0 0 16px rgba(0,255,247,0.35)",
+                fontSize: "1.28rem",
+              })}
+            >
+              🛋️ S'INSTALLER ET REGARDER
+            </button>
+          )}
           {renderDesktopReturnButton()}
         </>
       );
@@ -1216,15 +1224,21 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
           {timerEl}
           {renderMobileRewindStatus()}
           {renderMobileExtensionButton()}
-          <button
-            onClick={handleSitDown}
-            style={mobilePillStyle("#00fff7", "#ffffff", {
-              background: "rgba(0,255,247,0.2)",
-              boxShadow: "0 0 10px rgba(0,255,247,0.3)",
-            })}
-          >
-            🛋️ S'INSTALLER
-          </button>
+          {isCastBlocked ? (
+            <div style={{ color: '#ff6b6b', fontSize: '0.7rem', fontFamily: "'Orbitron', monospace", textAlign: 'center', padding: '6px 0' }}>
+              DIFFUSION EN COURS — ARRÊTEZ D'ABORD
+            </div>
+          ) : (
+            <button
+              onClick={handleSitDown}
+              style={mobilePillStyle("#00fff7", "#ffffff", {
+                background: "rgba(0,255,247,0.2)",
+                boxShadow: "0 0 10px rgba(0,255,247,0.3)",
+              })}
+            >
+              🛋️ S'INSTALLER
+            </button>
+          )}
           {returnBtn}
         </>
       );
