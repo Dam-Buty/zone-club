@@ -38,6 +38,7 @@ export function VHSPlayer() {
   const fetchMe = useStore(state => state.fetchMe);
   const isAuthenticated = useStore(state => state.isAuthenticated);
   const addCredits = useStore(state => state.addCredits);
+  const setActiveCastFilmId = useStore(state => state.setActiveCastFilmId);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [playerState, setPlayerState] = useState<PlayerState>('paused');
   const [audioTrack, setAudioTrack] = useState<AudioTrack>('vf');
@@ -197,6 +198,23 @@ export function VHSPlayer() {
     return () => video.removeEventListener('canplay', handleCanPlay);
   }, [isPlayerOpen, rental?.watchPosition]);
 
+  // ===== Auto-detect existing cast session (ORIGIN_SCOPED reconnect) =====
+  useEffect(() => {
+    if (!isPlayerOpen) return;
+    if (isCastConnected && remoteCastMediaLoaded && playerState !== 'casting') {
+      const video = videoRef.current;
+      if (video && !video.paused) video.pause();
+      setPlayerState('casting');
+      setActiveCastFilmId(currentPlayingFilm);
+      castFilmIdRef.current = currentPlayingFilm ?? null;
+      castDurationRef.current = remoteCastDuration || 0;
+      if (currentPlayingFilm) {
+        api.castSessions.create(currentPlayingFilm, remoteCastDuration || 0, getRemoteCurrentTime()).catch(() => {});
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally triggers only on reconnect signals
+  }, [isPlayerOpen, isCastConnected, remoteCastMediaLoaded]);
+
   // ===== FF/RW Logic =====
 
   // Stop any active rewind RAF loop + clean up seeked listener
@@ -347,6 +365,10 @@ export function VHSPlayer() {
         api.rentals.updateProgress(currentPlayingFilm, progress, remoteTime).catch(() => {});
       }
       remoteStop();
+      setActiveCastFilmId(null);
+      if (currentPlayingFilm) {
+        api.castSessions.end(currentPlayingFilm).catch(() => {});
+      }
       if (hasReachedMilestone() && !rental?.rewindClaimed) {
         setPendingEject(false);
         setRewindPhase('prompt');
@@ -379,7 +401,7 @@ export function VHSPlayer() {
       setPlayerState('paused');
       setShowBlueScreen(true);
     }
-  }, [stopRW, currentPlayingFilm, hasReachedMilestone, rental?.rewindClaimed, playerState, getRemoteCurrentTime, remoteCastDuration, remoteStop]);
+  }, [stopRW, currentPlayingFilm, hasReachedMilestone, rental?.rewindClaimed, playerState, getRemoteCurrentTime, remoteCastDuration, remoteStop, setActiveCastFilmId]);
 
   // Rewind to start (⏮) — simulates VHS tape rewind with proportional duration
   const handleRewindToStart = useCallback(() => {
@@ -679,9 +701,13 @@ export function VHSPlayer() {
       video.pause();
     }
     setPlayerState('casting');
+    setActiveCastFilmId(currentPlayingFilm);
     castFilmIdRef.current = currentPlayingFilm ?? null;
     castDurationRef.current = video?.duration || 0;
-  }, [videoUrl, isCastReady, hasCastDevices, isCastConnected, castMedia, currentFilm?.title, openMirroringFallback, currentPlayingFilm]);
+    if (currentPlayingFilm) {
+      api.castSessions.create(currentPlayingFilm, video?.duration || 0, video?.currentTime || 0).catch(() => {});
+    }
+  }, [videoUrl, isCastReady, hasCastDevices, isCastConnected, castMedia, currentFilm?.title, openMirroringFallback, currentPlayingFilm, setActiveCastFilmId]);
 
   const handleAirPlayPicker = useCallback(() => {
     setRemoteError(null);
@@ -756,6 +782,7 @@ export function VHSPlayer() {
         const remoteTime = getRemoteCurrentTime();
         const progress = Math.round((remoteTime / remoteCastDuration) * 100);
         api.rentals.updateProgress(currentPlayingFilm, progress, remoteTime).catch(() => {});
+        api.castSessions.updatePosition(currentPlayingFilm, remoteTime).catch(() => {});
         return;
       }
 
@@ -844,33 +871,58 @@ export function VHSPlayer() {
     return () => video.removeEventListener('ended', handleEnded);
   }, [currentPlayingFilm, stopRW, rental?.rewindClaimed, closePlayer]);
 
-  // ===== Remote Film Ended Detection =====
-  // When remote player goes IDLE while we're in casting mode → film finished
+  // ===== Remote Film Ended / Stopped Detection =====
+  // IDLE can mean film finished OR manual stop on receiver — distinguish by position
   const prevRemoteCastPlayerStateRef = useRef(remoteCastPlayerState);
   useEffect(() => {
     const prev = prevRemoteCastPlayerStateRef.current;
     prevRemoteCastPlayerStateRef.current = remoteCastPlayerState;
 
     if (playerState !== 'casting') return;
-    // Only trigger on transition to IDLE (not initial IDLE)
     if (remoteCastPlayerState === 'IDLE' && prev !== 'IDLE' && prev !== 'UNKNOWN') {
-      // Film ended on receiver — same flow as handleEnded
+      const remoteTime = getRemoteCurrentTime();
+      const isNearEnd = remoteCastDuration > 0 && remoteTime / remoteCastDuration >= 0.95;
+
+      // End cast session tracking
+      setActiveCastFilmId(null);
       if (currentPlayingFilm) {
-        api.rentals.updateProgress(currentPlayingFilm, 100, 0).catch(() => {});
+        api.castSessions.end(currentPlayingFilm).catch(() => {});
       }
-      if (!rental?.rewindClaimed) {
-        setPendingEject(true);
-        setRewindPhase('prompt');
+
+      if (isNearEnd) {
+        // Film finished — existing rewind prompt flow
+        if (currentPlayingFilm) {
+          api.rentals.updateProgress(currentPlayingFilm, 100, 0).catch(() => {});
+        }
+        if (!rental?.rewindClaimed) {
+          setPendingEject(true);
+          setRewindPhase('prompt');
+        } else {
+          closePlayer();
+        }
       } else {
-        closePlayer();
+        // Manual stop on receiver — save position, stay paused
+        if (currentPlayingFilm && remoteCastDuration > 0) {
+          const progress = Math.round((remoteTime / remoteCastDuration) * 100);
+          api.rentals.updateProgress(currentPlayingFilm, progress, remoteTime).catch(() => {});
+        }
+        const video = videoRef.current;
+        if (video) {
+          video.currentTime = remoteTime > 0 ? remoteTime : video.currentTime;
+        }
+        setPlayerState('paused');
       }
     }
-  }, [remoteCastPlayerState, playerState, currentPlayingFilm, rental?.rewindClaimed, closePlayer]);
+  }, [remoteCastPlayerState, playerState, currentPlayingFilm, rental?.rewindClaimed, closePlayer, remoteCastDuration, getRemoteCurrentTime, setActiveCastFilmId]);
 
   // ===== Unexpected Cast Disconnect — Resume Local =====
   useEffect(() => {
     if (!isCastConnected && playerState === 'casting') {
-      // Cast disconnected unexpectedly — resume local playback from remote position
+      // Cast disconnected unexpectedly — end session, resume local playback
+      setActiveCastFilmId(null);
+      if (castFilmIdRef.current) {
+        api.castSessions.end(castFilmIdRef.current).catch(() => {});
+      }
       const remoteTime = getRemoteCurrentTime();
       const video = videoRef.current;
       if (video) {
@@ -884,7 +936,7 @@ export function VHSPlayer() {
         setPlayerState('paused');
       }
     }
-  }, [isCastConnected, playerState, getRemoteCurrentTime]);
+  }, [isCastConnected, playerState, getRemoteCurrentTime, setActiveCastFilmId]);
 
   // ===== Rewind Animation =====
   const startRewind = useCallback(() => {
@@ -980,6 +1032,11 @@ export function VHSPlayer() {
       setRewindCredited(false);
       castFilmIdRef.current = null;
       castDurationRef.current = 0;
+      // End cast session if active (use getState to avoid stale closure)
+      const castFilmId = useStore.getState().activeCastFilmId;
+      if (castFilmId) {
+        api.castSessions.end(castFilmId).catch(() => {});
+      }
       // Reset review state
       setReviewContent('');
       setRatingDirection(3);
