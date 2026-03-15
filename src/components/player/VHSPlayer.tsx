@@ -122,6 +122,9 @@ export function VHSPlayer() {
   // Track film info for cast session
   const castFilmIdRef = useRef<number | null>(null);
   const castDurationRef = useRef(0);
+  // Preserve last known remote position (SDK resets to 0 on disconnect before we can read it)
+  const lastKnownCastTimeRef = useRef(0);
+  if (remoteCastTime > 0) lastKnownCastTimeRef.current = remoteCastTime;
   const isMobile = useIsMobile();
 
   const rental = currentPlayingFilm ? getRental(currentPlayingFilm) : null;
@@ -918,25 +921,46 @@ export function VHSPlayer() {
   // ===== Unexpected Cast Disconnect — Resume Local =====
   useEffect(() => {
     if (!isCastConnected && playerState === 'casting') {
-      // Cast disconnected unexpectedly — end session, resume local playback
+      // Cast disconnected — end session
       setActiveCastFilmId(null);
       if (castFilmIdRef.current) {
         api.castSessions.end(castFilmIdRef.current).catch(() => {});
       }
-      const remoteTime = getRemoteCurrentTime();
-      const video = videoRef.current;
-      if (video) {
-        video.currentTime = remoteTime > 0 ? remoteTime : video.currentTime;
-        video.play().then(() => {
-          setPlayerState('playing');
-        }).catch(() => {
-          setPlayerState('paused');
-        });
+
+      // Use lastKnownCastTimeRef (SDK resets remoteTime to 0 on disconnect)
+      const savedTime = lastKnownCastTimeRef.current;
+      const duration = castDurationRef.current;
+      const isNearEnd = duration > 0 && savedTime / duration >= 0.95;
+
+      if (isNearEnd) {
+        // Film likely finished on receiver before disconnect (e.g. TV turned off after film ended)
+        if (currentPlayingFilm) {
+          api.rentals.updateProgress(currentPlayingFilm, 100, 0).catch(() => {});
+        }
+        if (!rental?.rewindClaimed) {
+          setPendingEject(true);
+          setRewindPhase('prompt');
+        } else {
+          closePlayer();
+        }
       } else {
-        setPlayerState('paused');
+        // Mid-film disconnect — resume local from last known position
+        const video = videoRef.current;
+        if (video) {
+          if (savedTime > 0) video.currentTime = savedTime;
+          video.play().then(() => {
+            setPlayerState('playing');
+          }).catch(() => {
+            setPlayerState('paused');
+          });
+        } else {
+          setPlayerState('paused');
+        }
       }
+
+      lastKnownCastTimeRef.current = 0;
     }
-  }, [isCastConnected, playerState, getRemoteCurrentTime, setActiveCastFilmId]);
+  }, [isCastConnected, playerState, setActiveCastFilmId, currentPlayingFilm, rental?.rewindClaimed, closePlayer]);
 
   // ===== Rewind Animation =====
   const startRewind = useCallback(() => {
@@ -1032,6 +1056,7 @@ export function VHSPlayer() {
       setRewindCredited(false);
       castFilmIdRef.current = null;
       castDurationRef.current = 0;
+      lastKnownCastTimeRef.current = 0;
       // End cast session if active (use getState to avoid stale closure)
       const castFilmId = useStore.getState().activeCastFilmId;
       if (castFilmId) {
