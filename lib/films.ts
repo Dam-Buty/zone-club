@@ -216,6 +216,26 @@ export function getFilmsByAisle(aisle: string): Film[] {
     ).all(aisle).map(parseFilm);
 }
 
+export function getAllAvailableFilmsGroupedByAisle(): Map<string, Film[]> {
+    const films = db.prepare(
+        'SELECT * FROM films WHERE is_available = 1 ORDER BY title'
+    ).all().map(parseFilm);
+    const grouped = new Map<string, Film[]>();
+    for (const film of films) {
+        if (film.aisle) {
+            const list = grouped.get(film.aisle) || [];
+            list.push(film);
+            grouped.set(film.aisle, list);
+        }
+        if (film.is_nouveaute) {
+            const list = grouped.get('nouveautes') || [];
+            list.push(film);
+            grouped.set('nouveautes', list);
+        }
+    }
+    return grouped;
+}
+
 export function getNouveautes(): Film[] {
     return db.prepare(
         'SELECT * FROM films WHERE is_nouveaute = 1 AND is_available = 1 ORDER BY created_at DESC'

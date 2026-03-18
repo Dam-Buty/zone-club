@@ -842,6 +842,9 @@ export const useStore = create<VideoClubState>()(
         hasSeenOnboarding: state.hasSeenOnboarding,
         hasSeenVHSSwipeHint: state.hasSeenVHSSwipeHint,
         hasCompletedTutorial: state.hasCompletedTutorial,
+        // Navigation state — persisted so mobile tab-switch doesn't reset to exterior
+        currentScene: state.currentScene,
+        currentAisle: state.currentAisle,
         // Ne pas persister benchmarkEnabled — use ?benchmark=1 URL param only
         // Ne pas persister authUser, les cookies de session gèrent ça
       }),

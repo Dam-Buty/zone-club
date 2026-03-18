@@ -1,6 +1,6 @@
 import { db } from './db';
 import { createRentalSymlinks, deleteRentalSymlinks, getStreamingUrl } from './symlinks';
-import { getFilmById, getFilmTier, type Film } from './films';
+import { getFilmById, getFilmTier, parseFilm, type Film } from './films';
 import { RENTAL_COSTS, RENTAL_DURATIONS } from '../src/types';
 import { access } from 'fs/promises';
 import { join } from 'path';
@@ -94,13 +94,52 @@ export function getFilmStock(filmId: number): number {
 }
 
 export function getUserActiveRentals(userId: number): RentalWithFilm[] {
-    const rentals = db.prepare(`
-        SELECT * FROM rentals
-        WHERE user_id = ? AND is_active = 1 AND expires_at > datetime('now')
-        ORDER BY rented_at DESC
-    `).all(userId) as Rental[];
+    const rows = db.prepare(`
+        SELECT r.*, f.tmdb_id as f_tmdb_id, f.title as f_title, f.title_original as f_title_original,
+               f.synopsis as f_synopsis, f.release_year as f_release_year, f.poster_url as f_poster_url,
+               f.backdrop_url as f_backdrop_url, f.genres as f_genres, f.directors as f_directors,
+               f.actors as f_actors, f.runtime as f_runtime, f.file_path_vf as f_file_path_vf,
+               f.file_path_vo as f_file_path_vo, f.subtitle_path as f_subtitle_path,
+               f.radarr_vo_id as f_radarr_vo_id, f.radarr_vf_id as f_radarr_vf_id,
+               f.aisle as f_aisle, f.is_nouveaute as f_is_nouveaute, f.is_available as f_is_available,
+               f.transcode_status as f_transcode_status, f.transcode_progress as f_transcode_progress,
+               f.transcode_error as f_transcode_error, f.file_path_vo_transcoded as f_file_path_vo_transcoded,
+               f.file_path_vf_transcoded as f_file_path_vf_transcoded, f.created_at as f_created_at
+        FROM rentals r
+        JOIN films f ON r.film_id = f.id
+        WHERE r.user_id = ? AND r.is_active = 1 AND r.expires_at > datetime('now')
+        ORDER BY r.rented_at DESC
+    `).all(userId) as any[];
 
-    return rentals.map(rental => enrichRental(rental)).filter((r): r is RentalWithFilm => r !== null);
+    return rows.map(row => {
+        const film = parseFilm({
+            id: row.film_id, tmdb_id: row.f_tmdb_id, title: row.f_title,
+            title_original: row.f_title_original, synopsis: row.f_synopsis,
+            release_year: row.f_release_year, poster_url: row.f_poster_url,
+            backdrop_url: row.f_backdrop_url, genres: row.f_genres, directors: row.f_directors,
+            actors: row.f_actors, runtime: row.f_runtime, file_path_vf: row.f_file_path_vf,
+            file_path_vo: row.f_file_path_vo, subtitle_path: row.f_subtitle_path,
+            radarr_vo_id: row.f_radarr_vo_id, radarr_vf_id: row.f_radarr_vf_id,
+            aisle: row.f_aisle, is_nouveaute: row.f_is_nouveaute, is_available: row.f_is_available,
+            transcode_status: row.f_transcode_status, transcode_progress: row.f_transcode_progress,
+            transcode_error: row.f_transcode_error, file_path_vo_transcoded: row.f_file_path_vo_transcoded,
+            file_path_vf_transcoded: row.f_file_path_vf_transcoded, created_at: row.f_created_at,
+        });
+
+        const expiresAt = new Date(row.expires_at + 'Z');
+        const now = new Date();
+        const timeRemaining = Math.max(0, Math.floor((expiresAt.getTime() - now.getTime()) / 60000));
+
+        const streamingUrls = FORCED_RENTAL_VIDEO_URL
+            ? { vf: FORCED_RENTAL_VIDEO_URL, vo: FORCED_RENTAL_VIDEO_URL, subtitles: null }
+            : {
+                vf: film.file_path_vf_transcoded ? getStreamingUrl(row.symlink_uuid, 'film_vf.mp4') : null,
+                vo: film.file_path_vo_transcoded ? getStreamingUrl(row.symlink_uuid, 'film_vo.mp4') : null,
+                subtitles: film.subtitle_path ? getStreamingUrl(row.symlink_uuid, 'subs_fr.vtt') : null
+            };
+
+        return { ...row, film, streaming_urls: streamingUrls, time_remaining: timeRemaining } as RentalWithFilm;
+    });
 }
 
 export function getUserRentalHistory(userId: number): Rental[] {

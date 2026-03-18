@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useId } from 'react';
 import { createPortal } from 'react-dom';
 import { useStore } from '../../store';
 import styles from './AuthModal.module.css';
@@ -21,6 +21,7 @@ export function AuthModal({ isOpen, onClose, onSuccess, initialMode = 'login' }:
   const [newRecoveryPhrase, setNewRecoveryPhrase] = useState('');
   const [copied, setCopied] = useState(false);
 
+  const formId = useId();
   const login = useStore(state => state.login);
   const register = useStore(state => state.register);
   const isLoading = useStore(state => state.isLoading);
@@ -81,7 +82,7 @@ export function AuthModal({ isOpen, onClose, onSuccess, initialMode = 'login' }:
     }
 
     try {
-      const response = await fetch('http://localhost:5179/api/auth/recover', {
+      const response = await fetch('/api/auth/recover', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -141,27 +142,31 @@ export function AuthModal({ isOpen, onClose, onSuccess, initialMode = 'login' }:
           {mode === 'login' && (
             <form onSubmit={handleLogin}>
               <div className={styles.formGroup}>
-                <label className={styles.label}>PSEUDO</label>
+                <label htmlFor={`${formId}-login-user`} className={styles.label}>PSEUDO</label>
                 <input
+                  id={`${formId}-login-user`}
                   type="text"
                   className={styles.input}
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   required
                   autoFocus
+                  autoComplete="username"
                   minLength={3}
                   maxLength={30}
                 />
               </div>
 
               <div className={styles.formGroup}>
-                <label className={styles.label}>MOT DE PASSE</label>
+                <label htmlFor={`${formId}-login-pass`} className={styles.label}>MOT DE PASSE</label>
                 <input
+                  id={`${formId}-login-pass`}
                   type="password"
                   className={styles.input}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
+                  autoComplete="current-password"
                   minLength={8}
                 />
               </div>
@@ -187,39 +192,45 @@ export function AuthModal({ isOpen, onClose, onSuccess, initialMode = 'login' }:
           {mode === 'register' && (
             <form onSubmit={handleRegister}>
               <div className={styles.formGroup}>
-                <label className={styles.label}>PSEUDO</label>
+                <label htmlFor={`${formId}-reg-user`} className={styles.label}>PSEUDO</label>
                 <input
+                  id={`${formId}-reg-user`}
                   type="text"
                   className={styles.input}
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   required
                   autoFocus
+                  autoComplete="username"
                   minLength={3}
                   maxLength={30}
                 />
               </div>
 
               <div className={styles.formGroup}>
-                <label className={styles.label}>MOT DE PASSE</label>
+                <label htmlFor={`${formId}-reg-pass`} className={styles.label}>MOT DE PASSE</label>
                 <input
+                  id={`${formId}-reg-pass`}
                   type="password"
                   className={styles.input}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
+                  autoComplete="new-password"
                   minLength={8}
                 />
               </div>
 
               <div className={styles.formGroup}>
-                <label className={styles.label}>CONFIRMER LE MOT DE PASSE</label>
+                <label htmlFor={`${formId}-reg-confirm`} className={styles.label}>CONFIRMER LE MOT DE PASSE</label>
                 <input
+                  id={`${formId}-reg-confirm`}
                   type="password"
                   className={styles.input}
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   required
+                  autoComplete="new-password"
                 />
               </div>
 
@@ -253,20 +264,23 @@ export function AuthModal({ isOpen, onClose, onSuccess, initialMode = 'login' }:
               </p>
 
               <div className={styles.formGroup}>
-                <label className={styles.label}>PSEUDO</label>
+                <label htmlFor={`${formId}-rec-user`} className={styles.label}>PSEUDO</label>
                 <input
+                  id={`${formId}-rec-user`}
                   type="text"
                   className={styles.input}
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   required
                   autoFocus
+                  autoComplete="username"
                 />
               </div>
 
               <div className={styles.formGroup}>
-                <label className={styles.label}>PASSPHRASE DE RECUPERATION</label>
+                <label htmlFor={`${formId}-rec-phrase`} className={styles.label}>PASSPHRASE DE RECUPERATION</label>
                 <input
+                  id={`${formId}-rec-phrase`}
                   type="text"
                   className={styles.input}
                   value={recoveryPhrase}
@@ -277,25 +291,29 @@ export function AuthModal({ isOpen, onClose, onSuccess, initialMode = 'login' }:
               </div>
 
               <div className={styles.formGroup}>
-                <label className={styles.label}>NOUVEAU MOT DE PASSE</label>
+                <label htmlFor={`${formId}-rec-pass`} className={styles.label}>NOUVEAU MOT DE PASSE</label>
                 <input
+                  id={`${formId}-rec-pass`}
                   type="password"
                   className={styles.input}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
+                  autoComplete="new-password"
                   minLength={8}
                 />
               </div>
 
               <div className={styles.formGroup}>
-                <label className={styles.label}>CONFIRMER LE MOT DE PASSE</label>
+                <label htmlFor={`${formId}-rec-confirm`} className={styles.label}>CONFIRMER LE MOT DE PASSE</label>
                 <input
+                  id={`${formId}-rec-confirm`}
                   type="password"
                   className={styles.input}
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   required
+                  autoComplete="new-password"
                 />
               </div>
 

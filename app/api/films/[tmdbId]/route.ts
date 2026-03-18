@@ -17,7 +17,7 @@ export async function GET(
 
     const film = getFilmByTmdbId(tmdbId);
 
-    if (!film) {
+    if (!film || !film.is_available) {
         return NextResponse.json({ error: 'Film non trouvé' }, { status: 404 });
     }
 

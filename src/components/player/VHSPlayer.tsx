@@ -594,13 +594,16 @@ export function VHSPlayer() {
           handleEject();
           break;
         case 'f':
-        case 'F':
-          if (document.fullscreenElement) {
-            document.exitFullscreen();
+        case 'F': {
+          const doc = document as Document & { webkitFullscreenElement?: Element; webkitExitFullscreen?: () => void };
+          const el = document.documentElement as HTMLElement & { webkitRequestFullscreen?: () => void };
+          if (document.fullscreenElement || doc.webkitFullscreenElement) {
+            (document.exitFullscreen || doc.webkitExitFullscreen)?.call(document);
           } else {
-            document.documentElement.requestFullscreen();
+            (el.requestFullscreen || el.webkitRequestFullscreen)?.call(el);
           }
           break;
+        }
         case 'm':
         case 'M':
           video.muted = !video.muted;

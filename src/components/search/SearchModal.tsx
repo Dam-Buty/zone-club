@@ -42,6 +42,7 @@ export function SearchModal({ isOpen, onClose }: SearchModalProps) {
         setResults(response.results.slice(0, 10));
       } catch (err) {
         setError('Erreur lors de la recherche');
+        setTimeout(() => setError(null), 5000);
         console.error(err);
       } finally {
         setLoading(false);

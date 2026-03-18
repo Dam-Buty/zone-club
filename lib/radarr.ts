@@ -31,6 +31,7 @@ class RadarrClient {
 
         const response = await fetch(url, {
             ...options,
+            signal: options.signal ?? AbortSignal.timeout(15000),
             headers: {
                 'X-Api-Key': this.apiKey,
                 'Content-Type': 'application/json',
@@ -114,14 +115,24 @@ class RadarrClient {
     }
 }
 
+function requireEnv(name: string, fallback?: string): string {
+    const val = process.env[name];
+    if (val) return val;
+    if (fallback !== undefined) return fallback;
+    if (process.env.NODE_ENV === 'production') {
+        throw new Error(`${name} environment variable is required in production`);
+    }
+    return '';
+}
+
 export const radarrVO = new RadarrClient(
-    process.env.RADARR_VO_URL || 'http://radarr-vo:7878',
-    process.env.RADARR_VO_API_KEY || ''
+    requireEnv('RADARR_VO_URL', 'http://radarr-vo:7878'),
+    requireEnv('RADARR_VO_API_KEY')
 );
 
 export const radarrVF = new RadarrClient(
-    process.env.RADARR_VF_URL || 'http://radarr-vf:7878',
-    process.env.RADARR_VF_API_KEY || ''
+    requireEnv('RADARR_VF_URL', 'http://radarr-vf:7878'),
+    requireEnv('RADARR_VF_API_KEY')
 );
 
 export async function addMovie(tmdbId: number, title: string): Promise<{ vo: RadarrMovie; vf: RadarrMovie }> {

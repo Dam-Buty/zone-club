@@ -43,6 +43,10 @@ export async function POST(
     const filmId = parseInt(filmIdStr);
     const { content, rating_direction, rating_screenplay, rating_acting } = await request.json();
 
+    if (typeof content !== 'string' || content.length > 10000) {
+        return NextResponse.json({ error: 'Critique trop longue (max 10 000 caracteres)' }, { status: 400 });
+    }
+
     try {
         const review = createReview(user.id, filmId, content, {
             direction: rating_direction,
@@ -69,6 +73,10 @@ export async function PUT(
     const { filmId: filmIdStr } = await params;
     const filmId = parseInt(filmIdStr);
     const { content, rating_direction, rating_screenplay, rating_acting } = await request.json();
+
+    if (typeof content !== 'string' || content.length > 10000) {
+        return NextResponse.json({ error: 'Critique trop longue (max 10 000 caracteres)' }, { status: 400 });
+    }
 
     try {
         const review = updateReview(user.id, filmId, content, {

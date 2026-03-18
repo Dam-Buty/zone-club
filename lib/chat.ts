@@ -1,4 +1,4 @@
-import { getFilmsByAisle, getNouveautes } from './films';
+import { getAllAvailableFilmsGroupedByAisle } from './films';
 import { getUserActiveRentals, getUserRentalHistory } from './rentals';
 import { getUserReviews } from './reviews';
 import { getUserFacts } from './user-facts';
@@ -17,20 +17,12 @@ export function buildSystemPrompt(context: ChatContext): string {
   const reviews = getUserReviews(context.userId);
   const facts = getUserFacts(context.userId);
 
-  // Build catalogue compact by aisle
-  const aisles = ['action', 'horreur', 'sf', 'comedie', 'drame', 'thriller', 'policier', 'animation', 'classiques', 'bizarre'] as const;
+  // Build catalogue compact by aisle (single DB query)
+  const filmsByAisle = getAllAvailableFilmsGroupedByAisle();
   const catalogueLines: string[] = [];
-  for (const aisle of aisles) {
-    const films = getFilmsByAisle(aisle);
-    if (films.length > 0) {
-      const filmList = films.map(f => `${f.title} (id:${f.id}, tmdb:${f.tmdb_id})`).join(', ');
-      catalogueLines.push(`${aisle}: ${filmList}`);
-    }
-  }
-  const nouveautes = getNouveautes();
-  if (nouveautes.length > 0) {
-    const filmList = nouveautes.map(f => `${f.title} (id:${f.id}, tmdb:${f.tmdb_id})`).join(', ');
-    catalogueLines.push(`nouveautes: ${filmList}`);
+  for (const [aisle, films] of filmsByAisle) {
+    const filmList = films.map(f => `${f.title} (id:${f.id}, tmdb:${f.tmdb_id})`).join(', ');
+    catalogueLines.push(`${aisle}: ${filmList}`);
   }
 
   // Build rental history text
@@ -97,26 +89,18 @@ ${factsText ? `## CE QUE TU SAIS SUR CE CLIENT\n${factsText}` : ''}
 Pour ton premier message:
 ${reviews.length > 0 ? `- Tu peux mentionner une critique recente du client.` : ''}
 ${activeRentals.length > 0 ? `- Tu peux demander si le client a regarde son film en cours.` : ''}
-${nouveautes.length > 0 ? `- Tu peux mentionner les nouveautes.` : ''}
+${(filmsByAisle.get('nouveautes')?.length ?? 0) > 0 ? `- Tu peux mentionner les nouveautes.` : ''}
 - Ou simplement accueillir le client a ta maniere bourrue.
 - TOUJOURS commencer par un message d'accueil, ne pas commencer par un outil.`;
 }
 
 export function buildGuestSystemPrompt(): string {
-  // Build catalogue compact by aisle (same as authenticated)
-  const aisles = ['action', 'horreur', 'sf', 'comedie', 'drame', 'thriller', 'policier', 'animation', 'classiques', 'bizarre'] as const;
+  // Build catalogue compact by aisle (single DB query)
+  const filmsByAisle = getAllAvailableFilmsGroupedByAisle();
   const catalogueLines: string[] = [];
-  for (const aisle of aisles) {
-    const films = getFilmsByAisle(aisle);
-    if (films.length > 0) {
-      const filmList = films.map(f => `${f.title} (id:${f.id}, tmdb:${f.tmdb_id})`).join(', ');
-      catalogueLines.push(`${aisle}: ${filmList}`);
-    }
-  }
-  const nouveautes = getNouveautes();
-  if (nouveautes.length > 0) {
-    const filmList = nouveautes.map(f => `${f.title} (id:${f.id}, tmdb:${f.tmdb_id})`).join(', ');
-    catalogueLines.push(`nouveautes: ${filmList}`);
+  for (const [aisle, films] of filmsByAisle) {
+    const filmList = films.map(f => `${f.title} (id:${f.id}, tmdb:${f.tmdb_id})`).join(', ');
+    catalogueLines.push(`${aisle}: ${filmList}`);
   }
 
   return `Tu es Michel, le gerant du videoclub Zone Club depuis 1984. Tu es un personnage haut en couleur.
@@ -148,7 +132,7 @@ ${catalogueLines.join('\n')}
 
 ## OUVERTURE
 Pour ton premier message:
-${nouveautes.length > 0 ? `- Tu peux mentionner les nouveautes.` : ''}
+${(filmsByAisle.get('nouveautes')?.length ?? 0) > 0 ? `- Tu peux mentionner les nouveautes.` : ''}
 - Accueille le visiteur a ta maniere bourrue. Tu remarques que tu ne le connais pas.
 - TOUJOURS commencer par un message d'accueil, ne pas commencer par un outil.`;
 }

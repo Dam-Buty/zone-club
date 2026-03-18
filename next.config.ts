@@ -11,9 +11,18 @@ const nextConfig: NextConfig = {
     // Pre-existing lint issues from Vite migration — fix incrementally
     ignoreDuringBuilds: true,
   },
-  // Long-term cache headers for immutable 3D assets
+  // Security + cache headers
   async headers() {
+    const securityHeaders = [
+      { key: 'X-Content-Type-Options', value: 'nosniff' },
+      { key: 'X-Frame-Options', value: 'DENY' },
+      { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+      { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
+    ];
     return [
+      // Security headers on all routes
+      { source: '/(.*)', headers: securityHeaders },
+      // Long-term cache for immutable 3D assets
       {
         source: '/models/:path*',
         headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }],
