@@ -31,6 +31,7 @@ class RadarrClient {
 
         const response = await fetch(url, {
             ...options,
+            signal: options.signal ?? AbortSignal.timeout(15000),
             headers: {
                 'X-Api-Key': this.apiKey,
                 'Content-Type': 'application/json',

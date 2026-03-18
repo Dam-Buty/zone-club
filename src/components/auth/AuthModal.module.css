@@ -4,7 +4,7 @@
 
 .terminal {
   composes: panelBase panelScanlines panelInnerGlow from '../../styles/primitives/modalCrt.module.css';
-  width: 450px;
+  width: min(450px, 90vw);
   max-height: 90vh;
   border: 3px solid #00ff00;
   color: #00ff00;
