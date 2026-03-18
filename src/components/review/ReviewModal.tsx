@@ -258,14 +258,16 @@ export function ReviewModal({ isOpen, onClose, film }: ReviewModalProps) {
               {/* Ratings */}
               <div className={styles.ratings}>
                 <div className={styles.ratingRow}>
-                  <span className={styles.ratingLabel}>REALISATION</span>
-                  <div className={styles.stars}>
+                  <span className={styles.ratingLabel} id="rating-direction">REALISATION</span>
+                  <div className={styles.stars} role="radiogroup" aria-labelledby="rating-direction">
                     {[1, 2, 3, 4, 5].map((n) => (
                       <button
                         key={n}
                         type="button"
                         className={`${styles.star} ${n <= ratingDirection ? styles.active : ''}`}
                         onClick={() => setRatingDirection(n)}
+                        aria-label={`${n} sur 5`}
+                        aria-pressed={n === ratingDirection}
                       >
                         ★
                       </button>
@@ -273,14 +275,16 @@ export function ReviewModal({ isOpen, onClose, film }: ReviewModalProps) {
                   </div>
                 </div>
                 <div className={styles.ratingRow}>
-                  <span className={styles.ratingLabel}>SCENARIO</span>
-                  <div className={styles.stars}>
+                  <span className={styles.ratingLabel} id="rating-screenplay">SCENARIO</span>
+                  <div className={styles.stars} role="radiogroup" aria-labelledby="rating-screenplay">
                     {[1, 2, 3, 4, 5].map((n) => (
                       <button
                         key={n}
                         type="button"
                         className={`${styles.star} ${n <= ratingScreenplay ? styles.active : ''}`}
                         onClick={() => setRatingScreenplay(n)}
+                        aria-label={`${n} sur 5`}
+                        aria-pressed={n === ratingScreenplay}
                       >
                         ★
                       </button>
@@ -288,14 +292,16 @@ export function ReviewModal({ isOpen, onClose, film }: ReviewModalProps) {
                   </div>
                 </div>
                 <div className={styles.ratingRow}>
-                  <span className={styles.ratingLabel}>JEU D'ACTEUR</span>
-                  <div className={styles.stars}>
+                  <span className={styles.ratingLabel} id="rating-acting">JEU D'ACTEUR</span>
+                  <div className={styles.stars} role="radiogroup" aria-labelledby="rating-acting">
                     {[1, 2, 3, 4, 5].map((n) => (
                       <button
                         key={n}
                         type="button"
                         className={`${styles.star} ${n <= ratingActing ? styles.active : ''}`}
                         onClick={() => setRatingActing(n)}
+                        aria-label={`${n} sur 5`}
+                        aria-pressed={n === ratingActing}
                       >
                         ★
                       </button>

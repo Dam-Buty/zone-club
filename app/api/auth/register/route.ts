@@ -18,6 +18,10 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Le mot de passe doit faire au moins 8 caractères' }, { status: 400 });
     }
 
+    if (!/[a-z]/.test(password) || !/[A-Z]/.test(password) || !/[0-9]/.test(password)) {
+        return NextResponse.json({ error: 'Le mot de passe doit contenir au moins une minuscule, une majuscule et un chiffre' }, { status: 400 });
+    }
+
     if (usernameExists(username)) {
         return NextResponse.json({ error: 'Ce pseudo est déjà pris' }, { status: 409 });
     }

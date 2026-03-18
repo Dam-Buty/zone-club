@@ -337,7 +337,11 @@ function App() {
       {currentScene === 'interior' && !loadingDismissed && (
         <>
           <style>{`@keyframes film-reel-spin { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }`}</style>
-          <div style={{
+          <div
+            role="status"
+            aria-live="polite"
+            aria-label="Chargement du vidéoclub"
+            style={{
             position: 'fixed', inset: 0, zIndex: 9999,
             background: '#000',
             display: 'flex', flexDirection: 'column',

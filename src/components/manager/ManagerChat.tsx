@@ -23,7 +23,7 @@ export function ManagerChat() {
   const processedToolCalls = useRef<Set<string>>(new Set());
 
   // Stable session UUID for Langfuse grouping — generated once when chat opens
-  const sessionIdRef = useRef<string>(crypto.randomUUID());
+  const sessionIdRef = useRef<string>(globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2));
 
   const { messages, sendMessage, status, error } = useChat({});
 
@@ -72,7 +72,7 @@ export function ManagerChat() {
   // Focus input + unlock pointer when chat opens, generate new session UUID
   useEffect(() => {
     if (managerVisible) {
-      sessionIdRef.current = crypto.randomUUID();
+      sessionIdRef.current = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
       requestPointerUnlock();
       inputRef.current?.focus();
     }
