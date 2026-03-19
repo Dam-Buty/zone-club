@@ -128,11 +128,14 @@ export default function BoardOverlay() {
         >
           <button
             onClick={handleClose}
+            aria-label="Fermer"
             style={{
-              position: 'absolute', top: '0.4rem', right: '0.6rem',
+              position: 'absolute', top: '0.2rem', right: '0.3rem',
               background: 'none', border: 'none', color: '#4a2a10',
               fontSize: '1.4rem', cursor: 'pointer', fontWeight: 'bold',
               lineHeight: 1, zIndex: 2,
+              width: '44px', height: '44px',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}
           >
             ✕
@@ -185,12 +188,13 @@ export default function BoardOverlay() {
                     <button
                       key={c}
                       onClick={() => setNewColor(c)}
+                      aria-label={`Couleur ${c}`}
                       style={{
-                        width: '32px', height: '32px',
+                        width: '44px', height: '44px',
                         backgroundColor: NOTE_COLORS[c],
                         border: newColor === c ? '3px solid #3e1f0a' : '2px solid rgba(62,31,10,0.3)',
-                        borderRadius: '3px', cursor: 'pointer',
-                        transform: newColor === c ? 'scale(1.15)' : 'none',
+                        borderRadius: '4px', cursor: 'pointer',
+                        transform: newColor === c ? 'scale(1.1)' : 'none',
                         transition: 'all 0.15s ease',
                       }}
                     />
@@ -236,7 +240,8 @@ export default function BoardOverlay() {
                     onClick={handleClose}
                     style={{
                       background: 'rgba(93, 58, 26, 0.5)', color: '#fff',
-                      border: 'none', borderRadius: '4px', padding: '0.45rem 1rem',
+                      border: 'none', borderRadius: '4px', padding: '0.6rem 1.2rem',
+                      minHeight: '44px',
                       fontFamily: "'Courier New', monospace", fontSize: '0.8rem', cursor: 'pointer',
                     }}
                   >
@@ -248,7 +253,8 @@ export default function BoardOverlay() {
                     style={{
                       background: !newContent.trim() || isSubmitting ? 'rgba(93, 58, 26, 0.3)' : '#5d3a1a',
                       color: '#fff9c4', border: 'none', borderRadius: '4px',
-                      padding: '0.45rem 1rem', fontFamily: "'Courier New', monospace",
+                      padding: '0.6rem 1.2rem', minHeight: '44px',
+                      fontFamily: "'Courier New', monospace",
                       fontSize: '0.8rem',
                       cursor: !newContent.trim() || isSubmitting ? 'default' : 'pointer',
                       opacity: !newContent.trim() || isSubmitting ? 0.5 : 1,
@@ -356,7 +362,8 @@ export default function BoardOverlay() {
               style={{
                 background: 'rgba(255,255,255,0.15)', color: '#ddd',
                 border: '1px solid rgba(255,255,255,0.2)', borderRadius: '4px',
-                padding: '0.4rem 1rem', fontFamily: "'Courier New', monospace",
+                padding: '0.6rem 1.2rem', minHeight: '44px',
+                fontFamily: "'Courier New', monospace",
                 fontSize: '0.8rem', cursor: 'pointer',
               }}
             >
@@ -368,7 +375,8 @@ export default function BoardOverlay() {
                 onClick={() => handleDelete(selectedNote.id)}
                 style={{
                   background: 'rgba(183, 28, 28, 0.7)', color: '#fff',
-                  border: 'none', borderRadius: '4px', padding: '0.4rem 1rem',
+                  border: 'none', borderRadius: '4px', padding: '0.6rem 1.2rem',
+                  minHeight: '44px',
                   fontFamily: "'Courier New', monospace", fontSize: '0.8rem',
                   cursor: 'pointer',
                 }}

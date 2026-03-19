@@ -2,8 +2,18 @@ import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { registerUser, usernameExists } from '@/lib/auth';
 import { createSessionToken } from '@/lib/session';
+import { checkRateLimit, getRateLimitKey } from '@/lib/rate-limit';
 
 export async function POST(request: NextRequest) {
+    const rateLimitKey = getRateLimitKey(request, 'register');
+    const retryAfter = checkRateLimit(rateLimitKey, 3, 15 * 60 * 1000);
+    if (retryAfter !== null) {
+        return NextResponse.json(
+            { error: `Trop de tentatives. Reessayez dans ${Math.ceil(retryAfter / 60)} minutes.` },
+            { status: 429 },
+        );
+    }
+
     const { username, password } = await request.json();
 
     if (!username || !password) {

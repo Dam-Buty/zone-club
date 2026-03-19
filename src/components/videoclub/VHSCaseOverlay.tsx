@@ -212,17 +212,22 @@ function PersonModal({ person, detail, loading, onClose }: {
         {/* Close button */}
         <button
           onClick={onClose}
+          aria-label="Fermer"
           style={{
             position: "absolute",
-            top: "14px",
-            right: "16px",
+            top: "10px",
+            right: "10px",
             background: "none",
             border: "none",
             color: "rgba(255,255,255,0.5)",
             fontSize: "1.3rem",
             cursor: "pointer",
             fontFamily: "Orbitron, sans-serif",
-            padding: "4px 8px",
+            width: "44px",
+            height: "44px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
           }}
         >
           X
@@ -1758,23 +1763,25 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
               </>
             )}
 
-            {/* Drag handle */}
+            {/* Drag handle — larger touch area for mobile */}
             <div
               {...bindSheet()}
               style={{
                 flexShrink: 0,
                 display: "flex",
                 justifyContent: "center",
-                padding: "8px 0 4px",
+                alignItems: "center",
+                padding: "12px 0 6px",
+                minHeight: "32px",
                 cursor: "grab",
                 touchAction: "none",
               }}
             >
               <div style={{
-                width: "36px",
-                height: "4px",
-                borderRadius: "2px",
-                background: "rgba(255,255,255,0.25)",
+                width: "44px",
+                height: "5px",
+                borderRadius: "3px",
+                background: "rgba(255,255,255,0.35)",
               }} />
             </div>
 

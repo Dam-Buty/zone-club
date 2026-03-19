@@ -80,7 +80,16 @@ _prefetchPromise.then((results) => {
   }
 });
 
+function detectBrowser(): string {
+  const ua = navigator.userAgent;
+  if (ua.includes('Firefox')) return 'firefox';
+  if (ua.includes('Safari') && !ua.includes('Chrome')) return 'safari';
+  if (ua.includes('Chrome')) return 'chrome';
+  return 'other';
+}
+
 function WebGPUNotSupported() {
+  const browser = detectBrowser();
   return (
     <div style={{
       display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
@@ -90,11 +99,52 @@ function WebGPUNotSupported() {
       <h1 style={{ fontSize: '2rem', textShadow: '0 0 20px #ff2d95', marginBottom: '1rem' }}>
         WebGPU non disponible
       </h1>
-      <p style={{ color: '#ccc', fontFamily: 'sans-serif', maxWidth: '500px', lineHeight: 1.6 }}>
+      <p style={{ color: '#ccc', fontFamily: 'sans-serif', maxWidth: '560px', lineHeight: 1.7, marginBottom: '1.5rem' }}>
         Ce vidéoclub utilise WebGPU pour le rendu 3D.
-        Utilisez une version récente de Chrome, Edge, Firefox ou Safari avec accélération matérielle activée.
-        Selon le système, WebGPU peut aussi nécessiter l’activation d’options expérimentales.
       </p>
+      <div style={{
+        color: '#aaa', fontFamily: 'sans-serif', maxWidth: '560px', lineHeight: 1.8,
+        textAlign: 'left', fontSize: '0.9rem',
+      }}>
+        {browser === 'chrome' && (
+          <>
+            <p style={{ color: '#00e5ff', fontWeight: 'bold', marginBottom: '0.5rem' }}>Chrome / Edge</p>
+            <p>WebGPU est actif par defaut depuis Chrome 113. Verifiez que l'acceleration materielle est activee :</p>
+            <p style={{ color: '#888', fontSize: '0.85rem', margin: '0.3rem 0' }}>
+              Parametres &gt; Systeme &gt; Utiliser l'acceleration materielle
+            </p>
+          </>
+        )}
+        {browser === 'firefox' && (
+          <>
+            <p style={{ color: '#ff9100', fontWeight: 'bold', marginBottom: '0.5rem' }}>Firefox</p>
+            <p>WebGPU n'est pas actif par defaut sur Firefox. Pour l'activer :</p>
+            <ol style={{ paddingLeft: '1.5rem', margin: '0.5rem 0', color: '#ccc' }}>
+              <li>Tapez <code style={{ color: '#00e5ff', background: 'rgba(0,229,255,0.1)', padding: '2px 6px', borderRadius: 3 }}>about:config</code> dans la barre d'adresse</li>
+              <li>Cherchez <code style={{ color: '#00e5ff', background: 'rgba(0,229,255,0.1)', padding: '2px 6px', borderRadius: 3 }}>dom.webgpu.enabled</code></li>
+              <li>Passez la valeur a <strong style={{ color: '#00ff00' }}>true</strong></li>
+              <li>Redemarrez Firefox</li>
+            </ol>
+          </>
+        )}
+        {browser === 'safari' && (
+          <>
+            <p style={{ color: '#007aff', fontWeight: 'bold', marginBottom: '0.5rem' }}>Safari</p>
+            <p>WebGPU est disponible depuis Safari 17. Verifiez :</p>
+            <ol style={{ paddingLeft: '1.5rem', margin: '0.5rem 0', color: '#ccc' }}>
+              <li>Menu Developpeur &gt; Fonctionnalites experimentales</li>
+              <li>Activez <strong>WebGPU</strong></li>
+              <li>Rechargez la page</li>
+            </ol>
+            <p style={{ color: '#888', fontSize: '0.85rem' }}>
+              (Si le menu Developpeur n'apparait pas : Preferences &gt; Avance &gt; Afficher le menu Developpeur)
+            </p>
+          </>
+        )}
+        {browser === 'other' && (
+          <p>Utilisez Chrome 113+, Edge 113+, ou Safari 17+ pour acceder au videoclub.</p>
+        )}
+      </div>
     </div>
   );
 }
@@ -165,6 +215,31 @@ function PWAInstallToast({ onInstall, onDismiss }: { onInstall: () => void; onDi
         ✕
       </button>
     </div>
+  );
+}
+
+function Reticule() {
+  const [locked, setLocked] = useState(false);
+  useEffect(() => {
+    const onChange = () => setLocked(!!document.pointerLockElement);
+    document.addEventListener('pointerlockchange', onChange);
+    return () => document.removeEventListener('pointerlockchange', onChange);
+  }, []);
+  if (!locked) return null;
+  return (
+    <div
+      aria-hidden="true"
+      style={{
+        position: 'fixed', top: '50%', left: '50%',
+        transform: 'translate(-50%, -50%)',
+        width: 6, height: 6,
+        borderRadius: '50%',
+        background: 'rgba(255, 255, 255, 0.5)',
+        boxShadow: '0 0 4px rgba(0, 0, 0, 0.5)',
+        pointerEvents: 'none',
+        zIndex: 50,
+      }}
+    />
   );
 }
 
@@ -332,6 +407,9 @@ function App() {
       <Suspense fallback={null}>
         <InteriorScene onCassetteClick={handleFilmClick} />
       </Suspense>
+
+      {/* FPS center reticule — visible only when pointer locked */}
+      <Reticule />
 
       {/* Loading screen overlay — film reel spinner + fade out (min 2s visible) */}
       {currentScene === 'interior' && !loadingDismissed && (

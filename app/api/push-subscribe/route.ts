@@ -23,8 +23,9 @@ export async function POST(request: NextRequest) {
     savePushSubscription(user.id, subscription);
     return NextResponse.json({ ok: true });
   } catch (err) {
+    console.error('push-subscribe POST error:', err);
     return NextResponse.json(
-      { error: (err as Error).message },
+      { error: "Erreur interne" },
       { status: 500 },
     );
   }

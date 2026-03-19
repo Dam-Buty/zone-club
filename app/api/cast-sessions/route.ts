@@ -32,8 +32,9 @@ export async function POST(request: NextRequest) {
     );
     return NextResponse.json({ session });
   } catch (err) {
+    console.error('cast-sessions POST error:', err);
     return NextResponse.json(
-      { error: (err as Error).message },
+      { error: "Erreur interne" },
       { status: 500 },
     );
   }
@@ -59,8 +60,9 @@ export async function PATCH(request: NextRequest) {
     updateCastSession(user.id, filmId, currentPosition);
     return NextResponse.json({ ok: true });
   } catch (err) {
+    console.error('cast-sessions PATCH error:', err);
     return NextResponse.json(
-      { error: (err as Error).message },
+      { error: "Erreur interne" },
       { status: 500 },
     );
   }
@@ -83,8 +85,9 @@ export async function DELETE(request: NextRequest) {
     endCastSession(user.id, filmId);
     return NextResponse.json({ ok: true });
   } catch (err) {
+    console.error('cast-sessions DELETE error:', err);
     return NextResponse.json(
-      { error: (err as Error).message },
+      { error: "Erreur interne" },
       { status: 500 },
     );
   }

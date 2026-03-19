@@ -14,10 +14,12 @@ export function generatePassphrase(): string {
     const plat = secureRandomChoice(plats);
     const origine = secureRandomChoice(origines);
     const qualificatif = secureRandomChoice(qualificatifs);
+    const plat2 = secureRandomChoice(plats);
+    const qualificatif2 = secureRandomChoice(qualificatifs);
 
-    return `${plat}-${origine}-${qualificatif}`;
+    return `${plat}-${origine}-${qualificatif}-${plat2}-${qualificatif2}`;
 }
 
 export function getPassphraseCombinations(): number {
-    return plats.length * origines.length * qualificatifs.length;
+    return plats.length * origines.length * qualificatifs.length * plats.length * qualificatifs.length;
 }

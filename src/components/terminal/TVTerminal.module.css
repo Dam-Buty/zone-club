@@ -1071,3 +1071,75 @@
   font-weight: bold;
   flex-shrink: 0;
 }
+
+/* ============ MOBILE TOUCH TARGETS ============ */
+@media (max-width: 768px) {
+  .menuItem {
+    padding: 14px 18px;
+    min-height: 44px;
+  }
+
+  .playButton {
+    padding: 12px 16px;
+    min-height: 44px;
+  }
+
+  .reviewButton {
+    padding: 12px 14px;
+    min-height: 44px;
+    font-size: 0.8rem;
+  }
+
+  .adminApproveBtn,
+  .adminRejectBtn {
+    width: 44px;
+    height: 44px;
+    font-size: 1.2rem;
+  }
+
+  .adminAisleSelect {
+    padding: 8px 10px;
+    min-height: 44px;
+    font-size: 0.7rem;
+  }
+
+  .adminDlBtn {
+    padding: 10px 14px;
+    min-height: 44px;
+    font-size: 0.75rem;
+  }
+
+  .adminToggleBtn {
+    padding: 10px 14px;
+    min-height: 44px;
+    font-size: 0.75rem;
+  }
+
+  .backButton {
+    padding: 14px 20px;
+    min-height: 44px;
+  }
+
+  .filterSelect {
+    padding: 8px 10px;
+    min-height: 44px;
+    font-size: 0.65rem;
+  }
+
+  .sortBtn {
+    padding: 8px 12px;
+    min-height: 44px;
+    font-size: 0.65rem;
+  }
+
+  .bulkBtn {
+    padding: 8px 12px;
+    min-height: 44px;
+    font-size: 0.65rem;
+  }
+
+  .benchmarkToggle {
+    padding: 10px 14px;
+    min-height: 44px;
+  }
+}
