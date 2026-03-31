@@ -17,7 +17,7 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
   const postProcessingRef = useRef<THREE.PostProcessing | null>(null)
   const bokehRef = useRef<ReturnType<typeof uniform> | null>(null)
   const bloomStrengthRef = useRef<ReturnType<typeof uniform> | null>(null)
-  const bloomBaseStrength = 0.18
+  const bloomBaseStrength = isMobile ? 0.12 : 0.18
   const isVHSCaseOpen = useStore(state => state.isVHSCaseOpen)
   const dofTrigger = isMobile ? false : isVHSCaseOpen
 
@@ -36,11 +36,17 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
     }
 
     if (isMobile) {
-      // ===== MOBILE PIPELINE: Scene → Vignette → FXAA =====
+      // ===== MOBILE PIPELINE: Scene → Bloom → Vignette → FXAA =====
       const scenePass = pass(scene, camera)
       const scenePassColor = scenePass.getTextureNode('output')
 
-      const withVignette = applyVignette(scenePassColor)
+      // Bloom with high threshold (0.5) — only emissive neon tubes trigger
+      const bloomStrength = uniform(bloomBaseStrength)
+      bloomStrengthRef.current = bloomStrength
+      const bloomPass = bloom(scenePassColor, 0.32, bloomStrength, 0.50)
+      const withBloom = scenePassColor.add(bloomPass)
+
+      const withVignette = applyVignette(withBloom)
       const withFXAA = fxaa(withVignette)
       postProcessing.outputNode = withFXAA
 
@@ -88,9 +94,15 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
   }, [renderer, scene, camera, isMobile, dofTrigger])
 
   const frameSkipRef = useRef(0)
+  const isTerminalOpen = useStore(state => state.isTerminalOpen)
+  const isPlayerOpen = useStore(state => state.isPlayerOpen)
 
   useFrame((_, delta) => {
     if (document.hidden) return
+
+    // Full 2D overlays completely cover the 3D scene — skip rendering entirely.
+    // The last rendered frame stays on the canvas; rendering resumes seamlessly on close.
+    if (isTerminalOpen || isPlayerOpen) return
 
     if (postProcessingRef.current) {
       if (isVHSCaseOpen && bokehRef.current) {

@@ -1,6 +1,6 @@
 // Service Worker — cache-first for 3D assets, stale-while-revalidate for API data
 // Bump VERSION on every deploy to invalidate stale caches
-const VERSION = 'v2'
+const VERSION = 'v3'
 const CACHE_NAME = `zone-club-${VERSION}`
 
 // Assets to pre-cache on install (critical path)
@@ -42,12 +42,24 @@ function getStrategy(url) {
     return 'cache-first'
   }
 
+  // Next.js static bundles — cache-first (content-hashed filenames = immutable)
+  if (path.startsWith('/_next/static/')) {
+    return 'cache-first'
+  }
+
   // Poster proxy — cache-first (TMDB images are immutable per path)
   if (path.startsWith('/api/poster/')) {
     return 'cache-first'
   }
 
-  // Everything else (including /api/films/ — data changes on admin edits)
+  // Film catalog API — stale-while-revalidate
+  // Serve cached data instantly on repeat visits, refresh in background.
+  // New films added by admin appear on next visit.
+  if (path.startsWith('/api/films/')) {
+    return 'stale-while-revalidate'
+  }
+
+  // Everything else (auth, rentals, reviews, admin, etc.)
   return 'network-only'
 }
 

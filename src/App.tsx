@@ -149,6 +149,87 @@ function WebGPUNotSupported() {
   );
 }
 
+const LOADING_TIPS = [
+  'Louez de vrais films et regardez-les sur votre smartphone',
+  'Castez vos films sur votre TV via Chromecast ou AirPlay',
+  'Discutez cinema avec le gerant — il connait son catalogue',
+  'Demandez conseil au gerant, il vous recommandera des perles',
+  'Laissez des critiques sur les films pour gagner des credits',
+  'Chaque critique publiee = +1 credit de location gratuit',
+  'Explorez les allees pour decouvrir tous les genres',
+  'Regardez le tableau d\'affichage pour laisser un mot',
+  'Les nouveautes sont a l\'entree du videoclub',
+]
+
+function LoadingDots() {
+  const [dots, setDots] = useState(1)
+  useEffect(() => {
+    const id = setInterval(() => setDots(d => (d % 3) + 1), 500)
+    return () => clearInterval(id)
+  }, [])
+  return (
+    <span style={{ display: 'inline-block', width: '1.5em', textAlign: 'left' }}>
+      {'.'.repeat(dots)}
+    </span>
+  )
+}
+
+function LoadingTips() {
+  // Shuffle tips once on mount (Fisher-Yates)
+  const order = useRef<number[]>([])
+  if (order.current.length === 0) {
+    order.current = [...LOADING_TIPS.keys()]
+    for (let i = order.current.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [order.current[i], order.current[j]] = [order.current[j], order.current[i]]
+    }
+  }
+
+  const [pos, setPos] = useState(0)
+  const [phase, setPhase] = useState<'in' | 'out'>('in')
+  const timerRef = useRef<ReturnType<typeof setTimeout>>(null)
+  const safetyRef = useRef<ReturnType<typeof setTimeout>>(null)
+
+  useEffect(() => {
+    if (phase === 'in') {
+      timerRef.current = setTimeout(() => setPhase('out'), 2500)
+    } else if (phase === 'out') {
+      safetyRef.current = setTimeout(() => {
+        setPos(p => (p + 1) % order.current.length)
+        setPhase('in')
+      }, 600)
+    }
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current)
+      if (safetyRef.current) clearTimeout(safetyRef.current)
+    }
+  }, [phase, pos])
+
+  const handleTransitionEnd = useCallback(() => {
+    if (phase === 'out') {
+      if (safetyRef.current) clearTimeout(safetyRef.current)
+      setPos(p => (p + 1) % order.current.length)
+      setPhase('in')
+    }
+  }, [phase])
+
+  return (
+    <p
+      onTransitionEnd={handleTransitionEnd}
+      style={{
+        color: '#999', fontFamily: "'Courier New', monospace",
+        fontSize: 15, fontWeight: 'bold', lineHeight: 1.6,
+        textAlign: 'center', maxWidth: 380,
+        minHeight: 48,
+        opacity: phase === 'in' ? 1 : 0,
+        transition: 'opacity 0.4s ease',
+      }}
+    >
+      {LOADING_TIPS[order.current[pos]]}
+    </p>
+  )
+}
+
 // Film reel loader — pure CSS spinner
 function FilmReelLoader() {
   return (
@@ -265,10 +346,17 @@ function App() {
   const setShowInstallPrompt = useStore(state => state.setShowInstallPrompt);
   const dismissInstallPrompt = useStore(state => state.dismissInstallPrompt);
 
-  // Register service worker + capture install prompt
+  // Register service worker (production only) + capture install prompt
   useEffect(() => {
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').catch(() => {});
+      if (process.env.NODE_ENV === 'production') {
+        navigator.serviceWorker.register('/sw.js').catch(() => {});
+      } else {
+        // Dev mode: unregister any stale SW to prevent cached old JS bundles
+        navigator.serviceWorker.getRegistrations().then(regs => {
+          regs.forEach(reg => reg.unregister());
+        });
+      }
     }
     const handler = (e: Event) => {
       e.preventDefault();
@@ -411,7 +499,7 @@ function App() {
       {/* FPS center reticule — visible only when pointer locked */}
       <Reticule />
 
-      {/* Loading screen overlay — film reel spinner + fade out (min 2s visible) */}
+      {/* Loading screen overlay — dynamic "Chargement..." top, spinner center, tips bottom */}
       {currentScene === 'interior' && !loadingDismissed && (
         <>
           <style>{`@keyframes film-reel-spin { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }`}</style>
@@ -423,19 +511,26 @@ function App() {
             position: 'fixed', inset: 0, zIndex: 9999,
             background: '#000',
             display: 'flex', flexDirection: 'column',
-            alignItems: 'center', justifyContent: 'center',
+            alignItems: 'center', justifyContent: 'space-between',
+            padding: '20vh 0 calc(12vh + 10px)',
             opacity: loaderCanFade ? 0 : 1,
             transition: 'opacity 1.2s ease',
             pointerEvents: loaderCanFade ? 'none' : 'all',
           }}>
-            <FilmReelLoader />
+            {/* Top: dynamic "Chargement..." */}
             <p style={{
               color: '#ccc', fontFamily: "'Courier New', monospace",
-              marginTop: 24, fontSize: 14, letterSpacing: 2,
+              fontSize: 16, letterSpacing: 3,
               textTransform: 'uppercase',
             }}>
-              Vidéoclub en cours de chargement
+              Chargement en cours<LoadingDots />
             </p>
+
+            {/* Center: spinner */}
+            <FilmReelLoader />
+
+            {/* Bottom: rotating tips */}
+            <LoadingTips />
             {/* retd logo */}
             <img
               src="/retd.png"

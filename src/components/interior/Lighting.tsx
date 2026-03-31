@@ -43,7 +43,7 @@ const SHARED_NEON_TUBE_MAT = new THREE.MeshStandardNodeMaterial({
   toneMapped: false,
 })
 // Static emissive via TSL (WebGPU)
-SHARED_NEON_TUBE_MAT.emissiveNode = tslColor('#fff5e6').mul(float(3.0))
+SHARED_NEON_TUBE_MAT.emissiveNode = tslColor('#fff5e6').mul(float(3.5))
 const SHARED_NEON_FIXTURE_MAT = new THREE.MeshStandardMaterial({
   color: '#666666',
   roughness: 0.5,
@@ -128,11 +128,12 @@ function OptimizedLighting({ isMobile = false }: { isMobile?: boolean }) {
 
   return (
     <>
-      {/* Hemisphere ambient fill */}
+      {/* Hemisphere ambient fill — mobile lower than before (0.65→0.45)
+          because we now have directional RectAreaLights providing contrast */}
       <hemisphereLight
         color="#fff8f0"
         groundColor="#a09890"
-        intensity={isMobile ? 0.65 : 0.35}
+        intensity={isMobile ? 0.55 : 0.35}
       />
 
       {/* Desktop-only per-fragment lights */}
@@ -261,16 +262,93 @@ function OptimizedLighting({ isMobile = false }: { isMobile?: boolean }) {
         </>
       )}
 
-      {/* Mobile-only: single PointLight between the two islands */}
+      {/* Mobile lighting rig — 6 RectAreaLights + 2 PointLights (Pixel 9 budget)
+          ACES Filmic @ exposure 0.82 needs HDR ≥2.0 for "bright" → intensities scaled +40% vs naive values */}
       {isMobile && (
-        <pointLight
-          position={[-1.0, 1.8, 0]}
-          intensity={1.2}
-          color="#fff5e6"
-          distance={5}
-          decay={2}
-          castShadow={false}
-        />
+        <>
+          {/* Ceiling tubes — left wall + right wall, intensity 5.0 (was 3.5)
+              Cosine falloff at 2.68m height → walls receive ~30% → need high base intensity */}
+          <rectAreaLight
+            position={[-3.3, 2.68, 0]}
+            rotation={[-Math.PI / 2, 0, 0]}
+            width={0.4}
+            height={7.0}
+            intensity={5.0}
+            color="#f0f5ff"
+          />
+          <rectAreaLight
+            position={[3.8, 2.68, 0]}
+            rotation={[-Math.PI / 2, 0, 0]}
+            width={0.4}
+            height={7.0}
+            intensity={5.0}
+            color="#f0f5ff"
+          />
+
+          {/* Ceiling bounce — intensity 1.8 (was 1.2)
+              At 1.2 → sRGB ~0.25 after ACES = pitch black ceiling. 1.8 → sRGB ~0.45 = visible */}
+          <rectAreaLight
+            position={[0, 0.15, 0]}
+            rotation={[Math.PI / 2, 0, 0]}
+            width={3.0}
+            height={2.5}
+            intensity={1.8}
+            color="#e8ddd0"
+          />
+
+          {/* Island overhead — NEW: prevents dark shelf valleys between aisles
+              Desktop has 2 island lights (1.8 each); mobile uses 1 centered at 2.2 */}
+          <rectAreaLight
+            position={[-1.0, 2.2, -0.2]}
+            rotation={[-Math.PI / 2, 0, 0]}
+            width={0.8}
+            height={4.0}
+            intensity={2.2}
+            color="#f0f5ff"
+          />
+
+          {/* Back wall wash — intensity 0.7 (was 0.5)
+              Single wall wash must illuminate back wall + provide fill */}
+          <rectAreaLight
+            position={[0, 1.4, -3.0]}
+            rotation={[0, 0, 0]}
+            width={7.0}
+            height={2.0}
+            intensity={0.7}
+            color="#fff5e6"
+          />
+
+          {/* Vitrine cold — warm/cold contrast from storefront */}
+          <rectAreaLight
+            position={[0.5, 1.4, 4.15]}
+            rotation={[0, Math.PI, 0]}
+            width={5.0}
+            height={2.2}
+            intensity={0.8}
+            color="#5577aa"
+          />
+
+          {/* Left aisle fill — illuminates left wall K7s + left face of island 1
+              Y=2.0 for broader spread across shelves top to bottom */}
+          <pointLight
+            position={[-2.5, 2.0, 0]}
+            intensity={1.5}
+            color="#fff5e6"
+            distance={8}
+            decay={2}
+            castShadow={false}
+          />
+          {/* Right aisle fill — illuminates right wall K7s + right face of island 2
+              Y=2.0 (higher) for broader spread, avoids wall hot spot */}
+          <pointLight
+            position={[1.5, 2.0, 0]}
+            intensity={1.5}
+            color="#fff5e6"
+            distance={8}
+            decay={2}
+            castShadow={false}
+          />
+        </>
       )}
 
       {/* Angled DirectionalLight — 42° from vertical, illuminates tops AND sides */}

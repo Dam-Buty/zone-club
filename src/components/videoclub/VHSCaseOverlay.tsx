@@ -398,9 +398,21 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
   // Mobile tutorial expand indicator auto-hide
   const [showMobileTutorialExpand, setShowMobileTutorialExpand] = useState(true);
 
-  // Prev/next film navigation (circular within same aisle)
+  // Prev/next film navigation (circular within same aisle, or within desk films)
+  const deskFilms = useStore(state => state.deskFilms);
   const { prevFilm, nextFilm } = useMemo(() => {
     if (!film) return { prevFilm: null, nextFilm: null };
+
+    // Desk K7s: navigate only within the 3 desk films
+    const deskIdx = deskFilms.findIndex(f => f.id === film.id);
+    if (deskIdx !== -1) {
+      return {
+        prevFilm: deskFilms[(deskIdx - 1 + deskFilms.length) % deskFilms.length],
+        nextFilm: deskFilms[(deskIdx + 1) % deskFilms.length],
+      };
+    }
+
+    // Aisle K7s: navigate within the same aisle
     for (const aisleFilms of Object.values(films)) {
       const idx = aisleFilms.findIndex(f => f.id === film.id);
       if (idx !== -1) {
@@ -411,7 +423,7 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
       }
     }
     return { prevFilm: null, nextFilm: null };
-  }, [film, films]);
+  }, [film, films, deskFilms]);
 
   // Mobile swipe navigation via @use-gesture/react
   const bind = useDrag(
@@ -2070,7 +2082,7 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
               }}
               style={{
                 position: "fixed",
-                left: "calc(50% - 232px - 280px)",
+                left: "calc(50% - 232px - 356px)",
                 top: "50%",
                 transform: bounceLeft ? "translate(-50%, -50%) scale(0.82)" : "translate(-50%, -50%) scale(1)",
                 transition: "transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)",
@@ -2108,7 +2120,7 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
               }}
               style={{
                 position: "fixed",
-                left: "calc(50% - 232px + 260px)",
+                left: "calc(50% - 232px + 312px)",
                 top: "50%",
                 transform: bounceRight ? "translate(-50%, -50%) scale(0.82)" : "translate(-50%, -50%) scale(1)",
                 transition: "transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)",

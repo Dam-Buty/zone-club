@@ -318,9 +318,11 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
     const renderer = gl as unknown as THREE.WebGPURenderer
     atlas.setRenderer(renderer)
 
-    // Load unique poster textures (10 per frame — ~50 unique posters total)
+    // Load unique poster textures — throttled per frame to avoid GPU upload spikes
+    // Mobile: 4/frame (less GPU contention), Desktop: 10/frame
     let cancelled = false
-    const POSTERS_PER_FRAME = 10
+    const _isMobileDevice = window.matchMedia?.('(pointer: coarse)')?.matches || window.innerWidth <= 768
+    const POSTERS_PER_FRAME = _isMobileDevice ? 4 : 10
     const queue: { slot: number; url: string }[] = []
     for (const [url, slot] of urlToSlot) {
       queue.push({ slot, url })

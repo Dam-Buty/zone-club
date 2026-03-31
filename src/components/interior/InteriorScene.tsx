@@ -850,8 +850,6 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
         }) as any}
         onCreated={(state) => {
-
-
           // Wait for films + poster atlas GPU uploads before dismissing loading screen
           const checkReady = () => {
             const { films } = useStore.getState()
@@ -866,11 +864,43 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
               if (!progress) {
                 requestAnimationFrame(checkPosters)
               } else if (progress.total === 0 || progress.loaded >= progress.total) {
-                // All posters uploaded — scene is fully textured
-                useStore.getState().setSceneReady(true)
-              } else if (isMobile && progress.total > 0 && progress.loaded >= progress.total * 0.9) {
-                // Mobile can enter slightly earlier to keep startup time acceptable
-                useStore.getState().setSceneReady(true)
+                // SHADER WARM-UP: compile ALL WebGPU render pipelines BEFORE
+                // dismissing the loading screen, preventing the 3-5s freeze on
+                // first camera movement.
+                //
+                // Why not compileAsync/render()?
+                // PostProcessing uses internal HDR render targets (float16) —
+                // pipelines compiled against the canvas format (BGRA8) are NOT
+                // reused. The only way to compile the correct pipelines is to
+                // let PostProcessing.render() run naturally with every mesh
+                // visible (frustumCulled=false). We wait 3 frames (1st compiles
+                // all shaders, 2nd+3rd safety margin) while the loading screen
+                // is still covering the canvas.
+                const scene = state.scene
+                const savedCulling: { obj: THREE.Mesh; val: boolean }[] = []
+                scene.traverse((obj: THREE.Object3D) => {
+                  if ((obj as THREE.Mesh).isMesh) {
+                    const mesh = obj as THREE.Mesh
+                    savedCulling.push({ obj: mesh, val: mesh.frustumCulled })
+                    mesh.frustumCulled = false
+                  }
+                })
+
+                // Let PostProcessing render 3 frames with ALL meshes visible
+                let warmUpFrames = 0
+                const waitForWarmUp = () => {
+                  warmUpFrames++
+                  if (warmUpFrames < 3) {
+                    requestAnimationFrame(waitForWarmUp)
+                  } else {
+                    // Restore frustum culling
+                    for (const { obj, val } of savedCulling) {
+                      obj.frustumCulled = val
+                    }
+                    useStore.getState().setSceneReady(true)
+                  }
+                }
+                requestAnimationFrame(waitForWarmUp)
               } else {
                 requestAnimationFrame(checkPosters)
               }

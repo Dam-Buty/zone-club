@@ -72,7 +72,7 @@ export function WallShelf({
     return rmap
   }, [woodTextures, length])
 
-  const shelfMaterial = useMemo(() => new THREE.MeshPhysicalMaterial({
+  const shelfMaterial = useMemo(() => new THREE.MeshStandardMaterial({
     map: shelfMap,
     normalMap: shelfNormalMap,
     roughnessMap: shelfRoughnessMap,
@@ -80,8 +80,6 @@ export function WallShelf({
     roughness: 0.55,
     metalness: 0.0,
     envMapIntensity: 0.25,
-    clearcoat: 0.10,
-    clearcoatRoughness: 0.40,
     normalScale: new THREE.Vector2(0.9, 0.9),
   }), [shelfMap, shelfNormalMap, shelfRoughnessMap])
 
