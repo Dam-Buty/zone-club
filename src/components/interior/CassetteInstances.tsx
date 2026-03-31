@@ -318,9 +318,10 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
     const renderer = gl as unknown as THREE.WebGPURenderer
     atlas.setRenderer(renderer)
 
-    // Load unique poster textures (10 per frame — ~50 unique posters total)
+    // Load unique poster textures — try IndexedDB cache first, else throttled decode
     let cancelled = false
-    const POSTERS_PER_FRAME = 10
+    const _isMobileDevice = window.matchMedia?.('(pointer: coarse)')?.matches || window.innerWidth <= 768
+    const POSTERS_PER_FRAME = _isMobileDevice ? 4 : 10
     const queue: { slot: number; url: string }[] = []
     for (const [url, slot] of urlToSlot) {
       queue.push({ slot, url })
@@ -331,24 +332,50 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
       window.__posterProgress = { total: queue.length, loaded: 0 }
     }
 
-    let queueIdx = 0
-    const loadNextBatch = async () => {
-      if (cancelled || queueIdx >= queue.length) return
-      if (!atlas.isGPUReady()) {
-        requestAnimationFrame(() => { void loadNextBatch() })
+    // Fingerprint = sorted poster URLs — same catalog = cache hit
+    const fingerprint = Array.from(urlToSlot.keys()).sort().join('|')
+
+    const startLoading = async () => {
+      if (cancelled) return
+
+      // Try IndexedDB cache first (instant restore: ~50ms vs ~3s decode)
+      const cacheHit = await atlas.restoreFromCache(fingerprint)
+      if (cacheHit && !cancelled) {
+        atlas.flush()
+        if (typeof window !== 'undefined' && window.__posterProgress) {
+          window.__posterProgress.loaded = queue.length
+        }
         return
       }
-      const end = Math.min(queueIdx + POSTERS_PER_FRAME, queue.length)
-      await Promise.all(
-        queue.slice(queueIdx, end).map(({ slot, url }) => atlas.loadPosterIntoSlot(url, slot))
-      )
-      queueIdx = end
-      if (typeof window !== 'undefined' && window.__posterProgress) {
-        window.__posterProgress.loaded = queueIdx
+
+      // Cache miss — load from network with throttled decode
+      let queueIdx = 0
+      const loadNextBatch = async () => {
+        if (cancelled || queueIdx >= queue.length) {
+          // All loaded — save to IndexedDB for next visit
+          if (!cancelled && queueIdx >= queue.length) {
+            atlas.saveToCache(fingerprint).catch(() => {})
+          }
+          return
+        }
+        if (!atlas.isGPUReady()) {
+          requestAnimationFrame(() => { void loadNextBatch() })
+          return
+        }
+        const end = Math.min(queueIdx + POSTERS_PER_FRAME, queue.length)
+        await Promise.all(
+          queue.slice(queueIdx, end).map(({ slot, url }) => atlas.loadPosterIntoSlot(url, slot))
+        )
+        queueIdx = end
+        if (typeof window !== 'undefined' && window.__posterProgress) {
+          window.__posterProgress.loaded = queueIdx
+        }
+        requestAnimationFrame(() => { void loadNextBatch() })
       }
       requestAnimationFrame(() => { void loadNextBatch() })
     }
-    requestAnimationFrame(() => { void loadNextBatch() })
+
+    startLoading()
 
     return () => {
       cancelled = true

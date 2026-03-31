@@ -69,14 +69,12 @@ export function IslandShelf({
     return map
   }, [woodTextures])
 
-  const shelfMaterial = useMemo(() => new THREE.MeshPhysicalMaterial({
+  const shelfMaterial = useMemo(() => new THREE.MeshStandardMaterial({
     map: shelfMap,
     color: SHELF_COLOR,
-    roughness: 0.22,
+    roughness: 0.15,
     metalness: METALNESS,
     envMapIntensity: 0.50,
-    clearcoat: 0.42,
-    clearcoatRoughness: 0.12,
   }), [shelfMap])
 
   const trapezoidGeometry = useMemo(() => {

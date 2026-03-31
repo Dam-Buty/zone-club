@@ -84,6 +84,11 @@
   font-family: monospace;
   cursor: pointer;
   padding: 4px 10px;
+  min-width: 44px;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 4px;
   transition:
     color 0.2s,
@@ -501,7 +506,7 @@
 }
 
 /* Mobile responsive */
-@media (max-width: 640px) {
+@media (max-width: 768px) {
   .overlay {
     inset: 0;
     z-index: 1100;

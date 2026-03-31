@@ -68,6 +68,7 @@ import { ServiceBell } from './ServiceBell'
 import { DustParticles } from './DustParticles'
 import type { Film, AisleType } from '../../types'
 import type { CassetteInstanceData } from '../../utils/CassetteTextureArray'
+import { SHARED_WALL_MATERIAL } from './constants'
 
 interface AisleProps {
   films: Film[]
@@ -190,19 +191,8 @@ function MergedWalls({ wallTextures, roomWidth, roomDepth, roomHeight }: {
     return mergeGeometries([wallBack, wallLeft, wallRight])!
   }, [roomWidth, roomDepth, roomHeight])
 
-  const material = useMemo(() => {
-    // Interior walls should read as painted smooth plaster, not raw concrete.
-    // Keep the warm storefront-inspired hue, but drop the heavy PBR relief.
-    const next = new THREE.MeshPhysicalMaterial({
-      color: '#d4b080',
-      roughness: 0.38,
-      metalness: 0.0,
-      envMapIntensity: 0.70,
-      clearcoat: 0.22,
-      clearcoatRoughness: 0.45,
-    })
-    return next
-  }, [wallTextures])
+  // Shared wall material — single GPU pipeline for all interior walls
+  const material = SHARED_WALL_MATERIAL
 
   useEffect(() => {
     return () => { geometry.dispose() }

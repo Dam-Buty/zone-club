@@ -212,17 +212,22 @@ function PersonModal({ person, detail, loading, onClose }: {
         {/* Close button */}
         <button
           onClick={onClose}
+          aria-label="Fermer"
           style={{
             position: "absolute",
-            top: "14px",
-            right: "16px",
+            top: "10px",
+            right: "10px",
             background: "none",
             border: "none",
             color: "rgba(255,255,255,0.5)",
             fontSize: "1.3rem",
             cursor: "pointer",
             fontFamily: "Orbitron, sans-serif",
-            padding: "4px 8px",
+            width: "44px",
+            height: "44px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
           }}
         >
           X
@@ -393,9 +398,21 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
   // Mobile tutorial expand indicator auto-hide
   const [showMobileTutorialExpand, setShowMobileTutorialExpand] = useState(true);
 
-  // Prev/next film navigation (circular within same aisle)
+  // Prev/next film navigation (circular within same aisle, or within desk films)
+  const deskFilms = useStore(state => state.deskFilms);
   const { prevFilm, nextFilm } = useMemo(() => {
     if (!film) return { prevFilm: null, nextFilm: null };
+
+    // Desk K7s: navigate only within the 3 desk films
+    const deskIdx = deskFilms.findIndex(f => f.id === film.id);
+    if (deskIdx !== -1) {
+      return {
+        prevFilm: deskFilms[(deskIdx - 1 + deskFilms.length) % deskFilms.length],
+        nextFilm: deskFilms[(deskIdx + 1) % deskFilms.length],
+      };
+    }
+
+    // Aisle K7s: navigate within the same aisle
     for (const aisleFilms of Object.values(films)) {
       const idx = aisleFilms.findIndex(f => f.id === film.id);
       if (idx !== -1) {
@@ -406,7 +423,7 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
       }
     }
     return { prevFilm: null, nextFilm: null };
-  }, [film, films]);
+  }, [film, films, deskFilms]);
 
   // Mobile swipe navigation via @use-gesture/react
   const bind = useDrag(
@@ -1758,23 +1775,25 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
               </>
             )}
 
-            {/* Drag handle */}
+            {/* Drag handle — larger touch area for mobile */}
             <div
               {...bindSheet()}
               style={{
                 flexShrink: 0,
                 display: "flex",
                 justifyContent: "center",
-                padding: "8px 0 4px",
+                alignItems: "center",
+                padding: "12px 0 6px",
+                minHeight: "32px",
                 cursor: "grab",
                 touchAction: "none",
               }}
             >
               <div style={{
-                width: "36px",
-                height: "4px",
-                borderRadius: "2px",
-                background: "rgba(255,255,255,0.25)",
+                width: "44px",
+                height: "5px",
+                borderRadius: "3px",
+                background: "rgba(255,255,255,0.35)",
               }} />
             </div>
 
@@ -2063,7 +2082,7 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
               }}
               style={{
                 position: "fixed",
-                left: "calc(50% - 232px - 280px)",
+                left: "calc(50% - 232px - 356px)",
                 top: "50%",
                 transform: bounceLeft ? "translate(-50%, -50%) scale(0.82)" : "translate(-50%, -50%) scale(1)",
                 transition: "transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)",
@@ -2101,7 +2120,7 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
               }}
               style={{
                 position: "fixed",
-                left: "calc(50% - 232px + 260px)",
+                left: "calc(50% - 232px + 312px)",
                 top: "50%",
                 transform: bounceRight ? "translate(-50%, -50%) scale(0.82)" : "translate(-50%, -50%) scale(1)",
                 transition: "transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)",

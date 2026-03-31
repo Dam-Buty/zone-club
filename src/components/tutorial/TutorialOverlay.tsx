@@ -135,7 +135,8 @@ export default function TutorialOverlay() {
   };
 
   const skipBtnStyle: React.CSSProperties = {
-    padding: '8px 20px',
+    padding: '12px 20px',
+    minHeight: '44px',
     background: 'transparent',
     border: '1px solid rgba(255,255,255,0.15)',
     borderRadius: 4,
@@ -146,6 +147,8 @@ export default function TutorialOverlay() {
     letterSpacing: 1,
     transition: 'all 0.2s',
     whiteSpace: 'nowrap',
+    display: 'flex',
+    alignItems: 'center',
   };
 
   return (

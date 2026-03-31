@@ -15,12 +15,66 @@ import * as THREE from 'three'
  *
  * Per-poster GPU upload uses writeTexture with 2D sub-region origin,
  * uploading only 240KB per poster instead of the full ~13MB atlas.
+ *
+ * IndexedDB caching: the fully-built atlas (Uint8Array) is saved to IndexedDB
+ * keyed by a fingerprint of the poster URLs. On revisit, the atlas is restored
+ * from cache in ~50ms (1 GPU upload) instead of re-decoding all images
+ * (~3s + 15 GPU uploads on mobile).
  */
 
 const POSTER_WIDTH = 256
 const POSTER_HEIGHT = 384
 const BYTES_PER_PIXEL = 4
 const POSTER_ROW_BYTES = POSTER_WIDTH * BYTES_PER_PIXEL
+
+// ===== IndexedDB Atlas Cache =====
+const IDB_NAME = 'cassette-atlas-cache'
+const IDB_VERSION = 1
+const IDB_STORE = 'atlases'
+const IDB_KEY = 'current' // single-entry cache (latest atlas only)
+
+function openAtlasDB(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(IDB_NAME, IDB_VERSION)
+    request.onupgradeneeded = () => {
+      const db = request.result
+      if (!db.objectStoreNames.contains(IDB_STORE)) {
+        db.createObjectStore(IDB_STORE)
+      }
+    }
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error)
+  })
+}
+
+interface AtlasCacheEntry {
+  fingerprint: string
+  data: ArrayBuffer
+  cols: number
+  rows: number
+  loadedSlots: number[]
+}
+
+async function idbGet(): Promise<AtlasCacheEntry | undefined> {
+  const db = await openAtlasDB()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, 'readonly')
+    const req = tx.objectStore(IDB_STORE).get(IDB_KEY)
+    req.onsuccess = () => resolve(req.result as AtlasCacheEntry | undefined)
+    req.onerror = () => reject(req.error)
+    tx.oncomplete = () => db.close()
+  })
+}
+
+async function idbPut(entry: AtlasCacheEntry): Promise<void> {
+  const db = await openAtlasDB()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, 'readwrite')
+    tx.objectStore(IDB_STORE).put(entry, IDB_KEY)
+    tx.oncomplete = () => { db.close(); resolve() }
+    tx.onerror = () => { db.close(); reject(tx.error) }
+  })
+}
 
 let _extractCanvas: HTMLCanvasElement | null = null
 let _extractCtx: CanvasRenderingContext2D | null = null
@@ -179,6 +233,46 @@ export class CassetteTextureAtlas {
       return true
     }
     return false
+  }
+
+  /**
+   * Save the fully-built atlas to IndexedDB for instant restore on next visit.
+   * Best-effort — silently ignores errors (quota, private browsing, etc.).
+   */
+  async saveToCache(fingerprint: string): Promise<void> {
+    try {
+      await idbPut({
+        fingerprint,
+        data: (this.data.buffer as ArrayBuffer).slice(0), // structured-clone-safe copy
+        cols: this.cols,
+        rows: this.rows,
+        loadedSlots: Array.from(this.loadedSlots),
+      })
+    } catch {
+      // Cache save is best-effort
+    }
+  }
+
+  /**
+   * Try to restore the atlas from IndexedDB cache.
+   * Returns true if cache hit (data restored, ready to flush).
+   */
+  async restoreFromCache(fingerprint: string): Promise<boolean> {
+    try {
+      const cached = await idbGet()
+      if (!cached) return false
+      if (cached.fingerprint !== fingerprint) return false
+      if (cached.cols !== this.cols || cached.rows !== this.rows) return false
+
+      this.data.set(new Uint8Array(cached.data))
+      for (const slot of cached.loadedSlots) {
+        this.loadedSlots.add(slot)
+      }
+      this._dirty = true
+      return true
+    } catch {
+      return false
+    }
   }
 
   dispose(): void {

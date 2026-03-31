@@ -1,5 +1,6 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import { useDrag } from '@use-gesture/react';
 import { useStore } from '../../store';
 import api, { type ReviewsResponse, type ReviewWithUser } from '../../api';
 import type { Film } from '../../types';
@@ -32,6 +33,8 @@ interface ReviewReaderProps {
 
 // Full-page review reader — magazine editorial style
 function ReviewReader({ review, filmTitle, totalReviews, currentIndex, onNavigate, onClose }: ReviewReaderProps) {
+  const contentRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') { e.preventDefault(); onClose(); }
@@ -41,6 +44,18 @@ function ReviewReader({ review, filmTitle, totalReviews, currentIndex, onNavigat
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
   }, [onClose, onNavigate, currentIndex, totalReviews]);
+
+  // Swipe left/right to navigate between reviews (mobile)
+  const bind = useDrag(({ movement: [mx], direction: [dx], velocity: [vx], last, cancel }) => {
+    if (!last) return;
+    const threshold = 50;
+    if (Math.abs(mx) < threshold && vx < 0.3) return;
+    if (dx < 0 && currentIndex < totalReviews - 1) {
+      onNavigate(1);
+    } else if (dx > 0 && currentIndex > 0) {
+      onNavigate(-1);
+    }
+  }, { axis: 'x', filterTaps: true });
 
   const avgRating = review.average_rating.toFixed(1);
   const date = new Date(review.created_at).toLocaleDateString('fr-FR', {
@@ -63,7 +78,7 @@ function ReviewReader({ review, filmTitle, totalReviews, currentIndex, onNavigat
       <div className={styles.readerModal} onClick={(e) => e.stopPropagation()}>
         <button className={styles.readerClose} onClick={onClose} title="Fermer (Esc)">✕</button>
 
-        <div className={styles.readerContent}>
+        <div className={styles.readerContent} {...bind()} ref={contentRef} style={{ touchAction: 'pan-y' }}>
           <div className={styles.readerKicker}>CRITIQUE</div>
           <div className={styles.readerFilmTitle}>{filmTitle}</div>
           <div className={styles.readerByline}>par @{review.username}</div>

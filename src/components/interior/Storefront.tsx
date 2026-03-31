@@ -4,6 +4,7 @@ import { useTexture } from '@react-three/drei'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { TextureCache } from '../../utils/TextureCache'
 import { useKTX2Textures } from '../../hooks/useKTX2Textures'
+import { SHARED_WALL_MATERIAL } from './constants'
 
 interface StorefrontProps {
   position: [number, number, number]
@@ -221,15 +222,8 @@ export function Storefront({ position, roomWidth, roomHeight, posterPaths }: Sto
     })
   }, [wallTextures])
 
-  // Match MergedWalls material — uniform painted smooth plaster across all walls
-  const wallMaterial = useMemo(() => new THREE.MeshPhysicalMaterial({
-    color: '#d4b080',
-    roughness: 0.38,
-    metalness: 0.0,
-    envMapIntensity: 0.70,
-    clearcoat: 0.22,
-    clearcoatRoughness: 0.45,
-  }), [])
+  // Shared wall material — single GPU pipeline for all interior walls
+  const wallMaterial = SHARED_WALL_MATERIAL
 
   // Exterior backdrop (exterior.jpeg — placed at real 3D depth behind wall for geometric parallax)
   const exteriorTex = useTexture('/exterior.webp')

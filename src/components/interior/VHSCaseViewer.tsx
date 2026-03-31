@@ -35,7 +35,7 @@ const PORTRAIT_QUAT = new THREE.Quaternion().setFromAxisAngle(
 const ALBEDO_COLOR = new THREE.Color(0.89, 0.89, 0.89)
 
 // Animation constants
-const DISTANCE_FROM_CAMERA = 0.471  // meters in front of camera (+5% zoom)
+const DISTANCE_FROM_CAMERA = 0.495  // meters in front of camera
 const CASE_SCALE = 0.255          // model is ~2m tall → ~51cm
 const TILT_ANGLE = (3 * Math.PI) / 180 // 3° backward tilt — reduced from 10° to minimize ceiling light on top
 const MANUAL_ROTATE_SPEED = 2.5   // rad/s

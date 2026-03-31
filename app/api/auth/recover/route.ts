@@ -2,8 +2,18 @@ import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { recoverAccount } from '@/lib/auth';
 import { createSessionToken } from '@/lib/session';
+import { checkRateLimit, getRateLimitKey } from '@/lib/rate-limit';
 
 export async function POST(request: NextRequest) {
+    const rateLimitKey = getRateLimitKey(request, 'recover');
+    const retryAfter = checkRateLimit(rateLimitKey, 3, 60 * 60 * 1000); // 3 attempts per hour
+    if (retryAfter !== null) {
+        return NextResponse.json(
+            { error: `Trop de tentatives. Reessayez dans ${Math.ceil(retryAfter / 60)} minutes.` },
+            { status: 429 },
+        );
+    }
+
     const { username, recoveryPhrase, newPassword } = await request.json();
 
     if (!username || !recoveryPhrase || !newPassword) {

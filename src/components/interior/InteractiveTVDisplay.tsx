@@ -503,13 +503,12 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
       t.anisotropy = 16
       t.colorSpace = key === 'map' ? THREE.SRGBColorSpace : THREE.LinearSRGBColorSpace
     })
-    return new THREE.MeshPhysicalMaterial({
+    return new THREE.MeshStandardMaterial({
       map: woodTextures.map as THREE.Texture,
       normalMap: woodTextures.normalMap as THREE.Texture,
       roughnessMap: woodTextures.roughnessMap as THREE.Texture,
       color: '#5a3f28',
-      roughness: 0.25,
-      clearcoat: 0.40,
+      roughness: 0.18,
       normalScale: new THREE.Vector2(0.7, 0.7),
     })
   }, [woodTextures])
@@ -1172,12 +1171,16 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Animation et mise à jour de l'écran
-  useFrame((_, delta) => {
+  useFrame((state, delta) => {
     timeRef.current += delta
 
     // LCD clock update — every second, toggle colon
+    // Gated by distance: skip GPU texture upload when player is far away (>6m)
+    const cam = state.camera.position
+    const dx = cam.x - position[0], dz = cam.z - position[2]
+    const distSq = dx * dx + dz * dz
     const sec = new Date().getSeconds()
-    if (sec !== lcdLastSecRef.current && lcdCanvasRef.current && lcdTextureRef.current) {
+    if (distSq < 36 && sec !== lcdLastSecRef.current && lcdCanvasRef.current && lcdTextureRef.current) {
       lcdLastSecRef.current = sec
       lcdColonRef.current = !lcdColonRef.current
       renderLCDTime(lcdCanvasRef.current, lcdColonRef.current)
