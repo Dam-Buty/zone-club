@@ -5,6 +5,7 @@ import { AuthModal } from './components/auth/AuthModal';
 import { ManagerChat } from './components/manager/ManagerChat';
 import BoardOverlay from './components/board/BoardOverlay';
 import { VHSPlayer } from './components/player/VHSPlayer';
+import { PerfOverlay } from './components/ui/PerfOverlay';
 import { preloadPosterImage } from './utils/CassetteTextureArray';
 import api, { apiFilmToFilm } from './api';
 import type { AisleType, Film } from './types';
@@ -491,6 +492,9 @@ function App() {
   // Interior view (3D scene) — VHSPlayer overlays on top, scene stays mounted
   return (
     <>
+      {/* Dev-only perf overlay — toggle 'P' or ?perf=1 */}
+      <PerfOverlay />
+
       {/* 3D R3F + WebGPU Video Club Scene */}
       <Suspense fallback={null}>
         <InteriorScene onCassetteClick={handleFilmClick} />
