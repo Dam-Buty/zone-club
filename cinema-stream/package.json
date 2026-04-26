@@ -1,0 +1,23 @@
+{
+  "name": "zone-cinema-stream",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.6.2",
+    "fluent-ffmpeg": "^2.1.3",
+    "tsx": "^4.20.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/fluent-ffmpeg": "^2.1.27",
+    "@types/node": "^24.10.1",
+    "typescript": "~5.9.3"
+  }
+}

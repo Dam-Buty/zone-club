@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS films (
     file_path_vf_transcoded TEXT DEFAULT NULL,
     sub_genre TEXT DEFAULT NULL,
     stock INTEGER DEFAULT 2,
+    duration_sec REAL DEFAULT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 

@@ -94,6 +94,11 @@ try {
   );
 } catch {}
 
+// Migrate: cinema stream duration cache
+try {
+  db.exec("ALTER TABLE films ADD COLUMN duration_sec REAL DEFAULT NULL");
+} catch {}
+
 // Migrate: multi-copy rental system (stock, returned_early, return_requests)
 const multiCopyMigrations = [
   "ALTER TABLE films ADD COLUMN stock INTEGER DEFAULT 2",

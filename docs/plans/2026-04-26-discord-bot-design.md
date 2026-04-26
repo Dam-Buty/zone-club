@@ -63,19 +63,29 @@ Une "chaîne TV" virtuelle qui diffuse en boucle continue tous les films de la D
 
 ## Algorithme de position
 
-Au boot du serveur HLS et du bot status :
+**Cache des durées en DB** : la table `films` reçoit une nouvelle colonne `duration_sec REAL`. Probing ffprobe lazy uniquement pour les films qui ne l'ont pas encore en DB :
+
+- `cinema-stream` (DB :rw) : au boot, pour chaque film avec `duration_sec IS NULL`, ffprobe + UPDATE. Premier boot : long (~5min pour 250 films). Boots suivants : instant.
+- `zone-discord-bot` (DB :ro) : au boot, ne lit que les films avec `duration_sec IS NOT NULL`. Si certains manquent (cinema-stream pas encore booté), il les ignore et continue avec ce qu'il a.
 
 ```ts
 // PLAYLIST_START = "1993-06-11" → epoch UTC du 1993-06-11 00:00 Europe/Paris
 const films = db
-  .prepare("SELECT * FROM films WHERE file_path_vf IS NOT NULL ORDER BY id")
+  .prepare(`SELECT id, title, release_year, file_path_vf,
+                   file_path_vf_transcoded, duration_sec
+            FROM films
+            WHERE file_path_vf IS NOT NULL
+            ORDER BY id`)
   .all();
 
-// ffprobe chaque fichier, cache durations en mémoire
+// cinema-stream uniquement : probe + write si manquant
 for (const f of films) {
-  f.durationSec = await probeDuration(f.file_path_vf_transcoded ?? f.file_path_vf);
+  if (f.duration_sec == null) {
+    f.duration_sec = await probeDuration(f.absolutePath);
+    db.prepare("UPDATE films SET duration_sec = ? WHERE id = ?").run(f.duration_sec, f.id);
+  }
 }
-const totalSec = films.reduce((acc, f) => acc + f.durationSec, 0);
+const totalSec = films.reduce((acc, f) => acc + f.duration_sec, 0);
 
 function currentPosition() {
   const elapsed = (Date.now() / 1000) - startEpoch;
@@ -209,6 +219,6 @@ zone-club/
 ## Risques connus
 
 - **Continuité HLS au redémarrage du concat** : quand ffmpeg termine la longue concat list (semaines), il s'arrête. Un watcher Node détecte la fin et relance avec une nouvelle list — il y aura un micro-gap (1-3s). Acceptable car ça arrive rarement.
-- **Drift de position** : durations TMDB en minutes vs durations réelles fichiers. On utilise ffprobe (réel) pour éviter le drift. Cache en mémoire au boot.
-- **Films ajoutés à la DB** : si un film est ajouté en cours de route, la playlist ne le voit pas avant le prochain boot du `cinema-stream`. Acceptable pour V1 — on relance le service à chaque ajout important.
+- **Drift de position** : durations TMDB en minutes vs durations réelles fichiers. On utilise ffprobe (réel) pour éviter le drift. Cache persistant en DB (colonne `films.duration_sec`).
+- **Films ajoutés à la DB** : si un film est ajouté en cours de route, la playlist ne le voit pas avant le prochain boot du `cinema-stream`. Acceptable pour V1 — on relance le service à chaque ajout important. Au prochain boot, seuls les nouveaux films sont probed.
 - **Bandwidth client** : HLS 1080p ~5 Mbps download. Tous les contrats fibre français passent.

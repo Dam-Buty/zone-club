@@ -119,5 +119,36 @@ services:
       - "traefik.http.services.bazarr.loadbalancer.server.port=6767"
 
 
+  cinema-stream:
+    build: ./cinema-stream
+    container_name: zone-cinema-stream
+    volumes:
+      - ./zone.db:/data/zone.db
+      - /data/big-boi/zone-club/films-vf:/media/films-vf:ro
+      - media_public:/media/public:rw
+    environment:
+      - DATABASE_PATH=/data/zone.db
+      - FILMS_VF_ROOT=/media/films-vf
+      - HLS_OUT_DIR=/media/public/symlinks/cinema-live
+      - PLAYLIST_START=${PLAYLIST_START}
+      - TZ=Europe/Paris
+
+
+  zone-discord-bot:
+    build: ./zone-discord-bot
+    container_name: zone-discord-bot
+    volumes:
+      - ./zone.db:/data/zone.db:ro
+      - /data/big-boi/zone-club/films-vf:/media/films-vf:ro
+    environment:
+      - DATABASE_PATH=/data/zone.db
+      - FILMS_VF_ROOT=/media/films-vf
+      - PLAYLIST_START=${PLAYLIST_START}
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
+      - DISCORD_GUILD_ID=${DISCORD_GUILD_ID}
+      - DISCORD_VOICE_CHANNEL_ID=${DISCORD_VOICE_CHANNEL_ID}
+      - TZ=Europe/Paris
+
+
 volumes:
   media_public:

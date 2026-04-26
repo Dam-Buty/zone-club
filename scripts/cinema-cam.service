@@ -1,0 +1,16 @@
+[Unit]
+Description=Zone Club Cinéma — bridge HLS vers caméra virtuelle (v4l2loopback)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment="VIDEO_NR=10"
+Environment="HLS_URL=https://stream.lazone.at/cinema-live/live.m3u8"
+Environment="SCALE=1280:720"
+ExecStart=%h/zone-club/scripts/cinema-cam.sh
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

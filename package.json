@@ -18,7 +18,17 @@
     "docker:build": "docker compose build app",
     "deploy": "docker compose down app && sudo rm -rf .next && npm run build && docker compose up -d app",
     "transcode:progress": "scripts/transcode-progress.sh",
-    "movies:clean-originals": "scripts/clean-originals.sh"
+    "movies:clean-originals": "scripts/clean-originals.sh",
+    "bot:up": "docker compose up -d zone-discord-bot",
+    "bot:down": "docker compose down zone-discord-bot",
+    "bot:restart": "docker compose restart zone-discord-bot",
+    "bot:rebuild": "docker compose up -d --build zone-discord-bot",
+    "bot:logs": "docker compose logs -f zone-discord-bot",
+    "cinema:up": "docker compose up -d cinema-stream",
+    "cinema:down": "docker compose down cinema-stream",
+    "cinema:restart": "docker compose restart cinema-stream",
+    "cinema:rebuild": "docker compose up -d --build cinema-stream",
+    "cinema:logs": "docker compose logs -f cinema-stream"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.30",
