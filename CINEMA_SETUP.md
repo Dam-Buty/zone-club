@@ -29,43 +29,34 @@ Tu dois pouvoir le lire dans VLC, mpv, Safari, ou un player HLS.
 
 ## 2. Client Linux (headless, recommandé)
 
-Setup ultra-light avec `v4l2loopback` (caméra virtuelle kernel) + ffmpeg.
-
-### Installation
+### Setup en une commande
 
 ```bash
-sudo apt install -y v4l2loopback-dkms ffmpeg
+./scripts/cinema-cam-install.sh
 ```
 
-(Sur Arch : `sudo pacman -S v4l2loopback-dkms ffmpeg`)
+Empreinte minimale sur le système — un seul fichier permanent : `/etc/systemd/system/cinema-cam.service`. Le module `v4l2loopback` est chargé au start du service, déchargé au stop. Pas de config dans `/etc/modules-load.d` ni `/etc/modprobe.d`.
 
-### Lancement manuel
+Le script :
+1. Installe `v4l2loopback-dkms` + `ffmpeg` (apt / pacman / dnf)
+2. Copie `cinema-cam.sh` dans `/usr/local/bin/` (le service en a besoin)
+3. Écrit `/etc/systemd/system/cinema-cam.service`
+4. `systemctl enable --now cinema-cam.service`
 
+Variables surchargeables :
 ```bash
-HLS_URL="https://${STORAGE_SUBDOMAIN}.${DOMAIN}/cinema-live/live.m3u8"
-sudo modprobe v4l2loopback video_nr=10 card_label="Zone Club Cinéma" exclusive_caps=1
-ffmpeg -re -i "$HLS_URL" -vf "format=yuv420p,scale=1280:720" -f v4l2 /dev/video10
+VIDEO_NR=10 \
+CARD_LABEL="Zone Club Cinéma" \
+HLS_URL=https://club-storage.lazone.at/cinema-live/live.m3u8 \
+SCALE=1280:720 \
+./scripts/cinema-cam-install.sh
 ```
 
-### Script + service systemd user
+### Vérification + logs
 
-Le repo fournit `scripts/cinema-cam.sh` (le wrapper) et `scripts/cinema-cam.service` (unit user-level).
-
-Installation comme service auto-start :
 ```bash
-mkdir -p ~/.config/systemd/user
-cp scripts/cinema-cam.service ~/.config/systemd/user/
-# Édite l'URL HLS dans le fichier si besoin
-systemctl --user daemon-reload
-systemctl --user enable --now cinema-cam.service
-journalctl --user -u cinema-cam.service -f   # logs
-```
-
-Le module v4l2loopback doit être chargé au boot. Pour le rendre permanent :
-```bash
-echo "v4l2loopback" | sudo tee -a /etc/modules-load.d/v4l2loopback.conf
-echo "options v4l2loopback video_nr=10 card_label=\"Zone Club Cinéma\" exclusive_caps=1" \
-  | sudo tee /etc/modprobe.d/v4l2loopback.conf
+systemctl status cinema-cam.service
+journalctl -u cinema-cam.service -f
 ```
 
 ### Dans Discord
@@ -73,6 +64,23 @@ echo "options v4l2loopback video_nr=10 card_label=\"Zone Club Cinéma\" exclusiv
 1. **User Settings → Voice & Video → Camera** → choisis `Zone Club Cinéma`
 2. Rejoins le voice channel
 3. Bouton vidéo → **Share Camera**
+
+### Désinstall complète
+
+```bash
+sudo systemctl disable --now cinema-cam.service
+sudo rm /etc/systemd/system/cinema-cam.service /usr/local/bin/cinema-cam.sh
+sudo modprobe -r v4l2loopback
+sudo apt remove v4l2loopback-dkms   # optionnel
+```
+
+### Lancement à la main (sans systemd)
+
+Le script `cinema-cam.sh` charge le module si on l'invoque en root :
+```bash
+sudo HLS_URL="https://club-storage.lazone.at/cinema-live/live.m3u8" \
+     ./scripts/cinema-cam.sh
+```
 
 ## 3. Client macOS
 

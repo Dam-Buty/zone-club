@@ -6,11 +6,13 @@ Wants=network-online.target
 [Service]
 Type=simple
 Environment="VIDEO_NR=10"
-Environment="HLS_URL=https://stream.lazone.at/cinema-live/live.m3u8"
+Environment="CARD_LABEL=Zone Club Cinéma"
+Environment="HLS_URL=https://club-storage.lazone.at/cinema-live/live.m3u8"
 Environment="SCALE=1280:720"
-ExecStart=%h/zone-club/scripts/cinema-cam.sh
+ExecStart=/usr/local/bin/cinema-cam.sh
+ExecStopPost=-/sbin/modprobe -r v4l2loopback
 Restart=on-failure
 RestartSec=5
 
 [Install]
-WantedBy=default.target
+WantedBy=multi-user.target
