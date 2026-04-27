@@ -137,6 +137,7 @@ services:
   zone-discord-bot:
     build: ./zone-discord-bot
     container_name: zone-discord-bot
+    network_mode: host
     volumes:
       - ./zone.db:/data/zone.db:ro
       - /data/big-boi/zone-club/films-vf:/media/films-vf:ro
