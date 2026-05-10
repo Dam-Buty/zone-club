@@ -71,6 +71,9 @@ interface VideoClubState {
   addRental: (rental: Rental) => void;
   removeRental: (filmId: number) => void;
   getRental: (filmId: number) => Rental | undefined;
+  // Push to server + sync local store. Single source of truth so seek-on-reopen
+  // and recast both read the latest position without round-trip.
+  updateRentalProgress: (filmId: number, progress: number, position: number) => Promise<{ ok: boolean }>;
   rentFilm: (filmId: number) => Promise<Rental | null>;
   returnFilm: (filmId: number) => Promise<{ earlyReturnCredit: boolean } | null>;
   requestReturn: (filmId: number) => Promise<boolean>;
@@ -410,6 +413,17 @@ export const useStore = create<VideoClubState>()(
         }),
 
       getRental: (filmId) => get().rentals.find((r) => r.filmId === filmId),
+
+      updateRentalProgress: (filmId, progress, position) => {
+        set((state) => ({
+          rentals: state.rentals.map((r) =>
+            r.filmId === filmId
+              ? { ...r, watchPosition: position, watchProgress: Math.max(r.watchProgress, progress) }
+              : r
+          ),
+        }));
+        return api.rentals.updateProgress(filmId, progress, position);
+      },
 
       returnFilm: async (filmId) => {
         try {

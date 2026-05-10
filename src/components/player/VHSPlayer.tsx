@@ -36,6 +36,7 @@ export function VHSPlayer() {
   const getRental = useStore(state => state.getRental);
   const films = useStore(state => state.films);
   const fetchMe = useStore(state => state.fetchMe);
+  const updateRentalProgress = useStore(state => state.updateRentalProgress);
   const isAuthenticated = useStore(state => state.isAuthenticated);
   const addCredits = useStore(state => state.addCredits);
   const setActiveCastFilmId = useStore(state => state.setActiveCastFilmId);
@@ -184,6 +185,15 @@ export function VHSPlayer() {
       }
     }
   }, [audioTrack]);
+
+  // Multi-device sync: refresh rental data on player open so seek picks up
+  // progress made elsewhere (other browser/device, or background cast).
+  // Non-blocking: local seek effect below uses current store value immediately;
+  // when fetchMe resolves with a newer watchPosition, that effect re-runs.
+  useEffect(() => {
+    if (!isPlayerOpen) return;
+    fetchMe();
+  }, [isPlayerOpen, fetchMe]);
 
   // Resume from saved position when player opens
   useEffect(() => {
@@ -365,7 +375,7 @@ export function VHSPlayer() {
       const remoteTime = getRemoteCurrentTime();
       if (currentPlayingFilm && remoteCastDuration > 0) {
         const progress = Math.round((remoteTime / remoteCastDuration) * 100);
-        api.rentals.updateProgress(currentPlayingFilm, progress, remoteTime).catch(() => {});
+        updateRentalProgress(currentPlayingFilm, progress, remoteTime).catch(() => {});
       }
       remoteStop();
       setActiveCastFilmId(null);
@@ -388,7 +398,7 @@ export function VHSPlayer() {
     // Save current position before stopping
     if (currentPlayingFilm && video.duration > 0) {
       const progress = Math.round((video.currentTime / video.duration) * 100);
-      api.rentals.updateProgress(currentPlayingFilm, progress, video.currentTime).catch(() => {});
+      updateRentalProgress(currentPlayingFilm, progress, video.currentTime).catch(() => {});
     }
 
     stopRW();
@@ -454,7 +464,7 @@ export function VHSPlayer() {
       const remoteTime = getRemoteCurrentTime();
       if (currentPlayingFilm && remoteCastDuration > 0) {
         const progress = Math.round((remoteTime / remoteCastDuration) * 100);
-        api.rentals.updateProgress(currentPlayingFilm, progress, remoteTime).catch(() => {});
+        updateRentalProgress(currentPlayingFilm, progress, remoteTime).catch(() => {});
       }
       remoteStop();
       if (hasReachedMilestone() && !rental?.rewindClaimed) {
@@ -469,7 +479,7 @@ export function VHSPlayer() {
     const video = videoRef.current;
     if (video && currentPlayingFilm && video.duration > 0) {
       const progress = Math.round((video.currentTime / video.duration) * 100);
-      api.rentals.updateProgress(currentPlayingFilm, progress, video.currentTime).catch(() => {});
+      updateRentalProgress(currentPlayingFilm, progress, video.currentTime).catch(() => {});
     }
     stopRW();
 
@@ -689,10 +699,13 @@ export function VHSPlayer() {
     }
 
     const video = videoRef.current;
+    // Fallback to rental.watchPosition if local video hasn't seeked yet (canplay
+    // race when user clicks Cast before <video> reaches its resume position).
+    const startTime = Math.max(video?.currentTime || 0, rental?.watchPosition || 0);
     const result = await castMedia({
       url: videoUrl,
       title: currentFilm?.title || 'Zone Club',
-      currentTime: video?.currentTime || 0,
+      currentTime: startTime,
       autoplay: Boolean(video && !video.paused),
     });
 
@@ -713,7 +726,7 @@ export function VHSPlayer() {
     if (currentPlayingFilm) {
       api.castSessions.create(currentPlayingFilm, video?.duration || 0, video?.currentTime || 0).catch(() => {});
     }
-  }, [videoUrl, isCastReady, hasCastDevices, isCastConnected, castMedia, currentFilm?.title, openMirroringFallback, currentPlayingFilm, setActiveCastFilmId]);
+  }, [videoUrl, isCastReady, hasCastDevices, isCastConnected, castMedia, currentFilm?.title, openMirroringFallback, currentPlayingFilm, setActiveCastFilmId, rental?.watchPosition]);
 
   const handleAirPlayPicker = useCallback(() => {
     setRemoteError(null);
@@ -787,7 +800,7 @@ export function VHSPlayer() {
       if (playerState === 'casting' && remoteCastMediaLoaded && remoteCastDuration > 0) {
         const remoteTime = getRemoteCurrentTime();
         const progress = Math.round((remoteTime / remoteCastDuration) * 100);
-        api.rentals.updateProgress(currentPlayingFilm, progress, remoteTime).catch(() => {});
+        updateRentalProgress(currentPlayingFilm, progress, remoteTime).catch(() => {});
         api.castSessions.updatePosition(currentPlayingFilm, remoteTime).catch(() => {});
         return;
       }
@@ -797,7 +810,7 @@ export function VHSPlayer() {
       if (!video || video.duration === 0 || video.paused) return;
 
       const progress = Math.round((video.currentTime / video.duration) * 100);
-      api.rentals.updateProgress(currentPlayingFilm, progress, video.currentTime).catch(() => {});
+      updateRentalProgress(currentPlayingFilm, progress, video.currentTime).catch(() => {});
 
     }, 30000);
 
@@ -814,7 +827,7 @@ export function VHSPlayer() {
         const remoteTime = getRemoteCurrentTime();
         if (remoteCastDuration > 0) {
           const progress = Math.round((remoteTime / remoteCastDuration) * 100);
-          api.rentals.updateProgress(currentPlayingFilm, progress, remoteTime).catch(() => {});
+          updateRentalProgress(currentPlayingFilm, progress, remoteTime).catch(() => {});
         }
       }
       // On visible: Cast SDK auto-reconnects (ORIGIN_SCOPED).
@@ -862,7 +875,7 @@ export function VHSPlayer() {
       setFfSpeed(0);
       // Send final progress (100%) + reset position to 0
       if (currentPlayingFilm) {
-        api.rentals.updateProgress(currentPlayingFilm, 100, 0).catch(() => {});
+        updateRentalProgress(currentPlayingFilm, 100, 0).catch(() => {});
       }
       // Same flow as eject — pendingEject=true since film ended
       if (!rental?.rewindClaimed) {
@@ -898,7 +911,7 @@ export function VHSPlayer() {
       if (isNearEnd) {
         // Film finished — existing rewind prompt flow
         if (currentPlayingFilm) {
-          api.rentals.updateProgress(currentPlayingFilm, 100, 0).catch(() => {});
+          updateRentalProgress(currentPlayingFilm, 100, 0).catch(() => {});
         }
         if (!rental?.rewindClaimed) {
           setPendingEject(true);
@@ -910,7 +923,7 @@ export function VHSPlayer() {
         // Manual stop on receiver — save position, stay paused
         if (currentPlayingFilm && remoteCastDuration > 0) {
           const progress = Math.round((remoteTime / remoteCastDuration) * 100);
-          api.rentals.updateProgress(currentPlayingFilm, progress, remoteTime).catch(() => {});
+          updateRentalProgress(currentPlayingFilm, progress, remoteTime).catch(() => {});
         }
         const video = videoRef.current;
         if (video) {
@@ -938,7 +951,7 @@ export function VHSPlayer() {
       if (isNearEnd) {
         // Film likely finished on receiver before disconnect (e.g. TV turned off after film ended)
         if (currentPlayingFilm) {
-          api.rentals.updateProgress(currentPlayingFilm, 100, 0).catch(() => {});
+          updateRentalProgress(currentPlayingFilm, 100, 0).catch(() => {});
         }
         if (!rental?.rewindClaimed) {
           setPendingEject(true);
@@ -1096,22 +1109,45 @@ export function VHSPlayer() {
   useEffect(() => {
     if (!isPlayerOpen || rewindPhase !== 'none' || rewindingToStart) return;
 
+    // Portrait mobile: VCR remote sits below the video and is always visible.
+    // Auto-hide doesn't make sense there — it's not floating over the video.
+    const checkPortraitMobile = () => isMobile && window.innerHeight > window.innerWidth;
+
     const onActivity = () => resetIdleTimer();
+    let listenersActive = false;
 
-    window.addEventListener('mousemove', onActivity);
-    window.addEventListener('touchstart', onActivity);
-    window.addEventListener('keydown', onActivity);
+    const enableAutoHide = () => {
+      if (listenersActive) return;
+      listenersActive = true;
+      window.addEventListener('mousemove', onActivity);
+      window.addEventListener('touchstart', onActivity);
+      window.addEventListener('keydown', onActivity);
+      resetIdleTimer();
+    };
 
-    // Start initial timer
-    resetIdleTimer();
-
-    return () => {
+    const disableAutoHide = () => {
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+      setOverlayVisible(true);
+      if (!listenersActive) return;
+      listenersActive = false;
       window.removeEventListener('mousemove', onActivity);
       window.removeEventListener('touchstart', onActivity);
       window.removeEventListener('keydown', onActivity);
-      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
     };
-  }, [isPlayerOpen, rewindPhase, rewindingToStart, resetIdleTimer]);
+
+    const apply = () => {
+      if (checkPortraitMobile()) disableAutoHide();
+      else enableAutoHide();
+    };
+
+    apply();
+    window.addEventListener('resize', apply);
+
+    return () => {
+      window.removeEventListener('resize', apply);
+      disableAutoHide();
+    };
+  }, [isPlayerOpen, rewindPhase, rewindingToStart, resetIdleTimer, isMobile]);
 
   if (!isPlayerOpen || !rental) return null;
   const connectedTvLabel = castDeviceName || (isAirPlayConnected ? 'TV AirPlay connectée' : null);

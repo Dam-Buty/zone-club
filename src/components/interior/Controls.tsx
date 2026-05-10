@@ -168,10 +168,19 @@ const _pinchSavedPos = new THREE.Vector3();
 // Couch at world x=2.5 (reculé 30cm), 40% zoom towards TV (x=4.0): distance 1.5*0.6=0.90
 const SEATED_POSITION = new THREE.Vector3(3.452, 0.683, 1.2);
 const SEATED_LOOKAT = new THREE.Vector3(4.225, 0.699, 1.2);
-// Mobile seated — closer to TV so CRT fills viewport height
-// Screen center (3.955, 0.754), height 0.386m, FOV 80° → distance 0.231m for ~100% fill
-const SEATED_POSITION_MOBILE = new THREE.Vector3(3.724, 0.754, 1.2);
+// Mobile seated lookAt — TV screen center
 const SEATED_LOOKAT_MOBILE = new THREE.Vector3(3.955, 0.754, 1.2);
+// CRT visible screen width (4:3 ratio, height 0.386m → width ≈ 0.515m). Used to
+// dynamically place the camera so the TV fills the viewport width regardless of
+// portrait/landscape — re-evaluated each frame so rotating mid-sit re-fits.
+const TV_SCREEN_WIDTH = 0.515;
+const TV_FIT_MARGIN = 1.10;      // 10% breathing around TV width (was 1.05)
+const SEATED_DIST_MIN = 0.231;   // landscape fill: fit TV height in viewport
+const SEATED_DIST_MAX = 0.85;    // cap so we stay in front of the couch
+// Lower the camera ~10cm below the TV center while keeping lookAt on the TV.
+// Result: camera tilts up slightly, TV appears ~10-11% higher on screen.
+const SEATED_CAMERA_Y_OFFSET = -0.1;
+const _seatedDynamicMobile = new THREE.Vector3();
 const SIT_TRANSITION_SPEED = 5.0; // lerp alpha — ~95% converged at 600ms
 
 // TV Paramètres zoom — camera fills viewport with CRT screen
@@ -1089,8 +1098,27 @@ export function Controls({
       }
       wasSittingRef.current = true;
       const alpha = Math.min(1, SIT_TRANSITION_SPEED * delta);
-      const seatPos = isMobile ? SEATED_POSITION_MOBILE : SEATED_POSITION;
-      const seatLook = isMobile ? SEATED_LOOKAT_MOBILE : SEATED_LOOKAT;
+      let seatPos: THREE.Vector3;
+      let seatLook: THREE.Vector3;
+      if (isMobile) {
+        // Compute distance so TV fills viewport width based on current FOV+aspect.
+        // perspectiveCamera.fov is the *vertical* FOV; horizontal FOV depends on aspect.
+        const fovV = ((camera as THREE.PerspectiveCamera).fov * Math.PI) / 180;
+        const aspect = window.innerWidth / window.innerHeight;
+        const fovH = 2 * Math.atan(Math.tan(fovV / 2) * aspect);
+        const targetDist = (TV_SCREEN_WIDTH / 2) / Math.tan(fovH / 2) * TV_FIT_MARGIN;
+        const dist = Math.max(SEATED_DIST_MIN, Math.min(SEATED_DIST_MAX, targetDist));
+        _seatedDynamicMobile.set(
+          SEATED_LOOKAT_MOBILE.x - dist,
+          SEATED_LOOKAT_MOBILE.y + SEATED_CAMERA_Y_OFFSET,
+          SEATED_LOOKAT_MOBILE.z,
+        );
+        seatPos = _seatedDynamicMobile;
+        seatLook = SEATED_LOOKAT_MOBILE;
+      } else {
+        seatPos = SEATED_POSITION;
+        seatLook = SEATED_LOOKAT;
+      }
       camera.position.lerp(seatPos, alpha);
       // Compute target quaternion facing the TV
       _lookAtMatrix.lookAt(camera.position, seatLook, _up);
@@ -1210,7 +1238,7 @@ export function Controls({
     if (useStore.getState().isInteractingWithTV) return; // Block movement during standing TV menu
     if (useStore.getState().isInteractingWithLaZone) return; // Block movement during LaZone menu
 
-    const speed = isMobile ? 0.385 : 1.75; // slower on mobile for precision near shelves
+    const speed = isMobile ? 0.5775 : 1.75; // mobile bumped +50% (was 0.385) for less sluggish feel
     velocity.current.x -= velocity.current.x * 10.0 * delta;
     velocity.current.z -= velocity.current.z * 10.0 * delta;
 

@@ -6,6 +6,7 @@ import { ManagerChat } from './components/manager/ManagerChat';
 import BoardOverlay from './components/board/BoardOverlay';
 import { VHSPlayer } from './components/player/VHSPlayer';
 import { preloadPosterImage } from './utils/CassetteTextureArray';
+import './utils/asset-preload'; // Side-effect import: kicks off HDR/KTX2/wasm prefetch into HTTP cache
 import api, { apiFilmToFilm } from './api';
 import type { AisleType, Film } from './types';
 
@@ -400,6 +401,25 @@ function App() {
     fetchMe();
     fetchBoardNotes();
   }, [fetchMe, fetchBoardNotes]);
+
+  // L3 warmup screen: force ExteriorView at fresh page load even if persisted
+  // currentScene === 'interior'. Acts as a buffer where asset-preload.ts and
+  // module-level useGLTF.preload() fetches populate the cache while user reads
+  // the storefront / clicks "Entrer". SessionStorage flag distinguishes a fresh
+  // page load from a tab-switch (where we want to keep the user where they were).
+  useEffect(() => {
+    const SESSION_KEY = 'zone-club-session-active';
+    const isFreshLoad = !sessionStorage.getItem(SESSION_KEY);
+    if (!isFreshLoad) return;
+    sessionStorage.setItem(SESSION_KEY, '1');
+
+    // Don't override if user is being deep-linked into interior (cast notification).
+    if (new URLSearchParams(window.location.search).has('castEnded')) return;
+
+    if (useStore.getState().currentScene === 'interior') {
+      setScene('exterior');
+    }
+  }, [setScene]);
 
   // ===== Deep link: ?castEnded=filmId (from push notification) =====
   useEffect(() => {

@@ -1,4 +1,4 @@
-import { useRef, useMemo, useCallback, useEffect } from 'react'
+import { useRef, useMemo, useState, useCallback, useEffect } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
@@ -90,6 +90,10 @@ export function LaZoneCRT({ position, rotation = [0, 0, 0], tilt = -10 }: LaZone
 
   // Stable video element (module-level singleton)
   const video = getSharedVideo()
+
+  // Lazy-start gate: avoid preloading ~30 MB of TV channel video at boot.
+  // Triggers when user is close (<6m), sitting, or after a 60s safety fallback.
+  const [shouldStartTV, setShouldStartTV] = useState(false)
 
   // Store selectors
   const soundOn = useStore((s) => s.laZoneSoundOn)
@@ -312,8 +316,16 @@ export function LaZoneCRT({ position, rotation = [0, 0, 0], tilt = -10 }: LaZone
     return () => video.removeEventListener('loadedmetadata', onMetadata)
   }, [video])
 
+  // 60s fallback: trigger TV start regardless of proximity/sit
+  useEffect(() => {
+    if (shouldStartTV) return
+    const t = setTimeout(() => setShouldStartTV(true), 60_000)
+    return () => clearTimeout(t)
+  }, [shouldStartTV])
+
   // Fetch La Zone TV data + start ambient playback
   useEffect(() => {
+    if (!shouldStartTV) return
     if (!video) return
     let cancelled = false
 
@@ -364,12 +376,23 @@ export function LaZoneCRT({ position, rotation = [0, 0, 0], tilt = -10 }: LaZone
       if (switchTimeoutRef.current) { clearTimeout(switchTimeoutRef.current); switchTimeoutRef.current = null }
       video.pause()
     }
-  }, [video, playNext])
+  }, [shouldStartTV, video, playNext])
 
   // --- Screen flicker effect + stuck detection ---
   // Only show video when play() has succeeded for the current source (playGenRef matches srcGenRef)
   // Also monitors video.currentTime to detect permanently frozen playback
-  useFrame(() => {
+  useFrame((state) => {
+    // Lazy trigger: start TV when user is near (<6m) or sitting on couch.
+    // 60s fallback handled in a separate setTimeout above.
+    if (!shouldStartTV) {
+      const cam = state.camera.position
+      const dx = cam.x - position[0]
+      const dz = cam.z - position[2]
+      if (dx * dx + dz * dz < 36 || useStore.getState().isSitting) {
+        setShouldStartTV(true)
+      }
+    }
+
     if (!screenMeshRef.current || !video) return
     const mat = screenMeshRef.current.material as THREE.MeshStandardMaterial
     const isActive = !video.paused && video.readyState >= 2 && playGenRef.current === srcGenRef.current
