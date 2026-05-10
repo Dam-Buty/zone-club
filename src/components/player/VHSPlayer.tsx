@@ -1109,22 +1109,45 @@ export function VHSPlayer() {
   useEffect(() => {
     if (!isPlayerOpen || rewindPhase !== 'none' || rewindingToStart) return;
 
+    // Portrait mobile: VCR remote sits below the video and is always visible.
+    // Auto-hide doesn't make sense there — it's not floating over the video.
+    const checkPortraitMobile = () => isMobile && window.innerHeight > window.innerWidth;
+
     const onActivity = () => resetIdleTimer();
+    let listenersActive = false;
 
-    window.addEventListener('mousemove', onActivity);
-    window.addEventListener('touchstart', onActivity);
-    window.addEventListener('keydown', onActivity);
+    const enableAutoHide = () => {
+      if (listenersActive) return;
+      listenersActive = true;
+      window.addEventListener('mousemove', onActivity);
+      window.addEventListener('touchstart', onActivity);
+      window.addEventListener('keydown', onActivity);
+      resetIdleTimer();
+    };
 
-    // Start initial timer
-    resetIdleTimer();
-
-    return () => {
+    const disableAutoHide = () => {
+      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
+      setOverlayVisible(true);
+      if (!listenersActive) return;
+      listenersActive = false;
       window.removeEventListener('mousemove', onActivity);
       window.removeEventListener('touchstart', onActivity);
       window.removeEventListener('keydown', onActivity);
-      if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
     };
-  }, [isPlayerOpen, rewindPhase, rewindingToStart, resetIdleTimer]);
+
+    const apply = () => {
+      if (checkPortraitMobile()) disableAutoHide();
+      else enableAutoHide();
+    };
+
+    apply();
+    window.addEventListener('resize', apply);
+
+    return () => {
+      window.removeEventListener('resize', apply);
+      disableAutoHide();
+    };
+  }, [isPlayerOpen, rewindPhase, rewindingToStart, resetIdleTimer, isMobile]);
 
   if (!isPlayerOpen || !rental) return null;
   const connectedTvLabel = castDeviceName || (isAirPlayConnected ? 'TV AirPlay connectée' : null);

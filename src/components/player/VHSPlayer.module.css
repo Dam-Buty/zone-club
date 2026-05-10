@@ -603,3 +603,26 @@
   50% { opacity: 0.8; }
   75% { opacity: 0.9; }
 }
+
+/* ===== Portrait mobile: video on top (full width), VCR remote below ===== */
+@media (orientation: portrait) and (max-width: 900px) {
+  .player {
+    flex-direction: column;
+    justify-content: flex-start;
+    align-items: stretch;
+  }
+
+  .header {
+    position: static;
+    padding: 0.5rem 0.75rem;
+  }
+
+  .video {
+    width: 100vw;
+    height: auto;
+    max-height: 56vh; /* 100vw * 9/16 ≈ 56% on a portrait viewport */
+    background: black;
+    object-fit: contain;
+    flex: 0 0 auto;
+  }
+}

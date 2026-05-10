@@ -308,6 +308,9 @@ export function VHSControls({
               MIROIR
             </button>
           </div>
+          <button onClick={onEject} className={styles.backToStoreBtn} title="Retourner dans le vidéoclub">
+            ← RETOUR VIDÉOCLUB
+          </button>
         </div>
       </div>
       {remoteError && <div className={styles.remoteError}>{remoteError}</div>}
