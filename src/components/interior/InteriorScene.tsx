@@ -27,6 +27,7 @@ import type { MobileInput } from '../../types/mobile'
 // Lazy loading du composant Aisle (contient tous les modèles 3D)
 const Aisle = lazy(() => import('./Aisle').then(module => ({ default: module.Aisle })))
 import { VHSCaseViewer } from './VHSCaseViewer'
+import { CassetteHighlight } from './CassetteHighlight'
 import { TVTerminal } from '../terminal/TVTerminal'
 import { AuthModal } from '../auth/AuthModal'
 import { SearchModal } from '../search/SearchModal'
@@ -129,6 +130,7 @@ const SceneContent = memo(function SceneContent({
         isMobile={isMobile}
       />
       {selectedFilm && <VHSCaseViewer key={selectedFilm.id} film={selectedFilm} />}
+      <CassetteHighlight />
     </>
   )
 })

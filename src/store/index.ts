@@ -178,6 +178,22 @@ interface VideoClubState {
   isZoomedOnTV: boolean;
   setZoomedOnTV: (val: boolean) => void;
 
+  // Minitel (search/browse films + 3D highlight)
+  isInteractingWithMinitel: boolean;
+  setInteractingWithMinitel: (val: boolean) => void;
+  minitelMode: 'idle' | 'sommaire' | 'recherche' | 'rayons' | 'alpha' | 'commander' | 'detail';
+  setMinitelMode: (m: 'idle' | 'sommaire' | 'recherche' | 'rayons' | 'alpha' | 'commander' | 'detail') => void;
+  minitelQuery: string;
+  setMinitelQuery: (q: string) => void;
+  minitelSelectedAisle: AisleType | null;
+  setMinitelSelectedAisle: (a: AisleType | null) => void;
+  minitelSelectedFilm: number | null;
+  setMinitelSelectedFilm: (id: number | null) => void;
+  minitelPageIndex: number;
+  setMinitelPageIndex: (n: number) => void;
+  highlightedCassetteKey: string | null;
+  setHighlightedCassetteKey: (k: string | null) => void;
+
   // Standing TV interaction (click TV while standing → 2-option menu)
   isInteractingWithTV: boolean;
   setInteractingWithTV: (val: boolean) => void;
@@ -723,6 +739,22 @@ export const useStore = create<VideoClubState>()(
       // TV zoom (Paramètres)
       isZoomedOnTV: false,
       setZoomedOnTV: (val) => set({ isZoomedOnTV: val }),
+
+      // Minitel
+      isInteractingWithMinitel: false,
+      setInteractingWithMinitel: (val) => set({ isInteractingWithMinitel: val }),
+      minitelMode: 'idle',
+      setMinitelMode: (m) => set({ minitelMode: m }),
+      minitelQuery: '',
+      setMinitelQuery: (q) => set({ minitelQuery: q }),
+      minitelSelectedAisle: null,
+      setMinitelSelectedAisle: (a) => set({ minitelSelectedAisle: a }),
+      minitelSelectedFilm: null,
+      setMinitelSelectedFilm: (id) => set({ minitelSelectedFilm: id }),
+      minitelPageIndex: 0,
+      setMinitelPageIndex: (n) => set({ minitelPageIndex: n }),
+      highlightedCassetteKey: null,
+      setHighlightedCassetteKey: (k) => set({ highlightedCassetteKey: k }),
 
       // Standing TV interaction
       isInteractingWithTV: false,

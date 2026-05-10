@@ -190,6 +190,13 @@ const TV_ZOOM_POSITION = new THREE.Vector3(3.555, 0.754, 1.2);
 const TV_ZOOM_POSITION_MOBILE = new THREE.Vector3(3.621, 0.754, 1.2);
 const TV_ZOOM_LOOKAT = new THREE.Vector3(3.955, 0.754, 1.2);
 
+// Minitel zoom — model placed at world ~(-0.571, 1.047, -0.01) on the desk,
+// rotated π so it faces +Z. Camera placed in front of the screen at ~0.4m.
+// The screen sits ~5cm above the model base and tilts forward; we look at it.
+const MINITEL_LOOKAT = new THREE.Vector3(-0.571, 1.10, -0.01);
+const MINITEL_POSITION = new THREE.Vector3(-0.571, 1.16, 0.27);
+const MINITEL_POSITION_MOBILE = new THREE.Vector3(-0.571, 1.16, 0.32);
+
 // LaZone CRT watch position — perpendicular to screen surface
 // CRT origin: [4.2, 1.8, 3.95], Y-rot 65°, tilt -10°
 // Screen world normal: (-0.893, -0.174, -0.417)
@@ -268,6 +275,11 @@ export function Controls({
   const wasZoomedOnTVRef = useRef(false);
   const preZoomTVPosRef = useRef(new THREE.Vector3());
   const preZoomTVQuatRef = useRef(new THREE.Quaternion());
+
+  // Minitel zoom tracking
+  const wasInMinitelRef = useRef(false);
+  const preMinitelPosRef = useRef(new THREE.Vector3());
+  const preMinitelQuatRef = useRef(new THREE.Quaternion());
 
   // Hystérésis pour sélection cassettes
   const lastCassetteKeyRef = useRef<string | null>(null)
@@ -355,8 +367,8 @@ export function Controls({
     // Block interactions during tutorial
     if (useStore.getState().tutorialStep !== null) return;
     // On desktop, require pointer lock (unless sitting or interacting with TV/LaZone).
-    const { isSitting: sittingNow, isInteractingWithTV, isInteractingWithLaZone } = useStore.getState();
-    if (!isMobile && !sittingNow && !isInteractingWithTV && !isInteractingWithLaZone && !controlsRef.current?.isLocked) return;
+    const { isSitting: sittingNow, isInteractingWithTV, isInteractingWithLaZone, isInteractingWithMinitel: inMinitel } = useStore.getState();
+    if (!isMobile && !sittingNow && !isInteractingWithTV && !isInteractingWithLaZone && !inMinitel && !controlsRef.current?.isLocked) return;
 
     const interactive = targetedInteractiveRef.current;
 
@@ -1062,6 +1074,33 @@ export function Controls({
     }
 
     // === Zoomed on TV (Paramètres) — fills viewport with CRT screen ===
+    // === Minitel zoom ===
+    const isInMinitel = useStore.getState().isInteractingWithMinitel;
+    if (isInMinitel) {
+      if (!wasInMinitelRef.current) {
+        preMinitelPosRef.current.copy(camera.position);
+        preMinitelQuatRef.current.copy(camera.quaternion);
+      }
+      wasInMinitelRef.current = true;
+      const alpha = Math.min(1, SIT_TRANSITION_SPEED * delta);
+      camera.position.lerp(isMobile ? MINITEL_POSITION_MOBILE : MINITEL_POSITION, alpha);
+      _lookAtMatrix.lookAt(camera.position, MINITEL_LOOKAT, _up);
+      _targetQuat.setFromRotationMatrix(_lookAtMatrix);
+      camera.quaternion.slerp(_targetQuat, alpha);
+      return;
+    }
+    if (wasInMinitelRef.current) {
+      const alpha = Math.min(1, SIT_TRANSITION_SPEED * delta);
+      camera.position.lerp(preMinitelPosRef.current, alpha);
+      camera.quaternion.slerp(preMinitelQuatRef.current, alpha);
+      if (camera.position.distanceTo(preMinitelPosRef.current) < 0.01) {
+        camera.position.copy(preMinitelPosRef.current);
+        camera.quaternion.copy(preMinitelQuatRef.current);
+        wasInMinitelRef.current = false;
+      }
+      return;
+    }
+
     const isZoomedOnTV = useStore.getState().isZoomedOnTV;
     if (isZoomedOnTV) {
       if (!wasZoomedOnTVRef.current) {

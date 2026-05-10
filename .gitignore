@@ -37,6 +37,9 @@ certificates/
 # Playwright MCP artifacts
 .playwright-mcp/
 
+# Superpowers brainstorming session files (visual companion mockups)
+.superpowers/
+
 # SvelteKit remnants
 backend-zone-club/
 
