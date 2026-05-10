@@ -971,22 +971,8 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
           </p>
         </div>
       )}
-      {/* Sitting on couch: landscape required (portrait forbidden) */}
-      {isMobile && isSitting && isPortrait && (
-        <div style={{
-          position: 'fixed', inset: 0, zIndex: 9999,
-          background: 'rgba(0,0,0,0.95)',
-          display: 'flex', flexDirection: 'column',
-          alignItems: 'center', justifyContent: 'center',
-          color: '#00ffff', fontFamily: "'Courier New', monospace",
-          textAlign: 'center', padding: '2rem',
-        }}>
-          <div style={{ fontSize: '4rem', marginBottom: '1rem' }}>📱↻</div>
-          <p style={{ fontSize: '1.2rem', letterSpacing: 2 }}>
-            Tournez votre téléphone<br/>en mode paysage
-          </p>
-        </div>
-      )}
+      {/* Sitting on couch: TV menu controls work in both portrait and landscape.
+          The right-anchored UP/OK/DOWN/EXIT buttons are reachable either way. */}
 
       <UIOverlays isMobile={isMobile} />
 
