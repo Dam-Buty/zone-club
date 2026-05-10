@@ -174,8 +174,12 @@ const SEATED_LOOKAT_MOBILE = new THREE.Vector3(3.955, 0.754, 1.2);
 // dynamically place the camera so the TV fills the viewport width regardless of
 // portrait/landscape — re-evaluated each frame so rotating mid-sit re-fits.
 const TV_SCREEN_WIDTH = 0.515;
-const SEATED_DIST_MIN = 0.231;  // landscape fill: fit TV height in viewport
-const SEATED_DIST_MAX = 0.85;   // cap so we stay in front of the couch
+const TV_FIT_MARGIN = 1.10;      // 10% breathing around TV width (was 1.05)
+const SEATED_DIST_MIN = 0.231;   // landscape fill: fit TV height in viewport
+const SEATED_DIST_MAX = 0.85;    // cap so we stay in front of the couch
+// Lower the camera ~10cm below the TV center while keeping lookAt on the TV.
+// Result: camera tilts up slightly, TV appears ~10-11% higher on screen.
+const SEATED_CAMERA_Y_OFFSET = -0.1;
 const _seatedDynamicMobile = new THREE.Vector3();
 const SIT_TRANSITION_SPEED = 5.0; // lerp alpha — ~95% converged at 600ms
 
@@ -1102,11 +1106,11 @@ export function Controls({
         const fovV = ((camera as THREE.PerspectiveCamera).fov * Math.PI) / 180;
         const aspect = window.innerWidth / window.innerHeight;
         const fovH = 2 * Math.atan(Math.tan(fovV / 2) * aspect);
-        const targetDist = (TV_SCREEN_WIDTH / 2) / Math.tan(fovH / 2) * 1.05; // 5% breathing
+        const targetDist = (TV_SCREEN_WIDTH / 2) / Math.tan(fovH / 2) * TV_FIT_MARGIN;
         const dist = Math.max(SEATED_DIST_MIN, Math.min(SEATED_DIST_MAX, targetDist));
         _seatedDynamicMobile.set(
           SEATED_LOOKAT_MOBILE.x - dist,
-          SEATED_LOOKAT_MOBILE.y,
+          SEATED_LOOKAT_MOBILE.y + SEATED_CAMERA_Y_OFFSET,
           SEATED_LOOKAT_MOBILE.z,
         );
         seatPos = _seatedDynamicMobile;
