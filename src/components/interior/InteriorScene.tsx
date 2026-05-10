@@ -865,18 +865,16 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
           const startTime = performance.now()
           let resolved = false
 
-          const finish = (reason: string) => {
+          const finish = () => {
             if (resolved) return
             resolved = true
-            const elapsed = Math.round(performance.now() - startTime)
-            console.log(`[scene-ready] ${reason} after ${elapsed}ms`)
             useStore.getState().setSceneReady(true)
           }
 
           const tryReady = async () => {
             // Hard timeout safety
             if (performance.now() - startTime > HARD_TIMEOUT_MS) {
-              finish('timeout')
+              finish()
               return
             }
 
@@ -910,10 +908,9 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
               if (typeof renderer.compileAsync === 'function') {
                 await renderer.compileAsync(state.scene, state.camera)
               }
-              finish(`ready meshes=${meshCount}`)
-            } catch (err) {
-              console.warn('[scene-ready] compileAsync failed, dismissing anyway:', err)
-              finish('compile-error')
+              finish()
+            } catch {
+              finish()
             }
           }
           requestAnimationFrame(tryReady)
