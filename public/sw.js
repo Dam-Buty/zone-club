@@ -1,6 +1,8 @@
-// Service Worker — cache-first for 3D assets, stale-while-revalidate for API data
-// Bump VERSION on every deploy to invalidate stale caches
-const VERSION = 'v3'
+// Service Worker — cache-first for 3D assets and film catalog, network-only for posters
+// (posters are served by /api/poster proxy with HTTP Cache-Control: max-age=2592000 immutable,
+// so the browser HTTP cache handles them — duplicating in SW cache wasted ~58 MB on mobile).
+// Bump VERSION on every deploy to invalidate stale caches.
+const VERSION = 'v4'
 const CACHE_NAME = `zone-club-${VERSION}`
 
 // Assets to pre-cache on install (critical path)
@@ -47,16 +49,15 @@ function getStrategy(url) {
     return 'cache-first'
   }
 
-  // Poster proxy — cache-first (TMDB images are immutable per path)
-  if (path.startsWith('/api/poster/')) {
-    return 'cache-first'
-  }
+  // Poster proxy — network-only: served by /api/poster with HTTP Cache-Control
+  // max-age=2592000 immutable. Browser HTTP cache handles repeat fetches without
+  // SW intervention; duplicating in SW cache wasted ~58 MB on mobile.
 
-  // Film catalog API — stale-while-revalidate
-  // Serve cached data instantly on repeat visits, refresh in background.
-  // New films added by admin appear on next visit.
+  // Film catalog API — cache-first (instead of stale-while-revalidate).
+  // Eliminates ~1 MB of background revalidation on every visit.
+  // New films appear on next deploy (VERSION bump invalidates cache).
   if (path.startsWith('/api/films/')) {
-    return 'stale-while-revalidate'
+    return 'cache-first'
   }
 
   // Everything else (auth, rentals, reviews, admin, etc.)
@@ -114,24 +115,6 @@ self.addEventListener('fetch', (event) => {
         })
       )
     )
-    return
-  }
-
-  if (strategy === 'stale-while-revalidate') {
-    event.respondWith(
-      caches.open(CACHE_NAME).then((cache) =>
-        cache.match(request).then((cached) => {
-          const fetchPromise = fetch(request).then((response) => {
-            if (response.ok) {
-              cache.put(request, response.clone())
-            }
-            return response
-          })
-          return cached || fetchPromise
-        })
-      )
-    )
-    return
   }
 })
 

@@ -22,14 +22,18 @@ import * as THREE from 'three'
  * (~3s + 15 GPU uploads on mobile).
  */
 
-const POSTER_WIDTH = 256
-const POSTER_HEIGHT = 384
+// Aligned with TMDB w185 source (~185×278). 200×300 is the smallest power-friendly
+// size that doesn't downscale below source. Atlas = 200×300×4×18×18 = 78 MB
+// (vs 127 MB at 256×384, which was upscaling the source).
+const POSTER_WIDTH = 200
+const POSTER_HEIGHT = 300
 const BYTES_PER_PIXEL = 4
 const POSTER_ROW_BYTES = POSTER_WIDTH * BYTES_PER_PIXEL
 
 // ===== IndexedDB Atlas Cache =====
 const IDB_NAME = 'cassette-atlas-cache'
-const IDB_VERSION = 1
+// Bump on POSTER_WIDTH/HEIGHT change — old cached atlases have incompatible byte layout
+const IDB_VERSION = 2
 const IDB_STORE = 'atlases'
 const IDB_KEY = 'current' // single-entry cache (latest atlas only)
 
@@ -38,9 +42,10 @@ function openAtlasDB(): Promise<IDBDatabase> {
     const request = indexedDB.open(IDB_NAME, IDB_VERSION)
     request.onupgradeneeded = () => {
       const db = request.result
-      if (!db.objectStoreNames.contains(IDB_STORE)) {
-        db.createObjectStore(IDB_STORE)
+      if (db.objectStoreNames.contains(IDB_STORE)) {
+        db.deleteObjectStore(IDB_STORE)
       }
+      db.createObjectStore(IDB_STORE)
     }
     request.onsuccess = () => resolve(request.result)
     request.onerror = () => reject(request.error)

@@ -850,56 +850,73 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
         }) as any}
         onCreated={(state) => {
-          // Wait for films data, then compile shaders. Poster atlas loads
-          // progressively in the background — no need to block here.
-          // On first visit, posters fill in during the tutorial (~30s user-paced).
-          // On return visits, IndexedDB cache restores the atlas in ~50ms.
-          const checkReady = () => {
-            const { films } = useStore.getState()
-            const totalFilms = Object.values(films).flat().length
-            if (totalFilms === 0) {
-              requestAnimationFrame(checkReady)
+          // Scene ready gating — gates loader dismiss behind 3 conditions ANDed:
+          //  1. films data loaded (store has at least 1 film)
+          //  2. all expected meshes are mounted (suspense resolved for Aisle, CassetteInstances,
+          //     Lighting, Storefront, Couch, LaZoneCRT, InteractiveTVDisplay, etc.)
+          //  3. renderer.compileAsync(scene, camera) resolved (all WebGPU pipelines compiled)
+          //  4. poster atlas fully loaded (window.__posterProgress.loaded === total)
+          //
+          // Hard timeout fallback at 10s so the user never sees an infinite loader.
+          // Replaces the previous "wait 1 RAF + 3 frames + frustumCulled hack" which
+          // raced with Suspense and only compiled pipelines for ~1 mesh.
+          const HARD_TIMEOUT_MS = 10_000
+          const MIN_MESH_COUNT = 30 // empirical: scene typically has 80+ meshes when fully mounted
+          const startTime = performance.now()
+          let resolved = false
+
+          const finish = (reason: string) => {
+            if (resolved) return
+            resolved = true
+            const elapsed = Math.round(performance.now() - startTime)
+            console.log(`[scene-ready] ${reason} after ${elapsed}ms`)
+            useStore.getState().setSceneReady(true)
+          }
+
+          const tryReady = async () => {
+            // Hard timeout safety
+            if (performance.now() - startTime > HARD_TIMEOUT_MS) {
+              finish('timeout')
               return
             }
 
-            // Give 1 frame for CassetteInstances to mount + create InstancedMesh
-            requestAnimationFrame(() => {
-              // SHADER WARM-UP: compile ALL WebGPU render pipelines BEFORE
-              // dismissing the loading screen, preventing the 3-5s freeze on
-              // first camera movement.
-              //
-              // PostProcessing uses internal HDR render targets (float16) —
-              // pipelines compiled against the canvas format (BGRA8) are NOT
-              // reused. The only way to compile the correct pipelines is to
-              // let PostProcessing.render() run naturally with every mesh
-              // visible (frustumCulled=false).
-              const scene = state.scene
-              const savedCulling: { obj: THREE.Mesh; val: boolean }[] = []
-              scene.traverse((obj: THREE.Object3D) => {
-                if ((obj as THREE.Mesh).isMesh) {
-                  const mesh = obj as THREE.Mesh
-                  savedCulling.push({ obj: mesh, val: mesh.frustumCulled })
-                  mesh.frustumCulled = false
-                }
-              })
+            const { films } = useStore.getState()
+            if (Object.values(films).flat().length === 0) {
+              requestAnimationFrame(tryReady)
+              return
+            }
 
-              // Let PostProcessing render 3 frames with ALL meshes visible
-              let warmUpFrames = 0
-              const waitForWarmUp = () => {
-                warmUpFrames++
-                if (warmUpFrames < 3) {
-                  requestAnimationFrame(waitForWarmUp)
-                } else {
-                  for (const { obj, val } of savedCulling) {
-                    obj.frustumCulled = val
-                  }
-                  useStore.getState().setSceneReady(true)
-                }
-              }
-              requestAnimationFrame(waitForWarmUp)
+            // Count meshes currently in scene — proxy for "all suspense resolved"
+            let meshCount = 0
+            state.scene.traverse((obj) => {
+              if ((obj as THREE.Mesh).isMesh) meshCount++
             })
+            if (meshCount < MIN_MESH_COUNT) {
+              requestAnimationFrame(tryReady)
+              return
+            }
+
+            // Check poster atlas progress (set by CassetteInstances).
+            // Allow ready if all loaded OR atlas hasn't started (fallback)
+            const pp = (window as unknown as { __posterProgress?: { total: number; loaded: number } }).__posterProgress
+            if (pp && pp.total > 0 && pp.loaded < pp.total) {
+              requestAnimationFrame(tryReady)
+              return
+            }
+
+            // Compile all pipelines via official Three.js API
+            try {
+              const renderer = state.gl as unknown as { compileAsync?: (s: THREE.Scene, c: THREE.Camera) => Promise<void> }
+              if (typeof renderer.compileAsync === 'function') {
+                await renderer.compileAsync(state.scene, state.camera)
+              }
+              finish(`ready meshes=${meshCount}`)
+            } catch (err) {
+              console.warn('[scene-ready] compileAsync failed, dismissing anyway:', err)
+              finish('compile-error')
+            }
           }
-          checkReady()
+          requestAnimationFrame(tryReady)
         }}
       >
         <SceneErrorBoundary>
