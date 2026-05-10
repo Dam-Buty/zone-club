@@ -1,14 +1,12 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { useStore } from '../../store'
 
 type Display = {
   fps: number
   fpsMin: number
   fpsP5: number
   heap: number
-  tier: string
   janks: number
 }
 
@@ -21,13 +19,12 @@ export function PerfOverlay() {
     return qs.get('perf') === '1'
   })
   const [display, setDisplay] = useState<Display>({
-    fps: 0, fpsMin: 0, fpsP5: 0, heap: 0, tier: '-', janks: 0,
+    fps: 0, fpsMin: 0, fpsP5: 0, heap: 0, janks: 0,
   })
   const samplesRef = useRef<number[]>([])
   const janksRef = useRef(0)
   const lastFrameRef = useRef(performance.now())
   const rafRef = useRef(0)
-  const qualityTier = useStore(s => s.qualityTier ?? '-')
 
   useEffect(() => {
     if (process.env.NODE_ENV !== 'development') return
@@ -58,14 +55,13 @@ export function PerfOverlay() {
         fpsMin: Math.round(fpsMin),
         fpsP5: Math.round(fpsP5),
         heap: Math.round(heap / 1e6),
-        tier: String(qualityTier),
         janks: janksRef.current,
       })
       rafRef.current = requestAnimationFrame(tick)
     }
     rafRef.current = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(rafRef.current)
-  }, [visible, qualityTier])
+  }, [visible])
 
   if (process.env.NODE_ENV !== 'development' || !visible) return null
 
@@ -89,7 +85,6 @@ export function PerfOverlay() {
     >
       <div>FPS {display.fps} (min {display.fpsMin} / p5 {display.fpsP5})</div>
       <div>Heap {display.heap} MB</div>
-      <div>Tier {display.tier}</div>
       <div>Janks &gt;33ms {display.janks}</div>
     </div>
   )

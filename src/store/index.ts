@@ -252,10 +252,6 @@ interface VideoClubState {
   openBoardNote: (noteId: number) => void;
   closeBoard: () => void;
   fetchBoardNotes: () => Promise<void>;
-
-  // Quality tier (Phase 2 — adaptatif mobile)
-  qualityTier: 'HIGH' | 'MEDIUM' | 'LOW';
-  setQualityTier: (tier: 'HIGH' | 'MEDIUM' | 'LOW') => void;
 }
 
 export const useStore = create<VideoClubState>()(
@@ -851,10 +847,6 @@ export const useStore = create<VideoClubState>()(
           // silently fail
         }
       },
-
-      // Quality tier — default HIGH, adaptatif via useQualityTier (Phase 2)
-      qualityTier: 'HIGH',
-      setQualityTier: (tier) => set({ qualityTier: tier }),
     }),
     {
       name: 'videoclub-storage',
