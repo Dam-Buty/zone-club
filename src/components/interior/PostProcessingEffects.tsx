@@ -84,12 +84,18 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
     }
 
     postProcessingRef.current = postProcessing
+    // Expose for the scene-ready gate (InteriorScene) so it can warmup pipelines
+    // in the PostProcessing render-target context (HalfFloat) — pipelines compiled
+    // for the default RT in compileAsync are useless here, the actual render uses
+    // PassNode's render target which has a different format.
+    ;(window as unknown as { __postProcessing?: THREE.PostProcessing }).__postProcessing = postProcessing
 
     return () => {
       postProcessing.dispose()
       postProcessingRef.current = null
       bokehRef.current = null
       bloomStrengthRef.current = null
+      ;(window as unknown as { __postProcessing?: THREE.PostProcessing | null }).__postProcessing = null
     }
   }, [renderer, scene, camera, isMobile, dofTrigger])
 
