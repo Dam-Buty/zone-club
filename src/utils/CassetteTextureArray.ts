@@ -104,9 +104,12 @@ export class CassetteTextureAtlas {
     this.texture = new THREE.DataTexture(this.data, this.atlasWidth, this.atlasHeight)
     this.texture.format = THREE.RGBAFormat
     this.texture.type = THREE.UnsignedByteType
-    this.texture.minFilter = THREE.LinearMipmapLinearFilter
+    // Test: mipmaps disabled. Hypothesis: backend.generateMipmaps() on a 33MB
+    // atlas does ~11 render passes to fill mip levels + compiles a mipmap
+    // shader, which on Pixel 9 takes 1-2s and triggers post-load spikes.
+    this.texture.minFilter = THREE.LinearFilter
     this.texture.magFilter = THREE.LinearFilter
-    this.texture.generateMipmaps = true
+    this.texture.generateMipmaps = false
     this.texture.flipY = false
     this.texture.colorSpace = THREE.SRGBColorSpace
     this._dirty = true
