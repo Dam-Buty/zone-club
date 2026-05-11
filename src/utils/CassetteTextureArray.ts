@@ -264,12 +264,18 @@ export class CassetteTextureAtlas {
    */
   async restoreFromCache(fingerprint: string): Promise<boolean> {
     try {
+      const _t0 = performance.now()
       const cached = await idbGet()
+      const _t1 = performance.now()
+      console.warn(`[IDB-GET] ${(_t1 - _t0).toFixed(0)}ms (has=${!!cached})`)
       if (!cached) return false
       if (cached.fingerprint !== fingerprint) return false
       if (cached.cols !== this.cols || cached.rows !== this.rows) return false
 
+      const _t2 = performance.now()
       this.data.set(new Uint8Array(cached.data))
+      const _t3 = performance.now()
+      console.warn(`[IDB-COPY] ${(_t3 - _t2).toFixed(0)}ms (${(cached.data.byteLength / 1024 / 1024).toFixed(1)}MB)`)
       for (const slot of cached.loadedSlots) {
         this.loadedSlots.add(slot)
       }
