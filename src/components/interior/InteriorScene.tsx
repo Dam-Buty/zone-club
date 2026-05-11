@@ -928,7 +928,9 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
             useStore.getState().setSceneReady(true)
           }
 
-          const runWarmup = async (): Promise<boolean> => {
+          const runWarmup = (): boolean => {
+            // 1. Disable frustum culling on every mesh → projectObject pushes ALL to
+            //    the render list, so every pipeline variant gets compiled.
             const restoreList: THREE.Mesh[] = []
             state.scene.traverse((obj) => {
               const m = obj as THREE.Mesh
@@ -937,33 +939,26 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
                 m.frustumCulled = false
               }
             })
+            // 2. Save the current camera orientation so we can sweep through
+            //    multiple view directions during warmup. Even with
+            //    frustumCulled=false, pipelines that depend on view-direction
+            //    (TSL hover variants, shadow caster selection, lighting
+            //    clusters) only compile when actually rendered from that
+            //    angle. A 360° sweep exposes every angle.
             const savedQuat = state.camera.quaternion.clone()
             const tmpEuler = new THREE.Euler(0, 0, 0, 'YXZ')
             try {
               const pp = (window as unknown as { __postProcessing?: { render?: () => void } }).__postProcessing
               if (!pp || typeof pp.render !== 'function') return false
-              // 16 yaw × 2 pitch = 32 angles. Covers every direction the user
-              // can look in, so every bind group / mesh combination is cached
-              // BEFORE sceneReady fires.
+              // 8 yaw directions × 2 pitch tilts = 16 angles. Covers walls,
+              // aisles, ceiling lights, floor reflections, etc.
               for (const pitch of [0, -0.4]) {
-                for (let i = 0; i < 16; i++) {
-                  tmpEuler.set(pitch, (i * Math.PI) / 8, 0)
+                for (let i = 0; i < 8; i++) {
+                  tmpEuler.set(pitch, (i * Math.PI) / 4, 0)
                   state.camera.quaternion.setFromEuler(tmpEuler)
                   state.camera.updateMatrixWorld(true)
                   pp.render()
                 }
-              }
-              // Wait for GPU to actually FINISH all warmup work before
-              // declaring sceneReady. Without this await, pp.render() just
-              // queues commands and returns — GPU still drains during user
-              // interaction, causing rotation spikes from queue backup.
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              const renderer = state.gl as any
-              const device = renderer?.backend?.device as GPUDevice | undefined
-              if (device?.queue?.onSubmittedWorkDone) {
-                const _t = performance.now()
-                await device.queue.onSubmittedWorkDone()
-                console.warn(`[WARMUP-GPU-WAIT] ${(performance.now() - _t).toFixed(0)}ms`)
               }
               return true
             } finally {
@@ -1002,14 +997,16 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
               requestAnimationFrame(tryReady)
               return
             }
-            // Single-pass warmup. async because we await GPU completion to
-            // ensure all bind groups/pipelines are baked BEFORE sceneReady.
+            // Single-pass warmup. The previous multi-pass adaptive logic with
+            // setTimeout(2500ms) chains caused 5 visible frame spikes of 1-2s
+            // each post-sceneReady — the GPU work from runWarmup() (16 renders
+            // with frustumCulled=false) was staggered across user interaction
+            // windows. Evidence: [FRAME-SPIKE] logs showed 5 spikes 1.1-2.4s
+            // each at identical (idle) camera position.
             const t0 = performance.now()
-            void (async () => {
-              try { await runWarmup() } catch {}
-              console.warn(`[WARMUP-PASS] ${(performance.now() - t0).toFixed(0)}ms`)
-              finish()
-            })()
+            try { runWarmup() } catch {}
+            console.warn(`[WARMUP-PASS] ${(performance.now() - t0).toFixed(0)}ms`)
+            finish()
           }
           requestAnimationFrame(tryReady)
         }}
