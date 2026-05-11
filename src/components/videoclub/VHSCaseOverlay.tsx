@@ -15,6 +15,7 @@ import {
   type PersonDetail,
 } from "../../types";
 import { useIsMobile } from "../../hooks/useIsMobile";
+import { useBackGuard } from "../../hooks/useBackGuard";
 
 interface VHSCaseOverlayProps {
   film: Film | null;
@@ -341,6 +342,7 @@ function PersonModal({ person, detail, loading, onClose }: {
 }
 
 export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
+  useBackGuard(isOpen, onClose);
   const isMobile = useIsMobile();
   const isAuthenticated = useStore((state) => state.isAuthenticated);
   const films = useStore((state) => state.films);

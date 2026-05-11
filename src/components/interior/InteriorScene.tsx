@@ -21,6 +21,7 @@ import { Controls } from './Controls'
 import { PostProcessingEffects } from './PostProcessingEffects'
 import { Environment } from '@react-three/drei'
 import { useIsMobile } from '../../hooks/useIsMobile'
+import { useBackGuard } from '../../hooks/useBackGuard'
 import { createMobileInput } from '../../types/mobile'
 import type { MobileInput } from '../../types/mobile'
 
@@ -750,8 +751,23 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
   const benchmarkEnabled = useStore(state => state.benchmarkEnabled)
   const laZoneActive = useStore(state => state.isInteractingWithLaZone || state.isWatchingLaZone)
   const isSitting = useStore(state => state.isSitting)
+  const setSitting = useStore(state => state.setSitting)
   const isTerminalOpen = useStore(state => state.isTerminalOpen)
+  const isWatchingLaZone = useStore(state => state.isWatchingLaZone)
+  const isInteractingWithLaZone = useStore(state => state.isInteractingWithLaZone)
+  const setWatchingLaZone = useStore(state => state.setWatchingLaZone)
+  const setInteractingWithLaZone = useStore(state => state.setInteractingWithLaZone)
+  const isInteractingWithTV = useStore(state => state.isInteractingWithTV)
+  const setInteractingWithTV = useStore(state => state.setInteractingWithTV)
   const benchmarkMode = benchmarkEnabled || URL_BENCHMARK_MODE
+
+  // Back-gesture guards for scene-level states (no overlay components owning these).
+  // Order matters: deeper-nested states must be registered AFTER their parents so
+  // back closes them first.
+  useBackGuard(isSitting, () => setSitting(false))
+  useBackGuard(isInteractingWithTV, () => setInteractingWithTV(false))
+  useBackGuard(isInteractingWithLaZone, () => setInteractingWithLaZone(false))
+  useBackGuard(isWatchingLaZone, () => { setWatchingLaZone(false); setInteractingWithLaZone(false) })
 
   useEffect(() => {
     return () => {
@@ -850,18 +866,26 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
         }) as any}
         onCreated={(state) => {
-          // Scene ready gating — gates loader dismiss behind 3 conditions ANDed:
-          //  1. films data loaded (store has at least 1 film)
-          //  2. all expected meshes are mounted (suspense resolved for Aisle, CassetteInstances,
-          //     Lighting, Storefront, Couch, LaZoneCRT, InteractiveTVDisplay, etc.)
-          //  3. renderer.compileAsync(scene, camera) resolved (all WebGPU pipelines compiled)
-          //  4. poster atlas fully loaded (window.__posterProgress.loaded === total)
+          // Scene ready gating — empirical fix for PR #44's spike-on-movement bug.
           //
-          // Hard timeout fallback at 10s so the user never sees an infinite loader.
-          // Replaces the previous "wait 1 RAF + 3 frames + frustumCulled hack" which
-          // raced with Suspense and only compiled pipelines for ~1 mesh.
-          const HARD_TIMEOUT_MS = 10_000
-          const MIN_MESH_COUNT = 30 // empirical: scene typically has 80+ meshes when fully mounted
+          // PROBLEM with PR #44 (verified via CDP probe on Pixel 9 prod reload):
+          // 1. compileAsync warms pipelines for the DEFAULT screen render target
+          //    (renderContext built from this._renderTarget — see Renderer.js:858).
+          // 2. PostProcessing.render() uses a HalfFloat custom RenderTarget
+          //    (see PassNode.js:240). Different format = different pipeline cache key.
+          // 3. At first postProcessing.render(), all 50+ material pipelines need to
+          //    be COMPILED AGAIN, this time SYNCHRONOUSLY (WebGPUPipelineUtils.js:252
+          //    falls back to createRenderPipeline sync when promises=null).
+          //    → 1.6s of spike spread over the first 1-2s of rendering.
+          // 4. Additionally, compileAsync's renderList only includes meshes inside the
+          //    camera frustum at warmup time (Renderer.js:2778+2828). Meshes hors-champ
+          //    compile their pipelines on first appearance → spike au déplacement.
+          //
+          // FIX: warmup via postProcessing.render() WITH frustumCulled=false on every
+          // mesh, so pipelines are compiled in the correct RT context AND for all meshes.
+          // Then restore frustumCulled and signal scene-ready.
+          const HARD_TIMEOUT_MS = 15_000
+          const MIN_MESH_COUNT = 30
           const startTime = performance.now()
           let resolved = false
 
@@ -871,20 +895,45 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
             useStore.getState().setSceneReady(true)
           }
 
-          const tryReady = async () => {
-            // Hard timeout safety
+          const runWarmup = (): boolean => {
+            // 1. Disable frustum culling on every mesh → projectObject pushes ALL to
+            //    the render list, so every pipeline variant gets compiled.
+            const restoreList: THREE.Mesh[] = []
+            state.scene.traverse((obj) => {
+              const m = obj as THREE.Mesh
+              if (m.isMesh && m.frustumCulled) {
+                restoreList.push(m)
+                m.frustumCulled = false
+              }
+            })
+            try {
+              // 2. Trigger postProcessing.render() — this is the SAME code path as
+              //    runtime rendering, so pipelines are compiled for the correct RT.
+              //    First call is slow on mobile (sync createRenderPipeline calls
+              //    queued into one GPU submit) but happens behind the loading screen.
+              const pp = (window as unknown as { __postProcessing?: { render?: () => void } }).__postProcessing
+              if (pp && typeof pp.render === 'function') {
+                pp.render()
+                return true
+              }
+              return false
+            } finally {
+              // 3. Restore frustum culling so runtime culling works normally.
+              for (const m of restoreList) m.frustumCulled = true
+            }
+          }
+
+          const tryReady = () => {
+            // Hard timeout safety net — never block the user forever.
             if (performance.now() - startTime > HARD_TIMEOUT_MS) {
               finish()
               return
             }
-
             const { films } = useStore.getState()
             if (Object.values(films).flat().length === 0) {
               requestAnimationFrame(tryReady)
               return
             }
-
-            // Count meshes currently in scene — proxy for "all suspense resolved"
             let meshCount = 0
             state.scene.traverse((obj) => {
               if ((obj as THREE.Mesh).isMesh) meshCount++
@@ -893,25 +942,24 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
               requestAnimationFrame(tryReady)
               return
             }
-
-            // Check poster atlas progress (set by CassetteInstances).
-            // Allow ready if all loaded OR atlas hasn't started (fallback)
             const pp = (window as unknown as { __posterProgress?: { total: number; loaded: number } }).__posterProgress
             if (pp && pp.total > 0 && pp.loaded < pp.total) {
               requestAnimationFrame(tryReady)
               return
             }
-
-            // Compile all pipelines via official Three.js API
-            try {
-              const renderer = state.gl as unknown as { compileAsync?: (s: THREE.Scene, c: THREE.Camera) => Promise<void> }
-              if (typeof renderer.compileAsync === 'function') {
-                await renderer.compileAsync(state.scene, state.camera)
-              }
-              finish()
-            } catch {
-              finish()
+            // Wait for PostProcessing instance to be ready before warmup.
+            if (!(window as unknown as { __postProcessing?: unknown }).__postProcessing) {
+              requestAnimationFrame(tryReady)
+              return
             }
+            // Run warmup render — synchronous from our perspective; the GPU compile
+            // happens behind queue.submit but on the same loading-screen frame.
+            try {
+              runWarmup()
+            } catch {
+              // Swallow — fall through to finish so we never hang the loader.
+            }
+            finish()
           }
           requestAnimationFrame(tryReady)
         }}

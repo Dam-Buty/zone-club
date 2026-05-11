@@ -7,6 +7,7 @@ import api, { type ReviewsResponse } from '../../api';
 import type { PlayerState } from '../../types';
 import { useGoogleCast } from '../../hooks/useGoogleCast';
 import { useIsMobile } from '../../hooks/useIsMobile';
+import { useBackGuard } from '../../hooks/useBackGuard';
 import styles from './VHSPlayer.module.css';
 
 const MIN_CONTENT_LENGTH = 500;
@@ -33,6 +34,7 @@ export function VHSPlayer() {
   const isPlayerOpen = useStore(state => state.isPlayerOpen);
   const currentPlayingFilm = useStore(state => state.currentPlayingFilm);
   const closePlayer = useStore(state => state.closePlayer);
+  useBackGuard(isPlayerOpen, closePlayer);
   const getRental = useStore(state => state.getRental);
   const films = useStore(state => state.films);
   const fetchMe = useStore(state => state.fetchMe);
@@ -457,8 +459,23 @@ export function VHSPlayer() {
     rewindToStartRafRef.current = requestAnimationFrame(animate);
   }, [rewindingToStart, stopRW]);
 
+  // Mobile ghost-click guard: when openPlayer fires from a touchstart on the
+  // seated TV menu (OK button), the synthesized click event arrives ~50-100ms
+  // later — by which time VHSPlayer has mounted and its eject button is at the
+  // same screen coordinate. That click then fires handleEject which closes the
+  // player immediately. We block eject for the first 500ms after mount to
+  // swallow the ghost click without blocking legitimate user-initiated ejects.
+  const mountedAtRef = useRef(performance.now());
+  useEffect(() => {
+    if (isPlayerOpen) mountedAtRef.current = performance.now();
+  }, [isPlayerOpen]);
+
   // Eject: save position + close player (or rewind prompt at 80%+)
   const handleEject = useCallback(() => {
+    if (performance.now() - mountedAtRef.current < 500) {
+      // Likely a ghost click from the touchstart that opened the player.
+      return;
+    }
     // Casting mode: save remote position, stop cast
     if (playerState === 'casting') {
       const remoteTime = getRemoteCurrentTime();
@@ -1189,7 +1206,10 @@ export function VHSPlayer() {
           }
         }}
       >
-        <source src={videoUrl} type="video/mp4" />
+        {/* Don't emit <source src=""> — browsers fire `error` on the video
+            element which cascades into closePlayer paths and unmounts the
+            whole player. */}
+        {videoUrl && <source src={videoUrl} type="video/mp4" />}
         {showSubtitles && hasSubtitles && streamingUrls?.subtitles && (
           <track
             kind="subtitles"
