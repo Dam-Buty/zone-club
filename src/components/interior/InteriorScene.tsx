@@ -853,6 +853,38 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
                 setGpuError(`Le périphérique GPU a été perdu (${info.reason}). Recharge la page pour réinitialiser WebGPU.`)
               }
             })
+
+            // DIAGNOSTIC : compte les compute pipelines créés (jamais surveillés
+            // par les probes précédents qui ne traçaient que createRenderPipeline*).
+            // Si le spike au premier mouvement est dû à un compute pipeline compilé
+            // synchrone, ces logs le révèleront avec le timing exact.
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const dev = device as any
+            const origCompute = dev.createComputePipeline?.bind(dev)
+            const origComputeAsync = dev.createComputePipelineAsync?.bind(dev)
+            let computeCount = 0
+            if (origCompute) {
+              dev.createComputePipeline = (desc: GPUComputePipelineDescriptor) => {
+                const t0 = performance.now()
+                const p = origCompute(desc)
+                const dt = performance.now() - t0
+                computeCount++
+                console.warn(`[COMPUTE-PIPE #${computeCount}] sync ${dt.toFixed(1)}ms label="${desc.label || ''}"`)
+                return p
+              }
+            }
+            if (origComputeAsync) {
+              dev.createComputePipelineAsync = (desc: GPUComputePipelineDescriptor) => {
+                const t0 = performance.now()
+                computeCount++
+                const id = computeCount
+                console.warn(`[COMPUTE-PIPE #${id}] async START label="${desc.label || ''}"`)
+                return origComputeAsync(desc).then((p: GPUComputePipeline) => {
+                  console.warn(`[COMPUTE-PIPE #${id}] async DONE ${(performance.now() - t0).toFixed(1)}ms`)
+                  return p
+                })
+              }
+            }
           }
 
           renderer.shadowMap.enabled = true
