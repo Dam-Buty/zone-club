@@ -332,56 +332,33 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
       window.__posterProgress = { total: queue.length, loaded: 0 }
     }
 
-    // Fingerprint = sorted poster URLs — same catalog = cache hit
-    const fingerprint = Array.from(urlToSlot.keys()).sort().join('|')
-
-    const startLoading = async () => {
-      if (cancelled) return
-
-      // Try IndexedDB cache first (instant restore: ~50ms vs ~3s decode)
-      const _tCacheStart = performance.now()
-      const cacheHit = await atlas.restoreFromCache(fingerprint)
-      console.warn(`[ATLAS-CACHE] hit=${cacheHit} ${(performance.now() - _tCacheStart).toFixed(0)}ms (queue=${queue.length})`)
-      if (cacheHit && !cancelled) {
-        const _tFlush = performance.now()
-        atlas.flush()
-        console.warn(`[ATLAS-FLUSH] ${(performance.now() - _tFlush).toFixed(0)}ms`)
-        if (typeof window !== 'undefined' && window.__posterProgress) {
-          window.__posterProgress.loaded = queue.length
+    // Progressive load — fetch posters from /api/poster proxy (HTTP + disk cache
+    // already provided by the server). Previously cached in IndexedDB but the
+    // structured-clone of 33MB atlas blocked the main thread 5-8s on Pixel 9.
+    const _tLoadStart = performance.now()
+    let queueIdx = 0
+    const loadNextBatch = async () => {
+      if (cancelled || queueIdx >= queue.length) {
+        if (!cancelled && queueIdx >= queue.length) {
+          console.warn(`[POSTER-LOAD] complete ${(performance.now() - _tLoadStart).toFixed(0)}ms (${queue.length} posters)`)
         }
         return
       }
-
-      // Cache miss — load from network with throttled decode
-      const _tLoadStart = performance.now()
-      let queueIdx = 0
-      const loadNextBatch = async () => {
-        if (cancelled || queueIdx >= queue.length) {
-          // All loaded — save to IndexedDB for next visit
-          if (!cancelled && queueIdx >= queue.length) {
-            console.warn(`[POSTER-LOAD] complete ${(performance.now() - _tLoadStart).toFixed(0)}ms (${queue.length} posters)`)
-            atlas.saveToCache(fingerprint).catch(() => {})
-          }
-          return
-        }
-        if (!atlas.isGPUReady()) {
-          requestAnimationFrame(() => { void loadNextBatch() })
-          return
-        }
-        const end = Math.min(queueIdx + POSTERS_PER_FRAME, queue.length)
-        await Promise.all(
-          queue.slice(queueIdx, end).map(({ slot, url }) => atlas.loadPosterIntoSlot(url, slot))
-        )
-        queueIdx = end
-        if (typeof window !== 'undefined' && window.__posterProgress) {
-          window.__posterProgress.loaded = queueIdx
-        }
+      if (!atlas.isGPUReady()) {
         requestAnimationFrame(() => { void loadNextBatch() })
+        return
+      }
+      const end = Math.min(queueIdx + POSTERS_PER_FRAME, queue.length)
+      await Promise.all(
+        queue.slice(queueIdx, end).map(({ slot, url }) => atlas.loadPosterIntoSlot(url, slot))
+      )
+      queueIdx = end
+      if (typeof window !== 'undefined' && window.__posterProgress) {
+        window.__posterProgress.loaded = queueIdx
       }
       requestAnimationFrame(() => { void loadNextBatch() })
     }
-
-    startLoading()
+    requestAnimationFrame(() => { void loadNextBatch() })
 
     return () => {
       cancelled = true
