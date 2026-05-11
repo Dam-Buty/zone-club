@@ -952,14 +952,22 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
               requestAnimationFrame(tryReady)
               return
             }
-            // Run warmup render — synchronous from our perspective; the GPU compile
-            // happens behind queue.submit but on the same loading-screen frame.
-            try {
-              runWarmup()
-            } catch {
-              // Swallow — fall through to finish so we never hang the loader.
-            }
-            finish()
+            // Multi-pass warmup — empirically (CDP probe on Pixel 9 dev) a single
+            // postProcessing.render() leaves ~35 MeshStandardMaterial pipelines to
+            // compile sync at t=33-37s post-mount. These come from late-mounting
+            // Suspense components (DeskCassettes posters, Manager3D poses,
+            // tutorial overlays, etc.) — materials simply don't exist yet at first
+            // warmup. Three passes across ~5s catch them. sceneReady fires only
+            // after the last pass — extending the loading screen by ~5s but
+            // eliminating the post-mount spike.
+            try { runWarmup() } catch {}
+            setTimeout(() => {
+              try { runWarmup() } catch {}
+              setTimeout(() => {
+                try { runWarmup() } catch {}
+                finish()
+              }, 3000)
+            }, 2000)
           }
           requestAnimationFrame(tryReady)
         }}
