@@ -35,13 +35,9 @@ Tu dois pouvoir le lire dans VLC, mpv, Safari, ou un player HLS.
 ./scripts/cinema-cam-install.sh
 ```
 
-Empreinte minimale sur le système — un seul fichier permanent : `/etc/systemd/system/cinema-cam.service`. Le module `v4l2loopback` est chargé au start du service, déchargé au stop. Pas de config dans `/etc/modules-load.d` ni `/etc/modprobe.d`.
-
-Le script :
-1. Installe `v4l2loopback-dkms` + `ffmpeg` (apt / pacman / dnf)
-2. Copie `cinema-cam.sh` dans `/usr/local/bin/` (le service en a besoin)
-3. Écrit `/etc/systemd/system/cinema-cam.service`
-4. `systemctl enable --now cinema-cam.service`
+Le script crée deux services systemd :
+- **`cinema-cam-module.service`** (system, oneshot) — charge `v4l2loopback` au boot, le décharge au stop
+- **`cinema-cam.service`** (user) — crée un null-sink PipeWire/Pulse (audio) + lance `ffmpeg` qui pompe le HLS dans `/dev/video10` (vidéo) et le sink (audio)
 
 Variables surchargeables :
 ```bash
@@ -55,31 +51,28 @@ SCALE=1280:720 \
 ### Vérification + logs
 
 ```bash
-systemctl status cinema-cam.service
-journalctl -u cinema-cam.service -f
+systemctl status cinema-cam-module.service   # le module
+systemctl --user status cinema-cam.service   # ffmpeg + sink audio
+journalctl --user -u cinema-cam.service -f
 ```
 
 ### Dans Discord
 
-1. **User Settings → Voice & Video → Camera** → choisis `Zone Club Cinéma`
+1. **User Settings → Voice & Video** :
+   - **Camera** = `Zone Club Cinéma`
+   - **Input Device** = `Monitor of Zone Club Cinéma` (le micro virtuel branché sur le sink)
 2. Rejoins le voice channel
 3. Bouton vidéo → **Share Camera**
 
-### Désinstall complète
+> Le bot Discord parle dans le voice avec son "micro" qui est en fait l'audio du film. Si tu veux parler par-dessus, faut switcher l'Input Device sur ton vrai micro temporairement (Discord ne mixe pas deux inputs).
+
+### Désinstall
 
 ```bash
-sudo systemctl disable --now cinema-cam.service
-sudo rm /etc/systemd/system/cinema-cam.service /usr/local/bin/cinema-cam.sh
-sudo modprobe -r v4l2loopback
-sudo apt remove v4l2loopback-dkms   # optionnel
-```
-
-### Lancement à la main (sans systemd)
-
-Le script `cinema-cam.sh` charge le module si on l'invoque en root :
-```bash
-sudo HLS_URL="https://club-storage.lazone.at/cinema-live/live.m3u8" \
-     ./scripts/cinema-cam.sh
+systemctl --user disable --now cinema-cam.service
+sudo systemctl disable --now cinema-cam-module.service
+rm $HOME/.config/systemd/user/cinema-cam.service
+sudo rm /etc/systemd/system/cinema-cam-module.service /usr/local/bin/cinema-cam.sh
 ```
 
 ## 3. Client macOS

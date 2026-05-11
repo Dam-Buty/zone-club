@@ -1,0 +1,14 @@
+[Unit]
+Description=Zone Club Cinéma — load v4l2loopback module
+After=systemd-modules-load.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment="VIDEO_NR=10"
+Environment="CARD_LABEL=Zone Club Cinéma"
+ExecStart=/sbin/modprobe v4l2loopback video_nr=${VIDEO_NR} card_label=${CARD_LABEL} exclusive_caps=1 max_buffers=8
+ExecStop=/sbin/modprobe -r v4l2loopback
+
+[Install]
+WantedBy=multi-user.target

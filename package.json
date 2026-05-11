@@ -29,7 +29,10 @@
     "cinema:down": "docker compose down cinema-stream",
     "cinema:restart": "docker compose restart cinema-stream",
     "cinema:rebuild": "docker compose up -d --build cinema-stream",
-    "cinema:logs": "docker compose logs -f cinema-stream"
+    "cinema:logs": "docker compose logs -f cinema-stream",
+    "loopback:start": "pactl load-module module-loopback source=zone-cinema.monitor latency_msec=50 >/dev/null && echo 'Loopback zone-cinema → default sink : ON'",
+    "loopback:stop": "pactl list short modules | awk '$2 == \"module-loopback\" && /zone-cinema/ {print $1}' | xargs -rn1 pactl unload-module && echo 'Loopback : OFF'",
+    "loopback:status": "pactl list short modules | awk '$2 == \"module-loopback\" && /zone-cinema/' | grep -q . && echo 'Loopback : ON' || echo 'Loopback : OFF'"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.30",
