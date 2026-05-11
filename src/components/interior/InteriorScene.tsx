@@ -885,6 +885,37 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
                 })
               }
             }
+
+            // Wrap render pipelines too — these compile synchronously when no
+            // promise is provided, blocking the main thread.
+            const origRP = dev.createRenderPipeline?.bind(dev)
+            const origRPAsync = dev.createRenderPipelineAsync?.bind(dev)
+            let rpCount = 0
+            if (origRP) {
+              dev.createRenderPipeline = (desc: GPURenderPipelineDescriptor) => {
+                const t0 = performance.now()
+                const p = origRP(desc)
+                const dt = performance.now() - t0
+                rpCount++
+                console.warn(`[RENDER-PIPE #${rpCount}] sync ${dt.toFixed(1)}ms label="${desc.label || ''}"`)
+                return p
+              }
+            }
+            if (origRPAsync) {
+              dev.createRenderPipelineAsync = (desc: GPURenderPipelineDescriptor) => {
+                const t0 = performance.now()
+                rpCount++
+                const id = rpCount
+                return origRPAsync(desc).then((p: GPURenderPipeline) => {
+                  const dt = performance.now() - t0
+                  // Only log slow async compiles (>50ms) to avoid log flood
+                  if (dt > 50) console.warn(`[RENDER-PIPE #${id}] async DONE ${dt.toFixed(1)}ms label="${desc.label || ''}"`)
+                  return p
+                })
+              }
+            }
+            // Expose pipeline count for the warmup gate to detect stability.
+            ;(window as unknown as { __rpCount?: () => number }).__rpCount = () => rpCount
           }
 
           renderer.shadowMap.enabled = true
@@ -950,15 +981,19 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
             try {
               const pp = (window as unknown as { __postProcessing?: { render?: () => void } }).__postProcessing
               if (!pp || typeof pp.render !== 'function') return false
-              // 8 yaw directions × 2 pitch tilts = 16 angles. Covers walls,
-              // aisles, ceiling lights, floor reflections, etc.
-              for (const pitch of [0, -0.4]) {
-                for (let i = 0; i < 8; i++) {
-                  tmpEuler.set(pitch, (i * Math.PI) / 4, 0)
-                  state.camera.quaternion.setFromEuler(tmpEuler)
-                  state.camera.updateMatrixWorld(true)
-                  pp.render()
+              // 4 yaw directions, 1 pitch (horizontal). Each pass is 4 ops, but
+              // multi-pass coverage (4 passes × 4 angles = 16 total) catches
+              // late-mounted GLBs across the plateau detection window.
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const renderer = state.gl as any
+              for (let i = 0; i < 4; i++) {
+                tmpEuler.set(0, (i * Math.PI) / 2, 0)
+                state.camera.quaternion.setFromEuler(tmpEuler)
+                state.camera.updateMatrixWorld(true)
+                if (typeof renderer?.compileAsync === 'function') {
+                  void renderer.compileAsync(state.scene, state.camera)
                 }
+                pp.render()
               }
               return true
             } finally {
@@ -997,16 +1032,43 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
               requestAnimationFrame(tryReady)
               return
             }
-            // Single-pass warmup. The previous multi-pass adaptive logic with
-            // setTimeout(2500ms) chains caused 5 visible frame spikes of 1-2s
-            // each post-sceneReady — the GPU work from runWarmup() (16 renders
-            // with frustumCulled=false) was staggered across user interaction
-            // windows. Evidence: [FRAME-SPIKE] logs showed 5 spikes 1.1-2.4s
-            // each at identical (idle) camera position.
-            const t0 = performance.now()
-            try { runWarmup() } catch {}
-            console.warn(`[WARMUP-PASS] ${(performance.now() - t0).toFixed(0)}ms`)
-            finish()
+            // Pipeline-count plateau detection. Robust against any cache /
+            // timing combination: keep warming up until N consecutive iterations
+            // produce zero new render pipelines. That means everything that
+            // needs a pipeline has one cached.
+            const getPipeCount = () => {
+              const fn = (window as unknown as { __rpCount?: () => number }).__rpCount
+              return typeof fn === 'function' ? fn() : 0
+            }
+            const PIPE_STABLE_NEEDED = 3      // 3 stable iterations
+            const POLL_INTERVAL_MS = 300
+            const MAX_TOTAL_MS = 20000        // hard cap 20s
+            const _t0 = performance.now()
+            let stableIters = 0
+            let lastCount = getPipeCount()
+            const warmupLoop = () => {
+              try { runWarmup() } catch {}
+              const cur = getPipeCount()
+              if (cur === lastCount) {
+                stableIters++
+              } else {
+                stableIters = 0
+                lastCount = cur
+              }
+              const elapsed = performance.now() - _t0
+              if (stableIters >= PIPE_STABLE_NEEDED) {
+                console.warn(`[WARMUP-PIPE-STABLE] count=${cur} ${elapsed.toFixed(0)}ms`)
+                finish()
+                return
+              }
+              if (elapsed >= MAX_TOTAL_MS) {
+                console.warn(`[WARMUP-MAX] count=${cur} ${elapsed.toFixed(0)}ms`)
+                finish()
+                return
+              }
+              setTimeout(warmupLoop, POLL_INTERVAL_MS)
+            }
+            warmupLoop()
           }
           requestAnimationFrame(tryReady)
         }}
