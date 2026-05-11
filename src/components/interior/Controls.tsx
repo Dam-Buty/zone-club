@@ -190,12 +190,13 @@ const TV_ZOOM_POSITION = new THREE.Vector3(3.555, 0.754, 1.2);
 const TV_ZOOM_POSITION_MOBILE = new THREE.Vector3(3.621, 0.754, 1.2);
 const TV_ZOOM_LOOKAT = new THREE.Vector3(3.955, 0.754, 1.2);
 
-// Minitel zoom — model placed at world ~(-0.571, 1.047, -0.01) on the desk,
-// rotated π so it faces +Z. Camera placed in front of the screen at ~0.4m.
-// The screen sits ~5cm above the model base and tilts forward; we look at it.
-const MINITEL_LOOKAT = new THREE.Vector3(-0.571, 1.10, -0.01);
-const MINITEL_POSITION = new THREE.Vector3(-0.571, 1.16, 0.27);
-const MINITEL_POSITION_MOBILE = new THREE.Vector3(-0.571, 1.16, 0.32);
+// Minitel zoom — the GLB sits inside the desk group at (ROOM_WIDTH/2 - 2.3, 0,
+// ROOM_DEPTH/2 - 1.28) with local pos (-0.571, 1.047, -0.01) and rotation Y=π
+// (faces +Z). With ROOM_WIDTH=9, ROOM_DEPTH=8.5 → world (1.629, 1.047, 2.96).
+// Camera placed very close to the screen (small CRT at scale 0.025).
+const MINITEL_LOOKAT = new THREE.Vector3(1.629, 1.21, 2.88);
+const MINITEL_POSITION = new THREE.Vector3(1.629, 1.30, 3.20);
+const MINITEL_POSITION_MOBILE = new THREE.Vector3(1.629, 1.30, 3.30);
 
 // LaZone CRT watch position — perpendicular to screen surface
 // CRT origin: [4.2, 1.8, 3.95], Y-rot 65°, tilt -10°

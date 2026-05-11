@@ -1,4 +1,4 @@
-import { useMemo, useEffect, useState } from 'react'
+import { useMemo, useEffect } from 'react'
 import { useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 import { useStore } from '../../store'
@@ -13,21 +13,27 @@ interface MinitelDisplayProps {
   rotation?: [number, number, number]
 }
 
+// Empirical local-space placement of the screen overlay plane on top of the
+// minitel CRT (relative to the GLB origin, BEFORE the parent scale is applied).
+// These constants are sized in GLB units (the GLB ships at ~40 units; with
+// scale=0.025 they map to real-world meters). Adjust if the plane sits in
+// the wrong spot — width/height ratio kept 4:3.
+const SCREEN_PLANE_OFFSET: [number, number, number] = [0, 6.5, -3.2]
+const SCREEN_PLANE_TILT_X = -0.20  // ~ -11.5° (CRT tilts back)
+const SCREEN_PLANE_W = 9
+const SCREEN_PLANE_H = 6.75
+
 /**
- * 3D minitel model with click-to-activate raycast layer + CanvasTexture
- * attached to the screen mesh. Click on the minitel → opens the search UI
- * (camera zoom + overlay) handled by Controls + MinitelOverlay.
+ * Renders the minitel GLB unchanged + adds a separate screen-overlay plane
+ * with the canvas texture on top, positioned in local space relative to the
+ * GLB. No mesh material substitution — so the GLB always renders correctly
+ * and the overlay just floats in front of the CRT face.
  */
 export function MinitelDisplay({ position, scale = 0.025, rotation = [0, Math.PI, 0] }: MinitelDisplayProps) {
   const { scene } = useGLTF('/models/minitel_1982-france.glb', true)
-  const setInteractingWithMinitel = useStore((s) => s.setInteractingWithMinitel)
-  const setMinitelMode = useStore((s) => s.setMinitelMode)
-  const isInteractingWithMinitel = useStore((s) => s.isInteractingWithMinitel)
-  const [screenMesh, setScreenMesh] = useState<THREE.Mesh | null>(null)
-
   const { texture: screenTexture } = useMinitelScreenTexture()
 
-  // Clone the scene + tag all meshes for interactive raycast (pure, no setState).
+  // Clone GLB + tag meshes for interactive raycast (no material change).
   const clonedScene = useMemo(() => {
     const cloned = scene.clone(true)
     cloned.traverse((child) => {
@@ -41,66 +47,33 @@ export function MinitelDisplay({ position, scale = 0.025, rotation = [0, Math.PI
     return cloned
   }, [scene])
 
-  // Identify the screen mesh in a useEffect (NEVER setState inside useMemo).
-  useEffect(() => {
-    let pickedByName: THREE.Mesh | null = null
-    let largestMesh: THREE.Mesh | null = null
-    let largestArea = 0
-    clonedScene.traverse((child) => {
-      if (!(child instanceof THREE.Mesh)) return
-      const name = (child.name || '').toLowerCase()
-      if (!pickedByName && (name.includes('screen') || name.includes('ecran') || name.includes('tube') || name.includes('display'))) {
-        pickedByName = child
-      }
-      if (!child.geometry.boundingBox) child.geometry.computeBoundingBox()
-      const bb = child.geometry.boundingBox
-      if (bb) {
-        const size = new THREE.Vector3()
-        bb.getSize(size)
-        const area = size.x * size.y
-        if (area > largestArea) {
-          largestArea = area
-          largestMesh = child
-        }
-      }
-    })
-    setScreenMesh(pickedByName ?? largestMesh)
-  }, [clonedScene])
-
-  // Apply the canvas texture to the identified screen mesh
-  useEffect(() => {
-    if (!screenMesh || !screenTexture) return
-    const mat = new THREE.MeshStandardMaterial({
+  // Material for the overlay plane.
+  const overlayMaterial = useMemo(() => {
+    return new THREE.MeshBasicMaterial({
       map: screenTexture,
-      emissive: '#003344',
-      emissiveMap: screenTexture,
-      emissiveIntensity: 1.2,
-      roughness: 0.6,
-      metalness: 0.0,
       toneMapped: false,
+      side: THREE.DoubleSide,
     })
-    const prevMaterial = screenMesh.material
-    screenMesh.material = mat
-    return () => {
-      mat.dispose()
-      screenMesh.material = prevMaterial
-    }
-  }, [screenMesh, screenTexture])
+  }, [screenTexture])
 
-  const handleClick = (e: { stopPropagation?: () => void }) => {
-    if (isInteractingWithMinitel) return
-    e.stopPropagation?.()
-    setInteractingWithMinitel(true)
-    setMinitelMode('sommaire')
-  }
+  useEffect(() => {
+    return () => overlayMaterial.dispose()
+  }, [overlayMaterial])
 
   return (
-    <primitive
-      object={clonedScene}
-      position={position}
-      scale={scale}
-      rotation={rotation}
-      onClick={handleClick}
-    />
+    <group position={position} rotation={rotation} scale={scale}>
+      <primitive object={clonedScene} />
+      {/* Screen overlay plane in GLB-local units (scale applied by the group). */}
+      {/* Rotated π on Y to compensate for the parent group's Y=π rotation
+          so the text reads correctly on the visible face. */}
+      <mesh
+        position={SCREEN_PLANE_OFFSET}
+        rotation={[SCREEN_PLANE_TILT_X, Math.PI, 0]}
+        material={overlayMaterial}
+        userData={{ isMinitel: true }}
+      >
+        <planeGeometry args={[SCREEN_PLANE_W, SCREEN_PLANE_H]} />
+      </mesh>
+    </group>
   )
 }
