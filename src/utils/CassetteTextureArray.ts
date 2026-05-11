@@ -164,15 +164,6 @@ export class CassetteTextureAtlas {
     }
   }
 
-  /**
-   * Manually mark the atlas dirty so the next flush() triggers a full GPU
-   * upload. Use after all posters have been loaded into the atlas to do a
-   * single 33MB upload instead of one per batch.
-   */
-  markDirty(): void {
-    this._dirty = true
-  }
-
   private copyPixelsToAtlas(pixels: Uint8ClampedArray, col: number, row: number): void {
     const atlasRowBytes = this.atlasWidth * BYTES_PER_PIXEL
     const startX = col * POSTER_WIDTH * BYTES_PER_PIXEL
@@ -189,11 +180,22 @@ export class CassetteTextureAtlas {
 
   flush(): boolean {
     if (this._dirty) {
+      console.warn(`[ATLAS-FULL-UPLOAD] needsUpdate=true (${(this.data.byteLength / 1024 / 1024).toFixed(1)}MB)`)
       this.texture.needsUpdate = true
       this._dirty = false
       return true
     }
     return false
+  }
+
+  /**
+   * Manually mark the atlas dirty so the next flush() triggers a full GPU
+   * upload. Use after all posters have been loaded into the atlas to do a
+   * single 33MB upload instead of one per batch.
+   */
+  markDirty(): void {
+    console.warn('[ATLAS-MARK-DIRTY]')
+    this._dirty = true
   }
 
   dispose(): void {
