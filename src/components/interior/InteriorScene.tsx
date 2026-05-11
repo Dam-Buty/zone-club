@@ -906,19 +906,31 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
                 m.frustumCulled = false
               }
             })
+            // 2. Save the current camera orientation so we can sweep through
+            //    multiple view directions during warmup. Even with
+            //    frustumCulled=false, pipelines that depend on view-direction
+            //    (TSL hover variants, shadow caster selection, lighting
+            //    clusters) only compile when actually rendered from that
+            //    angle. A 360° sweep exposes every angle.
+            const savedQuat = state.camera.quaternion.clone()
+            const tmpEuler = new THREE.Euler(0, 0, 0, 'YXZ')
             try {
-              // 2. Trigger postProcessing.render() — this is the SAME code path as
-              //    runtime rendering, so pipelines are compiled for the correct RT.
-              //    First call is slow on mobile (sync createRenderPipeline calls
-              //    queued into one GPU submit) but happens behind the loading screen.
               const pp = (window as unknown as { __postProcessing?: { render?: () => void } }).__postProcessing
-              if (pp && typeof pp.render === 'function') {
-                pp.render()
-                return true
+              if (!pp || typeof pp.render !== 'function') return false
+              // 8 yaw directions × 2 pitch tilts = 16 angles. Covers walls,
+              // aisles, ceiling lights, floor reflections, etc.
+              for (const pitch of [0, -0.4]) {
+                for (let i = 0; i < 8; i++) {
+                  tmpEuler.set(pitch, (i * Math.PI) / 4, 0)
+                  state.camera.quaternion.setFromEuler(tmpEuler)
+                  state.camera.updateMatrixWorld(true)
+                  pp.render()
+                }
               }
-              return false
+              return true
             } finally {
-              // 3. Restore frustum culling so runtime culling works normally.
+              state.camera.quaternion.copy(savedQuat)
+              state.camera.updateMatrixWorld(true)
               for (const m of restoreList) m.frustumCulled = true
             }
           }
