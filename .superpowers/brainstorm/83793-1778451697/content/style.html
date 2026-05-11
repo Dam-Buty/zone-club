@@ -1,0 +1,168 @@
+<h2>Quel style d'écran pour le minitel ?</h2>
+<p class="subtitle">Tu as dit "text plutôt blanc, écran CRT, façon 1997" — voici 2 directions à comparer côte à côte. Click sur celle qui te parle.</p>
+
+<style>
+  .minitel-screen {
+    background: #000;
+    border-radius: 14px;
+    padding: 18px 16px;
+    font-family: 'Courier New', monospace;
+    aspect-ratio: 4/3;
+    overflow: hidden;
+    position: relative;
+  }
+  .minitel-screen::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+      to bottom,
+      rgba(255,255,255,0.04) 0px,
+      rgba(255,255,255,0.04) 1px,
+      transparent 1px,
+      transparent 3px
+    );
+    pointer-events: none;
+    z-index: 2;
+  }
+  .minitel-screen::after {
+    content: '';
+    position: absolute;
+    inset: -10%;
+    background: radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,0.55) 100%);
+    pointer-events: none;
+    z-index: 3;
+    border-radius: 14px;
+  }
+  .minitel-content {
+    position: relative;
+    z-index: 1;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  /* Style A: Authentique 1982 — texte blanc épais, fond noir, header cyan */
+  .style-a .minitel-content {
+    color: #ffffff;
+    font-weight: bold;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+  }
+  .style-a .header-bar {
+    background: #00d8ff;
+    color: #000;
+    padding: 3px 6px;
+    font-weight: bold;
+    text-transform: uppercase;
+  }
+  .style-a .input-row {
+    border: 1px solid #ffffff;
+    padding: 3px 6px;
+    background: #000;
+  }
+  .style-a .result {
+    padding: 1px 0;
+    border-bottom: 1px dotted rgba(255,255,255,0.25);
+  }
+  .style-a .selected {
+    background: #ffcc00;
+    color: #000;
+    padding: 1px 4px;
+  }
+  .style-a .footer {
+    background: #00d8ff;
+    color: #000;
+    margin-top: auto;
+    padding: 3px 6px;
+    font-size: 9px;
+    text-transform: uppercase;
+    text-align: center;
+  }
+
+  /* Style B: Néon-noir hybride — texte blanc + accents cyan, fond noir profond */
+  .style-b .minitel-content {
+    color: #f0f4ff;
+    font-size: 11px;
+    letter-spacing: 0.05em;
+    text-shadow: 0 0 4px rgba(0, 255, 247, 0.25);
+  }
+  .style-b .header-bar {
+    color: #00fff7;
+    border-bottom: 1px solid #00fff7;
+    padding-bottom: 3px;
+    text-transform: uppercase;
+    text-shadow: 0 0 8px rgba(0, 255, 247, 0.6);
+    font-weight: bold;
+  }
+  .style-b .input-row {
+    background: rgba(0,255,247,0.08);
+    border: 1px solid rgba(0,255,247,0.4);
+    padding: 3px 6px;
+    color: #00fff7;
+  }
+  .style-b .result {
+    padding: 1px 0;
+  }
+  .style-b .selected {
+    color: #00fff7;
+    text-shadow: 0 0 6px #00fff7;
+  }
+  .style-b .footer {
+    color: rgba(0,255,247,0.5);
+    margin-top: auto;
+    font-size: 9px;
+    text-align: center;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+</style>
+
+<div class="cards">
+  <div class="card" data-choice="authentique" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="minitel-screen style-a">
+        <div class="minitel-content">
+          <div class="header-bar">VIDEOCLUB - RECHERCHE</div>
+          <div>RECHERCHEZ UN FILM:</div>
+          <div class="input-row">&gt; PULP FICTION_</div>
+          <div style="margin-top:4px">3 RESULTATS:</div>
+          <div class="result selected">PULP FICTION (1994)</div>
+          <div style="font-size:9px;padding-left:10px">RAYON: CLASSIQUES</div>
+          <div style="font-size:9px;padding-left:10px">EMPLACEMENT: 4-7</div>
+          <div class="result">PULP FICTION 2 - DTV</div>
+          <div class="result">PULP NOVEL ADAPT.</div>
+          <div class="footer">[ENVOI] ILLUMINER LA K7</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A — Authentique 1982</h3>
+      <p>Texte blanc épais sur fond noir, headers cyan inversé style minitel original, rangées tabulaires, footer "ENVOI" comme les vrais terminaux.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="neonretro" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="minitel-screen style-b">
+        <div class="minitel-content">
+          <div class="header-bar">▸ ZONE CLUB - RECHERCHE</div>
+          <div>Rechercher un film :</div>
+          <div class="input-row">▸ PULP FICTION_</div>
+          <div style="margin-top:4px;color:rgba(255,255,255,0.6)">3 résultats trouvés :</div>
+          <div class="result selected">▸ PULP FICTION (1994)</div>
+          <div style="font-size:9px;padding-left:14px;color:rgba(255,255,255,0.6)">Rayon : Classiques</div>
+          <div style="font-size:9px;padding-left:14px;color:rgba(255,255,255,0.6)">Emplacement : 4-7</div>
+          <div class="result">  Pulp Fiction 2 - DTV</div>
+          <div class="result">  Pulp Novel Adapt.</div>
+          <div class="footer">[ ENVOI ] illuminer la K7</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B — Néon-noir hybride</h3>
+      <p>Texte blanc lisible avec accents cyan glowy, sans inversion, plus aligné avec la palette néon du videoclub. Lecture moderne mais ambiance CRT.</p>
+    </div>
+  </div>
+</div>

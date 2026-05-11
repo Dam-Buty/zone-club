@@ -155,10 +155,22 @@ export class CassetteTextureAtlas {
 
       this.copyPixelsToAtlas(pixels, col, row)
       this.loadedSlots.add(slot)
-      this._dirty = true
+      // _dirty intentionally NOT set here. Each set triggers texture.needsUpdate
+      // on next flush() which makes Three.js re-upload the full 33MB atlas.
+      // 35 batches × 33MB = 1.15GB queued on GPU, draining for seconds after
+      // load. Instead, mark dirty ONCE at end-of-load via markDirty().
     } catch {
       // On error, keep the fallback color
     }
+  }
+
+  /**
+   * Manually mark the atlas dirty so the next flush() triggers a full GPU
+   * upload. Use after all posters have been loaded into the atlas to do a
+   * single 33MB upload instead of one per batch.
+   */
+  markDirty(): void {
+    this._dirty = true
   }
 
   private copyPixelsToAtlas(pixels: Uint8ClampedArray, col: number, row: number): void {

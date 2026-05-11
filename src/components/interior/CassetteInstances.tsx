@@ -340,6 +340,9 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
     const loadNextBatch = async () => {
       if (cancelled || queueIdx >= queue.length) {
         if (!cancelled && queueIdx >= queue.length) {
+          // Single full-atlas upload at end-of-load. Per-batch flushes would
+          // trigger 35 × 33MB = 1.15GB of redundant GPU traffic.
+          atlas.markDirty()
           console.warn(`[POSTER-LOAD] complete ${(performance.now() - _tLoadStart).toFixed(0)}ms (${queue.length} posters)`)
         }
         return
