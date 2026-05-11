@@ -15,11 +15,6 @@ import * as THREE from 'three'
  *
  * Per-poster GPU upload uses writeTexture with 2D sub-region origin,
  * uploading only 240KB per poster instead of the full ~13MB atlas.
- *
- * IndexedDB caching: the fully-built atlas (Uint8Array) is saved to IndexedDB
- * keyed by a fingerprint of the poster URLs. On revisit, the atlas is restored
- * from cache in ~50ms (1 GPU upload) instead of re-decoding all images
- * (~3s + 15 GPU uploads on mobile).
  */
 
 // Aligned with TMDB w185 source (~185×278). 200×300 is the smallest power-friendly
@@ -29,57 +24,6 @@ const POSTER_WIDTH = 200
 const POSTER_HEIGHT = 300
 const BYTES_PER_PIXEL = 4
 const POSTER_ROW_BYTES = POSTER_WIDTH * BYTES_PER_PIXEL
-
-// ===== IndexedDB Atlas Cache =====
-const IDB_NAME = 'cassette-atlas-cache'
-// Bump on POSTER_WIDTH/HEIGHT change — old cached atlases have incompatible byte layout
-const IDB_VERSION = 2
-const IDB_STORE = 'atlases'
-const IDB_KEY = 'current' // single-entry cache (latest atlas only)
-
-function openAtlasDB(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(IDB_NAME, IDB_VERSION)
-    request.onupgradeneeded = () => {
-      const db = request.result
-      if (db.objectStoreNames.contains(IDB_STORE)) {
-        db.deleteObjectStore(IDB_STORE)
-      }
-      db.createObjectStore(IDB_STORE)
-    }
-    request.onsuccess = () => resolve(request.result)
-    request.onerror = () => reject(request.error)
-  })
-}
-
-interface AtlasCacheEntry {
-  fingerprint: string
-  data: ArrayBuffer
-  cols: number
-  rows: number
-  loadedSlots: number[]
-}
-
-async function idbGet(): Promise<AtlasCacheEntry | undefined> {
-  const db = await openAtlasDB()
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(IDB_STORE, 'readonly')
-    const req = tx.objectStore(IDB_STORE).get(IDB_KEY)
-    req.onsuccess = () => resolve(req.result as AtlasCacheEntry | undefined)
-    req.onerror = () => reject(req.error)
-    tx.oncomplete = () => db.close()
-  })
-}
-
-async function idbPut(entry: AtlasCacheEntry): Promise<void> {
-  const db = await openAtlasDB()
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(IDB_STORE, 'readwrite')
-    tx.objectStore(IDB_STORE).put(entry, IDB_KEY)
-    tx.oncomplete = () => { db.close(); resolve() }
-    tx.onerror = () => { db.close(); reject(tx.error) }
-  })
-}
 
 let _extractCanvas: HTMLCanvasElement | null = null
 let _extractCtx: CanvasRenderingContext2D | null = null
@@ -160,9 +104,12 @@ export class CassetteTextureAtlas {
     this.texture = new THREE.DataTexture(this.data, this.atlasWidth, this.atlasHeight)
     this.texture.format = THREE.RGBAFormat
     this.texture.type = THREE.UnsignedByteType
-    this.texture.minFilter = THREE.LinearMipmapLinearFilter
+    // Test: mipmaps disabled. Hypothesis: backend.generateMipmaps() on a 33MB
+    // atlas does ~11 render passes to fill mip levels + compiles a mipmap
+    // shader, which on Pixel 9 takes 1-2s and triggers post-load spikes.
+    this.texture.minFilter = THREE.LinearFilter
     this.texture.magFilter = THREE.LinearFilter
-    this.texture.generateMipmaps = true
+    this.texture.generateMipmaps = false
     this.texture.flipY = false
     this.texture.colorSpace = THREE.SRGBColorSpace
     this._dirty = true
@@ -211,7 +158,10 @@ export class CassetteTextureAtlas {
 
       this.copyPixelsToAtlas(pixels, col, row)
       this.loadedSlots.add(slot)
-      this._dirty = true
+      // _dirty intentionally NOT set here. Each set triggers texture.needsUpdate
+      // on next flush() which makes Three.js re-upload the full 33MB atlas.
+      // 35 batches × 33MB = 1.15GB queued on GPU, draining for seconds after
+      // load. Instead, mark dirty ONCE at end-of-load via markDirty().
     } catch {
       // On error, keep the fallback color
     }
@@ -233,6 +183,7 @@ export class CassetteTextureAtlas {
 
   flush(): boolean {
     if (this._dirty) {
+      console.warn(`[ATLAS-FULL-UPLOAD] needsUpdate=true (${(this.data.byteLength / 1024 / 1024).toFixed(1)}MB)`)
       this.texture.needsUpdate = true
       this._dirty = false
       return true
@@ -241,43 +192,13 @@ export class CassetteTextureAtlas {
   }
 
   /**
-   * Save the fully-built atlas to IndexedDB for instant restore on next visit.
-   * Best-effort — silently ignores errors (quota, private browsing, etc.).
+   * Manually mark the atlas dirty so the next flush() triggers a full GPU
+   * upload. Use after all posters have been loaded into the atlas to do a
+   * single 33MB upload instead of one per batch.
    */
-  async saveToCache(fingerprint: string): Promise<void> {
-    try {
-      await idbPut({
-        fingerprint,
-        data: (this.data.buffer as ArrayBuffer).slice(0), // structured-clone-safe copy
-        cols: this.cols,
-        rows: this.rows,
-        loadedSlots: Array.from(this.loadedSlots),
-      })
-    } catch {
-      // Cache save is best-effort
-    }
-  }
-
-  /**
-   * Try to restore the atlas from IndexedDB cache.
-   * Returns true if cache hit (data restored, ready to flush).
-   */
-  async restoreFromCache(fingerprint: string): Promise<boolean> {
-    try {
-      const cached = await idbGet()
-      if (!cached) return false
-      if (cached.fingerprint !== fingerprint) return false
-      if (cached.cols !== this.cols || cached.rows !== this.rows) return false
-
-      this.data.set(new Uint8Array(cached.data))
-      for (const slot of cached.loadedSlots) {
-        this.loadedSlots.add(slot)
-      }
-      this._dirty = true
-      return true
-    } catch {
-      return false
-    }
+  markDirty(): void {
+    console.warn('[ATLAS-MARK-DIRTY]')
+    this._dirty = true
   }
 
   dispose(): void {

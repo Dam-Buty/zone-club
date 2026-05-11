@@ -37,6 +37,9 @@ certificates/
 # Playwright MCP artifacts
 .playwright-mcp/
 
+# Superpowers agent local state
+.superpowers/
+
 # SvelteKit remnants
 backend-zone-club/
 
