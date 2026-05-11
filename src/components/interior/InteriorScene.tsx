@@ -952,22 +952,50 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
               requestAnimationFrame(tryReady)
               return
             }
-            // Multi-pass warmup — empirically (CDP probe on Pixel 9 dev) a single
-            // postProcessing.render() leaves ~35 MeshStandardMaterial pipelines to
-            // compile sync at t=33-37s post-mount. These come from late-mounting
-            // Suspense components (DeskCassettes posters, Manager3D poses,
-            // tutorial overlays, etc.) — materials simply don't exist yet at first
-            // warmup. Three passes across ~5s catch them. sceneReady fires only
-            // after the last pass — extending the loading screen by ~5s but
-            // eliminating the post-mount spike.
-            try { runWarmup() } catch {}
-            setTimeout(() => {
+            // Adaptive multi-pass warmup. Run a postProcessing.render() pass,
+            // count meshes in scene. Repeat with delays as long as mesh count
+            // keeps growing — meaning Suspense components are still mounting
+            // and creating new materials. When the count plateaus for 1500ms
+            // we consider the scene fully built and fire sceneReady.
+            //
+            // Hard cap: max 5 passes across ~12s so we never block forever
+            // on an edge case.
+            const MAX_PASSES = 5
+            const PLATEAU_MS = 1500
+            const PASS_DELAY_MS = 2500
+            let pass = 0
+            let lastMeshCount = -1
+            let plateauStartedAt = 0
+
+            const countMeshes = (): number => {
+              let n = 0
+              state.scene.traverse((obj) => {
+                if ((obj as THREE.Mesh).isMesh) n++
+              })
+              return n
+            }
+
+            const adaptivePass = () => {
+              pass++
               try { runWarmup() } catch {}
-              setTimeout(() => {
-                try { runWarmup() } catch {}
+              const cur = countMeshes()
+              if (cur === lastMeshCount) {
+                if (plateauStartedAt === 0) plateauStartedAt = performance.now()
+                if (performance.now() - plateauStartedAt >= PLATEAU_MS) {
+                  finish()
+                  return
+                }
+              } else {
+                plateauStartedAt = 0
+                lastMeshCount = cur
+              }
+              if (pass >= MAX_PASSES) {
                 finish()
-              }, 3000)
-            }, 2000)
+                return
+              }
+              setTimeout(adaptivePass, PASS_DELAY_MS)
+            }
+            adaptivePass()
           }
           requestAnimationFrame(tryReady)
         }}
