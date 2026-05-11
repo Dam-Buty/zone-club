@@ -86,6 +86,10 @@ export class CassetteTextureAtlas {
   private data: Uint8Array
   private loadedSlots = new Set<number>()
   private _dirty = false
+  // Pending sub-region uploads (col, row) accumulated since last flush.
+  // Each sub-region is uploaded via device.queue.writeTexture (240KB) instead of
+  // triggering a full atlas reupload (33MB) via texture.needsUpdate=true.
+  private _pendingRegions: Array<[number, number]> = []
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private _renderer: any = null
 
@@ -104,9 +108,14 @@ export class CassetteTextureAtlas {
     this.texture = new THREE.DataTexture(this.data, this.atlasWidth, this.atlasHeight)
     this.texture.format = THREE.RGBAFormat
     this.texture.type = THREE.UnsignedByteType
-    this.texture.minFilter = THREE.LinearMipmapLinearFilter
+    // Mipmaps disabled: sub-region writeTexture bypasses Three.js's full
+    // re-upload path. Mipmap regeneration would require a 33MB full re-upload
+    // every batch (~150-300ms spike each on Pixel 9). Aliasing tradeoff
+    // accepted — most cassettes are viewed at near-source resolution in the
+    // confined room.
+    this.texture.minFilter = THREE.LinearFilter
     this.texture.magFilter = THREE.LinearFilter
-    this.texture.generateMipmaps = true
+    this.texture.generateMipmaps = false
     this.texture.flipY = false
     this.texture.colorSpace = THREE.SRGBColorSpace
     this._dirty = true
@@ -173,15 +182,62 @@ export class CassetteTextureAtlas {
         dstOffset
       )
     }
+    this._pendingRegions.push([col, row])
   }
 
   flush(): boolean {
-    if (this._dirty) {
+    if (!this._dirty && this._pendingRegions.length === 0) return false
+    if (!this._renderer) return false
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const backend = (this._renderer as any).backend
+    const device = backend?.device as GPUDevice | undefined
+    const textureData = backend?.get?.(this.texture)
+
+    // Bootstrap path: GPU texture not yet created by Three.js. Trigger one
+    // full upload of the fallback-color atlas; subsequent batches will use
+    // sub-region writeTexture below.
+    if (!device || !textureData?.initialized || !textureData.texture) {
+      console.warn('[ATLAS-INIT] bootstrap full upload')
       this.texture.needsUpdate = true
       this._dirty = false
+      this._pendingRegions = []
       return true
     }
-    return false
+
+    // Sub-region writeTexture: 240KB per poster (POSTER_WIDTH×POSTER_HEIGHT×4)
+    // vs 33MB full atlas reupload via texture.needsUpdate.
+    const gpuTexture = textureData.texture as GPUTexture
+    const atlasRowBytes = this.atlasWidth * BYTES_PER_PIXEL
+    const subRowBytes = POSTER_WIDTH * BYTES_PER_PIXEL
+    const _tSub = performance.now()
+    const _n = this._pendingRegions.length
+
+    for (const [col, row] of this._pendingRegions) {
+      const startX = col * POSTER_WIDTH
+      const startY = row * POSTER_HEIGHT
+      // Extract sub-region into a contiguous Uint8Array (atlas is row-major
+      // with full-row stride, so sub-region rows aren't contiguous in `data`).
+      const subBytes = new Uint8Array(POSTER_WIDTH * POSTER_HEIGHT * BYTES_PER_PIXEL)
+      for (let y = 0; y < POSTER_HEIGHT; y++) {
+        const srcOffset = (startY + y) * atlasRowBytes + startX * BYTES_PER_PIXEL
+        subBytes.set(
+          this.data.subarray(srcOffset, srcOffset + subRowBytes),
+          y * subRowBytes
+        )
+      }
+      device.queue.writeTexture(
+        { texture: gpuTexture, origin: { x: startX, y: startY, z: 0 } },
+        subBytes,
+        { bytesPerRow: subRowBytes },
+        { width: POSTER_WIDTH, height: POSTER_HEIGHT, depthOrArrayLayers: 1 }
+      )
+    }
+
+    console.warn(`[ATLAS-SUB] ${_n} regions ${(performance.now() - _tSub).toFixed(1)}ms`)
+    this._pendingRegions = []
+    this._dirty = false
+    return true
   }
 
   dispose(): void {
