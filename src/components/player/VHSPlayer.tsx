@@ -459,8 +459,23 @@ export function VHSPlayer() {
     rewindToStartRafRef.current = requestAnimationFrame(animate);
   }, [rewindingToStart, stopRW]);
 
+  // Mobile ghost-click guard: when openPlayer fires from a touchstart on the
+  // seated TV menu (OK button), the synthesized click event arrives ~50-100ms
+  // later — by which time VHSPlayer has mounted and its eject button is at the
+  // same screen coordinate. That click then fires handleEject which closes the
+  // player immediately. We block eject for the first 500ms after mount to
+  // swallow the ghost click without blocking legitimate user-initiated ejects.
+  const mountedAtRef = useRef(performance.now());
+  useEffect(() => {
+    if (isPlayerOpen) mountedAtRef.current = performance.now();
+  }, [isPlayerOpen]);
+
   // Eject: save position + close player (or rewind prompt at 80%+)
   const handleEject = useCallback(() => {
+    if (performance.now() - mountedAtRef.current < 500) {
+      // Likely a ghost click from the touchstart that opened the player.
+      return;
+    }
     // Casting mode: save remote position, stop cast
     if (playerState === 'casting') {
       const remoteTime = getRemoteCurrentTime();
