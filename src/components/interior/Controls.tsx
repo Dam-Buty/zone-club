@@ -1238,7 +1238,7 @@ export function Controls({
     if (useStore.getState().isInteractingWithTV) return; // Block movement during standing TV menu
     if (useStore.getState().isInteractingWithLaZone) return; // Block movement during LaZone menu
 
-    const speed = isMobile ? 0.5775 : 1.75; // mobile bumped +50% (was 0.385) for less sluggish feel
+    const speed = isMobile ? 1.0 : 1.75; // mobile bumped to ~57% of desktop (was 0.5775) per user feedback (still too slow)
     velocity.current.x -= velocity.current.x * 10.0 * delta;
     velocity.current.z -= velocity.current.z * 10.0 * delta;
 
