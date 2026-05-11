@@ -7,6 +7,7 @@ import api, { type ReviewsResponse } from '../../api';
 import type { PlayerState } from '../../types';
 import { useGoogleCast } from '../../hooks/useGoogleCast';
 import { useIsMobile } from '../../hooks/useIsMobile';
+import { useBackGuard } from '../../hooks/useBackGuard';
 import styles from './VHSPlayer.module.css';
 
 const MIN_CONTENT_LENGTH = 500;
@@ -33,6 +34,7 @@ export function VHSPlayer() {
   const isPlayerOpen = useStore(state => state.isPlayerOpen);
   const currentPlayingFilm = useStore(state => state.currentPlayingFilm);
   const closePlayer = useStore(state => state.closePlayer);
+  useBackGuard(isPlayerOpen, closePlayer);
   const getRental = useStore(state => state.getRental);
   const films = useStore(state => state.films);
   const fetchMe = useStore(state => state.fetchMe);

@@ -21,6 +21,7 @@ import { Controls } from './Controls'
 import { PostProcessingEffects } from './PostProcessingEffects'
 import { Environment } from '@react-three/drei'
 import { useIsMobile } from '../../hooks/useIsMobile'
+import { useBackGuard } from '../../hooks/useBackGuard'
 import { createMobileInput } from '../../types/mobile'
 import type { MobileInput } from '../../types/mobile'
 
@@ -750,8 +751,23 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
   const benchmarkEnabled = useStore(state => state.benchmarkEnabled)
   const laZoneActive = useStore(state => state.isInteractingWithLaZone || state.isWatchingLaZone)
   const isSitting = useStore(state => state.isSitting)
+  const setSitting = useStore(state => state.setSitting)
   const isTerminalOpen = useStore(state => state.isTerminalOpen)
+  const isWatchingLaZone = useStore(state => state.isWatchingLaZone)
+  const isInteractingWithLaZone = useStore(state => state.isInteractingWithLaZone)
+  const setWatchingLaZone = useStore(state => state.setWatchingLaZone)
+  const setInteractingWithLaZone = useStore(state => state.setInteractingWithLaZone)
+  const isInteractingWithTV = useStore(state => state.isInteractingWithTV)
+  const setInteractingWithTV = useStore(state => state.setInteractingWithTV)
   const benchmarkMode = benchmarkEnabled || URL_BENCHMARK_MODE
+
+  // Back-gesture guards for scene-level states (no overlay components owning these).
+  // Order matters: deeper-nested states must be registered AFTER their parents so
+  // back closes them first.
+  useBackGuard(isSitting, () => setSitting(false))
+  useBackGuard(isInteractingWithTV, () => setInteractingWithTV(false))
+  useBackGuard(isInteractingWithLaZone, () => setInteractingWithLaZone(false))
+  useBackGuard(isWatchingLaZone, () => { setWatchingLaZone(false); setInteractingWithLaZone(false) })
 
   useEffect(() => {
     return () => {

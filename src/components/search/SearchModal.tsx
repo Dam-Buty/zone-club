@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { tmdb, type TMDBSearchResult } from '../../services/tmdb';
 import { useStore } from '../../store';
+import { useBackGuard } from '../../hooks/useBackGuard';
 import api from '../../api';
 import styles from './SearchModal.module.css';
 
@@ -11,6 +12,7 @@ interface SearchModalProps {
 }
 
 export function SearchModal({ isOpen, onClose }: SearchModalProps) {
+  useBackGuard(isOpen, onClose);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<TMDBSearchResult[]>([]);
   const [loading, setLoading] = useState(false);
