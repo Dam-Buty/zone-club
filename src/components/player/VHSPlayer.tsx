@@ -1189,7 +1189,10 @@ export function VHSPlayer() {
           }
         }}
       >
-        <source src={videoUrl} type="video/mp4" />
+        {/* Don't emit <source src=""> — browsers fire `error` on the video
+            element which cascades into closePlayer paths and unmounts the
+            whole player. */}
+        {videoUrl && <source src={videoUrl} type="video/mp4" />}
         {showSubtitles && hasSubtitles && streamingUrls?.subtitles && (
           <track
             kind="subtitles"
