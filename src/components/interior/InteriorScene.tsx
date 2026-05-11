@@ -924,6 +924,7 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
           const finish = () => {
             if (resolved) return
             resolved = true
+            console.warn(`[SCENE-READY] fired at t+${(performance.now() - startTime).toFixed(0)}ms`)
             useStore.getState().setSceneReady(true)
           }
 
@@ -996,50 +997,16 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
               requestAnimationFrame(tryReady)
               return
             }
-            // Adaptive multi-pass warmup. Run a postProcessing.render() pass,
-            // count meshes in scene. Repeat with delays as long as mesh count
-            // keeps growing — meaning Suspense components are still mounting
-            // and creating new materials. When the count plateaus for 1500ms
-            // we consider the scene fully built and fire sceneReady.
-            //
-            // Hard cap: max 5 passes across ~12s so we never block forever
-            // on an edge case.
-            const MAX_PASSES = 5
-            const PLATEAU_MS = 1500
-            const PASS_DELAY_MS = 2500
-            let pass = 0
-            let lastMeshCount = -1
-            let plateauStartedAt = 0
-
-            const countMeshes = (): number => {
-              let n = 0
-              state.scene.traverse((obj) => {
-                if ((obj as THREE.Mesh).isMesh) n++
-              })
-              return n
-            }
-
-            const adaptivePass = () => {
-              pass++
-              try { runWarmup() } catch {}
-              const cur = countMeshes()
-              if (cur === lastMeshCount) {
-                if (plateauStartedAt === 0) plateauStartedAt = performance.now()
-                if (performance.now() - plateauStartedAt >= PLATEAU_MS) {
-                  finish()
-                  return
-                }
-              } else {
-                plateauStartedAt = 0
-                lastMeshCount = cur
-              }
-              if (pass >= MAX_PASSES) {
-                finish()
-                return
-              }
-              setTimeout(adaptivePass, PASS_DELAY_MS)
-            }
-            adaptivePass()
+            // Single-pass warmup. The previous multi-pass adaptive logic with
+            // setTimeout(2500ms) chains caused 5 visible frame spikes of 1-2s
+            // each post-sceneReady — the GPU work from runWarmup() (16 renders
+            // with frustumCulled=false) was staggered across user interaction
+            // windows. Evidence: [FRAME-SPIKE] logs showed 5 spikes 1.1-2.4s
+            // each at identical (idle) camera position.
+            const t0 = performance.now()
+            try { runWarmup() } catch {}
+            console.warn(`[WARMUP-PASS] ${(performance.now() - t0).toFixed(0)}ms`)
+            finish()
           }
           requestAnimationFrame(tryReady)
         }}
