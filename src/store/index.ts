@@ -191,6 +191,15 @@ interface VideoClubState {
   setMinitelSelectedFilm: (id: number | null) => void;
   minitelPageIndex: number;
   setMinitelPageIndex: (n: number) => void;
+  // Currently highlighted item index (1-based) for arrow-key navigation in the minitel.
+  minitelHighlightedItem: number;
+  setMinitelHighlightedItem: (n: number) => void;
+  // Bridge for direct-click on the 3D minitel screen plane: MinitelDisplay
+  // sets this to the clicked item index; MinitelOverlay reads + clears it
+  // and reuses its existing handleNumberPress flow.
+  pendingMinitelPress: number | null;
+  dispatchMinitelItem: (n: number) => void;
+  consumeMinitelItem: () => void;
   highlightedCassetteKey: string | null;
   setHighlightedCassetteKey: (k: string | null) => void;
 
@@ -753,6 +762,11 @@ export const useStore = create<VideoClubState>()(
       setMinitelSelectedFilm: (id) => set({ minitelSelectedFilm: id }),
       minitelPageIndex: 0,
       setMinitelPageIndex: (n) => set({ minitelPageIndex: n }),
+      minitelHighlightedItem: 1,
+      setMinitelHighlightedItem: (n) => set({ minitelHighlightedItem: n }),
+      pendingMinitelPress: null,
+      dispatchMinitelItem: (n) => set({ pendingMinitelPress: n }),
+      consumeMinitelItem: () => set({ pendingMinitelPress: null }),
       highlightedCassetteKey: null,
       setHighlightedCassetteKey: (k) => set({ highlightedCassetteKey: k }),
 

@@ -1,4 +1,4 @@
-import { useMemo, useEffect, useRef } from 'react'
+import { useMemo, useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { useStore } from '../../store'
 import { searchFilms } from '../../utils/minitelSearch'
@@ -8,15 +8,105 @@ import type { AisleType, Film } from '../../types'
 
 const SCREEN_W = 512
 const SCREEN_H = 384 // 4:3
-const PADDING = 18
-const LINE_H = 18
-const FONT = "bold 16px 'Courier New', monospace"
-const HEADER_FONT = "bold 14px 'Courier New', monospace"
-const SMALL_FONT = "12px 'Courier New', monospace"
+// Object_73 wraps around the whole CRT tube: the bezel + visible face share
+// the SAME texture. Anything drawn past the visible-face UV bounds re-appears
+// on the side curve and zigzags off the screen. Empirically the visible face
+// covers roughly canvas x ∈ [0, 300]; PADDING_R = 210 keeps wide strokes
+// (header rule, input border) inside that band.
+const PADDING_R = 210
 const COLOR_BG = '#000010'
 const COLOR_TEXT = '#f0f4ff'
 const COLOR_ACCENT = '#00fff7'
 const COLOR_DIM = 'rgba(240, 244, 255, 0.55)'
+
+// Visual tokens tuned per input type. Mobile gets larger touch targets, more
+// vertical spacing between selectable items, and a bigger font so tapping
+// isn't ambiguous when the camera is zoomed in (dist 0.13m).
+interface Tokens {
+  padding: number
+  safeRight: number
+  lineH: number
+  font: string
+  headerFont: string
+  smallFont: string
+  pillPadX: number
+  pillPadY: number
+  itemGap: number   // extra px between selectable list items
+  navGap: number    // gap between pills in the nav row
+}
+const DESKTOP_TOKENS: Tokens = {
+  padding: 18,
+  safeRight: SCREEN_W - PADDING_R,
+  lineH: 14,
+  font: "bold 13px 'Courier New', monospace",
+  headerFont: "bold 11px 'Courier New', monospace",
+  smallFont: "10px 'Courier New', monospace",
+  pillPadX: 10,
+  pillPadY: 4,
+  itemGap: 0,
+  navGap: 8,
+}
+const MOBILE_TOKENS: Tokens = {
+  padding: 22,
+  safeRight: SCREEN_W - PADDING_R,
+  lineH: 18,
+  font: "bold 16px 'Courier New', monospace",
+  headerFont: "bold 13px 'Courier New', monospace",
+  smallFont: "12px 'Courier New', monospace",
+  pillPadX: 14,
+  pillPadY: 8,
+  itemGap: 4,
+  navGap: 12,
+}
+// Active tokens — mutated by useMinitelScreenTexture once per render based on
+// pointer-coarse media query. There is a single MinitelScreen instance and we
+// re-render the whole canvas in one effect, so this avoids the noise of
+// threading a Tokens object through every draw function.
+let TOK: Tokens = DESKTOP_TOKENS
+// Legacy constant aliases — kept as getter-like vars so existing draw code
+// reads the active value without explicit `TOK.` everywhere.
+let PADDING = TOK.padding
+let SAFE_RIGHT = TOK.safeRight
+let LINE_H = TOK.lineH
+let FONT = TOK.font
+let HEADER_FONT = TOK.headerFont
+let SMALL_FONT = TOK.smallFont
+function setTokens(t: Tokens) {
+  TOK = t
+  PADDING = t.padding
+  SAFE_RIGHT = t.safeRight
+  LINE_H = t.lineH
+  FONT = t.font
+  HEADER_FONT = t.headerFont
+  SMALL_FONT = t.smallFont
+}
+
+function useIsCoarsePointer(): boolean {
+  const [coarse, setCoarse] = useState(() => {
+    if (typeof window === 'undefined') return false
+    return window.matchMedia?.('(pointer: coarse)')?.matches ?? false
+  })
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const mq = window.matchMedia('(pointer: coarse)')
+    const onChange = (e: MediaQueryListEvent) => setCoarse(e.matches)
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [])
+  return coarse
+}
+
+// Each clickable item's canvas range. `index` is 1-based (0 reserved for
+// back/exit) and matches what handleNumberPress expects in MinitelOverlay.
+// xStart/xEnd are optional — when present (e.g. side-by-side buttons), the
+// click must match both the Y AND X bands.
+export interface HitBox {
+  index: number
+  yStart: number
+  yEnd: number
+  xStart?: number
+  xEnd?: number
+}
 
 const PAGE_SIZE = 8
 const AISLES_ORDER: AisleType[] = [
@@ -37,7 +127,7 @@ function drawHeader(ctx: CanvasRenderingContext2D, title: string) {
   ctx.lineWidth = 1
   ctx.beginPath()
   ctx.moveTo(PADDING, PADDING + 18)
-  ctx.lineTo(SCREEN_W - PADDING, PADDING + 18)
+  ctx.lineTo(SAFE_RIGHT, PADDING + 18)
   ctx.stroke()
 }
 
@@ -50,6 +140,86 @@ function drawFooter(ctx: CanvasRenderingContext2D, text: string) {
   ctx.textAlign = 'left'
 }
 
+// Draws a clickable pill with explicit X+Y hitbox bounds. Used for RETOUR,
+// pagination (PREC/SUIV) and other inline controls.
+function drawPillButton(
+  ctx: CanvasRenderingContext2D,
+  label: string,
+  hitboxes: HitBox[],
+  opts: { x: number; y: number; index: number; fillAlpha?: number },
+): { w: number; h: number } {
+  const padX = TOK.pillPadX
+  const padY = TOK.pillPadY
+  ctx.font = FONT
+  const textW = ctx.measureText(label).width
+  const btnW = textW + padX * 2
+  const btnH = LINE_H + padY * 2
+  ctx.strokeStyle = COLOR_ACCENT
+  ctx.lineWidth = 1
+  ctx.fillStyle = `rgba(0, 255, 247, ${opts.fillAlpha ?? 0.10})`
+  ctx.fillRect(opts.x, opts.y, btnW, btnH)
+  ctx.strokeRect(opts.x, opts.y, btnW, btnH)
+  ctx.fillStyle = COLOR_ACCENT
+  ctx.textBaseline = 'top'
+  ctx.textAlign = 'left'
+  ctx.shadowColor = COLOR_ACCENT
+  ctx.shadowBlur = 6
+  ctx.fillText(label, opts.x + padX, opts.y + padY)
+  ctx.shadowBlur = 0
+  hitboxes.push({
+    index: opts.index,
+    yStart: opts.y - 2, yEnd: opts.y + btnH + 2,
+    xStart: opts.x - 2, xEnd: opts.x + btnW + 2,
+  })
+  return { w: btnW, h: btnH }
+}
+
+// Back-compat wrapper for the old API used by sommaire/recherche.
+function drawBackButton(
+  ctx: CanvasRenderingContext2D,
+  label: string,
+  hitboxes: HitBox[],
+  yPos?: number,
+  xPos?: number,
+) {
+  // Approximate the legacy size by computing it first.
+  ctx.font = FONT
+  const textW = ctx.measureText(label).width
+  const btnH = LINE_H + 4 * 2
+  const x = xPos ?? (PADDING + 16)
+  const y = yPos ?? (SCREEN_H - PADDING - btnH - 36)
+  drawPillButton(ctx, label, hitboxes, { x, y, index: 0 })
+  // Silence unused warnings for textW (kept for parity).
+  void textW
+}
+
+// Pagination + back row. Indices: -1 = prev page, -2 = next page, 0 = back.
+// Placed on a single row starting at `x` and Y, returns the row height so the
+// caller can advance its cursor.
+function drawNavRow(
+  ctx: CanvasRenderingContext2D,
+  hitboxes: HitBox[],
+  opts: { x: number; y: number; currentPage: number; totalPages: number; backLabel?: string },
+): number {
+  const backLabel = opts.backLabel ?? 'RETOUR'
+  let cursorX = opts.x
+  let rowH = 0
+  const gap = TOK.navGap
+  if (opts.currentPage > 0) {
+    const r = drawPillButton(ctx, '<< PREC', hitboxes, { x: cursorX, y: opts.y, index: -1 })
+    cursorX += r.w + gap
+    rowH = Math.max(rowH, r.h)
+  }
+  if (opts.currentPage < opts.totalPages - 1) {
+    const r = drawPillButton(ctx, 'SUIV >>', hitboxes, { x: cursorX, y: opts.y, index: -2 })
+    cursorX += r.w + gap
+    rowH = Math.max(rowH, r.h)
+  }
+  const r = drawPillButton(ctx, backLabel, hitboxes, { x: cursorX, y: opts.y, index: 0 })
+  rowH = Math.max(rowH, r.h)
+  return rowH
+}
+
 function drawScanlines(ctx: CanvasRenderingContext2D) {
   ctx.fillStyle = 'rgba(255, 255, 255, 0.04)'
   for (let y = 0; y < SCREEN_H; y += 3) {
@@ -57,39 +227,55 @@ function drawScanlines(ctx: CanvasRenderingContext2D) {
   }
 }
 
-function drawSommaire(ctx: CanvasRenderingContext2D) {
+function drawHighlightChevron(ctx: CanvasRenderingContext2D, x: number, y: number) {
+  ctx.fillStyle = COLOR_ACCENT
+  ctx.font = FONT
+  ctx.textBaseline = 'top'
+  ctx.shadowColor = COLOR_ACCENT
+  ctx.shadowBlur = 6
+  ctx.fillText('>', x, y)
+  ctx.shadowBlur = 0
+}
+
+function drawSommaire(ctx: CanvasRenderingContext2D, highlight: number, hitboxes: HitBox[]) {
   drawHeader(ctx, '> ZONE CLUB - VIDEOTHEQUE')
-  ctx.fillStyle = COLOR_TEXT
   ctx.font = FONT
   ctx.textBaseline = 'top'
   let y = PADDING + 50
-  const lines = [
-    '[1] RECHERCHER UN FILM',
-    '[2] PARCOURIR LES RAYONS',
-    '[3] LISTE ALPHABETIQUE',
-    '[4] COMMANDER UN FILM',
-    '    SI NON DISPO',
+  const items = [
+    'RECHERCHER UN FILM',
+    'PARCOURIR LES RAYONS',
+    'LISTE ALPHABETIQUE',
+    'COMMANDER UN FILM',
   ]
-  for (const l of lines) {
-    ctx.fillText(l, PADDING + 16, y)
-    y += LINE_H + 4
-  }
+  items.forEach((label, i) => {
+    const itemNum = i + 1
+    const isHl = itemNum === highlight
+    if (isHl) drawHighlightChevron(ctx, PADDING, y)
+    ctx.fillStyle = isHl ? COLOR_ACCENT : COLOR_TEXT
+    ctx.font = FONT
+    ctx.textBaseline = 'top'
+    ctx.fillText(label, PADDING + 16, y)
+    const pad = Math.round(TOK.itemGap / 2)
+    hitboxes.push({ index: itemNum, yStart: y - pad, yEnd: y + LINE_H + pad })
+    y += LINE_H + 6 + TOK.itemGap
+  })
   ctx.fillStyle = COLOR_DIM
   ctx.font = SMALL_FONT
-  ctx.fillText('Tapez le numero + ENVOI', PADDING + 16, y + 12)
-  drawFooter(ctx, '[ESC] sortir')
+  ctx.fillText('Tap / clic sur une ligne', PADDING + 16, y + 12)
+  // Place FERMER just below the menu items and hint text
+  drawBackButton(ctx, 'FERMER', hitboxes, y + 36)
 }
 
-function drawRecherche(ctx: CanvasRenderingContext2D, query: string, results: Film[]) {
+function drawRecherche(ctx: CanvasRenderingContext2D, query: string, results: Film[], highlight: number, hitboxes: HitBox[]) {
   drawHeader(ctx, '> RECHERCHE - TITRE')
   ctx.fillStyle = COLOR_TEXT
   ctx.font = FONT
   ctx.textBaseline = 'top'
-  ctx.fillText('Tapez un titre :', PADDING, PADDING + 32)
-  // Input box
+  ctx.fillText('Titre :', PADDING, PADDING + 32)
   ctx.strokeStyle = COLOR_ACCENT
   ctx.lineWidth = 1
-  ctx.strokeRect(PADDING, PADDING + 56, SCREEN_W - PADDING * 2, 28)
+  ctx.strokeRect(PADDING, PADDING + 56, SAFE_RIGHT - PADDING, 28)
   ctx.fillStyle = COLOR_ACCENT
   ctx.fillText(`> ${query || ''}_`, PADDING + 8, PADDING + 60)
 
@@ -101,106 +287,211 @@ function drawRecherche(ctx: CanvasRenderingContext2D, query: string, results: Fi
     ctx.fillStyle = COLOR_TEXT
     ctx.fillText('AUCUN RESULTAT', PADDING, PADDING + 100)
     ctx.fillStyle = COLOR_DIM
-    ctx.fillText('Essayez le mode 4 pour commander', PADDING, PADDING + 118)
+    ctx.fillText('Essayez COMMANDER UN FILM', PADDING, PADDING + 118)
   } else {
     ctx.fillStyle = COLOR_DIM
-    ctx.fillText(`${results.length} resultat(s) :`, PADDING, PADDING + 100)
+    ctx.fillText(`${results.length} resultat(s) — tap pour ouvrir :`, PADDING, PADDING + 100)
     let y = PADDING + 122
-    ctx.fillStyle = COLOR_TEXT
     ctx.font = FONT
     results.slice(0, 8).forEach((f, i) => {
-      const label = `[${i + 1}] ${f.title.slice(0, 36)}`
-      ctx.fillText(label, PADDING, y)
-      y += LINE_H
+      const num = i + 1
+      const isHl = num === highlight
+      if (isHl) drawHighlightChevron(ctx, PADDING - 14, y)
+      ctx.fillStyle = isHl ? COLOR_ACCENT : COLOR_TEXT
+      ctx.font = FONT
+      ctx.textBaseline = 'top'
+      ctx.fillText(f.title.slice(0, 40), PADDING, y)
+      const pad = Math.round(TOK.itemGap / 2)
+      hitboxes.push({ index: num, yStart: y - pad, yEnd: y + LINE_H + pad })
+      y += LINE_H + TOK.itemGap
     })
+    drawBackButton(ctx, 'RETOUR', hitboxes, y + 16)
+    return
   }
-  drawFooter(ctx, '[1-9] selectionner | [ESC] sommaire')
+  drawBackButton(ctx, 'RETOUR', hitboxes)
 }
 
-function drawRayons(ctx: CanvasRenderingContext2D, films: Record<string, Film[]>) {
+function drawRayons(ctx: CanvasRenderingContext2D, films: Record<string, Film[]>, highlight: number, hitboxes: HitBox[]) {
   drawHeader(ctx, '> RAYONS')
-  ctx.fillStyle = COLOR_TEXT
   ctx.font = FONT
   ctx.textBaseline = 'top'
   let y = PADDING + 32
-  AISLES_ORDER.forEach((a, i) => {
+  let visibleIdx = 0
+  AISLES_ORDER.forEach((a) => {
     const count = (films[a]?.length ?? 0)
     if (count === 0) return
-    const num = i + 1
-    const numLabel = num <= 9 ? `[${num}]` : `[${num}]`
-    ctx.fillText(`${numLabel} ${aisleLabel(a).padEnd(12)} (${count})`, PADDING, y)
-    y += LINE_H
+    visibleIdx++
+    const num = visibleIdx
+    const isHl = num === highlight
+    if (isHl) drawHighlightChevron(ctx, PADDING - 14, y)
+    ctx.fillStyle = isHl ? COLOR_ACCENT : COLOR_TEXT
+    ctx.font = FONT
+    ctx.textBaseline = 'top'
+    ctx.fillText(`${aisleLabel(a).padEnd(14)} ${count} films`, PADDING, y)
+    const pad = Math.round(TOK.itemGap / 2)
+    hitboxes.push({ index: num, yStart: y - pad, yEnd: y + LINE_H + pad })
+    y += LINE_H + TOK.itemGap
   })
-  drawFooter(ctx, '[1-9] selectionner | [ESC] sommaire')
+  drawNavRow(ctx, hitboxes, { x: PADDING, y: y + 8, currentPage: 0, totalPages: 1 })
 }
 
-function drawAlpha(ctx: CanvasRenderingContext2D, films: Film[], page: number) {
+function drawAlpha(ctx: CanvasRenderingContext2D, films: Film[], page: number, highlight: number, hitboxes: HitBox[]) {
   const totalPages = Math.max(1, Math.ceil(films.length / PAGE_SIZE))
   const safePage = Math.max(0, Math.min(page, totalPages - 1))
   drawHeader(ctx, `> FILMS A-Z   PAGE ${safePage + 1}/${totalPages}`)
-  ctx.fillStyle = COLOR_TEXT
   ctx.font = FONT
   ctx.textBaseline = 'top'
   const slice = films.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE)
   let y = PADDING + 32
   slice.forEach((f, i) => {
-    ctx.fillText(`[${i + 1}] ${f.title.slice(0, 36)}`, PADDING, y)
-    y += LINE_H
+    const num = i + 1
+    const isHl = num === highlight
+    if (isHl) drawHighlightChevron(ctx, PADDING - 14, y)
+    ctx.fillStyle = isHl ? COLOR_ACCENT : COLOR_TEXT
+    ctx.font = FONT
+    ctx.textBaseline = 'top'
+    ctx.fillText(f.title.slice(0, 40), PADDING, y)
+    const pad = Math.round(TOK.itemGap / 2)
+    hitboxes.push({ index: num, yStart: y - pad, yEnd: y + LINE_H + pad })
+    y += LINE_H + TOK.itemGap
   })
-  drawFooter(ctx, '[1-9] choisir | [SUITE] page+ | [ESC] sommaire')
+  drawNavRow(ctx, hitboxes, { x: PADDING, y: y + 8, currentPage: safePage, totalPages })
 }
 
-function drawAisleList(ctx: CanvasRenderingContext2D, aisle: AisleType, films: Film[], page: number) {
+function drawAisleList(ctx: CanvasRenderingContext2D, aisle: AisleType, films: Film[], page: number, highlight: number, hitboxes: HitBox[]) {
   const totalPages = Math.max(1, Math.ceil(films.length / PAGE_SIZE))
   const safePage = Math.max(0, Math.min(page, totalPages - 1))
   drawHeader(ctx, `> ${aisleLabel(aisle)}   PAGE ${safePage + 1}/${totalPages}`)
-  ctx.fillStyle = COLOR_TEXT
   ctx.font = FONT
   ctx.textBaseline = 'top'
   const slice = films.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE)
   let y = PADDING + 32
   slice.forEach((f, i) => {
-    ctx.fillText(`[${i + 1}] ${f.title.slice(0, 36)}`, PADDING, y)
-    y += LINE_H
+    const num = i + 1
+    const isHl = num === highlight
+    if (isHl) drawHighlightChevron(ctx, PADDING - 14, y)
+    ctx.fillStyle = isHl ? COLOR_ACCENT : COLOR_TEXT
+    ctx.font = FONT
+    ctx.textBaseline = 'top'
+    ctx.fillText(f.title.slice(0, 40), PADDING, y)
+    const pad = Math.round(TOK.itemGap / 2)
+    hitboxes.push({ index: num, yStart: y - pad, yEnd: y + LINE_H + pad })
+    y += LINE_H + TOK.itemGap
   })
-  drawFooter(ctx, '[1-9] choisir | [SUITE] page+ | [ESC] retour')
+  drawNavRow(ctx, hitboxes, { x: PADDING, y: y + 8, currentPage: safePage, totalPages })
 }
 
-function drawDetail(ctx: CanvasRenderingContext2D, film: Film, location: string) {
+function drawDetail(ctx: CanvasRenderingContext2D, film: Film, location: string, hitboxes: HitBox[]) {
   drawHeader(ctx, '> DETAIL FILM')
+  // Title
   ctx.fillStyle = COLOR_ACCENT
   ctx.font = FONT
   ctx.textBaseline = 'top'
   ctx.shadowColor = COLOR_ACCENT
   ctx.shadowBlur = 6
-  ctx.fillText(film.title.slice(0, 40), PADDING, PADDING + 40)
+  ctx.fillText(film.title.slice(0, 30), PADDING, PADDING + 30)
   ctx.shadowBlur = 0
+  // Year
   ctx.fillStyle = COLOR_DIM
   ctx.font = SMALL_FONT
   if (film.release_date) {
-    ctx.fillText(`(${film.release_date.slice(0, 4)})`, PADDING, PADDING + 64)
+    ctx.fillText(`(${film.release_date.slice(0, 4)})`, PADDING, PADDING + 52)
   }
+  // Actors
+  let yCursor = PADDING + 72
+  if (film.actors && film.actors.length > 0) {
+    ctx.fillStyle = COLOR_TEXT
+    ctx.font = SMALL_FONT
+    const line = `AVEC : ${film.actors.slice(0, 3).join(', ')}`
+    const wrapped = wrapText(line, 36)
+    for (const l of wrapped.slice(0, 2)) {
+      ctx.fillText(l, PADDING, yCursor)
+      yCursor += 14
+    }
+  }
+  // Pitch — tagline first, else first part of overview
+  yCursor += 4
+  const pitch = (film.tagline && film.tagline.trim()) || (film.overview ? film.overview : '')
+  if (pitch) {
+    ctx.fillStyle = COLOR_DIM
+    ctx.font = SMALL_FONT
+    const wrapped = wrapText(pitch, 36)
+    for (const l of wrapped.slice(0, 3)) {
+      ctx.fillText(l, PADDING, yCursor)
+      yCursor += 14
+    }
+  }
+  // Location
+  yCursor += 6
   ctx.fillStyle = COLOR_TEXT
   ctx.font = FONT
-  let y = PADDING + 110
-  // Wrap location on 2 lines if needed
-  const locLines = wrapText(location, 40)
-  locLines.forEach((line, i) => {
-    if (i === 0) ctx.fillText('LOCALISATION :', PADDING, y)
-    else ctx.fillText(line, PADDING, y)
-    y += LINE_H
-  })
+  ctx.fillText('LOCALISATION :', PADDING, yCursor)
+  yCursor += LINE_H
   ctx.fillStyle = COLOR_ACCENT
-  ctx.fillText(locLines[0] ?? '', PADDING, PADDING + 110 + LINE_H)
-  ctx.fillStyle = COLOR_TEXT
-  ctx.fillText('[ENVOI] ILLUMINER LA K7', PADDING, PADDING + 200)
-  ctx.fillStyle = COLOR_DIM
-  ctx.font = SMALL_FONT
-  ctx.fillText('[ESC] retour sommaire', PADDING, PADDING + 230)
-  drawFooter(ctx, '')
+  // FONT is ~16px Courier (~9.6px/char). SAFE_RIGHT-PADDING ≈ 284px → ~28 chars.
+  const locLines = wrapText(location, 28)
+  for (const l of locLines.slice(0, 2)) {
+    ctx.fillText(l, PADDING, yCursor)
+    yCursor += LINE_H
+  }
+  // ILLUMINER LA K7 + RETOUR — side by side so RETOUR stays on the flat face
+  // (the default bottom position lands on the bezel curve and warps).
+  yCursor += 8
+  ctx.font = FONT
+  const illumLabel = 'ILLUMINER LA K7'
+  const illumPadX = 12
+  const illumPadY = 8
+  const illumW = ctx.measureText(illumLabel).width + illumPadX * 2
+  const illumH = LINE_H + illumPadY * 2
+  const illumX = PADDING
+  const illumY = yCursor
+  ctx.strokeStyle = COLOR_ACCENT
+  ctx.lineWidth = 1
+  ctx.fillStyle = 'rgba(0, 255, 247, 0.15)'
+  ctx.fillRect(illumX, illumY, illumW, illumH)
+  ctx.strokeRect(illumX, illumY, illumW, illumH)
+  ctx.fillStyle = COLOR_ACCENT
+  ctx.textBaseline = 'top'
+  ctx.textAlign = 'left'
+  ctx.shadowColor = COLOR_ACCENT
+  ctx.shadowBlur = 8
+  ctx.fillText(illumLabel, illumX + illumPadX, illumY + illumPadY)
+  ctx.shadowBlur = 0
+  hitboxes.push({
+    index: 1,
+    yStart: illumY - 2, yEnd: illumY + illumH + 2,
+    xStart: illumX - 2, xEnd: illumX + illumW + 2,
+  })
+  // RETOUR pill — same Y as ILLUMINER, just to the right. Needs X bounds so a
+  // click on RETOUR isn't swallowed by ILLUMINER's hitbox.
+  const retourLabel = 'RETOUR'
+  const retourPadX = 12
+  const retourPadY = 6
+  const retourTextW = ctx.measureText(retourLabel).width
+  const retourW = retourTextW + retourPadX * 2
+  const retourH = LINE_H + retourPadY * 2
+  const retourX = illumX + illumW + 12
+  // Vertically center RETOUR on ILLUMINER's box (they have different heights).
+  const retourY = illumY + Math.round((illumH - retourH) / 2)
+  ctx.strokeStyle = COLOR_ACCENT
+  ctx.lineWidth = 1
+  ctx.fillStyle = 'rgba(0, 255, 247, 0.10)'
+  ctx.fillRect(retourX, retourY, retourW, retourH)
+  ctx.strokeRect(retourX, retourY, retourW, retourH)
+  ctx.fillStyle = COLOR_ACCENT
+  ctx.textBaseline = 'top'
+  ctx.shadowColor = COLOR_ACCENT
+  ctx.shadowBlur = 6
+  ctx.fillText(retourLabel, retourX + retourPadX, retourY + retourPadY)
+  ctx.shadowBlur = 0
+  hitboxes.push({
+    index: 0,
+    yStart: retourY - 2, yEnd: retourY + retourH + 2,
+    xStart: retourX - 2, xEnd: retourX + retourW + 2,
+  })
 }
 
-function drawCommander(ctx: CanvasRenderingContext2D, query: string, results: Array<{ id: number; title: string; release_date?: string }>, requested: Set<number>, authed: boolean) {
+function drawCommander(ctx: CanvasRenderingContext2D, query: string, results: Array<{ id: number; title: string; release_date?: string }>, requested: Set<number>, authed: boolean, hitboxes: HitBox[]) {
   drawHeader(ctx, '> COMMANDER UN FILM')
   ctx.fillStyle = COLOR_TEXT
   ctx.font = FONT
@@ -211,13 +502,13 @@ function drawCommander(ctx: CanvasRenderingContext2D, query: string, results: Ar
     ctx.fillStyle = COLOR_DIM
     ctx.font = SMALL_FONT
     ctx.fillText('[ENVOI] ouvrir la fenetre de connexion', PADDING, PADDING + 110)
-    drawFooter(ctx, '[ESC] sommaire')
+    drawPillButton(ctx, 'RETOUR', hitboxes, { x: PADDING, y: PADDING + 132, index: 0 })
     return
   }
   ctx.fillText('Recherche TMDB :', PADDING, PADDING + 32)
   ctx.strokeStyle = COLOR_ACCENT
   ctx.lineWidth = 1
-  ctx.strokeRect(PADDING, PADDING + 56, SCREEN_W - PADDING * 2, 28)
+  ctx.strokeRect(PADDING, PADDING + 56, SAFE_RIGHT - PADDING, 28)
   ctx.fillStyle = COLOR_ACCENT
   ctx.fillText(`> ${query || ''}_`, PADDING + 8, PADDING + 60)
 
@@ -236,13 +527,19 @@ function drawCommander(ctx: CanvasRenderingContext2D, query: string, results: Ar
       const isReq = requested.has(r.id)
       const year = r.release_date ? ` (${r.release_date.slice(0, 4)})` : ''
       const tag = isReq ? ' [DEJA]' : ''
-      const text = `[${i + 1}] ${r.title.slice(0, 28)}${year}${tag}`
+      const text = `${r.title.slice(0, 30)}${year}${tag}`
       ctx.fillStyle = isReq ? COLOR_DIM : COLOR_TEXT
       ctx.fillText(text, PADDING, y)
-      y += LINE_H
+      if (!isReq) {
+        const pad = Math.round(TOK.itemGap / 2)
+        hitboxes.push({ index: i + 1, yStart: y - pad, yEnd: y + LINE_H + pad })
+      }
+      y += LINE_H + TOK.itemGap
     })
+    drawPillButton(ctx, 'RETOUR', hitboxes, { x: PADDING, y: y + 8, index: 0 })
+    return
   }
-  drawFooter(ctx, '[1-9] commander | [ESC] sommaire')
+  drawPillButton(ctx, 'RETOUR', hitboxes, { x: PADDING, y: PADDING + 130, index: 0 })
 }
 
 function wrapText(text: string, max: number): string[] {
@@ -274,8 +571,10 @@ export function useMinitelScreenTexture(props: MinitelScreenProps = {}) {
   const minitelSelectedAisle = useStore((s) => s.minitelSelectedAisle)
   const minitelSelectedFilm = useStore((s) => s.minitelSelectedFilm)
   const minitelPageIndex = useStore((s) => s.minitelPageIndex)
+  const minitelHighlightedItem = useStore((s) => s.minitelHighlightedItem)
   const films = useStore((s) => s.films)
   const isAuthenticated = useStore((s) => s.isAuthenticated)
+  const isMobile = useIsCoarsePointer()
   const tmdbResults = props.tmdbResults ?? []
   const requestedIds = props.requestedIds ?? new Set<number>()
 
@@ -331,32 +630,44 @@ export function useMinitelScreenTexture(props: MinitelScreenProps = {}) {
     t.magFilter = THREE.LinearFilter
     t.colorSpace = THREE.SRGBColorSpace
     t.flipY = true
+    // Without explicit ClampToEdge, the texture repeats — combined with our
+    // -0.10 / +0.10 offset that pushed sampling out of [0,1], the same hitbox
+    // band can match in several UV regions (visible "ghost" rows on the mesh).
+    t.wrapS = THREE.ClampToEdgeWrapping
+    t.wrapT = THREE.ClampToEdgeWrapping
     return { canvas: c, texture: t }
   }, [])
+
+  const hitboxesRef = useRef<HitBox[]>([])
 
   useEffect(() => {
     const ctx = canvas.getContext('2d')
     if (!ctx) return
+    // Lock the active tokens for this draw pass. All draw helpers read from
+    // module-level TOK / aliases (PADDING / LINE_H / FONT etc.).
+    setTokens(isMobile ? MOBILE_TOKENS : DESKTOP_TOKENS)
     ctx.fillStyle = COLOR_BG
     ctx.fillRect(0, 0, SCREEN_W, SCREEN_H)
-    if (minitelMode === 'idle' || minitelMode === 'sommaire') drawSommaire(ctx)
-    else if (minitelMode === 'recherche') drawRecherche(ctx, minitelQuery, searchResults)
+    const hits: HitBox[] = []
+    if (minitelMode === 'idle' || minitelMode === 'sommaire') drawSommaire(ctx, minitelHighlightedItem, hits)
+    else if (minitelMode === 'recherche') drawRecherche(ctx, minitelQuery, searchResults, minitelHighlightedItem, hits)
     else if (minitelMode === 'rayons') {
-      if (minitelSelectedAisle) drawAisleList(ctx, minitelSelectedAisle, aisleFilms, minitelPageIndex)
-      else drawRayons(ctx, films)
+      if (minitelSelectedAisle) drawAisleList(ctx, minitelSelectedAisle, aisleFilms, minitelPageIndex, minitelHighlightedItem, hits)
+      else drawRayons(ctx, films, minitelHighlightedItem, hits)
     }
-    else if (minitelMode === 'alpha') drawAlpha(ctx, allFilms, minitelPageIndex)
-    else if (minitelMode === 'commander') drawCommander(ctx, minitelQuery, tmdbResults, requestedIds, isAuthenticated)
+    else if (minitelMode === 'alpha') drawAlpha(ctx, allFilms, minitelPageIndex, minitelHighlightedItem, hits)
+    else if (minitelMode === 'commander') drawCommander(ctx, minitelQuery, tmdbResults, requestedIds, isAuthenticated, hits)
     else if (minitelMode === 'detail') {
-      if (detailFilm) drawDetail(ctx, detailFilm, detailLocation)
-      else drawSommaire(ctx)
+      if (detailFilm) drawDetail(ctx, detailFilm, detailLocation, hits)
+      else drawSommaire(ctx, minitelHighlightedItem, hits)
     }
     drawScanlines(ctx)
     texture.needsUpdate = true
+    hitboxesRef.current = hits
   }, [
     canvas, texture, minitelMode, minitelQuery, minitelSelectedAisle,
-    minitelPageIndex, searchResults, aisleFilms, allFilms, films, detailFilm,
-    detailLocation, tmdbResults, requestedIds, isAuthenticated,
+    minitelPageIndex, minitelHighlightedItem, searchResults, aisleFilms, allFilms, films, detailFilm,
+    detailLocation, tmdbResults, requestedIds, isAuthenticated, isMobile,
   ])
 
   // Reference helper for cassette position (used by overlay's "ILLUMINER")
@@ -397,5 +708,5 @@ export function useMinitelScreenTexture(props: MinitelScreenProps = {}) {
     return []
   }, [minitelMode, searchResults, aisleFilms, allFilms, minitelPageIndex, minitelSelectedAisle, films, tmdbResults])
 
-  return { texture, detailCassetteKey, totalPages, selectableItems, getCassetteWorldPosition }
+  return { texture, detailCassetteKey, totalPages, selectableItems, getCassetteWorldPosition, hitboxesRef, screenWidth: SCREEN_W, screenHeight: SCREEN_H }
 }

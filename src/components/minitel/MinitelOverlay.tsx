@@ -100,7 +100,7 @@ export function MinitelOverlay() {
 
   // Handle a numeric selection [1..9] in current screen
   const handleNumberPress = useCallback((n: number) => {
-    if (minitelMode === 'sommaire') {
+    if (minitelMode === 'sommaire' || minitelMode === 'idle') {
       if (n === 1) { setMinitelMode('recherche'); setMinitelQuery(''); setMinitelPageIndex(0) }
       else if (n === 2) { setMinitelMode('rayons'); setMinitelSelectedAisle(null); setMinitelPageIndex(0) }
       else if (n === 3) { setMinitelMode('alpha'); setMinitelPageIndex(0) }
@@ -191,43 +191,117 @@ export function MinitelOverlay() {
   const handleRetour = useCallback(() => setMinitelPageIndex(Math.max(0, minitelPageIndex - 1)), [minitelPageIndex, setMinitelPageIndex])
 
   // Desktop keyboard handler
+  // Compute the number of selectable items for arrow navigation bounds.
+  const itemCount = (() => {
+    if (minitelMode === 'sommaire' || minitelMode === 'idle') return 4
+    if (minitelMode === 'rayons' && !minitelSelectedAisle) {
+      return AISLES_ORDER.filter((a) => (films[a]?.length ?? 0) > 0).length
+    }
+    if (minitelMode === 'rayons' && minitelSelectedAisle) {
+      const list = films[minitelSelectedAisle] || []
+      return Math.min(PAGE_SIZE, list.length - minitelPageIndex * PAGE_SIZE)
+    }
+    if (minitelMode === 'alpha') {
+      return Math.min(PAGE_SIZE, buildAllFilms().length - minitelPageIndex * PAGE_SIZE)
+    }
+    if (minitelMode === 'recherche') {
+      const results = searchFilms(buildAllFilms(), minitelQuery)
+      return Math.min(8, results.length)
+    }
+    if (minitelMode === 'commander') return Math.min(6, tmdbResults.length)
+    return 0
+  })()
+
+  const highlightedItem = useStore((s) => s.minitelHighlightedItem)
+  const setHighlightedItem = useStore((s) => s.setMinitelHighlightedItem)
+
+  // Reset highlight when mode/page/aisle/query changes — otherwise Enter would
+  // dispatch a stale highlightedItem index from previous results.
+  useEffect(() => {
+    setHighlightedItem(1)
+  }, [minitelMode, minitelSelectedAisle, minitelPageIndex, minitelQuery, setHighlightedItem])
+
   useEffect(() => {
     if (!isInteractingWithMinitel) return
     const onKey = (e: KeyboardEvent) => {
-      // Number keys
+      const inInput = document.activeElement === inputRef.current
+      // Number keys (only when not typing in an input)
       if (/^[1-9]$/.test(e.key)) {
-        // In input modes, the input handles digit insertion when focused.
-        // But [1-9] always selects an item if not in an input mode OR if no selectable input is focused.
-        const inInput = document.activeElement === inputRef.current
         if (!inInput || (minitelMode !== 'recherche' && minitelMode !== 'commander')) {
           e.preventDefault()
           handleNumberPress(parseInt(e.key, 10))
           return
         }
       }
-      if (e.key === 'Enter') { e.preventDefault(); handleEnvoi(); return }
+      // Arrow Up/Down work even when typing in the search input, so the user
+      // can pick a result without leaving the keyboard. Left/Right stay
+      // text-edit-only when input is focused.
+      if (itemCount > 0) {
+        if (e.key === 'ArrowDown' || (!inInput && e.key === 'ArrowRight')) {
+          e.preventDefault()
+          setHighlightedItem(highlightedItem >= itemCount ? 1 : highlightedItem + 1)
+          return
+        }
+        if (e.key === 'ArrowUp' || (!inInput && e.key === 'ArrowLeft')) {
+          e.preventDefault()
+          setHighlightedItem(highlightedItem <= 1 ? itemCount : highlightedItem - 1)
+          return
+        }
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        if (minitelMode === 'detail') { handleEnvoi(); return }
+        if (itemCount > 0) { handleNumberPress(highlightedItem); return }
+        handleEnvoi()
+        return
+      }
       if (e.key === 'Escape') { e.preventDefault(); handleEsc(); return }
+      if (e.key === 'Backspace' && !inInput) { e.preventDefault(); handleEsc(); return }
       if (e.key === 'PageDown') { e.preventDefault(); handleSuite(); return }
       if (e.key === 'PageUp') { e.preventDefault(); handleRetour(); return }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [isInteractingWithMinitel, minitelMode, handleNumberPress, handleEnvoi, handleEsc, handleSuite, handleRetour])
+  }, [
+    isInteractingWithMinitel, minitelMode, itemCount, highlightedItem,
+    setHighlightedItem, handleNumberPress, handleEnvoi, handleEsc, handleSuite, handleRetour,
+  ])
+
+  // Bridge: consume direct-clicks on the 3D screen plane forwarded by
+  // MinitelDisplay via pendingMinitelPress.
+  // index 0 = back/exit button (drawBackButton), other index = item selection
+  // detail mode + index=1 = ILLUMINER button (rendered inside the canvas)
+  const pendingMinitelPress = useStore((s) => s.pendingMinitelPress)
+  const consumeMinitelItem = useStore((s) => s.consumeMinitelItem)
+  useEffect(() => {
+    if (pendingMinitelPress == null) return
+    if (pendingMinitelPress === 0) {
+      handleEsc()
+    } else if (pendingMinitelPress === -1) {
+      handleRetour() // previous page
+    } else if (pendingMinitelPress === -2) {
+      handleSuite() // next page
+    } else if (minitelMode === 'detail' && pendingMinitelPress === 1) {
+      handleEnvoi()
+    } else {
+      handleNumberPress(pendingMinitelPress)
+    }
+    consumeMinitelItem()
+  }, [pendingMinitelPress, minitelMode, handleNumberPress, handleEsc, handleEnvoi, handleSuite, handleRetour, consumeMinitelItem])
 
   if (!isInteractingWithMinitel) return null
 
   const showInput = minitelMode === 'recherche' || minitelMode === 'commander'
-  const showNumbers = minitelMode !== 'detail'
-  const showEnvoi = minitelMode === 'detail' || (minitelMode === 'commander' && !isAuthenticated)
-  const showSuite = (minitelMode === 'alpha') || (minitelMode === 'rayons' && minitelSelectedAisle != null)
 
   return (
     <div style={{
       position: 'fixed', inset: 0, zIndex: 800,
       pointerEvents: 'none',
-      display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
     }}>
-      {/* Invisible input for desktop typing (mode recherche/commander) */}
+      {/* Hidden input for desktop typing (mode recherche/commander). On mobile
+          it stays slightly visible so the OS keyboard opens; on desktop it's
+          fully transparent — keystrokes still update minitelQuery via onChange,
+          which gets rendered live inside the 3D screen canvas. */}
       {showInput && (
         <input
           ref={inputRef}
@@ -240,60 +314,20 @@ export function MinitelOverlay() {
           spellCheck={false}
           style={{
             position: 'absolute',
-            top: '40%', left: '50%',
-            transform: 'translate(-50%, 0)',
-            width: 320, padding: '8px 12px',
+            bottom: 'max(env(safe-area-inset-bottom), 12px)', left: '50%',
+            transform: 'translateX(-50%)',
+            width: 280, padding: '8px 12px',
             background: 'rgba(0,0,0,0.85)',
             border: '1px solid #00fff7',
             color: '#00fff7',
             fontFamily: "'Courier New', monospace",
-            fontSize: 18,
+            fontSize: 16,
             outline: 'none',
             pointerEvents: 'auto',
-            opacity: isMobile ? 1 : 0.001, // visible on mobile (so the OS keyboard opens), hidden on desktop
+            opacity: isMobile ? 1 : 0.001,
           }}
         />
       )}
-
-      {/* Bottom button bar */}
-      <div style={{
-        pointerEvents: 'auto',
-        background: 'linear-gradient(180deg, rgba(0,8,16,0.85) 0%, rgba(0,8,16,0.95) 100%)',
-        borderTop: '2px solid #00fff7',
-        padding: '12px 10px max(env(safe-area-inset-bottom), 12px)',
-        display: 'flex', flexDirection: 'column', gap: 8,
-      }}>
-        {/* Numbers row */}
-        {showNumbers && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(9, 1fr)', gap: 6 }}>
-            {[1,2,3,4,5,6,7,8,9].map((n) => (
-              <button
-                key={n}
-                onClick={() => handleNumberPress(n)}
-                style={mtBtnStyle()}
-              >{n}</button>
-            ))}
-          </div>
-        )}
-        {/* Action row */}
-        <div style={{ display: 'flex', gap: 6, justifyContent: 'space-between' }}>
-          <button onClick={handleEsc} style={mtBtnStyle({ flex: '0 0 auto', minWidth: 92, color: '#ff6b6b', borderColor: '#ff6b6b' })}>SOMMAIRE</button>
-          <div style={{ flex: 1, display: 'flex', gap: 6, justifyContent: 'center' }}>
-            {showSuite && (
-              <>
-                <button onClick={handleRetour} style={mtBtnStyle({ flex: '0 0 auto', minWidth: 70 })}>RETOUR</button>
-                <button onClick={handleSuite} style={mtBtnStyle({ flex: '0 0 auto', minWidth: 70 })}>SUITE</button>
-              </>
-            )}
-          </div>
-          {showEnvoi && (
-            <button
-              onClick={handleEnvoi}
-              style={mtBtnStyle({ flex: '0 0 auto', minWidth: 92, background: '#00fff7', color: '#000814', borderColor: '#00fff7' })}
-            >ENVOI</button>
-          )}
-        </div>
-      </div>
     </div>
   )
 }

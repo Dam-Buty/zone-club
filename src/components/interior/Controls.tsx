@@ -194,9 +194,14 @@ const TV_ZOOM_LOOKAT = new THREE.Vector3(3.955, 0.754, 1.2);
 // ROOM_DEPTH/2 - 1.28) with local pos (-0.571, 1.047, -0.01) and rotation Y=π
 // (faces +Z). With ROOM_WIDTH=9, ROOM_DEPTH=8.5 → world (1.629, 1.047, 2.96).
 // Camera placed very close to the screen (small CRT at scale 0.025).
-const MINITEL_LOOKAT = new THREE.Vector3(1.629, 1.21, 2.88);
-const MINITEL_POSITION = new THREE.Vector3(1.629, 1.30, 3.20);
-const MINITEL_POSITION_MOBILE = new THREE.Vector3(1.629, 1.30, 3.30);
+// Camera face-on to the CRT screen. The screen mesh sits on the LEFT face of
+// the housing (world -X direction). Camera placed straight in front along the
+// screen normal: same Y / Z as the screen center, just offset in -X.
+// Empirical screen center: (1.17, 1.17, 3.10). Distance ≈ 0.32m for a close
+// fill-the-viewport view; mobile slightly further to fit the narrower FOV.
+const MINITEL_LOOKAT = new THREE.Vector3(1.17, 1.17, 3.10);
+const MINITEL_POSITION = new THREE.Vector3(0.85, 1.17, 3.10);
+const MINITEL_POSITION_MOBILE = new THREE.Vector3(0.78, 1.17, 3.10);
 
 // LaZone CRT watch position — perpendicular to screen surface
 // CRT origin: [4.2, 1.8, 3.95], Y-rot 65°, tilt -10°
@@ -223,7 +228,7 @@ const PINCH_SENSITIVITY = 3.0;       // maps normalized pinchDelta → zoomFacto
 export const RAYCAST_LAYER_CASSETTE = 1;
 export const RAYCAST_LAYER_INTERACTIVE = 2;
 
-type InteractiveTarget = "manager" | "bell" | "tv" | "couch" | "lazone" | "board" | "boardNote" | null;
+type InteractiveTarget = "manager" | "bell" | "tv" | "couch" | "lazone" | "board" | "boardNote" | "minitel" | null;
 
 export function Controls({
   onCassetteClick,
@@ -261,6 +266,7 @@ export function Controls({
   // Cible interactive actuelle
   const targetedInteractiveRef = useRef<InteractiveTarget>(null);
   const targetedBoardNoteIdRef = useRef<number | null>(null);
+  const targetedMinitelHitboxRef = useRef<number | null>(null);
   const targetedBoardCellRef = useRef<{ row: number; col: number } | null>(null);
 
   // Sitting state tracking for standup animation
@@ -337,8 +343,9 @@ export function Controls({
     if (isMobile) return;
     if (!controlsRef.current || !pointerLockRequested) return;
 
+    const minitelOpen = useStore.getState().isInteractingWithMinitel;
     const hasOverlayOpen =
-      managerVisible || selectedFilmId !== null || isTerminalOpen;
+      managerVisible || selectedFilmId !== null || isTerminalOpen || minitelOpen;
 
     const tutorialActive = useStore.getState().tutorialStep !== null;
 
@@ -350,7 +357,15 @@ export function Controls({
       !hasOverlayOpen &&
       !tutorialActive
     ) {
-      controlsRef.current.lock();
+      // PointerLockControls.lock() can throw "Unable to use Pointer Lock API"
+      // when called without a fresh user gesture (e.g., minitel-induced
+      // re-render). Swallow the error so the React tree doesn't crash.
+      try {
+        controlsRef.current.lock();
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.warn('[Controls] pointer lock denied:', (e as Error)?.message)
+      }
     }
     clearPointerLockRequest();
   }, [
@@ -408,6 +423,18 @@ export function Controls({
     if (interactive === "couch") {
       if (!isSitting) {
         setSitting(true);
+      }
+      return;
+    }
+    if (interactive === "minitel") {
+      const ms = useStore.getState();
+      if (!ms.isInteractingWithMinitel) {
+        ms.setInteractingWithMinitel(true);
+        // Desktop: release pointer lock so the user can move the cursor to
+        // click directly on items rendered on the 3D screen. Mobile uses tap.
+        if (!isMobile) requestPointerUnlock();
+      } else if (targetedMinitelHitboxRef.current != null) {
+        ms.dispatchMinitelItem(targetedMinitelHitboxRef.current);
       }
       return;
     }
@@ -471,7 +498,7 @@ export function Controls({
 
   // Desktop: create PointerLockControls + keyboard listeners
   const controlsCreated = useRef(false);
-  const handleClickRef = useRef<(() => void) | null>(null);
+  const handleClickRef = useRef<((e?: MouseEvent) => void) | null>(null);
   const handleKeyDownRef = useRef<((e: KeyboardEvent) => void) | null>(null);
   const handleKeyUpRef = useRef<((e: KeyboardEvent) => void) | null>(null);
 
@@ -497,7 +524,37 @@ export function Controls({
     controls.addEventListener("lock", handleLock);
     controls.addEventListener("unlock", handleUnlock);
 
-    handleClickRef.current = () => {
+    handleClickRef.current = (e?: MouseEvent) => {
+      const minitelOpen = useStore.getState().isInteractingWithMinitel;
+      if (!controls.isLocked && minitelOpen && e) {
+        const rect = gl.domElement.getBoundingClientRect();
+        const ndcX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        const ndcY = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+        _tapNDC.set(ndcX, ndcY);
+        raycasterRef.current.setFromCamera(_tapNDC, camera);
+        raycasterRef.current.far = 8;
+        const intersects = raycasterRef.current.intersectObjects(scene.children, true);
+        for (const intersect of intersects) {
+          if (intersect.object?.userData?.isMinitelScreen && intersect.uv) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const mh = (window as any).__minitelHitboxes;
+            if (mh) {
+              const canvasV = intersect.uv.y + mh.textureOffsetY;
+              const canvasY = (1 - canvasV) * mh.screenHeight;
+              const canvasU = intersect.uv.x + mh.textureOffsetX;
+              const canvasX = canvasU * (mh.screenWidth ?? 512);
+              const match = mh.getHitboxes().find((h: { yStart: number; yEnd: number; xStart?: number; xEnd?: number }) =>
+                canvasY >= h.yStart && canvasY <= h.yEnd &&
+                (h.xStart === undefined || h.xEnd === undefined ||
+                 (canvasX >= h.xStart && canvasX <= h.xEnd))
+              );
+              if (match) useStore.getState().dispatchMinitelItem(match.index);
+            }
+            return;
+          }
+        }
+        return;
+      }
       if (controls.isLocked) {
         // Click while watching LaZone → exit fully (watching + interacting)
         const { isWatchingLaZone } = useStore.getState();
@@ -523,9 +580,10 @@ export function Controls({
         const hasOverlayOpen =
           state.managerVisible ||
           state.selectedFilmId !== null ||
-          state.isTerminalOpen;
+          state.isTerminalOpen ||
+          state.isInteractingWithMinitel;
         if (!hasOverlayOpen && state.tutorialStep === null) {
-          controls.lock();
+          try { controls.lock(); } catch (e) { console.warn('[Controls] lock denied:', (e as Error)?.message); }
         }
       }
     };
@@ -706,13 +764,51 @@ export function Controls({
       }
     };
 
-    gl.domElement.addEventListener("click", handleClickRef.current);
+    gl.domElement.addEventListener("click", handleClickRef.current as EventListener);
+
+    // Hover highlight when minitel is open + pointer unlocked: track mousemove
+    // and raycast the minitel screen to set minitelHighlightedItem so the user
+    // gets visual feedback before clicking.
+    const handleHover = (e: MouseEvent) => {
+      const ms = useStore.getState();
+      if (controls.isLocked || !ms.isInteractingWithMinitel) return;
+      const rectH = gl.domElement.getBoundingClientRect();
+      const ndcXh = ((e.clientX - rectH.left) / rectH.width) * 2 - 1;
+      const ndcYh = -((e.clientY - rectH.top) / rectH.height) * 2 + 1;
+      _tapNDC.set(ndcXh, ndcYh);
+      raycasterRef.current.setFromCamera(_tapNDC, camera);
+      raycasterRef.current.far = 8;
+      const hits = raycasterRef.current.intersectObjects(scene.children, true);
+      for (const intersect of hits) {
+        if (intersect.object?.userData?.isMinitelScreen && intersect.uv) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const mh = (window as any).__minitelHitboxes;
+          if (mh) {
+            const canvasV = intersect.uv.y + mh.textureOffsetY;
+            const canvasY = (1 - canvasV) * mh.screenHeight;
+            const canvasU = intersect.uv.x + mh.textureOffsetX;
+            const canvasX = canvasU * (mh.screenWidth ?? 512);
+            const match = mh.getHitboxes().find((h: { yStart: number; yEnd: number; xStart?: number; xEnd?: number; index: number }) =>
+              h.index !== 0 && canvasY >= h.yStart && canvasY <= h.yEnd &&
+              (h.xStart === undefined || h.xEnd === undefined ||
+               (canvasX >= h.xStart && canvasX <= h.xEnd))
+            );
+            if (match && ms.minitelHighlightedItem !== match.index) {
+              ms.setMinitelHighlightedItem(match.index);
+            }
+          }
+          return;
+        }
+      }
+    };
+    gl.domElement.addEventListener("mousemove", handleHover);
     document.addEventListener("keydown", handleKeyDownRef.current);
     document.addEventListener("keyup", handleKeyUpRef.current);
 
     return () => {
       if (handleClickRef.current) {
-        gl.domElement.removeEventListener("click", handleClickRef.current);
+        gl.domElement.removeEventListener("click", handleClickRef.current as EventListener);
+        gl.domElement.removeEventListener("mousemove", handleHover);
       }
       if (handleKeyDownRef.current) {
         document.removeEventListener("keydown", handleKeyDownRef.current);
@@ -791,7 +887,7 @@ export function Controls({
           _tapNDC.set(ndcX, ndcY);
 
           raycasterRef.current.setFromCamera(_tapNDC, camera);
-          raycasterRef.current.far = 4;
+          raycasterRef.current.far = 8;
           const intersects = raycasterRef.current.intersectObjects(
             scene.children,
             true,
@@ -838,11 +934,31 @@ export function Controls({
                 handled = true;
                 break;
               }
-              if (obj.userData?.isTVScreen) {
+              if (obj.userData?.isTVScreen && intersect.distance <= 2.5) {
                 if (useStore.getState().isSitting) {
                   useStore.getState().dispatchTVMenu('select');
                 } else {
                   useStore.getState().setInteractingWithTV(true);
+                }
+                handled = true;
+                break;
+              }
+              if (obj.userData?.isMinitel) {
+                const minitelState = useStore.getState();
+                if (!minitelState.isInteractingWithMinitel) {
+                  minitelState.setInteractingWithMinitel(true);
+                } else if (obj.userData?.isMinitelScreen && intersect.uv) {
+                  // Already in minitel — convert UV → canvas Y → matching hitbox → dispatch
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  const mh = (window as any).__minitelHitboxes;
+                  if (mh) {
+                    const canvasV = intersect.uv.y + mh.textureOffsetY;
+                    const canvasY = (1 - canvasV) * mh.screenHeight;
+                    const match = mh.getHitboxes().find((h: { yStart: number; yEnd: number }) =>
+                      canvasY >= h.yStart && canvasY <= h.yEnd
+                    );
+                    if (match) minitelState.dispatchMinitelItem(match.index);
+                  }
                 }
                 handled = true;
                 break;
@@ -935,8 +1051,31 @@ export function Controls({
               foundInteractive = "couch";
               break;
             }
-            if (obj.userData?.isTVScreen) {
+            if (obj.userData?.isTVScreen && intersect.distance <= 2.5) {
               foundInteractive = "tv";
+              break;
+            }
+            if (obj.userData?.isMinitel) {
+              foundInteractive = "minitel";
+              // If the camera is already aimed at the screen mesh AND user is
+              // inside minitel, resolve UV → hitbox index for the desktop click
+              // path to consume.
+              if (obj.userData?.isMinitelScreen && intersect.uv && useStore.getState().isInteractingWithMinitel) {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const mh = (window as any).__minitelHitboxes;
+                if (mh) {
+                  const canvasV = intersect.uv.y + mh.textureOffsetY;
+                  const canvasY = (1 - canvasV) * mh.screenHeight;
+                  const m = mh.getHitboxes().find((h: { yStart: number; yEnd: number }) =>
+                    canvasY >= h.yStart && canvasY <= h.yEnd
+                  );
+                  targetedMinitelHitboxRef.current = m ? m.index : null;
+                } else {
+                  targetedMinitelHitboxRef.current = null;
+                }
+              } else {
+                targetedMinitelHitboxRef.current = null;
+              }
               break;
             }
             if (obj.userData?.isBoardNote) {
@@ -1084,8 +1223,24 @@ export function Controls({
       }
       wasInMinitelRef.current = true;
       const alpha = Math.min(1, SIT_TRANSITION_SPEED * delta);
-      camera.position.lerp(isMobile ? MINITEL_POSITION_MOBILE : MINITEL_POSITION, alpha);
-      _lookAtMatrix.lookAt(camera.position, MINITEL_LOOKAT, _up);
+      // Prefer the screen center/normal computed at runtime by MinitelDisplay
+      // (more accurate than the empirical constants). Fall back to constants
+      // if not yet published (first frame).
+      const info = (window as unknown as { __minitelScreenInfo?: { center: THREE.Vector3; normal: THREE.Vector3 } }).__minitelScreenInfo;
+      let targetPos: THREE.Vector3;
+      let targetLookAt: THREE.Vector3;
+      if (info) {
+        // Mobile gets a much tighter zoom so the canvas text reads at finger
+        // distance (FOV 80-90° on phones spreads it thin otherwise).
+        const dist = isMobile ? 0.13 : 0.29;
+        targetPos = info.center.clone().addScaledVector(info.normal, dist);
+        targetLookAt = info.center;
+      } else {
+        targetPos = isMobile ? MINITEL_POSITION_MOBILE : MINITEL_POSITION;
+        targetLookAt = MINITEL_LOOKAT;
+      }
+      camera.position.lerp(targetPos, alpha);
+      _lookAtMatrix.lookAt(camera.position, targetLookAt, _up);
       _targetQuat.setFromRotationMatrix(_lookAtMatrix);
       camera.quaternion.slerp(_targetQuat, alpha);
       return;

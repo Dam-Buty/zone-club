@@ -447,6 +447,7 @@ function UIOverlays({ isMobile }: { isMobile: boolean }) {
   const managerVisible = useStore(state => state.managerVisible)
   const isTerminalOpen = useStore(state => state.isTerminalOpen)
   const selectedFilmId = useStore(state => state.selectedFilmId)
+  const isInteractingWithMinitel = useStore(state => state.isInteractingWithMinitel)
   const hasSeenOnboarding = useStore(state => state.hasSeenOnboarding)
   const closeTerminal = useStore(state => state.closeTerminal)
   const setZoomedOnTV = useStore(state => state.setZoomedOnTV)
@@ -530,7 +531,7 @@ function UIOverlays({ isMobile }: { isMobile: boolean }) {
   return (
     <>
       {/* Message "Cliquez pour prendre le contrôle" — desktop only, when not locked */}
-      {overlaysEnabled && !isMobile && !isPointerLocked && !isTerminalOpen && !selectedFilmId && showTakeControlHint && tutorialStepUI === null && (
+      {overlaysEnabled && !isMobile && !isPointerLocked && !isTerminalOpen && !selectedFilmId && !isInteractingWithMinitel && showTakeControlHint && tutorialStepUI === null && (
         <div
           style={{
             position: 'fixed',
