@@ -914,6 +914,39 @@ export function Controls({
             true,
           );
 
+          // When in minitel mode, the only valid tap target is the minitel
+          // screen itself — anything else (couch behind the minitel, TV across
+          // the room, cassettes through walls) would teleport / reset the
+          // session unexpectedly.
+          const minitelOpenForTap = useStore.getState().isInteractingWithMinitel;
+          if (minitelOpenForTap) {
+            for (const intersect of intersects) {
+              let obj: THREE.Object3D | null = intersect.object;
+              while (obj) {
+                if (obj.userData?.isMinitelScreen && intersect.uv) {
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  const mh = (window as any).__minitelHitboxes;
+                  if (mh) {
+                    const canvasV = intersect.uv.y + mh.textureOffsetY;
+                    const canvasY = (1 - canvasV) * mh.screenHeight;
+                    const canvasU = intersect.uv.x + mh.textureOffsetX;
+                    const canvasX = canvasU * (mh.screenWidth ?? 512);
+                    const match = mh.getHitboxes().find((h: { yStart: number; yEnd: number; xStart?: number; xEnd?: number }) =>
+                      canvasY >= h.yStart && canvasY <= h.yEnd &&
+                      (h.xStart === undefined || h.xEnd === undefined ||
+                       (canvasX >= h.xStart && canvasX <= h.xEnd))
+                    );
+                    if (match) useStore.getState().dispatchMinitelItem(match.index);
+                  }
+                  break;
+                }
+                obj = obj.parent;
+              }
+              if (obj) break; // matched isMinitelScreen
+            }
+            return;
+          }
+
           for (const intersect of intersects) {
             // Check InstancedMesh cassettes
             if (

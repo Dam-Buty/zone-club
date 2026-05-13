@@ -395,6 +395,7 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
   })
 
   const prevTargetedKeyRef = useRef<string | null>(null)
+  const prevHighlightedKeyRef = useRef<string | null>(null)
   const hysteresisActiveRef = useRef(false)
   const lerpFramesRef = useRef(0)
 
@@ -406,6 +407,7 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
 
     const storeState = useStore.getState()
     const targetedCassetteKey = storeState.targetedCassetteKey
+    const highlightedCassetteKey = storeState.highlightedCassetteKey
     const getRental = storeState.getRental
     const filmRentalCounts = storeState.filmRentalCounts
 
@@ -426,6 +428,7 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
 
     const needsProcessing =
       targetedCassetteKey !== prevTargetedKeyRef.current ||
+      highlightedCassetteKey !== prevHighlightedKeyRef.current ||
       hysteresisActiveRef.current ||
       lerpFramesRef.current > 0
 
@@ -433,6 +436,7 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
       return
     }
     prevTargetedKeyRef.current = targetedCassetteKey
+    prevHighlightedKeyRef.current = highlightedCassetteKey
 
     const tarHoverArr = targetHoverZBuffer.value.array as Float32Array
     const tarEmissiveArr = targetEmissiveBuffer.value.array as Float32Array
@@ -473,15 +477,23 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
       }
 
       const isTargeted = hs.stableTargeted
+      const isHighlighted = highlightedCassetteKey != null && highlightedCassetteKey === instanceIdToKey[i]
 
-      const newTarHoverZ = isTargeted ? hoverOffsets[i] : 0
+      // Explicit ILLUMINER highlight pushes the K7 out further than a regular
+      // hover so it reads as a deliberate "look here" cue from across the room.
+      let newTarHoverZ = isTargeted ? hoverOffsets[i] : 0
+      if (isHighlighted) newTarHoverZ = hoverOffsets[i] * 1.5
       if (tarHoverArr[i] !== newTarHoverZ) {
         tarHoverArr[i] = newTarHoverZ
         tarHoverDirty = true
       }
 
       let tR = 0; let tG = 0; let tB = 0
-      if (isRented) {
+      if (isHighlighted) {
+        // Strong blue emissive — the bloom pass turns this into a wide halo
+        // around the cassette outline, replacing the previous floating sphere.
+        tR = 0; tG = 0.35; tB = 1.6
+      } else if (isRented) {
         tR = 0; tG = 0.3; tB = 0
       } else if (isTargeted) {
         tR = 0; tG = 0.5; tB = 0.1
