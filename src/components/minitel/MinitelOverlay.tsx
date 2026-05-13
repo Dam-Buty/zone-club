@@ -157,8 +157,21 @@ export function MinitelOverlay() {
       // Find cassette key for this film via global registry
       const map = (window as unknown as { __cassetteFilmIdToKey?: Map<number, string> }).__cassetteFilmIdToKey
       const key = map?.get(minitelSelectedFilm) ?? null
-      if (key) setHighlightedCassetteKey(key)
-      // Stay on detail screen; let the user ESC out to see the cassette
+      if (!key) {
+        // No cassette → nothing to highlight, leave the user on the detail
+        // screen so they know the action did not point them anywhere.
+        return
+      }
+      setHighlightedCassetteKey(key)
+      // Eject the user from the minitel so they can walk the aisles and spot
+      // the now-glowing K7. Short delay so the canvas redraws once with the
+      // ILLUMINER click registered (button stays cyan, but the user gets a
+      // beat to register the interaction before the camera pulls back).
+      setTimeout(() => {
+        setMinitelMode('idle')
+        setMinitelSelectedFilm(null)
+        setInteractingWithMinitel(false)
+      }, 320)
       return
     }
     if (minitelMode === 'commander' && !isAuthenticated) {
@@ -166,7 +179,7 @@ export function MinitelOverlay() {
       setInteractingWithMinitel(false)
       return
     }
-  }, [minitelMode, minitelSelectedFilm, isAuthenticated, setHighlightedCassetteKey, setInteractingWithMinitel])
+  }, [minitelMode, minitelSelectedFilm, isAuthenticated, setHighlightedCassetteKey, setInteractingWithMinitel, setMinitelMode, setMinitelSelectedFilm])
 
   // ESC: contextual back navigation
   const handleEsc = useCallback(() => {
