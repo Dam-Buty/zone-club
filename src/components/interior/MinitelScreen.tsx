@@ -491,18 +491,34 @@ function drawDetail(ctx: CanvasRenderingContext2D, film: Film, location: string,
   })
 }
 
-function drawCommander(ctx: CanvasRenderingContext2D, query: string, results: Array<{ id: number; title: string; release_date?: string }>, requested: Set<number>, authed: boolean, hitboxes: HitBox[]) {
+type TmdbState = 'idle' | 'pending' | 'ok' | 'empty' | 'error'
+function drawCommander(
+  ctx: CanvasRenderingContext2D,
+  query: string,
+  results: Array<{ id: number; title: string; release_date?: string }>,
+  requested: Set<number>,
+  authed: boolean,
+  tmdbState: TmdbState,
+  hitboxes: HitBox[],
+) {
   drawHeader(ctx, '> COMMANDER UN FILM')
   ctx.fillStyle = COLOR_TEXT
   ctx.font = FONT
   ctx.textBaseline = 'top'
   if (!authed) {
-    ctx.fillText('CONNECTEZ-VOUS POUR', PADDING, PADDING + 60)
-    ctx.fillText('COMMANDER UN FILM', PADDING, PADDING + 80)
+    ctx.fillText('CONNECTEZ-VOUS POUR', PADDING, PADDING + 40)
+    ctx.fillText('COMMANDER UN FILM', PADDING, PADDING + 60)
     ctx.fillStyle = COLOR_DIM
     ctx.font = SMALL_FONT
-    ctx.fillText('[ENVOI] ouvrir la fenetre de connexion', PADDING, PADDING + 110)
-    drawPillButton(ctx, 'RETOUR', hitboxes, { x: PADDING, y: PADDING + 132, index: 0 })
+    ctx.fillText('Tap SE CONNECTER pour ouvrir', PADDING, PADDING + 90)
+    ctx.fillText('la fenetre de login.', PADDING, PADDING + 104)
+    // SE CONNECTER pill — index=1 routed to handleEnvoi by the bridge,
+    // which opens the AuthModal inline (no minitel exit).
+    drawPillButton(ctx, 'SE CONNECTER', hitboxes, { x: PADDING, y: PADDING + 124, index: 1 })
+    // RETOUR pill — back to sommaire
+    ctx.font = FONT
+    const connTextW = ctx.measureText('SE CONNECTER').width + TOK.pillPadX * 2
+    drawPillButton(ctx, 'RETOUR', hitboxes, { x: PADDING + connTextW + 12, y: PADDING + 124, index: 0 })
     return
   }
   ctx.fillText('Recherche TMDB :', PADDING, PADDING + 32)
@@ -514,11 +530,20 @@ function drawCommander(ctx: CanvasRenderingContext2D, query: string, results: Ar
 
   ctx.fillStyle = COLOR_DIM
   ctx.font = SMALL_FONT
-  if (!query) {
-    ctx.fillText('Recherche dans la base TMDB', PADDING, PADDING + 100)
-  } else if (results.length === 0) {
+  if (tmdbState === 'idle' || !query) {
+    ctx.fillText('Tapez le titre du film a commander.', PADDING, PADDING + 100)
+  } else if (tmdbState === 'pending') {
     ctx.fillText('Recherche en cours...', PADDING, PADDING + 100)
+  } else if (tmdbState === 'error') {
+    ctx.fillStyle = COLOR_TEXT
+    ctx.fillText('ERREUR DE CONNEXION TMDB', PADDING, PADDING + 100)
+    ctx.fillStyle = COLOR_DIM
+    ctx.fillText('Reessayez plus tard.', PADDING, PADDING + 118)
+  } else if (tmdbState === 'empty') {
+    ctx.fillStyle = COLOR_TEXT
+    ctx.fillText('AUCUN RESULTAT', PADDING, PADDING + 100)
   } else {
+    // ok
     ctx.fillText(`${results.length} resultat(s) :`, PADDING, PADDING + 100)
     let y = PADDING + 122
     ctx.fillStyle = COLOR_TEXT
@@ -539,7 +564,7 @@ function drawCommander(ctx: CanvasRenderingContext2D, query: string, results: Ar
     drawPillButton(ctx, 'RETOUR', hitboxes, { x: PADDING, y: y + 8, index: 0 })
     return
   }
-  drawPillButton(ctx, 'RETOUR', hitboxes, { x: PADDING, y: PADDING + 130, index: 0 })
+  drawPillButton(ctx, 'RETOUR', hitboxes, { x: PADDING, y: PADDING + 140, index: 0 })
 }
 
 function wrapText(text: string, max: number): string[] {
@@ -559,6 +584,9 @@ function wrapText(text: string, max: number): string[] {
   return lines
 }
 
+// MinitelScreenProps is kept for back-compat — TMDB state now lives in the
+// store (minitelTmdbResults / minitelTmdbState / minitelRequestedIds) so the
+// canvas sees the same data as MinitelOverlay.
 interface MinitelScreenProps {
   tmdbResults?: Array<{ id: number; title: string; release_date?: string; poster_path?: string | null }>
   requestedIds?: Set<number>
@@ -575,8 +603,11 @@ export function useMinitelScreenTexture(props: MinitelScreenProps = {}) {
   const films = useStore((s) => s.films)
   const isAuthenticated = useStore((s) => s.isAuthenticated)
   const isMobile = useIsCoarsePointer()
-  const tmdbResults = props.tmdbResults ?? []
-  const requestedIds = props.requestedIds ?? new Set<number>()
+  const storeTmdbResults = useStore((s) => s.minitelTmdbResults)
+  const storeRequestedIds = useStore((s) => s.minitelRequestedIds)
+  const storeTmdbState = useStore((s) => s.minitelTmdbState)
+  const tmdbResults = props.tmdbResults ?? storeTmdbResults
+  const requestedIds = props.requestedIds ?? storeRequestedIds
 
   const allFilms = useMemo<Film[]>(() => {
     const seen = new Set<number>()
@@ -656,7 +687,7 @@ export function useMinitelScreenTexture(props: MinitelScreenProps = {}) {
       else drawRayons(ctx, films, minitelHighlightedItem, hits)
     }
     else if (minitelMode === 'alpha') drawAlpha(ctx, allFilms, minitelPageIndex, minitelHighlightedItem, hits)
-    else if (minitelMode === 'commander') drawCommander(ctx, minitelQuery, tmdbResults, requestedIds, isAuthenticated, hits)
+    else if (minitelMode === 'commander') drawCommander(ctx, minitelQuery, tmdbResults, requestedIds, isAuthenticated, storeTmdbState, hits)
     else if (minitelMode === 'detail') {
       if (detailFilm) drawDetail(ctx, detailFilm, detailLocation, hits)
       else drawSommaire(ctx, minitelHighlightedItem, hits)
@@ -667,7 +698,7 @@ export function useMinitelScreenTexture(props: MinitelScreenProps = {}) {
   }, [
     canvas, texture, minitelMode, minitelQuery, minitelSelectedAisle,
     minitelPageIndex, minitelHighlightedItem, searchResults, aisleFilms, allFilms, films, detailFilm,
-    detailLocation, tmdbResults, requestedIds, isAuthenticated, isMobile,
+    detailLocation, tmdbResults, requestedIds, storeTmdbState, isAuthenticated, isMobile,
   ])
 
   // Reference helper for cassette position (used by overlay's "ILLUMINER")

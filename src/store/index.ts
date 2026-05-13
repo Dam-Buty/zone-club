@@ -202,6 +202,15 @@ interface VideoClubState {
   consumeMinitelItem: () => void;
   highlightedCassetteKey: string | null;
   setHighlightedCassetteKey: (k: string | null) => void;
+  // TMDB search state for COMMANDER mode. Lives in the store so the canvas
+  // (rendered by MinitelDisplay) and the action handlers (in MinitelOverlay)
+  // both see the same results.
+  minitelTmdbResults: Array<{ id: number; title: string; release_date?: string; poster_path?: string | null }>;
+  setMinitelTmdbResults: (r: Array<{ id: number; title: string; release_date?: string; poster_path?: string | null }>) => void;
+  minitelTmdbState: 'idle' | 'pending' | 'ok' | 'empty' | 'error';
+  setMinitelTmdbState: (s: 'idle' | 'pending' | 'ok' | 'empty' | 'error') => void;
+  minitelRequestedIds: Set<number>;
+  setMinitelRequestedIds: (ids: Set<number>) => void;
 
   // Standing TV interaction (click TV while standing → 2-option menu)
   isInteractingWithTV: boolean;
@@ -769,6 +778,12 @@ export const useStore = create<VideoClubState>()(
       consumeMinitelItem: () => set({ pendingMinitelPress: null }),
       highlightedCassetteKey: null,
       setHighlightedCassetteKey: (k) => set({ highlightedCassetteKey: k }),
+      minitelTmdbResults: [],
+      setMinitelTmdbResults: (r) => set({ minitelTmdbResults: r }),
+      minitelTmdbState: 'idle',
+      setMinitelTmdbState: (s) => set({ minitelTmdbState: s }),
+      minitelRequestedIds: new Set<number>(),
+      setMinitelRequestedIds: (ids) => set({ minitelRequestedIds: ids }),
 
       // Standing TV interaction
       isInteractingWithTV: false,
