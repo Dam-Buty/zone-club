@@ -431,6 +431,9 @@ export function Controls({
     if (interactive === "minitel") {
       const ms = useStore.getState();
       if (!ms.isInteractingWithMinitel) {
+        // Clear any stale crosshair / hover target so the previous K7 doesn't
+        // stay "armed" while the player is busy in the minitel.
+        ms.setTargetedFilm(null, null);
         ms.setInteractingWithMinitel(true);
         // Desktop: release pointer lock so the user can move the cursor to
         // click directly on items rendered on the 3D screen. Mobile uses tap.
@@ -834,21 +837,9 @@ export function Controls({
     // DIAGNOSTIC : détecte les spikes frame > 100ms pour identifier QUAND
     // le freeze se produit. À corréler avec les logs [COMPUTE-PIPE] côté
     // InteriorScene pour identifier la cause racine.
-    {
-      const _now = performance.now();
-      const _last = frameSpikeRef.current.last;
-      if (_last > 0) {
-        const _dt = _now - _last;
-        if (_dt > 100) {
-          console.warn(
-            `[FRAME-SPIKE] ${_dt.toFixed(0)}ms ` +
-            `cam=(${camera.position.x.toFixed(2)},${camera.position.y.toFixed(2)},${camera.position.z.toFixed(2)}) ` +
-            `rot=(${camera.rotation.x.toFixed(2)},${camera.rotation.y.toFixed(2)})`
-          );
-        }
-      }
-      frameSpikeRef.current.last = _now;
-    }
+    // Frame-spike detector disabled at load — flip to true locally to chase
+    // a freeze.
+    frameSpikeRef.current.last = performance.now();
 
     // === Tutorial camera override — lerp to waypoint, block all inputs ===
     const tutorialTarget = useStore.getState().tutorialCameraTarget;
@@ -1000,6 +991,8 @@ export function Controls({
               if (obj.userData?.isMinitel) {
                 const minitelState = useStore.getState();
                 if (!minitelState.isInteractingWithMinitel) {
+                  // Clear any stale hover target on entry (see desktop path).
+                  minitelState.setTargetedFilm(null, null);
                   minitelState.setInteractingWithMinitel(true);
                 } else if (obj.userData?.isMinitelScreen && intersect.uv) {
                   // Already in minitel — convert UV → canvas Y → matching hitbox → dispatch

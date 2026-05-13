@@ -335,7 +335,6 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
     // Progressive load — fetch posters from /api/poster proxy (HTTP + disk cache
     // already provided by the server). Previously cached in IndexedDB but the
     // structured-clone of 33MB atlas blocked the main thread 5-8s on Pixel 9.
-    const _tLoadStart = performance.now()
     let queueIdx = 0
     const loadNextBatch = async () => {
       if (cancelled || queueIdx >= queue.length) {
@@ -343,7 +342,6 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
           // Single full-atlas upload at end-of-load. Per-batch flushes would
           // trigger 35 × 33MB = 1.15GB of redundant GPU traffic.
           atlas.markDirty()
-          console.warn(`[POSTER-LOAD] complete ${(performance.now() - _tLoadStart).toFixed(0)}ms (${queue.length} posters)`)
         }
         return
       }

@@ -896,25 +896,15 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
             let rpCount = 0
             if (origRP) {
               dev.createRenderPipeline = (desc: GPURenderPipelineDescriptor) => {
-                const t0 = performance.now()
                 const p = origRP(desc)
-                const dt = performance.now() - t0
                 rpCount++
-                console.warn(`[RENDER-PIPE #${rpCount}] sync ${dt.toFixed(1)}ms label="${desc.label || ''}"`)
                 return p
               }
             }
             if (origRPAsync) {
               dev.createRenderPipelineAsync = (desc: GPURenderPipelineDescriptor) => {
-                const t0 = performance.now()
                 rpCount++
-                const id = rpCount
-                return origRPAsync(desc).then((p: GPURenderPipeline) => {
-                  const dt = performance.now() - t0
-                  // Only log slow async compiles (>50ms) to avoid log flood
-                  if (dt > 50) console.warn(`[RENDER-PIPE #${id}] async DONE ${dt.toFixed(1)}ms label="${desc.label || ''}"`)
-                  return p
-                })
+                return origRPAsync(desc)
               }
             }
             // Expose pipeline count for the warmup gate to detect stability.
@@ -958,7 +948,6 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
           const finish = () => {
             if (resolved) return
             resolved = true
-            console.warn(`[SCENE-READY] fired at t+${(performance.now() - startTime).toFixed(0)}ms`)
             useStore.getState().setSceneReady(true)
           }
 
