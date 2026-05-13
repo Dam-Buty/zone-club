@@ -492,6 +492,39 @@ function drawDetail(ctx: CanvasRenderingContext2D, film: Film, location: string,
 }
 
 type TmdbState = 'idle' | 'pending' | 'ok' | 'empty' | 'error'
+// Compact pill drawn on the right of each commander row. Smaller than
+// drawPillButton (no shadow, tighter padding) so it fits within SAFE_RIGHT.
+function drawRowPill(
+  ctx: CanvasRenderingContext2D,
+  label: string,
+  hitboxes: HitBox[],
+  opts: { x: number; y: number; index: number | null; clickable: boolean },
+): { w: number; h: number } {
+  const padX = 6
+  const padY = 1
+  ctx.font = SMALL_FONT
+  const textW = ctx.measureText(label).width
+  const btnW = textW + padX * 2
+  const btnH = 14
+  ctx.strokeStyle = opts.clickable ? COLOR_ACCENT : COLOR_DIM
+  ctx.lineWidth = 1
+  ctx.fillStyle = opts.clickable ? 'rgba(0, 255, 247, 0.12)' : 'rgba(240, 244, 255, 0.04)'
+  ctx.fillRect(opts.x, opts.y, btnW, btnH)
+  ctx.strokeRect(opts.x, opts.y, btnW, btnH)
+  ctx.fillStyle = opts.clickable ? COLOR_ACCENT : COLOR_DIM
+  ctx.textBaseline = 'top'
+  ctx.textAlign = 'left'
+  ctx.fillText(label, opts.x + padX, opts.y + padY + 1)
+  if (opts.clickable && opts.index != null) {
+    hitboxes.push({
+      index: opts.index,
+      yStart: opts.y - 2, yEnd: opts.y + btnH + 2,
+      xStart: opts.x - 2, xEnd: opts.x + btnW + 2,
+    })
+  }
+  return { w: btnW, h: btnH }
+}
+
 function drawCommander(
   ctx: CanvasRenderingContext2D,
   query: string,
@@ -499,6 +532,7 @@ function drawCommander(
   requested: Set<number>,
   authed: boolean,
   tmdbState: TmdbState,
+  localTmdbIds: Set<number>,
   hitboxes: HitBox[],
 ) {
   drawHeader(ctx, '> COMMANDER UN FILM')
@@ -528,43 +562,77 @@ function drawCommander(
   ctx.fillStyle = COLOR_ACCENT
   ctx.fillText(`> ${query || ''}_`, PADDING + 8, PADDING + 60)
 
+  // RETOUR pinned at the top-right of the screen — always visible regardless
+  // of how many results we draw below. The previous bottom placement was
+  // landing in the bezel curve and felt "unresponsive".
+  ctx.font = FONT
+  const retourPillW = ctx.measureText('RETOUR').width + TOK.pillPadX * 2
+  drawPillButton(ctx, 'RETOUR', hitboxes, {
+    x: SAFE_RIGHT - retourPillW,
+    y: PADDING,
+    index: 0,
+  })
+
   ctx.fillStyle = COLOR_DIM
   ctx.font = SMALL_FONT
   if (tmdbState === 'idle' || !query) {
     ctx.fillText('Tapez le titre du film a commander.', PADDING, PADDING + 100)
-  } else if (tmdbState === 'pending') {
+    return
+  }
+  if (tmdbState === 'pending') {
     ctx.fillText('Recherche en cours...', PADDING, PADDING + 100)
-  } else if (tmdbState === 'error') {
+    return
+  }
+  if (tmdbState === 'error') {
     ctx.fillStyle = COLOR_TEXT
     ctx.fillText('ERREUR DE CONNEXION TMDB', PADDING, PADDING + 100)
     ctx.fillStyle = COLOR_DIM
     ctx.fillText('Reessayez plus tard.', PADDING, PADDING + 118)
-  } else if (tmdbState === 'empty') {
-    ctx.fillStyle = COLOR_TEXT
-    ctx.fillText('AUCUN RESULTAT', PADDING, PADDING + 100)
-  } else {
-    // ok
-    ctx.fillText(`${results.length} resultat(s) :`, PADDING, PADDING + 100)
-    let y = PADDING + 122
-    ctx.fillStyle = COLOR_TEXT
-    ctx.font = FONT
-    results.slice(0, 6).forEach((r, i) => {
-      const isReq = requested.has(r.id)
-      const year = r.release_date ? ` (${r.release_date.slice(0, 4)})` : ''
-      const tag = isReq ? ' [DEJA]' : ''
-      const text = `${r.title.slice(0, 30)}${year}${tag}`
-      ctx.fillStyle = isReq ? COLOR_DIM : COLOR_TEXT
-      ctx.fillText(text, PADDING, y)
-      if (!isReq) {
-        const pad = Math.round(TOK.itemGap / 2)
-        hitboxes.push({ index: i + 1, yStart: y - pad, yEnd: y + LINE_H + pad })
-      }
-      y += LINE_H + TOK.itemGap
-    })
-    drawPillButton(ctx, 'RETOUR', hitboxes, { x: PADDING, y: y + 8, index: 0 })
     return
   }
-  drawPillButton(ctx, 'RETOUR', hitboxes, { x: PADDING, y: PADDING + 140, index: 0 })
+  if (tmdbState === 'empty') {
+    ctx.fillStyle = COLOR_TEXT
+    ctx.fillText('AUCUN RESULTAT', PADDING, PADDING + 100)
+    return
+  }
+  // tmdbState === 'ok'
+  ctx.fillText(`${results.length} resultat(s) — tap COMMANDER :`, PADDING, PADDING + 100)
+  let y = PADDING + 122
+  // Pre-compute the pill width to know where to clip the title.
+  ctx.font = SMALL_FONT
+  const pillSlotW = Math.max(
+    ctx.measureText('DISPO').width,
+    ctx.measureText('DEMANDE').width,
+    ctx.measureText('COMMANDER').width,
+  ) + 6 * 2 // padX*2
+  const titleMaxX = SAFE_RIGHT - pillSlotW - 6
+  results.slice(0, 6).forEach((r, i) => {
+    const inLocal = localTmdbIds.has(r.id)
+    const isReq = requested.has(r.id)
+    const year = r.release_date ? ` (${r.release_date.slice(0, 4)})` : ''
+    // Truncate the title to fit before the pill column.
+    ctx.font = FONT
+    let text = `${r.title}${year}`
+    while (ctx.measureText(text).width > titleMaxX - PADDING - 4 && text.length > 4) {
+      text = text.slice(0, -2)
+    }
+    if (text !== `${r.title}${year}`) text = text.slice(0, -1) + '…'
+    const dim = inLocal || isReq
+    ctx.fillStyle = dim ? COLOR_DIM : COLOR_TEXT
+    ctx.textBaseline = 'top'
+    ctx.fillText(text, PADDING, y)
+    // Status / action pill on the right
+    const label = inLocal ? 'DISPO' : isReq ? 'DEMANDE' : 'COMMANDER'
+    ctx.font = SMALL_FONT
+    const measuredW = ctx.measureText(label).width + 6 * 2
+    drawRowPill(ctx, label, hitboxes, {
+      x: SAFE_RIGHT - measuredW,
+      y: y - 1,
+      index: !inLocal && !isReq ? i + 1 : null,
+      clickable: !inLocal && !isReq,
+    })
+    y += LINE_H + TOK.itemGap
+  })
 }
 
 function wrapText(text: string, max: number): string[] {
@@ -620,6 +688,16 @@ export function useMinitelScreenTexture(props: MinitelScreenProps = {}) {
     out.sort((a, b) => a.title.localeCompare(b.title))
     return out
   }, [films])
+
+  // Set of TMDB IDs already in the local catalogue — used by commander mode
+  // to label rows DISPO vs COMMANDER.
+  const localTmdbIds = useMemo<Set<number>>(() => {
+    const s = new Set<number>()
+    for (const f of allFilms) {
+      if (f.tmdb_id) s.add(f.tmdb_id)
+    }
+    return s
+  }, [allFilms])
 
   const searchResults = useMemo<Film[]>(() => {
     if (minitelMode !== 'recherche' || !minitelQuery.trim()) return []
@@ -687,7 +765,7 @@ export function useMinitelScreenTexture(props: MinitelScreenProps = {}) {
       else drawRayons(ctx, films, minitelHighlightedItem, hits)
     }
     else if (minitelMode === 'alpha') drawAlpha(ctx, allFilms, minitelPageIndex, minitelHighlightedItem, hits)
-    else if (minitelMode === 'commander') drawCommander(ctx, minitelQuery, tmdbResults, requestedIds, isAuthenticated, storeTmdbState, hits)
+    else if (minitelMode === 'commander') drawCommander(ctx, minitelQuery, tmdbResults, requestedIds, isAuthenticated, storeTmdbState, localTmdbIds, hits)
     else if (minitelMode === 'detail') {
       if (detailFilm) drawDetail(ctx, detailFilm, detailLocation, hits)
       else drawSommaire(ctx, minitelHighlightedItem, hits)
@@ -698,7 +776,7 @@ export function useMinitelScreenTexture(props: MinitelScreenProps = {}) {
   }, [
     canvas, texture, minitelMode, minitelQuery, minitelSelectedAisle,
     minitelPageIndex, minitelHighlightedItem, searchResults, aisleFilms, allFilms, films, detailFilm,
-    detailLocation, tmdbResults, requestedIds, storeTmdbState, isAuthenticated, isMobile,
+    detailLocation, tmdbResults, requestedIds, storeTmdbState, localTmdbIds, isAuthenticated, isMobile,
   ])
 
   // Reference helper for cassette position (used by overlay's "ILLUMINER")
