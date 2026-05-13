@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useStore } from '../../store';
 import { useIsMobile } from '../../hooks/useIsMobile';
+import { useBackGuard } from '../../hooks/useBackGuard';
 import { formatTimeRemaining } from '../../utils/formatTime';
 import { AuthModal } from '../auth/AuthModal';
 import { SearchModal } from '../search/SearchModal';
@@ -35,6 +36,7 @@ function getLevelProgress(totalRentals: number): { current: string; next: string
 }
 
 export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
+  useBackGuard(isOpen, onClose);
   const isMobile = useIsMobile();
   const secretInputRef = useRef<HTMLInputElement>(null);
   const [currentSection, setCurrentSection] = useState<MenuSection>('main');

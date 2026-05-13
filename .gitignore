@@ -37,7 +37,7 @@ certificates/
 # Playwright MCP artifacts
 .playwright-mcp/
 
-# Superpowers brainstorming session files (visual companion mockups)
+# Superpowers agent local state (brainstorming sessions, mockups, etc.)
 .superpowers/
 
 # SvelteKit remnants

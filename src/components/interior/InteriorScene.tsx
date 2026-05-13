@@ -21,6 +21,7 @@ import { Controls } from './Controls'
 import { PostProcessingEffects } from './PostProcessingEffects'
 import { Environment } from '@react-three/drei'
 import { useIsMobile } from '../../hooks/useIsMobile'
+import { useBackGuard } from '../../hooks/useBackGuard'
 import { createMobileInput } from '../../types/mobile'
 import type { MobileInput } from '../../types/mobile'
 
@@ -753,8 +754,23 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
   const benchmarkEnabled = useStore(state => state.benchmarkEnabled)
   const laZoneActive = useStore(state => state.isInteractingWithLaZone || state.isWatchingLaZone)
   const isSitting = useStore(state => state.isSitting)
+  const setSitting = useStore(state => state.setSitting)
   const isTerminalOpen = useStore(state => state.isTerminalOpen)
+  const isWatchingLaZone = useStore(state => state.isWatchingLaZone)
+  const isInteractingWithLaZone = useStore(state => state.isInteractingWithLaZone)
+  const setWatchingLaZone = useStore(state => state.setWatchingLaZone)
+  const setInteractingWithLaZone = useStore(state => state.setInteractingWithLaZone)
+  const isInteractingWithTV = useStore(state => state.isInteractingWithTV)
+  const setInteractingWithTV = useStore(state => state.setInteractingWithTV)
   const benchmarkMode = benchmarkEnabled || URL_BENCHMARK_MODE
+
+  // Back-gesture guards for scene-level states (no overlay components owning these).
+  // Order matters: deeper-nested states must be registered AFTER their parents so
+  // back closes them first.
+  useBackGuard(isSitting, () => setSitting(false))
+  useBackGuard(isInteractingWithTV, () => setInteractingWithTV(false))
+  useBackGuard(isInteractingWithLaZone, () => setInteractingWithLaZone(false))
+  useBackGuard(isWatchingLaZone, () => { setWatchingLaZone(false); setInteractingWithLaZone(false) })
 
   useEffect(() => {
     return () => {
@@ -840,6 +856,69 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
                 setGpuError(`Le périphérique GPU a été perdu (${info.reason}). Recharge la page pour réinitialiser WebGPU.`)
               }
             })
+
+            // DIAGNOSTIC : compte les compute pipelines créés (jamais surveillés
+            // par les probes précédents qui ne traçaient que createRenderPipeline*).
+            // Si le spike au premier mouvement est dû à un compute pipeline compilé
+            // synchrone, ces logs le révèleront avec le timing exact.
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const dev = device as any
+            const origCompute = dev.createComputePipeline?.bind(dev)
+            const origComputeAsync = dev.createComputePipelineAsync?.bind(dev)
+            let computeCount = 0
+            if (origCompute) {
+              dev.createComputePipeline = (desc: GPUComputePipelineDescriptor) => {
+                const t0 = performance.now()
+                const p = origCompute(desc)
+                const dt = performance.now() - t0
+                computeCount++
+                console.warn(`[COMPUTE-PIPE #${computeCount}] sync ${dt.toFixed(1)}ms label="${desc.label || ''}"`)
+                return p
+              }
+            }
+            if (origComputeAsync) {
+              dev.createComputePipelineAsync = (desc: GPUComputePipelineDescriptor) => {
+                const t0 = performance.now()
+                computeCount++
+                const id = computeCount
+                console.warn(`[COMPUTE-PIPE #${id}] async START label="${desc.label || ''}"`)
+                return origComputeAsync(desc).then((p: GPUComputePipeline) => {
+                  console.warn(`[COMPUTE-PIPE #${id}] async DONE ${(performance.now() - t0).toFixed(1)}ms`)
+                  return p
+                })
+              }
+            }
+
+            // Wrap render pipelines too — these compile synchronously when no
+            // promise is provided, blocking the main thread.
+            const origRP = dev.createRenderPipeline?.bind(dev)
+            const origRPAsync = dev.createRenderPipelineAsync?.bind(dev)
+            let rpCount = 0
+            if (origRP) {
+              dev.createRenderPipeline = (desc: GPURenderPipelineDescriptor) => {
+                const t0 = performance.now()
+                const p = origRP(desc)
+                const dt = performance.now() - t0
+                rpCount++
+                console.warn(`[RENDER-PIPE #${rpCount}] sync ${dt.toFixed(1)}ms label="${desc.label || ''}"`)
+                return p
+              }
+            }
+            if (origRPAsync) {
+              dev.createRenderPipelineAsync = (desc: GPURenderPipelineDescriptor) => {
+                const t0 = performance.now()
+                rpCount++
+                const id = rpCount
+                return origRPAsync(desc).then((p: GPURenderPipeline) => {
+                  const dt = performance.now() - t0
+                  // Only log slow async compiles (>50ms) to avoid log flood
+                  if (dt > 50) console.warn(`[RENDER-PIPE #${id}] async DONE ${dt.toFixed(1)}ms label="${desc.label || ''}"`)
+                  return p
+                })
+              }
+            }
+            // Expose pipeline count for the warmup gate to detect stability.
+            ;(window as unknown as { __rpCount?: () => number }).__rpCount = () => rpCount
           }
 
           renderer.shadowMap.enabled = true
@@ -853,41 +932,91 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
         }) as any}
         onCreated={(state) => {
-          // Scene ready gating — gates loader dismiss behind 3 conditions ANDed:
-          //  1. films data loaded (store has at least 1 film)
-          //  2. all expected meshes are mounted (suspense resolved for Aisle, CassetteInstances,
-          //     Lighting, Storefront, Couch, LaZoneCRT, InteractiveTVDisplay, etc.)
-          //  3. renderer.compileAsync(scene, camera) resolved (all WebGPU pipelines compiled)
-          //  4. poster atlas fully loaded (window.__posterProgress.loaded === total)
+          // Scene ready gating — empirical fix for PR #44's spike-on-movement bug.
           //
-          // Hard timeout fallback at 10s so the user never sees an infinite loader.
-          // Replaces the previous "wait 1 RAF + 3 frames + frustumCulled hack" which
-          // raced with Suspense and only compiled pipelines for ~1 mesh.
-          const HARD_TIMEOUT_MS = 10_000
-          const MIN_MESH_COUNT = 30 // empirical: scene typically has 80+ meshes when fully mounted
+          // PROBLEM with PR #44 (verified via CDP probe on Pixel 9 prod reload):
+          // 1. compileAsync warms pipelines for the DEFAULT screen render target
+          //    (renderContext built from this._renderTarget — see Renderer.js:858).
+          // 2. PostProcessing.render() uses a HalfFloat custom RenderTarget
+          //    (see PassNode.js:240). Different format = different pipeline cache key.
+          // 3. At first postProcessing.render(), all 50+ material pipelines need to
+          //    be COMPILED AGAIN, this time SYNCHRONOUSLY (WebGPUPipelineUtils.js:252
+          //    falls back to createRenderPipeline sync when promises=null).
+          //    → 1.6s of spike spread over the first 1-2s of rendering.
+          // 4. Additionally, compileAsync's renderList only includes meshes inside the
+          //    camera frustum at warmup time (Renderer.js:2778+2828). Meshes hors-champ
+          //    compile their pipelines on first appearance → spike au déplacement.
+          //
+          // FIX: warmup via postProcessing.render() WITH frustumCulled=false on every
+          // mesh, so pipelines are compiled in the correct RT context AND for all meshes.
+          // Then restore frustumCulled and signal scene-ready.
+          const HARD_TIMEOUT_MS = 15_000
+          const MIN_MESH_COUNT = 30
           const startTime = performance.now()
           let resolved = false
 
           const finish = () => {
             if (resolved) return
             resolved = true
+            console.warn(`[SCENE-READY] fired at t+${(performance.now() - startTime).toFixed(0)}ms`)
             useStore.getState().setSceneReady(true)
           }
 
-          const tryReady = async () => {
-            // Hard timeout safety
+          const runWarmup = (): boolean => {
+            // 1. Disable frustum culling on every mesh → projectObject pushes ALL to
+            //    the render list, so every pipeline variant gets compiled.
+            const restoreList: THREE.Mesh[] = []
+            state.scene.traverse((obj) => {
+              const m = obj as THREE.Mesh
+              if (m.isMesh && m.frustumCulled) {
+                restoreList.push(m)
+                m.frustumCulled = false
+              }
+            })
+            // 2. Save the current camera orientation so we can sweep through
+            //    multiple view directions during warmup. Even with
+            //    frustumCulled=false, pipelines that depend on view-direction
+            //    (TSL hover variants, shadow caster selection, lighting
+            //    clusters) only compile when actually rendered from that
+            //    angle. A 360° sweep exposes every angle.
+            const savedQuat = state.camera.quaternion.clone()
+            const tmpEuler = new THREE.Euler(0, 0, 0, 'YXZ')
+            try {
+              const pp = (window as unknown as { __postProcessing?: { render?: () => void } }).__postProcessing
+              if (!pp || typeof pp.render !== 'function') return false
+              // 4 yaw directions, 1 pitch (horizontal). Each pass is 4 ops, but
+              // multi-pass coverage (4 passes × 4 angles = 16 total) catches
+              // late-mounted GLBs across the plateau detection window.
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const renderer = state.gl as any
+              for (let i = 0; i < 4; i++) {
+                tmpEuler.set(0, (i * Math.PI) / 2, 0)
+                state.camera.quaternion.setFromEuler(tmpEuler)
+                state.camera.updateMatrixWorld(true)
+                if (typeof renderer?.compileAsync === 'function') {
+                  void renderer.compileAsync(state.scene, state.camera)
+                }
+                pp.render()
+              }
+              return true
+            } finally {
+              state.camera.quaternion.copy(savedQuat)
+              state.camera.updateMatrixWorld(true)
+              for (const m of restoreList) m.frustumCulled = true
+            }
+          }
+
+          const tryReady = () => {
+            // Hard timeout safety net — never block the user forever.
             if (performance.now() - startTime > HARD_TIMEOUT_MS) {
               finish()
               return
             }
-
             const { films } = useStore.getState()
             if (Object.values(films).flat().length === 0) {
               requestAnimationFrame(tryReady)
               return
             }
-
-            // Count meshes currently in scene — proxy for "all suspense resolved"
             let meshCount = 0
             state.scene.traverse((obj) => {
               if ((obj as THREE.Mesh).isMesh) meshCount++
@@ -896,25 +1025,53 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
               requestAnimationFrame(tryReady)
               return
             }
-
-            // Check poster atlas progress (set by CassetteInstances).
-            // Allow ready if all loaded OR atlas hasn't started (fallback)
             const pp = (window as unknown as { __posterProgress?: { total: number; loaded: number } }).__posterProgress
             if (pp && pp.total > 0 && pp.loaded < pp.total) {
               requestAnimationFrame(tryReady)
               return
             }
-
-            // Compile all pipelines via official Three.js API
-            try {
-              const renderer = state.gl as unknown as { compileAsync?: (s: THREE.Scene, c: THREE.Camera) => Promise<void> }
-              if (typeof renderer.compileAsync === 'function') {
-                await renderer.compileAsync(state.scene, state.camera)
-              }
-              finish()
-            } catch {
-              finish()
+            // Wait for PostProcessing instance to be ready before warmup.
+            if (!(window as unknown as { __postProcessing?: unknown }).__postProcessing) {
+              requestAnimationFrame(tryReady)
+              return
             }
+            // Pipeline-count plateau detection. Robust against any cache /
+            // timing combination: keep warming up until N consecutive iterations
+            // produce zero new render pipelines. That means everything that
+            // needs a pipeline has one cached.
+            const getPipeCount = () => {
+              const fn = (window as unknown as { __rpCount?: () => number }).__rpCount
+              return typeof fn === 'function' ? fn() : 0
+            }
+            const PIPE_STABLE_NEEDED = 3      // 3 stable iterations
+            const POLL_INTERVAL_MS = 300
+            const MAX_TOTAL_MS = 20000        // hard cap 20s
+            const _t0 = performance.now()
+            let stableIters = 0
+            let lastCount = getPipeCount()
+            const warmupLoop = () => {
+              try { runWarmup() } catch {}
+              const cur = getPipeCount()
+              if (cur === lastCount) {
+                stableIters++
+              } else {
+                stableIters = 0
+                lastCount = cur
+              }
+              const elapsed = performance.now() - _t0
+              if (stableIters >= PIPE_STABLE_NEEDED) {
+                console.warn(`[WARMUP-PIPE-STABLE] count=${cur} ${elapsed.toFixed(0)}ms`)
+                finish()
+                return
+              }
+              if (elapsed >= MAX_TOTAL_MS) {
+                console.warn(`[WARMUP-MAX] count=${cur} ${elapsed.toFixed(0)}ms`)
+                finish()
+                return
+              }
+              setTimeout(warmupLoop, POLL_INTERVAL_MS)
+            }
+            warmupLoop()
           }
           requestAnimationFrame(tryReady)
         }}

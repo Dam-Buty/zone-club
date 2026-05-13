@@ -1,7 +1,8 @@
-import { useMemo, useEffect, Suspense, memo } from 'react'
+import { useMemo, useEffect, useRef, Suspense, memo } from 'react'
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { useGLTF, useTexture } from '@react-three/drei'
+import { useFrame, useThree } from '@react-three/fiber'
 import { generateKentTileTextures } from '../../utils/KentTileTexture'
 import { LaZoneCRT } from './LaZoneCRT'
 import { BoardMesh } from './BoardMesh'
@@ -502,12 +503,38 @@ function computeIslandShelfCassettes(
   return data
 }
 
+// Desk world position (matches the <group position> at line ~1111 of this file).
+// Used to gate /api/films/desk-display fetch behind camera proximity.
+const DESK_WORLD_X = 2.2
+const DESK_WORLD_Z = 2.97
+const DESK_FETCH_RADIUS_SQ = 3.0 * 3.0  // 3m squared (avoid sqrt per frame)
+const DESK_FETCH_SAFETY_MS = 60_000     // fallback after 60s even if far
+
 export const Aisle = memo(function Aisle({ films, filmsByAisle }: AisleProps) {
   const deskFilms = useStore(s => s.deskFilms)
   const fetchDeskFilms = useStore(s => s.fetchDeskFilms)
+  const { camera } = useThree()
 
-  // Fetch desk films on mount
-  useEffect(() => { fetchDeskFilms() }, [fetchDeskFilms])
+  // Defer the 4-5s /api/films/desk-display fetch — only trigger when the camera
+  // gets within 3m of the desk OR after 60s safety fallback. Saves ~4s of work
+  // on every reload for users who never approach the desk.
+  const deskFetchTriggeredRef = useRef(false)
+  const deskFetchMountedAtRef = useRef(performance.now())
+  useFrame(() => {
+    if (deskFetchTriggeredRef.current) return
+    // Ignore frames where Controls hasn't yet set the player camera position
+    // (R3F default is (0,0,5) which is ~2.99m from the desk and would false-trigger
+    // the proximity check before the player is even placed at spawn).
+    if (camera.position.y < 1.0) return
+    const dx = camera.position.x - DESK_WORLD_X
+    const dz = camera.position.z - DESK_WORLD_Z
+    const distSq = dx * dx + dz * dz
+    const elapsed = performance.now() - deskFetchMountedAtRef.current
+    if (distSq < DESK_FETCH_RADIUS_SQ || elapsed > DESK_FETCH_SAFETY_MS) {
+      deskFetchTriggeredRef.current = true
+      fetchDeskFilms()
+    }
+  })
 
   // ===== DISTRIBUTION PAR SECTION =====
   // Chaque section affiche exactement les films assignés à son allée en DB.

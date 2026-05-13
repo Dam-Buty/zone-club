@@ -46,6 +46,8 @@
   ],
   "exclude": [
     "node_modules",
-    "archive"
+    "archive",
+    "cinema-stream",
+    "zone-discord-bot"
   ]
 }

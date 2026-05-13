@@ -1,6 +1,7 @@
 import { useState, useCallback, useId } from 'react';
 import { createPortal } from 'react-dom';
 import { useStore } from '../../store';
+import { useBackGuard } from '../../hooks/useBackGuard';
 import styles from './AuthModal.module.css';
 
 interface AuthModalProps {
@@ -13,6 +14,7 @@ interface AuthModalProps {
 type AuthMode = 'login' | 'register' | 'recover' | 'recovery-phrase';
 
 export function AuthModal({ isOpen, onClose, onSuccess, initialMode = 'login' }: AuthModalProps) {
+  useBackGuard(isOpen, onClose);
   const [mode, setMode] = useState<AuthMode>(initialMode);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');

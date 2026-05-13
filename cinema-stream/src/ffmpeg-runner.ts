@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { writeFileSync, mkdirSync, existsSync, readdirSync, unlinkSync } from "node:fs";
+import { writeFileSync, mkdirSync, existsSync, readdirSync, unlinkSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { HLS_OUT_DIR } from "./config.ts";
@@ -9,6 +9,8 @@ const REPEAT_PASSES = 50;
 const HLS_SEGMENT_SEC = 4;
 const HLS_LIST_SIZE = 6;
 const RESTART_DELAY_MS = 2000;
+const WATCHDOG_INTERVAL_MS = 10_000;
+const WATCHDOG_STALL_MS = 30_000;
 
 function escapeConcatPath(path: string): string {
   return path.replace(/'/g, "'\\''");
@@ -47,6 +49,7 @@ export class FfmpegSupervisor {
   private proc: ChildProcess | null = null;
   private state: PlaylistState;
   private stopped = false;
+  private watchdog: NodeJS.Timeout | null = null;
 
   constructor(state: PlaylistState) {
     this.state = state;
@@ -58,13 +61,34 @@ export class FfmpegSupervisor {
     }
     clearOldSegments();
     this.spawnFfmpeg();
+    this.watchdog = setInterval(
+      () => this.checkProgress(),
+      WATCHDOG_INTERVAL_MS,
+    );
   }
 
   stop(): void {
     this.stopped = true;
+    if (this.watchdog) {
+      clearInterval(this.watchdog);
+      this.watchdog = null;
+    }
     if (this.proc) {
       this.proc.kill("SIGTERM");
       this.proc = null;
+    }
+  }
+
+  private checkProgress(): void {
+    if (!this.proc || this.stopped) return;
+    const playlist = join(HLS_OUT_DIR, "live.m3u8");
+    if (!existsSync(playlist)) return;
+    const ageMs = Date.now() - statSync(playlist).mtimeMs;
+    if (ageMs > WATCHDOG_STALL_MS) {
+      console.warn(
+        `[watchdog] live.m3u8 not updated in ${Math.round(ageMs / 1000)}s, killing ffmpeg`,
+      );
+      this.proc.kill("SIGKILL");
     }
   }
 

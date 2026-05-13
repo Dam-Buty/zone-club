@@ -298,6 +298,8 @@ export function Controls({
 
   // Throttle raycast
   const frameCountRef = useRef(0);
+  // DIAGNOSTIC : timestamp de la dernière frame pour détecter les spikes
+  const frameSpikeRef = useRef({ last: 0 });
   const RAYCAST_INTERVAL = isMobile ? 3 : 3; // 20/sec both mobile & desktop
 
   // Pinch zoom state — continuous zoom level [0..1] that always animates towards target
@@ -828,6 +830,25 @@ export function Controls({
   // Main loop — movement + targeting
   useFrame((_, delta) => {
     frameCountRef.current++;
+
+    // DIAGNOSTIC : détecte les spikes frame > 100ms pour identifier QUAND
+    // le freeze se produit. À corréler avec les logs [COMPUTE-PIPE] côté
+    // InteriorScene pour identifier la cause racine.
+    {
+      const _now = performance.now();
+      const _last = frameSpikeRef.current.last;
+      if (_last > 0) {
+        const _dt = _now - _last;
+        if (_dt > 100) {
+          console.warn(
+            `[FRAME-SPIKE] ${_dt.toFixed(0)}ms ` +
+            `cam=(${camera.position.x.toFixed(2)},${camera.position.y.toFixed(2)},${camera.position.z.toFixed(2)}) ` +
+            `rot=(${camera.rotation.x.toFixed(2)},${camera.rotation.y.toFixed(2)})`
+          );
+        }
+      }
+      frameSpikeRef.current.last = _now;
+    }
 
     // === Tutorial camera override — lerp to waypoint, block all inputs ===
     const tutorialTarget = useStore.getState().tutorialCameraTarget;
@@ -1433,7 +1454,7 @@ export function Controls({
     if (useStore.getState().isInteractingWithTV) return; // Block movement during standing TV menu
     if (useStore.getState().isInteractingWithLaZone) return; // Block movement during LaZone menu
 
-    const speed = isMobile ? 0.5775 : 1.75; // mobile bumped +50% (was 0.385) for less sluggish feel
+    const speed = isMobile ? 1.0 : 1.75; // mobile bumped to ~57% of desktop (was 0.5775) per user feedback (still too slow)
     velocity.current.x -= velocity.current.x * 10.0 * delta;
     velocity.current.z -= velocity.current.z * 10.0 * delta;
 

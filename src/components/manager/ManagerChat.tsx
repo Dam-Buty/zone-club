@@ -3,11 +3,13 @@ import { useChat } from '@ai-sdk/react';
 import { isToolUIPart, getToolName } from 'ai';
 import { useStore } from '../../store';
 import { ChatMessageRenderer } from './ChatMessageRenderer';
+import { useBackGuard } from '../../hooks/useBackGuard';
 import styles from './ManagerChat.module.css';
 
 export function ManagerChat() {
   const managerVisible = useStore(s => s.managerVisible);
   const hideManager = useStore(s => s.hideManager);
+  useBackGuard(managerVisible, hideManager);
   const chatBackdropUrl = useStore(s => s.chatBackdropUrl);
   const setChatBackdrop = useStore(s => s.setChatBackdrop);
   const drainEvents = useStore(s => s.drainEvents);
