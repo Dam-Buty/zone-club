@@ -178,6 +178,31 @@ interface VideoClubState {
   isZoomedOnTV: boolean;
   setZoomedOnTV: (val: boolean) => void;
 
+  // Minitel (search/browse films + 3D highlight)
+  isInteractingWithMinitel: boolean;
+  setInteractingWithMinitel: (val: boolean) => void;
+  minitelMode: 'idle' | 'sommaire' | 'recherche' | 'rayons' | 'alpha' | 'commander' | 'detail';
+  setMinitelMode: (m: 'idle' | 'sommaire' | 'recherche' | 'rayons' | 'alpha' | 'commander' | 'detail') => void;
+  minitelQuery: string;
+  setMinitelQuery: (q: string) => void;
+  minitelSelectedAisle: AisleType | null;
+  setMinitelSelectedAisle: (a: AisleType | null) => void;
+  minitelSelectedFilm: number | null;
+  setMinitelSelectedFilm: (id: number | null) => void;
+  minitelPageIndex: number;
+  setMinitelPageIndex: (n: number) => void;
+  // Currently highlighted item index (1-based) for arrow-key navigation in the minitel.
+  minitelHighlightedItem: number;
+  setMinitelHighlightedItem: (n: number) => void;
+  // Bridge for direct-click on the 3D minitel screen plane: MinitelDisplay
+  // sets this to the clicked item index; MinitelOverlay reads + clears it
+  // and reuses its existing handleNumberPress flow.
+  pendingMinitelPress: number | null;
+  dispatchMinitelItem: (n: number) => void;
+  consumeMinitelItem: () => void;
+  highlightedCassetteKey: string | null;
+  setHighlightedCassetteKey: (k: string | null) => void;
+
   // Standing TV interaction (click TV while standing → 2-option menu)
   isInteractingWithTV: boolean;
   setInteractingWithTV: (val: boolean) => void;
@@ -723,6 +748,27 @@ export const useStore = create<VideoClubState>()(
       // TV zoom (Paramètres)
       isZoomedOnTV: false,
       setZoomedOnTV: (val) => set({ isZoomedOnTV: val }),
+
+      // Minitel
+      isInteractingWithMinitel: false,
+      setInteractingWithMinitel: (val) => set({ isInteractingWithMinitel: val }),
+      minitelMode: 'idle',
+      setMinitelMode: (m) => set({ minitelMode: m }),
+      minitelQuery: '',
+      setMinitelQuery: (q) => set({ minitelQuery: q }),
+      minitelSelectedAisle: null,
+      setMinitelSelectedAisle: (a) => set({ minitelSelectedAisle: a }),
+      minitelSelectedFilm: null,
+      setMinitelSelectedFilm: (id) => set({ minitelSelectedFilm: id }),
+      minitelPageIndex: 0,
+      setMinitelPageIndex: (n) => set({ minitelPageIndex: n }),
+      minitelHighlightedItem: 1,
+      setMinitelHighlightedItem: (n) => set({ minitelHighlightedItem: n }),
+      pendingMinitelPress: null,
+      dispatchMinitelItem: (n) => set({ pendingMinitelPress: n }),
+      consumeMinitelItem: () => set({ pendingMinitelPress: null }),
+      highlightedCassetteKey: null,
+      setHighlightedCassetteKey: (k) => set({ highlightedCassetteKey: k }),
 
       // Standing TV interaction
       isInteractingWithTV: false,

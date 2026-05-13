@@ -5,6 +5,7 @@ import { AuthModal } from './components/auth/AuthModal';
 import { ManagerChat } from './components/manager/ManagerChat';
 import BoardOverlay from './components/board/BoardOverlay';
 import { VHSPlayer } from './components/player/VHSPlayer';
+import { MinitelOverlay } from './components/minitel/MinitelOverlay';
 import { preloadPosterImage } from './utils/CassetteTextureArray';
 import './utils/asset-preload'; // Side-effect import: kicks off HDR/KTX2/wasm prefetch into HTTP cache
 import api, { apiFilmToFilm } from './api';
@@ -574,6 +575,9 @@ function App() {
 
       {/* VHS Player — overlays on top of scene (scene stays mounted to preserve WebGPU state) */}
       {isPlayerOpen && <VHSPlayer />}
+
+      {/* Minitel HTML overlay — input + buttons (3D screen rendered via CanvasTexture in MinitelDisplay) */}
+      <MinitelOverlay />
 
       {/* Manager Chat */}
       <ManagerChat />

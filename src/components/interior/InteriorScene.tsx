@@ -28,6 +28,7 @@ import type { MobileInput } from '../../types/mobile'
 // Lazy loading du composant Aisle (contient tous les modèles 3D)
 const Aisle = lazy(() => import('./Aisle').then(module => ({ default: module.Aisle })))
 import { VHSCaseViewer } from './VHSCaseViewer'
+import { CassetteHighlight } from './CassetteHighlight'
 import { TVTerminal } from '../terminal/TVTerminal'
 import { AuthModal } from '../auth/AuthModal'
 import { SearchModal } from '../search/SearchModal'
@@ -130,6 +131,7 @@ const SceneContent = memo(function SceneContent({
         isMobile={isMobile}
       />
       {selectedFilm && <VHSCaseViewer key={selectedFilm.id} film={selectedFilm} />}
+      <CassetteHighlight />
     </>
   )
 })
@@ -446,6 +448,7 @@ function UIOverlays({ isMobile }: { isMobile: boolean }) {
   const managerVisible = useStore(state => state.managerVisible)
   const isTerminalOpen = useStore(state => state.isTerminalOpen)
   const selectedFilmId = useStore(state => state.selectedFilmId)
+  const isInteractingWithMinitel = useStore(state => state.isInteractingWithMinitel)
   const hasSeenOnboarding = useStore(state => state.hasSeenOnboarding)
   const closeTerminal = useStore(state => state.closeTerminal)
   const setZoomedOnTV = useStore(state => state.setZoomedOnTV)
@@ -529,7 +532,7 @@ function UIOverlays({ isMobile }: { isMobile: boolean }) {
   return (
     <>
       {/* Message "Cliquez pour prendre le contrôle" — desktop only, when not locked */}
-      {overlaysEnabled && !isMobile && !isPointerLocked && !isTerminalOpen && !selectedFilmId && showTakeControlHint && tutorialStepUI === null && (
+      {overlaysEnabled && !isMobile && !isPointerLocked && !isTerminalOpen && !selectedFilmId && !isInteractingWithMinitel && showTakeControlHint && tutorialStepUI === null && (
         <div
           style={{
             position: 'fixed',

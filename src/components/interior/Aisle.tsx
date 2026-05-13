@@ -7,6 +7,8 @@ import { generateKentTileTextures } from '../../utils/KentTileTexture'
 import { LaZoneCRT } from './LaZoneCRT'
 import { BoardMesh } from './BoardMesh'
 import { DeskCassettes } from './DeskCassettes'
+import { MinitelDisplay } from './MinitelDisplay'
+import { setCassetteRegistry } from '../../utils/cassetteRegistry'
 import { useStore } from '../../store'
 
 // Composant pour chargement async des modèles 3D
@@ -797,6 +799,14 @@ export const Aisle = memo(function Aisle({ films, filmsByAisle }: AisleProps) {
     const islandRight = all.filter(c => c.cassetteKey.startsWith('island-right'))
     const island2Left = all.filter(c => c.cassetteKey.startsWith('island2-left'))
     const island2Right = all.filter(c => c.cassetteKey.startsWith('island2-right'))
+    // Publish positions to global registry for the minitel CassetteHighlight,
+    // and a filmId→cassetteKey map for the minitel detail screen lookup.
+    setCassetteRegistry(all.map((c) => ({ cassetteKey: c.cassetteKey, worldPosition: c.worldPosition })))
+    if (typeof window !== 'undefined') {
+      const m = new Map<number, string>()
+      for (const c of all) m.set(c.filmId, c.cassetteKey)
+      ;(window as unknown as { __cassetteFilmIdToKey?: Map<number, string> }).__cassetteFilmIdToKey = m
+    }
     return all
   // ROOM_WIDTH & ROOM_DEPTH in deps: ensures recomputation when room dimensions change (HMR cache fix)
   }, [actionSlice, animationSlice, aventureSlice, bizarreCenterZ, bizarreSlice, classiquesIslandRight, comedieSlice, drameSlice, horreurCenterZ, horreurLength, horreurSlice, leftEqualSectionLength, northLongLength, northLongOffset, northMediumLength, northMediumOffset, nouveautesLeft, nouveautesRight, policierSlice, rightLongLength, rightLongOffset, romanceSlice, sfIslandLeft, ROOM_WIDTH, ROOM_DEPTH])
@@ -1173,8 +1183,8 @@ export const Aisle = memo(function Aisle({ films, filmsByAisle }: AisleProps) {
         {/* Sonnette sur le comptoir */}
         <ServiceBell position={[0.2, 1.055, 0.25]} rotation={[0, Math.PI, 0]} />
 
-        {/* Minitel 1982 — Sketchfab model offset: center ~(17, 5, -6), needs compensation */}
-        <AsyncModel url="/models/minitel_1982-france.glb" position={[-0.571, 1.047, -0.01]} scale={0.025} rotation={[0, Math.PI, 0]} />
+        {/* Minitel 1982 — interactive search/browse + cassette highlight */}
+        <MinitelDisplay position={[-0.571, 1.047, -0.01]} scale={0.025} rotation={[0, Math.PI, 0]} />
 
         {/* Pile de 3 K7 VHS — derniers films rendus */}
         <DeskCassettes films={deskFilms} position={[0.24, 1.055, -0.04]} />
