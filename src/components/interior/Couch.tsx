@@ -2,6 +2,7 @@ import { useRef, useEffect, useCallback } from 'react'
 import * as THREE from 'three'
 import { useGLTF } from '@react-three/drei'
 import { RAYCAST_LAYER_INTERACTIVE } from './Controls'
+import { useStore } from '../../store'
 
 useGLTF.preload('/models/leather_couch.glb', true)
 
@@ -37,7 +38,17 @@ export function Couch({ position, rotation = [0, 0, 0], onSit }: CouchProps) {
     })
   }
 
-  const handleClick = useCallback(() => {
+  const handleClick = useCallback((e?: { stopPropagation?: () => void }) => {
+    // R3F propagates clicks through all intersected objects. A click on the
+    // minitel screen (closer to the camera than the couch on most ray paths)
+    // would otherwise also fire here and seat the player — guard against any
+    // active modal interaction so the couch only reacts when the user is
+    // really aiming at it.
+    const s = useStore.getState()
+    if (s.isInteractingWithMinitel || s.isInteractingWithTV || s.isInteractingWithLaZone) {
+      return
+    }
+    e?.stopPropagation?.()
     if (onSit) onSit()
   }, [onSit])
 
