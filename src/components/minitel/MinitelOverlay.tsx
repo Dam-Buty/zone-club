@@ -3,8 +3,9 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useStore } from '../../store'
 import { searchFilms } from '../../utils/minitelSearch'
-import { tmdb, type TMDBSearchResult } from '../../services/tmdb'
+import { tmdb } from '../../services/tmdb'
 import api from '../../api'
+import { AuthModal } from '../auth/AuthModal'
 import type { AisleType, Film } from '../../types'
 
 const PAGE_SIZE = 8
@@ -47,9 +48,14 @@ export function MinitelOverlay() {
   const minitelSelectedFilm = useStore((s) => s.minitelSelectedFilm)
   const isMobile = useIsMobile()
 
-  // Local: TMDB search results (mode 4) + requested IDs
-  const [tmdbResults, setTmdbResults] = useState<TMDBSearchResult[]>([])
-  const [requestedIds, setRequestedIds] = useState<Set<number>>(new Set())
+  // Store-backed TMDB state so MinitelDisplay (which owns the canvas) sees the
+  // same results & loading state.
+  const tmdbResults = useStore((s) => s.minitelTmdbResults)
+  const setTmdbResults = useStore((s) => s.setMinitelTmdbResults)
+  const setTmdbState = useStore((s) => s.setMinitelTmdbState)
+  const requestedIds = useStore((s) => s.minitelRequestedIds)
+  const setRequestedIds = useStore((s) => s.setMinitelRequestedIds)
+  const [showAuthModal, setShowAuthModal] = useState(false)
   const inputRef = useRef<HTMLInputElement | null>(null)
 
   // Auto-focus input on mount + mode change to recherche/commander
@@ -66,24 +72,32 @@ export function MinitelOverlay() {
     api.filmRequests.getAll()
       .then((requests) => setRequestedIds(new Set(requests.map((r: { tmdb_id: number }) => r.tmdb_id))))
       .catch(() => {})
-  }, [minitelMode, isAuthenticated])
+  }, [minitelMode, isAuthenticated, setRequestedIds])
 
-  // Debounced TMDB search for commander mode
+  // Debounced TMDB search for commander mode — writes results AND a state
+  // marker so the canvas can show "Recherche en cours…" vs "Aucun résultat"
+  // vs "Erreur réseau" instead of being stuck on "Recherche en cours…".
   useEffect(() => {
-    if (minitelMode !== 'commander' || !minitelQuery.trim()) {
+    if (minitelMode !== 'commander') return
+    if (!minitelQuery.trim()) {
       setTmdbResults([])
+      setTmdbState('idle')
       return
     }
+    setTmdbState('pending')
     const t = setTimeout(async () => {
       try {
         const r = await tmdb.search(minitelQuery)
-        setTmdbResults(r.results.slice(0, 6))
+        const slice = r.results.slice(0, 6)
+        setTmdbResults(slice)
+        setTmdbState(slice.length === 0 ? 'empty' : 'ok')
       } catch {
         setTmdbResults([])
+        setTmdbState('error')
       }
     }, 500)
     return () => clearTimeout(t)
-  }, [minitelMode, minitelQuery])
+  }, [minitelMode, minitelQuery, setTmdbResults, setTmdbState])
 
   // Build flat A→Z list of all films (deduped)
   const buildAllFilms = useCallback((): Film[] => {
@@ -141,13 +155,17 @@ export function MinitelOverlay() {
           tmdb_id: r.id,
           title: r.title,
           poster_url: r.poster_path ? tmdb.posterUrl(r.poster_path, 'w342') : null,
-        }).then(() => setRequestedIds((prev) => new Set([...prev, r.id]))).catch(() => {})
+        }).then(() => {
+          const next = new Set(requestedIds)
+          next.add(r.id)
+          setRequestedIds(next)
+        }).catch(() => {})
       }
       return
     }
   }, [
     minitelMode, minitelSelectedAisle, films, minitelPageIndex, minitelQuery,
-    tmdbResults, isAuthenticated, requestedIds, buildAllFilms,
+    tmdbResults, isAuthenticated, requestedIds, buildAllFilms, setRequestedIds,
     setMinitelMode, setMinitelQuery, setMinitelSelectedAisle, setMinitelSelectedFilm, setMinitelPageIndex,
   ])
 
@@ -157,16 +175,30 @@ export function MinitelOverlay() {
       // Find cassette key for this film via global registry
       const map = (window as unknown as { __cassetteFilmIdToKey?: Map<number, string> }).__cassetteFilmIdToKey
       const key = map?.get(minitelSelectedFilm) ?? null
-      if (key) setHighlightedCassetteKey(key)
-      // Stay on detail screen; let the user ESC out to see the cassette
+      if (!key) {
+        // No cassette → nothing to highlight, leave the user on the detail
+        // screen so they know the action did not point them anywhere.
+        return
+      }
+      setHighlightedCassetteKey(key)
+      // Eject the user from the minitel so they can walk the aisles and spot
+      // the now-glowing K7. Short delay so the canvas redraws once with the
+      // ILLUMINER click registered (button stays cyan, but the user gets a
+      // beat to register the interaction before the camera pulls back).
+      setTimeout(() => {
+        setMinitelMode('idle')
+        setMinitelSelectedFilm(null)
+        setInteractingWithMinitel(false)
+      }, 320)
       return
     }
     if (minitelMode === 'commander' && !isAuthenticated) {
-      // Open AuthModal? We just exit minitel and let user handle login
-      setInteractingWithMinitel(false)
+      // Pop the login modal inline so the user doesn't lose their minitel
+      // context — once auth succeeds they're back on the search.
+      setShowAuthModal(true)
       return
     }
-  }, [minitelMode, minitelSelectedFilm, isAuthenticated, setHighlightedCassetteKey, setInteractingWithMinitel])
+  }, [minitelMode, minitelSelectedFilm, isAuthenticated, setHighlightedCassetteKey, setInteractingWithMinitel, setMinitelMode, setMinitelSelectedFilm])
 
   // ESC: contextual back navigation
   const handleEsc = useCallback(() => {
@@ -283,11 +315,14 @@ export function MinitelOverlay() {
       handleSuite() // next page
     } else if (minitelMode === 'detail' && pendingMinitelPress === 1) {
       handleEnvoi()
+    } else if (minitelMode === 'commander' && !isAuthenticated && pendingMinitelPress === 1) {
+      // SE CONNECTER pill on the !authed commander screen
+      handleEnvoi()
     } else {
       handleNumberPress(pendingMinitelPress)
     }
     consumeMinitelItem()
-  }, [pendingMinitelPress, minitelMode, handleNumberPress, handleEsc, handleEnvoi, handleSuite, handleRetour, consumeMinitelItem])
+  }, [pendingMinitelPress, minitelMode, isAuthenticated, handleNumberPress, handleEsc, handleEnvoi, handleSuite, handleRetour, consumeMinitelItem])
 
   if (!isInteractingWithMinitel) return null
 
@@ -328,6 +363,11 @@ export function MinitelOverlay() {
           }}
         />
       )}
+      <AuthModal
+        isOpen={showAuthModal}
+        onClose={() => setShowAuthModal(false)}
+        onSuccess={() => setShowAuthModal(false)}
+      />
     </div>
   )
 }
