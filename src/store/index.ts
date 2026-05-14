@@ -4,19 +4,13 @@ import type { Film, Rental, AisleType, SceneType, MemberLevel, AuthUser, LocalUs
 import api, { apiFilmToFilm, type ApiRentalWithFilm, type ApiFilm, type ReviewWithUser, type ApiReturnRequest, type WeeklyBonusStatus, type ApiBoardNote, type BoardCapacity } from '../api';
 import { preloadPosterImage } from '../utils/CassetteTextureArray';
 import { fetchVHSCoverData } from '../utils/VHSCoverGenerator';
+import { createManagerSlice } from './slices/manager';
+import { createTutorialSlice, TUTORIAL_WAYPOINTS } from './slices/tutorial';
 
-// Tutorial waypoints — camera positions for the guided tour (7 steps)
-// Camera lookAt shifted opposite to Rick's portrait side so scene content is visible
-// Rick left → camera looks slightly right (+X offset), Rick right → slightly left (-X offset)
-export const TUTORIAL_WAYPOINTS: { position: [number, number, number]; lookAt: [number, number, number] }[] = [
-  { position: [-3.0, 1.52, 3.0],  lookAt: [0, 1.52, 0] },              // 0: BIENVENUE — centered, no offset
-  { position: [-2.25, 1.52, -2.5], lookAt: [-1.85, 1.52, -4.15] },     // 1: ALLEES — lookAt +0.4 X (Rick left)
-  { position: [-2.0, 1.52, -3.0], lookAt: [-1.6, 1.2, -4.5] },         // 2: K7 — inside aisle, closer to shelves
-  { position: [-2.0, 1.52, -3.0], lookAt: [-1.6, 1.2, -4.5] },         // 3: ECONOMIE — same position
-  { position: [1.5, 1.52, 2.0],   lookAt: [2.4, 1.2, 3.0] },           // 4: COMPTOIR — lookAt +0.4 X (Rick left)
-  { position: [3.2, 1.52, 3.2],   lookAt: [3.8, 2.05, 3.95] },         // 5: LAZONE — lookAt -0.4 X (Rick right)
-  { position: [2.4, 1.52, 1.2],   lookAt: [3.7, 0.75, 1.2] },          // 6: CANAPE — lookAt shifted 20% left
-];
+// Re-export the tutorial waypoints constant — moved to the tutorial slice
+// but still imported from this module by ~15 consumers (TutorialOverlay,
+// Controls.tsx, etc.).
+export { TUTORIAL_WAYPOINTS };
 
 function calculateLevel(totalRentals: number): MemberLevel {
   if (totalRentals >= 50) return 'platine';
@@ -55,7 +49,7 @@ export type InteractionMode =
   | 'lazoneWatching'   // watching La Zone fullscreen
   | 'film'             // VHS case overlay open (selectedFilmId !== null)
 
-interface VideoClubState {
+export interface VideoClubState {
   // Auth
   isAuthenticated: boolean;
   authUser: AuthUser | null;
@@ -315,7 +309,7 @@ interface VideoClubState {
 
 export const useStore = create<VideoClubState>()(
   persist(
-    (set, get) => ({
+    (set, get, store) => ({
       // Auth
       isAuthenticated: false,
       authUser: null,
@@ -688,19 +682,8 @@ export const useStore = create<VideoClubState>()(
       showDeskFilmPicker: false,
       setShowDeskFilmPicker: (show) => set({ showDeskFilmPicker: show }),
 
-      // Manager IA
-      managerVisible: false,
-      chatBackdropUrl: null,
-      eventQueue: [],
-      showManager: () => set({ managerVisible: true }),
-      hideManager: () => set({ managerVisible: false, chatBackdropUrl: null }),
-      setChatBackdrop: (url) => set({ chatBackdropUrl: url }),
-      pushEvent: (event) => set((state) => ({ eventQueue: [...state.eventQueue, event] })),
-      drainEvents: () => {
-        const events = get().eventQueue;
-        set({ eventQueue: [] });
-        return events;
-      },
+      // Manager IA — see src/store/slices/manager.ts
+      ...createManagerSlice(set, get, store),
 
       // Player
       isPlayerOpen: false,
@@ -944,47 +927,8 @@ export const useStore = create<VideoClubState>()(
         }
       },
 
-      // Tutorial
-      tutorialStep: null,
-      hasCompletedTutorial: false,
-      tutorialCameraTarget: null,
-      showPostTutorialAuth: false,
-      showInstallPrompt: false,
-      setShowInstallPrompt: (show: boolean) => set({ showInstallPrompt: show }),
-      dismissInstallPrompt: () => set({ showInstallPrompt: false }),
-      startTutorial: () => {
-        set({
-          tutorialStep: 0,
-          tutorialCameraTarget: TUTORIAL_WAYPOINTS[0],
-          pointerLockRequested: 'unlock',
-        });
-      },
-      nextTutorialStep: () => {
-        const current = get().tutorialStep;
-        if (current === null) return;
-        const next = current + 1;
-        if (next >= TUTORIAL_WAYPOINTS.length) {
-          // Teleport back to entrance
-          set({
-            tutorialStep: null,
-            tutorialCameraTarget: TUTORIAL_WAYPOINTS[0],
-            hasCompletedTutorial: true,
-          });
-        } else {
-          set({ tutorialStep: next, tutorialCameraTarget: TUTORIAL_WAYPOINTS[next] });
-        }
-      },
-      skipTutorial: () => {
-        // Teleport back to entrance
-        set({
-          tutorialStep: null,
-          tutorialCameraTarget: TUTORIAL_WAYPOINTS[0],
-          hasCompletedTutorial: true,
-        });
-      },
-      dismissPostTutorialAuth: () => {
-        set({ showPostTutorialAuth: false, tutorialCameraTarget: null });
-      },
+      // Tutorial — see src/store/slices/tutorial.ts
+      ...createTutorialSlice(set, get, store),
 
       // Board (sticky notes)
       boardOverlayMode: null,
