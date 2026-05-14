@@ -43,6 +43,18 @@ function apiRentalToRental(apiRental: ApiRentalWithFilm): Rental {
 }
 
 
+// Mutually-exclusive interaction modes. Only one can be active at a time;
+// setInteractionMode(mode) enforces this in the store, replacing the 6
+// hand-rolled mutex setters that drifted over time.
+export type InteractionMode =
+  | 'none'             // free FPS, no overlay active
+  | 'sitting'          // sat on the couch (TV seated menu active)
+  | 'minitel'          // minitel screen / overlay open
+  | 'tvStanding'       // standing TV menu (rarely entered — TV click teleports to couch since 42180ed)
+  | 'lazoneStanding'   // standing in front of La Zone CRT, menu open
+  | 'lazoneWatching'   // watching La Zone fullscreen
+  | 'film'             // VHS case overlay open (selectedFilmId !== null)
+
 interface VideoClubState {
   // Auth
   isAuthenticated: boolean;
@@ -170,7 +182,15 @@ interface VideoClubState {
   vhsFlipCount: number;
   requestVHSFlip: () => void;
 
-  // Sitting on couch
+  // Interaction mode — single source of truth for the mutex between the
+  // major overlays. The 5 isXxx booleans below are kept in the store as
+  // derived views (auto-synced by setInteractionMode) so the ~50 read sites
+  // in the codebase can keep their atomic selectors unchanged. New code
+  // SHOULD read s.interactionMode directly. New modes go in this enum first.
+  interactionMode: InteractionMode;
+  setInteractionMode: (mode: InteractionMode) => void;
+
+  // Sitting on couch (derived from interactionMode === 'sitting')
   isSitting: boolean;
   setSitting: (sitting: boolean) => void;
 
@@ -573,19 +593,20 @@ export const useStore = create<VideoClubState>()(
       setAisle: (aisle) => set({ currentAisle: aisle }),
       selectFilm: (filmId) => {
         if (filmId !== null) {
+          // Switch to 'film' mode first (clears other overlay flags via the
+          // single mutex setter), then set the actual filmId.
+          get().setInteractionMode('film');
           set({
             selectedFilmId: filmId,
             targetedFilmId: null,
             targetedCassetteKey: null,
-            isSitting: false,
-            isInteractingWithMinitel: false,
-            isInteractingWithTV: false,
-            isInteractingWithLaZone: false,
-            isWatchingLaZone: false,
           });
           const allFilms = Object.values(get().films).flat();
           const film = allFilms.find(f => f.id === filmId) || get().deskFilms.find(f => f.id === filmId);
           if (film) fetchVHSCoverData(film).catch(() => {});
+        } else if (get().interactionMode === 'film') {
+          // Leaving film mode — setInteractionMode clears selectedFilmId.
+          get().setInteractionMode('none');
         } else {
           set({ selectedFilmId: null, targetedFilmId: null, targetedCassetteKey: null });
         }
@@ -764,20 +785,34 @@ export const useStore = create<VideoClubState>()(
       vhsFlipCount: 0,
       requestVHSFlip: () => set((state) => ({ vhsFlipCount: state.vhsFlipCount + 1 })),
 
-      // Sitting on couch
+      // === Interaction mode (single mutex setter) ===
+      // Every transition into one of the 6 mutually-exclusive overlay modes
+      // funnels through here. The 5 isXxx booleans are kept in the state
+      // tree as derived mirrors so existing atomic selectors keep working.
+      // selectedFilmId is also cleared when leaving 'film' mode.
+      interactionMode: 'none',
+      setInteractionMode: (mode) => {
+        const prev = get().interactionMode;
+        if (prev === mode) return;
+        set({
+          interactionMode: mode,
+          isSitting:                mode === 'sitting',
+          isInteractingWithMinitel: mode === 'minitel',
+          isInteractingWithTV:      mode === 'tvStanding',
+          isInteractingWithLaZone:  mode === 'lazoneStanding',
+          isWatchingLaZone:         mode === 'lazoneWatching',
+          // Leaving film mode also clears the selected film id.
+          ...(prev === 'film' && mode !== 'film' ? { selectedFilmId: null, targetedFilmId: null, targetedCassetteKey: null } : {}),
+        });
+      },
+
+      // Sitting on couch (derived view of interactionMode)
       isSitting: false,
       setSitting: (sitting) => {
         if (sitting) {
-          set({
-            isSitting: true,
-            selectedFilmId: null,
-            isInteractingWithMinitel: false,
-            isInteractingWithTV: false,
-            isInteractingWithLaZone: false,
-            isWatchingLaZone: false,
-          });
-        } else {
-          set({ isSitting: false });
+          get().setInteractionMode('sitting');
+        } else if (get().interactionMode === 'sitting') {
+          get().setInteractionMode('none');
         }
       },
 
@@ -785,26 +820,19 @@ export const useStore = create<VideoClubState>()(
       isZoomedOnTV: false,
       setZoomedOnTV: (val) => set({ isZoomedOnTV: val }),
 
-      // Minitel
+      // Minitel (derived view of interactionMode === 'minitel')
       isInteractingWithMinitel: false,
       setInteractingWithMinitel: (val) => {
         if (val) {
-          set({
-            isInteractingWithMinitel: true,
-            selectedFilmId: null,
-            isSitting: false,
-            isInteractingWithTV: false,
-            isInteractingWithLaZone: false,
-            isWatchingLaZone: false,
-          });
-        } else {
+          get().setInteractionMode('minitel');
+        } else if (get().interactionMode === 'minitel') {
+          get().setInteractionMode('none');
           // UX 45: re-open minitel doit repartir du sommaire (idle).
           // NB: ne PAS reset highlightedCassetteKey ici — ILLUMINER LA K7
           // ferme le minitel volontairement pour laisser la K7 illuminée
           // dans le rayon. Le highlight est nettoyé ailleurs (au prochain
           // ILLUMINER, sélection cassette, etc.).
           set({
-            isInteractingWithMinitel: false,
             minitelMode: 'idle',
             minitelQuery: '',
             minitelSelectedAisle: null,
@@ -841,20 +869,13 @@ export const useStore = create<VideoClubState>()(
       minitelRequestedIds: new Set<number>(),
       setMinitelRequestedIds: (ids) => set({ minitelRequestedIds: ids }),
 
-      // Standing TV interaction
+      // Standing TV interaction (derived view of interactionMode === 'tvStanding')
       isInteractingWithTV: false,
       setInteractingWithTV: (val) => {
         if (val) {
-          set({
-            isInteractingWithTV: true,
-            selectedFilmId: null,
-            isSitting: false,
-            isInteractingWithMinitel: false,
-            isInteractingWithLaZone: false,
-            isWatchingLaZone: false,
-          });
-        } else {
-          set({ isInteractingWithTV: false });
+          get().setInteractionMode('tvStanding');
+        } else if (get().interactionMode === 'tvStanding') {
+          get().setInteractionMode('none');
         }
       },
 
@@ -863,35 +884,21 @@ export const useStore = create<VideoClubState>()(
       dispatchTVMenu: (action) => set({ tvMenuAction: action }),
       clearTVMenuAction: () => set({ tvMenuAction: null }),
 
-      // LaZone CRT interaction
+      // LaZone CRT interaction (derived views of interactionMode)
       isInteractingWithLaZone: false,
       setInteractingWithLaZone: (val) => {
         if (val) {
-          set({
-            isInteractingWithLaZone: true,
-            selectedFilmId: null,
-            isSitting: false,
-            isInteractingWithMinitel: false,
-            isInteractingWithTV: false,
-            isWatchingLaZone: false,
-          });
-        } else {
-          set({ isInteractingWithLaZone: false });
+          get().setInteractionMode('lazoneStanding');
+        } else if (get().interactionMode === 'lazoneStanding') {
+          get().setInteractionMode('none');
         }
       },
       isWatchingLaZone: false,
       setWatchingLaZone: (val) => {
         if (val) {
-          set({
-            isWatchingLaZone: true,
-            selectedFilmId: null,
-            isSitting: false,
-            isInteractingWithMinitel: false,
-            isInteractingWithTV: false,
-            isInteractingWithLaZone: false,
-          });
-        } else {
-          set({ isWatchingLaZone: false });
+          get().setInteractionMode('lazoneWatching');
+        } else if (get().interactionMode === 'lazoneWatching') {
+          get().setInteractionMode('none');
         }
       },
       laZoneMenuAction: null,
