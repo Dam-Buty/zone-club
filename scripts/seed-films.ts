@@ -149,7 +149,7 @@ async function main() {
     const updateAisle = db.prepare(`UPDATE films SET aisle = ?, is_nouveaute = ? WHERE tmdb_id = ?`);
 
     let added = 0;
-    let skipped = 0;
+    const skipped = 0;
     let updated = 0;
     let errors = 0;
 

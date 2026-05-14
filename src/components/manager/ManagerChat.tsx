@@ -87,7 +87,7 @@ export function ManagerChat() {
     processedToolCalls.current.clear();
     try {
       await fetch('/api/chat/close', { method: 'POST', credentials: 'include' });
-    } catch {}
+    } catch { /* close is best-effort */ }
   }, [hideManager, requestPointerLock]);
 
   // Escape to close

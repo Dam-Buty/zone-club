@@ -225,7 +225,7 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
           for (const s of statuses) map.set(s.id, s);
           setTranscodeStatuses(map);
         }
-      } catch {}
+      } catch { /* transcode status fetch is best-effort */ }
     };
 
     poll();

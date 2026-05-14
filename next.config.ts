@@ -8,8 +8,10 @@ const nextConfig: NextConfig = {
     '/**': ['./lib/schema.sql'],
   },
   eslint: {
-    // Pre-existing lint issues from Vite migration — fix incrementally
-    ignoreDuringBuilds: true,
+    // CI gate — `next build` will fail on ESLint errors. Warnings are
+    // surfaced but do not block. The current config (eslint.config.js) has
+    // bug-class rules at `error`, stylistic ones at `warn`.
+    ignoreDuringBuilds: false,
   },
   // Security + cache headers
   async headers() {

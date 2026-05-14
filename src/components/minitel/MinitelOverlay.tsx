@@ -6,33 +6,9 @@ import { searchFilms } from '../../utils/minitelSearch'
 import { tmdb } from '../../services/tmdb'
 import api from '../../api'
 import { AuthModal } from '../auth/AuthModal'
-import type { AisleType, Film } from '../../types'
-
-// Must stay in sync with PAGE_SIZE in MinitelScreen.tsx.
-const PAGE_SIZE = 7
-// RECHERCHE has extra vertical chrome above the list (TITRE input + label)
-// so it fits one fewer row than the generic paginated screens.
-const RECHERCHE_PAGE_SIZE = 6
-
-const AISLES_ORDER: AisleType[] = [
-  'action', 'aventure', 'bizarre', 'classiques', 'comedie',
-  'drame', 'horreur', 'policier', 'romance', 'sf',
-  'thriller', 'animation', 'nouveautes',
-] as AisleType[]
-
-function useIsMobile() {
-  const [isMobile, setIsMobile] = useState(() => {
-    if (typeof window === 'undefined') return false
-    return window.matchMedia?.('(pointer: coarse)')?.matches ?? false
-  })
-  useEffect(() => {
-    const mq = window.matchMedia('(pointer: coarse)')
-    const onChange = (e: MediaQueryListEvent) => setIsMobile(e.matches)
-    mq.addEventListener('change', onChange)
-    return () => mq.removeEventListener('change', onChange)
-  }, [])
-  return isMobile
-}
+import { useIsMobile } from '../../hooks/useIsMobile'
+import { PAGE_SIZE, RECHERCHE_PAGE_SIZE, AISLES_ORDER } from './shared'
+import type { Film } from '../../types'
 
 export function MinitelOverlay() {
   const isInteractingWithMinitel = useStore((s) => s.isInteractingWithMinitel)

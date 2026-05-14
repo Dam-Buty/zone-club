@@ -1038,7 +1038,7 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
             let stableIters = 0
             let lastCount = getPipeCount()
             const warmupLoop = () => {
-              try { runWarmup() } catch {}
+              try { runWarmup() } catch { /* shader warmup may throw on partial setup */ }
               const cur = getPipeCount()
               if (cur === lastCount) {
                 stableIters++

@@ -1489,7 +1489,7 @@ function drawFrontFullBleed(
   }
 
   // --- Top zone (below notch) ---
-  let topY = NOTCH_BOTTOM + 4;
+  const topY = NOTCH_BOTTOM + 4;
 
   enableTextShadow(tc);
 

@@ -1,11 +1,5 @@
 import { useEffect, useState, useCallback, useRef, lazy, Suspense } from 'react';
 import { useStore } from './store';
-import { VHSCaseOverlay } from './components/videoclub/VHSCaseOverlay';
-import { AuthModal } from './components/auth/AuthModal';
-import { ManagerChat } from './components/manager/ManagerChat';
-import BoardOverlay from './components/board/BoardOverlay';
-import { VHSPlayer } from './components/player/VHSPlayer';
-import { MinitelOverlay } from './components/minitel/MinitelOverlay';
 import { preloadPosterImage } from './utils/CassetteTextureArray';
 import './utils/asset-preload'; // Side-effect import: kicks off HDR/KTX2/wasm prefetch into HTTP cache
 import api, { apiFilmToFilm } from './api';
@@ -26,6 +20,16 @@ declare global {
 const ExteriorView = lazy(() => import('./components/exterior/ExteriorView').then(m => ({ default: m.ExteriorView })));
 const _interiorImport = import('./components/interior/InteriorScene');
 const InteriorScene = lazy(() => _interiorImport.then(m => ({ default: m.InteriorScene })));
+
+// Heavy overlays — none render on the initial entry screen, so we keep them
+// out of the entry chunk. Suspense fallback is null because every overlay
+// already renders null when its own open-state is false.
+const VHSCaseOverlay = lazy(() => import('./components/videoclub/VHSCaseOverlay').then(m => ({ default: m.VHSCaseOverlay })));
+const AuthModal = lazy(() => import('./components/auth/AuthModal').then(m => ({ default: m.AuthModal })));
+const ManagerChat = lazy(() => import('./components/manager/ManagerChat').then(m => ({ default: m.ManagerChat })));
+const BoardOverlay = lazy(() => import('./components/board/BoardOverlay'));
+const VHSPlayer = lazy(() => import('./components/player/VHSPlayer').then(m => ({ default: m.VHSPlayer })));
+const MinitelOverlay = lazy(() => import('./components/minitel/MinitelOverlay').then(m => ({ default: m.MinitelOverlay })));
 
 // Eagerly preload heavy interior assets (HDR, PBR textures, GLBs) while user is on exterior/onboarding.
 // These fire HTTP requests immediately — by the time the user enters, assets are in browser cache.
@@ -327,10 +331,10 @@ function Reticule() {
 }
 
 function App() {
-  // WebGPU support check
-  if (!navigator.gpu) {
-    return <WebGPUNotSupported />;
-  }
+  // WebGPU support flag — captured once at first render. We do the early
+  // return AFTER all hooks (rules-of-hooks) so hook order is identical
+  // regardless of WebGPU support. `navigator.gpu` is stable for a session.
+  const [webgpuSupported] = useState(() => typeof navigator !== 'undefined' && !!navigator.gpu);
 
   // Individual selectors to avoid re-rendering on unrelated store changes (e.g. targetedFilm, pointerLock)
   const currentScene = useStore(state => state.currentScene);
@@ -500,6 +504,12 @@ function App() {
     }, 100);
   }, [setScene]);
 
+  // WebGPU support gate — runs AFTER all hooks so hook order stays stable
+  // regardless of whether the browser supports WebGPU.
+  if (!webgpuSupported) {
+    return <WebGPUNotSupported />;
+  }
+
   // Exterior view
   if (currentScene === 'exterior') {
     return (
@@ -566,37 +576,42 @@ function App() {
         </>
       )}
 
-      {/* VHS Case 3D overlay (bottom bar with rental/trailer/close buttons) */}
-      <VHSCaseOverlay
-        film={selectedFilm}
-        isOpen={selectedFilmId !== null}
-        onClose={handleCloseModal}
-      />
+      {/* Heavy overlays grouped under a single Suspense — each is lazy-loaded
+          and renders null when its open-state is false, so the fallback is
+          never visible to the user. Keeps the entry chunk small. */}
+      <Suspense fallback={null}>
+        {/* VHS Case 3D overlay (bottom bar with rental/trailer/close buttons) */}
+        <VHSCaseOverlay
+          film={selectedFilm}
+          isOpen={selectedFilmId !== null}
+          onClose={handleCloseModal}
+        />
 
-      {/* VHS Player — overlays on top of scene (scene stays mounted to preserve WebGPU state) */}
-      {isPlayerOpen && <VHSPlayer />}
+        {/* VHS Player — overlays on top of scene (scene stays mounted to preserve WebGPU state) */}
+        {isPlayerOpen && <VHSPlayer />}
 
-      {/* Minitel HTML overlay — input + buttons (3D screen rendered via CanvasTexture in MinitelDisplay) */}
-      <MinitelOverlay />
+        {/* Minitel HTML overlay — input + buttons (3D screen rendered via CanvasTexture in MinitelDisplay) */}
+        <MinitelOverlay />
 
-      {/* Manager Chat */}
-      <ManagerChat />
+        {/* Manager Chat */}
+        <ManagerChat />
 
-      {/* Board overlay (sticky notes) */}
-      <BoardOverlay />
+        {/* Board overlay (sticky notes) */}
+        <BoardOverlay />
 
-      {/* Post-tutorial registration modal */}
-      <AuthModal
-        isOpen={showPostTutorialAuth}
-        onClose={() => {
-          dismissPostTutorialAuth();
-          // After onboarding + registration, suggest installing the app
-          if (window.__pwaPrompt) {
-            setTimeout(() => setShowInstallPrompt(true), 1000);
-          }
-        }}
-        initialMode="register"
-      />
+        {/* Post-tutorial registration modal */}
+        <AuthModal
+          isOpen={showPostTutorialAuth}
+          onClose={() => {
+            dismissPostTutorialAuth();
+            // After onboarding + registration, suggest installing the app
+            if (window.__pwaPrompt) {
+              setTimeout(() => setShowInstallPrompt(true), 1000);
+            }
+          }}
+          initialMode="register"
+        />
+      </Suspense>
 
       {/* PWA install toast — shown after onboarding completion */}
       {showInstallPrompt && (

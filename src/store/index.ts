@@ -4,19 +4,13 @@ import type { Film, Rental, AisleType, SceneType, MemberLevel, AuthUser, LocalUs
 import api, { apiFilmToFilm, type ApiRentalWithFilm, type ApiFilm, type ReviewWithUser, type ApiReturnRequest, type WeeklyBonusStatus, type ApiBoardNote, type BoardCapacity } from '../api';
 import { preloadPosterImage } from '../utils/CassetteTextureArray';
 import { fetchVHSCoverData } from '../utils/VHSCoverGenerator';
+import { createManagerSlice } from './slices/manager';
+import { createTutorialSlice, TUTORIAL_WAYPOINTS } from './slices/tutorial';
 
-// Tutorial waypoints — camera positions for the guided tour (7 steps)
-// Camera lookAt shifted opposite to Rick's portrait side so scene content is visible
-// Rick left → camera looks slightly right (+X offset), Rick right → slightly left (-X offset)
-export const TUTORIAL_WAYPOINTS: { position: [number, number, number]; lookAt: [number, number, number] }[] = [
-  { position: [-3.0, 1.52, 3.0],  lookAt: [0, 1.52, 0] },              // 0: BIENVENUE — centered, no offset
-  { position: [-2.25, 1.52, -2.5], lookAt: [-1.85, 1.52, -4.15] },     // 1: ALLEES — lookAt +0.4 X (Rick left)
-  { position: [-2.0, 1.52, -3.0], lookAt: [-1.6, 1.2, -4.5] },         // 2: K7 — inside aisle, closer to shelves
-  { position: [-2.0, 1.52, -3.0], lookAt: [-1.6, 1.2, -4.5] },         // 3: ECONOMIE — same position
-  { position: [1.5, 1.52, 2.0],   lookAt: [2.4, 1.2, 3.0] },           // 4: COMPTOIR — lookAt +0.4 X (Rick left)
-  { position: [3.2, 1.52, 3.2],   lookAt: [3.8, 2.05, 3.95] },         // 5: LAZONE — lookAt -0.4 X (Rick right)
-  { position: [2.4, 1.52, 1.2],   lookAt: [3.7, 0.75, 1.2] },          // 6: CANAPE — lookAt shifted 20% left
-];
+// Re-export the tutorial waypoints constant — moved to the tutorial slice
+// but still imported from this module by ~15 consumers (TutorialOverlay,
+// Controls.tsx, etc.).
+export { TUTORIAL_WAYPOINTS };
 
 function calculateLevel(totalRentals: number): MemberLevel {
   if (totalRentals >= 50) return 'platine';
@@ -43,7 +37,19 @@ function apiRentalToRental(apiRental: ApiRentalWithFilm): Rental {
 }
 
 
-interface VideoClubState {
+// Mutually-exclusive interaction modes. Only one can be active at a time;
+// setInteractionMode(mode) enforces this in the store, replacing the 6
+// hand-rolled mutex setters that drifted over time.
+export type InteractionMode =
+  | 'none'             // free FPS, no overlay active
+  | 'sitting'          // sat on the couch (TV seated menu active)
+  | 'minitel'          // minitel screen / overlay open
+  | 'tvStanding'       // standing TV menu (rarely entered — TV click teleports to couch since 42180ed)
+  | 'lazoneStanding'   // standing in front of La Zone CRT, menu open
+  | 'lazoneWatching'   // watching La Zone fullscreen
+  | 'film'             // VHS case overlay open (selectedFilmId !== null)
+
+export interface VideoClubState {
   // Auth
   isAuthenticated: boolean;
   authUser: AuthUser | null;
@@ -170,7 +176,15 @@ interface VideoClubState {
   vhsFlipCount: number;
   requestVHSFlip: () => void;
 
-  // Sitting on couch
+  // Interaction mode — single source of truth for the mutex between the
+  // major overlays. The 5 isXxx booleans below are kept in the store as
+  // derived views (auto-synced by setInteractionMode) so the ~50 read sites
+  // in the codebase can keep their atomic selectors unchanged. New code
+  // SHOULD read s.interactionMode directly. New modes go in this enum first.
+  interactionMode: InteractionMode;
+  setInteractionMode: (mode: InteractionMode) => void;
+
+  // Sitting on couch (derived from interactionMode === 'sitting')
   isSitting: boolean;
   setSitting: (sitting: boolean) => void;
 
@@ -295,7 +309,7 @@ interface VideoClubState {
 
 export const useStore = create<VideoClubState>()(
   persist(
-    (set, get) => ({
+    (set, get, store) => ({
       // Auth
       isAuthenticated: false,
       authUser: null,
@@ -573,19 +587,20 @@ export const useStore = create<VideoClubState>()(
       setAisle: (aisle) => set({ currentAisle: aisle }),
       selectFilm: (filmId) => {
         if (filmId !== null) {
+          // Switch to 'film' mode first (clears other overlay flags via the
+          // single mutex setter), then set the actual filmId.
+          get().setInteractionMode('film');
           set({
             selectedFilmId: filmId,
             targetedFilmId: null,
             targetedCassetteKey: null,
-            isSitting: false,
-            isInteractingWithMinitel: false,
-            isInteractingWithTV: false,
-            isInteractingWithLaZone: false,
-            isWatchingLaZone: false,
           });
           const allFilms = Object.values(get().films).flat();
           const film = allFilms.find(f => f.id === filmId) || get().deskFilms.find(f => f.id === filmId);
           if (film) fetchVHSCoverData(film).catch(() => {});
+        } else if (get().interactionMode === 'film') {
+          // Leaving film mode — setInteractionMode clears selectedFilmId.
+          get().setInteractionMode('none');
         } else {
           set({ selectedFilmId: null, targetedFilmId: null, targetedCassetteKey: null });
         }
@@ -667,19 +682,8 @@ export const useStore = create<VideoClubState>()(
       showDeskFilmPicker: false,
       setShowDeskFilmPicker: (show) => set({ showDeskFilmPicker: show }),
 
-      // Manager IA
-      managerVisible: false,
-      chatBackdropUrl: null,
-      eventQueue: [],
-      showManager: () => set({ managerVisible: true }),
-      hideManager: () => set({ managerVisible: false, chatBackdropUrl: null }),
-      setChatBackdrop: (url) => set({ chatBackdropUrl: url }),
-      pushEvent: (event) => set((state) => ({ eventQueue: [...state.eventQueue, event] })),
-      drainEvents: () => {
-        const events = get().eventQueue;
-        set({ eventQueue: [] });
-        return events;
-      },
+      // Manager IA — see src/store/slices/manager.ts
+      ...createManagerSlice(set, get, store),
 
       // Player
       isPlayerOpen: false,
@@ -764,20 +768,34 @@ export const useStore = create<VideoClubState>()(
       vhsFlipCount: 0,
       requestVHSFlip: () => set((state) => ({ vhsFlipCount: state.vhsFlipCount + 1 })),
 
-      // Sitting on couch
+      // === Interaction mode (single mutex setter) ===
+      // Every transition into one of the 6 mutually-exclusive overlay modes
+      // funnels through here. The 5 isXxx booleans are kept in the state
+      // tree as derived mirrors so existing atomic selectors keep working.
+      // selectedFilmId is also cleared when leaving 'film' mode.
+      interactionMode: 'none',
+      setInteractionMode: (mode) => {
+        const prev = get().interactionMode;
+        if (prev === mode) return;
+        set({
+          interactionMode: mode,
+          isSitting:                mode === 'sitting',
+          isInteractingWithMinitel: mode === 'minitel',
+          isInteractingWithTV:      mode === 'tvStanding',
+          isInteractingWithLaZone:  mode === 'lazoneStanding',
+          isWatchingLaZone:         mode === 'lazoneWatching',
+          // Leaving film mode also clears the selected film id.
+          ...(prev === 'film' && mode !== 'film' ? { selectedFilmId: null, targetedFilmId: null, targetedCassetteKey: null } : {}),
+        });
+      },
+
+      // Sitting on couch (derived view of interactionMode)
       isSitting: false,
       setSitting: (sitting) => {
         if (sitting) {
-          set({
-            isSitting: true,
-            selectedFilmId: null,
-            isInteractingWithMinitel: false,
-            isInteractingWithTV: false,
-            isInteractingWithLaZone: false,
-            isWatchingLaZone: false,
-          });
-        } else {
-          set({ isSitting: false });
+          get().setInteractionMode('sitting');
+        } else if (get().interactionMode === 'sitting') {
+          get().setInteractionMode('none');
         }
       },
 
@@ -785,26 +803,19 @@ export const useStore = create<VideoClubState>()(
       isZoomedOnTV: false,
       setZoomedOnTV: (val) => set({ isZoomedOnTV: val }),
 
-      // Minitel
+      // Minitel (derived view of interactionMode === 'minitel')
       isInteractingWithMinitel: false,
       setInteractingWithMinitel: (val) => {
         if (val) {
-          set({
-            isInteractingWithMinitel: true,
-            selectedFilmId: null,
-            isSitting: false,
-            isInteractingWithTV: false,
-            isInteractingWithLaZone: false,
-            isWatchingLaZone: false,
-          });
-        } else {
+          get().setInteractionMode('minitel');
+        } else if (get().interactionMode === 'minitel') {
+          get().setInteractionMode('none');
           // UX 45: re-open minitel doit repartir du sommaire (idle).
           // NB: ne PAS reset highlightedCassetteKey ici — ILLUMINER LA K7
           // ferme le minitel volontairement pour laisser la K7 illuminée
           // dans le rayon. Le highlight est nettoyé ailleurs (au prochain
           // ILLUMINER, sélection cassette, etc.).
           set({
-            isInteractingWithMinitel: false,
             minitelMode: 'idle',
             minitelQuery: '',
             minitelSelectedAisle: null,
@@ -841,20 +852,13 @@ export const useStore = create<VideoClubState>()(
       minitelRequestedIds: new Set<number>(),
       setMinitelRequestedIds: (ids) => set({ minitelRequestedIds: ids }),
 
-      // Standing TV interaction
+      // Standing TV interaction (derived view of interactionMode === 'tvStanding')
       isInteractingWithTV: false,
       setInteractingWithTV: (val) => {
         if (val) {
-          set({
-            isInteractingWithTV: true,
-            selectedFilmId: null,
-            isSitting: false,
-            isInteractingWithMinitel: false,
-            isInteractingWithLaZone: false,
-            isWatchingLaZone: false,
-          });
-        } else {
-          set({ isInteractingWithTV: false });
+          get().setInteractionMode('tvStanding');
+        } else if (get().interactionMode === 'tvStanding') {
+          get().setInteractionMode('none');
         }
       },
 
@@ -863,35 +867,21 @@ export const useStore = create<VideoClubState>()(
       dispatchTVMenu: (action) => set({ tvMenuAction: action }),
       clearTVMenuAction: () => set({ tvMenuAction: null }),
 
-      // LaZone CRT interaction
+      // LaZone CRT interaction (derived views of interactionMode)
       isInteractingWithLaZone: false,
       setInteractingWithLaZone: (val) => {
         if (val) {
-          set({
-            isInteractingWithLaZone: true,
-            selectedFilmId: null,
-            isSitting: false,
-            isInteractingWithMinitel: false,
-            isInteractingWithTV: false,
-            isWatchingLaZone: false,
-          });
-        } else {
-          set({ isInteractingWithLaZone: false });
+          get().setInteractionMode('lazoneStanding');
+        } else if (get().interactionMode === 'lazoneStanding') {
+          get().setInteractionMode('none');
         }
       },
       isWatchingLaZone: false,
       setWatchingLaZone: (val) => {
         if (val) {
-          set({
-            isWatchingLaZone: true,
-            selectedFilmId: null,
-            isSitting: false,
-            isInteractingWithMinitel: false,
-            isInteractingWithTV: false,
-            isInteractingWithLaZone: false,
-          });
-        } else {
-          set({ isWatchingLaZone: false });
+          get().setInteractionMode('lazoneWatching');
+        } else if (get().interactionMode === 'lazoneWatching') {
+          get().setInteractionMode('none');
         }
       },
       laZoneMenuAction: null,
@@ -937,47 +927,8 @@ export const useStore = create<VideoClubState>()(
         }
       },
 
-      // Tutorial
-      tutorialStep: null,
-      hasCompletedTutorial: false,
-      tutorialCameraTarget: null,
-      showPostTutorialAuth: false,
-      showInstallPrompt: false,
-      setShowInstallPrompt: (show: boolean) => set({ showInstallPrompt: show }),
-      dismissInstallPrompt: () => set({ showInstallPrompt: false }),
-      startTutorial: () => {
-        set({
-          tutorialStep: 0,
-          tutorialCameraTarget: TUTORIAL_WAYPOINTS[0],
-          pointerLockRequested: 'unlock',
-        });
-      },
-      nextTutorialStep: () => {
-        const current = get().tutorialStep;
-        if (current === null) return;
-        const next = current + 1;
-        if (next >= TUTORIAL_WAYPOINTS.length) {
-          // Teleport back to entrance
-          set({
-            tutorialStep: null,
-            tutorialCameraTarget: TUTORIAL_WAYPOINTS[0],
-            hasCompletedTutorial: true,
-          });
-        } else {
-          set({ tutorialStep: next, tutorialCameraTarget: TUTORIAL_WAYPOINTS[next] });
-        }
-      },
-      skipTutorial: () => {
-        // Teleport back to entrance
-        set({
-          tutorialStep: null,
-          tutorialCameraTarget: TUTORIAL_WAYPOINTS[0],
-          hasCompletedTutorial: true,
-        });
-      },
-      dismissPostTutorialAuth: () => {
-        set({ showPostTutorialAuth: false, tutorialCameraTarget: null });
-      },
+      // Tutorial — see src/store/slices/tutorial.ts
+      ...createTutorialSlice(set, get, store),
 
       // Board (sticky notes)
       boardOverlayMode: null,

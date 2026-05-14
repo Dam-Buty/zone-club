@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useEffect } from 'react'
 import * as THREE from 'three/webgpu'
-import { CASSETTE_DIMENSIONS } from './Cassette'
+import { CASSETTE_DIMENSIONS } from './cassette-constants'
 
 interface WallShelfProps {
   position: [number, number, number]
