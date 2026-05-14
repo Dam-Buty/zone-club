@@ -128,6 +128,16 @@ function getCastGlobals(): CastGlobals {
   return window as typeof window & CastGlobals;
 }
 
+/**
+ * Force the Google Cast SDK to start loading. Idempotent — subsequent calls
+ * return the same cached promise. Call this from a high-level component
+ * (e.g. App after entering the interior scene) so the SDK is ready before
+ * the user opens the player and clicks Cast.
+ */
+export function preloadCastSdk(): Promise<boolean> {
+  return loadCastSdk();
+}
+
 function normalizeCastState(rawState: string | undefined): CastState {
   if (!rawState) return 'UNKNOWN';
   if (rawState === 'NO_DEVICES_AVAILABLE') return 'NO_DEVICES_AVAILABLE';

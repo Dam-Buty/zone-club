@@ -383,6 +383,14 @@ function App() {
     if (currentScene === 'interior' && loaderMountRef.current === 0) {
       loaderMountRef.current = Date.now();
     }
+    // Pre-load the Google Cast SDK as soon as the user enters the videoclub
+    // so it is ready by the time they open the player. Previously the SDK
+    // only started loading when VHSPlayer mounted (lazy import), which
+    // created a 1-2 s race window where clicking the Cast button silently
+    // hit the !isReady branch. Idempotent + module-level promise.
+    if (currentScene === 'interior') {
+      import('./hooks/useGoogleCast').then(m => m.preloadCastSdk()).catch(() => {});
+    }
   }, [currentScene]);
   useEffect(() => {
     if (isSceneReady) {

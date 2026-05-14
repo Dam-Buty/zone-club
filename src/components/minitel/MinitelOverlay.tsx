@@ -7,6 +7,7 @@ import { tmdb } from '../../services/tmdb'
 import api from '../../api'
 import { AuthModal } from '../auth/AuthModal'
 import { useIsMobile } from '../../hooks/useIsMobile'
+import { useBackGuard } from '../../hooks/useBackGuard'
 import { PAGE_SIZE, RECHERCHE_PAGE_SIZE, AISLES_ORDER } from './shared'
 import type { Film } from '../../types'
 
@@ -38,6 +39,10 @@ export function MinitelOverlay() {
   const setRequestedIds = useStore((s) => s.setMinitelRequestedIds)
   const [showAuthModal, setShowAuthModal] = useState(false)
   const inputRef = useRef<HTMLInputElement | null>(null)
+
+  // Mobile back-gesture: close the minitel instead of leaving the webapp.
+  // Without this, swiping back on Android pops the app out of history.
+  useBackGuard(isInteractingWithMinitel, () => setInteractingWithMinitel(false))
 
   // Auto-focus input on mount + mode change to recherche/commander
   useEffect(() => {
