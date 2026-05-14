@@ -1514,7 +1514,7 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
       setTvMode('idle')
     }
     prevSittingRef.current = isSitting
-  }, [isSitting, tvMode, rentedFilms.length]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isSitting, tvMode, rentedFilms.length])  
 
   // Couleur de l'écran selon le mode — greenish-teal like real Trinitron phosphor
   const screenColor = tvMode === 'playing' ? '#000000' : '#1a2e2b'

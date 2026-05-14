@@ -193,7 +193,7 @@ interface GPUQueue {
     writeBuffer(
         buffer: GPUBuffer,
         bufferOffset: GPUSize64,
-        data: ArrayBufferView<any> | ArrayBuffer, // eslint-disable-line @typescript-eslint/no-explicit-any
+        data: ArrayBufferView<any> | ArrayBuffer,  
         dataOffset?: GPUSize64,
         size?: GPUSize64,
     ): undefined;

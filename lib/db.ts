@@ -60,7 +60,7 @@ const transcodeMigrations = [
 for (const sql of transcodeMigrations) {
   try {
     db.exec(sql);
-  } catch {}
+  } catch { /* idempotent: column/index already exists */ }
 }
 
 // Migrate: gamification system (watch tracking, extension, rewind, weekly bonus)
@@ -77,7 +77,7 @@ const gamificationMigrations = [
 for (const sql of gamificationMigrations) {
   try {
     db.exec(sql);
-  } catch {}
+  } catch { /* idempotent: column/index already exists */ }
 }
 
 // Weekly bonuses table (safe with IF NOT EXISTS)
@@ -95,12 +95,12 @@ try {
   db.exec(
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_weekly_bonuses_user_week ON weekly_bonuses(user_id, week_number)",
   );
-} catch {}
+} catch { /* idempotent: column/index already exists */ }
 
 // Migrate: cinema stream duration cache
 try {
   db.exec("ALTER TABLE films ADD COLUMN duration_sec REAL DEFAULT NULL");
-} catch {}
+} catch { /* idempotent: column/index already exists */ }
 
 // Migrate: multi-copy rental system (stock, returned_early, return_requests)
 const multiCopyMigrations = [
@@ -111,7 +111,7 @@ const multiCopyMigrations = [
 for (const sql of multiCopyMigrations) {
   try {
     db.exec(sql);
-  } catch {}
+  } catch { /* idempotent: column/index already exists */ }
 }
 
 // Set stock based on aisle (only on first migration)
@@ -127,7 +127,7 @@ try {
     );
     db.exec("UPDATE films SET stock = 1 WHERE aisle = 'bizarre' AND stock = 2");
   }
-} catch {}
+} catch { /* idempotent: column/index already exists */ }
 
 // Return requests table
 try {
@@ -151,17 +151,17 @@ try {
   db.exec(
     "CREATE INDEX IF NOT EXISTS idx_return_requests_film ON return_requests(film_id)",
   );
-} catch {}
+} catch { /* idempotent: column/index already exists */ }
 
 // Migrate: watch_position for resume playback
 try {
   db.exec("ALTER TABLE rentals ADD COLUMN watch_position REAL DEFAULT 0");
-} catch {}
+} catch { /* idempotent: column/index already exists */ }
 
 // Drop obsolete chat_sessions table
 try {
   db.exec("DROP TABLE IF EXISTS chat_sessions");
-} catch {}
+} catch { /* idempotent: column/index already exists */ }
 
 // User facts table (safe with IF NOT EXISTS in schema.sql, but migration for existing DBs)
 try {
@@ -177,7 +177,7 @@ try {
   db.exec(
     "CREATE INDEX IF NOT EXISTS idx_user_facts_user ON user_facts(user_id)",
   );
-} catch {}
+} catch { /* idempotent: column/index already exists */ }
 
 // Board notes table (safe with IF NOT EXISTS in schema.sql, but migration for existing DBs)
 try {
@@ -197,7 +197,7 @@ try {
   db.exec(
     "CREATE INDEX IF NOT EXISTS idx_board_notes_user ON board_notes(user_id)",
   );
-} catch {}
+} catch { /* idempotent: column/index already exists */ }
 
 // Cast sessions table (Chromecast tracking)
 try {
@@ -220,7 +220,7 @@ try {
   db.exec(
     "CREATE INDEX IF NOT EXISTS idx_cast_sessions_user ON cast_sessions(user_id)",
   );
-} catch {}
+} catch { /* idempotent: column/index already exists */ }
 
 // Push subscriptions table (Web Push notifications)
 try {
@@ -238,6 +238,6 @@ try {
   db.exec(
     "CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user ON push_subscriptions(user_id)",
   );
-} catch {}
+} catch { /* idempotent: column/index already exists */ }
 
 export default db;

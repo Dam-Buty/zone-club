@@ -331,10 +331,10 @@ function Reticule() {
 }
 
 function App() {
-  // WebGPU support check
-  if (!navigator.gpu) {
-    return <WebGPUNotSupported />;
-  }
+  // WebGPU support flag — captured once at first render. We do the early
+  // return AFTER all hooks (rules-of-hooks) so hook order is identical
+  // regardless of WebGPU support. `navigator.gpu` is stable for a session.
+  const [webgpuSupported] = useState(() => typeof navigator !== 'undefined' && !!navigator.gpu);
 
   // Individual selectors to avoid re-rendering on unrelated store changes (e.g. targetedFilm, pointerLock)
   const currentScene = useStore(state => state.currentScene);
@@ -503,6 +503,12 @@ function App() {
       setIsTransitioning(false);
     }, 100);
   }, [setScene]);
+
+  // WebGPU support gate — runs AFTER all hooks so hook order stays stable
+  // regardless of whether the browser supports WebGPU.
+  if (!webgpuSupported) {
+    return <WebGPUNotSupported />;
+  }
 
   // Exterior view
   if (currentScene === 'exterior') {

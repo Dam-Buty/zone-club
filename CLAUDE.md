@@ -38,39 +38,49 @@ docker compose up -d # Production (5 services)
 ```
 app/
 ├── page.tsx                 # Dynamic import de src/App (ssr: false)
-├── layout.tsx               # Root layout
-├── api/                     # API routes (Next.js App Router)
-│   ├── auth/                # login, logout, register, recover
-│   ├── films/               # list, [tmdbId], genre/[slug]
-│   │   └── aisle/[aisle]/   # GET films par allee
-│   ├── rentals/[filmId]/    # GET|POST|DELETE
-│   ├── reviews/[filmId]/    # GET|POST|DELETE
-│   ├── requests/            # GET|POST|DELETE
-│   ├── genres/              # GET
-│   ├── me/                  # GET (current user)
-│   └── admin/
-│       ├── films/           # POST (ajouter film), GET (liste admin)
-│       │   └── [filmId]/
-│       │       ├── aisle/       # PATCH (assigner allee)
-│       │       ├── availability/# PATCH (toggle dispo)
-│       │       └── download/    # POST (lancer Radarr VO+VF)
-│       ├── requests/        # GET|PATCH (gestion demandes)
-│       └── stats/           # GET
-lib/
-├── db.ts                    # SQLite (better-sqlite3)
-├── auth.ts                  # Auth helpers
+├── layout.tsx               # Root layout (VT323 font preconnect, asset preloads)
+├── api/                     # 39 routes (Next.js App Router) — voir table complete plus bas
+│   ├── auth/                # login, logout, register, recover (POST)
+│   ├── films/               # GET endpoints: list, [tmdbId], aisle/[a], genre/[s], desk-display
+│   ├── genres/              # GET liste genres
+│   ├── me/                  # GET user + notifications + weekly-bonus (GET/POST)
+│   ├── rentals/[filmId]/    # POST rent + sous-routes (extend, return, progress, rewind, etc.)
+│   ├── reviews/[filmId]/    # GET / POST / PUT
+│   ├── requests/            # GET / POST (commandes de films)
+│   ├── board/               # GET/POST notes + DELETE [noteId] (sticky board)
+│   ├── cast-sessions/       # POST/PATCH/DELETE — Chromecast session tracking
+│   ├── chat/                # POST + chat/close (LLM manager)
+│   ├── poster/[...path]/    # GET — proxy TMDB images (disk cache)
+│   ├── push-subscribe/      # POST — web push subscription
+│   ├── test/forced-video/   # GET — forced-rental video stream (dev only)
+│   └── admin/               # 8 routes admin (is_admin gate)
+│       ├── films/           # POST add + [filmId]/{aisle,availability,download} + status
+│       ├── requests/        # GET liste + PATCH [id] (approve/reject)
+│       └── stats/           # GET (users, films, rentals, requests)
+lib/                          # Backend logic, ~23 modules
+├── db.ts                    # SQLite (better-sqlite3) + migrations au boot
+├── schema.sql               # DB schema
+├── auth.ts                  # Auth helpers (cookie + api-key)
 ├── session.ts               # Cookie session management
+├── rate-limit.ts            # Per-IP rate limit (login, register, recover)
+├── passphrase.ts            # Password / passphrase hashing
 ├── films.ts                 # Film catalog CRUD
-├── rentals.ts               # Rental logic
+├── rentals.ts               # Rental rent/return/extend logic + symlinks
 ├── reviews.ts               # Reviews CRUD
-├── requests.ts              # Film requests
+├── requests.ts              # Film commandes
+├── board.ts                 # Sticky board notes
+├── bonus.ts                 # Weekly bonus credits
+├── user-facts.ts            # Manager chat user-fact memory
 ├── radarr.ts                # Radarr API client (dual VO/VF)
-├── radarr-poller.ts         # Background Radarr sync
-├── tmdb.ts                  # TMDB API client
-├── cleanup.ts               # Cleanup scheduler
+├── radarr-poller.ts         # Background Radarr sync (instrumentation)
+├── transcoder.ts            # FFmpeg transcode queue (VO/VF)
+├── tmdb.ts                  # TMDB API client (server-side)
+├── chat.ts + chat-tools.ts  # LLM manager backend
+├── cast-sessions.ts         # Cast session DB persistence
+├── cast-session-checker.ts  # Background cast session monitor
+├── cleanup.ts               # Cleanup scheduler (expired rentals)
 ├── symlinks.ts              # Media symlink management
-├── passphrase.ts            # Password hashing
-└── schema.sql               # DB schema
+└── push.ts                  # Web Push notifications
 src/
 ├── App.tsx                  # Main React app (Canvas + UI)
 ├── api/index.ts             # Frontend API client
@@ -114,6 +124,52 @@ scripts/
 | Methode | Route | Description |
 |---|---|---|
 | `GET` | `/api/films/aisle/[aisle]` | Films par allee (action, horreur, sf, comedie, classiques, bizarre, nouveautes) |
+
+### Toutes les routes (source: `app/api/**/route.ts`)
+
+| Methode(s) | Route | Auth | Description |
+|---|---|---|---|
+| `POST` | `/api/auth/login` | publique | Login user/passphrase |
+| `POST` | `/api/auth/logout` | session | Logout |
+| `POST` | `/api/auth/register` | publique | Inscription |
+| `POST` | `/api/auth/recover` | publique | Recovery via phrase |
+| `GET` | `/api/me` | session | Profil utilisateur |
+| `GET` | `/api/me/notifications` | session | Notifications retour |
+| `GET / POST` | `/api/me/weekly-bonus` | session | Status + claim bonus hebdo |
+| `GET` | `/api/films` | publique | Liste films |
+| `GET` | `/api/films/[tmdbId]` | mixte | Detail film + rental status |
+| `GET` | `/api/films/aisle/[aisle]` | publique | Films par allee |
+| `GET` | `/api/films/genre/[slug]` | publique | Films par genre |
+| `GET` | `/api/films/desk-display` | publique | 3 derniers retours (deskFilms) |
+| `GET` | `/api/genres` | publique | Liste genres |
+| `POST` | `/api/rentals/[filmId]` | session | Louer un film |
+| `GET` | `/api/rentals/[filmId]/download` | session | Stream / range source du film |
+| `PATCH` | `/api/rentals/[filmId]/extend` | session | Prolonger location |
+| `PATCH` | `/api/rentals/[filmId]/progress` | session | Maj watch position |
+| `POST` | `/api/rentals/[filmId]/return` | session | Retourner (early-return credit) |
+| `POST` | `/api/rentals/[filmId]/request-return` | session | Demander retour anticipe |
+| `POST` | `/api/rentals/[filmId]/rewind` | session | Rewind reward credit |
+| `PATCH` | `/api/rentals/[filmId]/viewing-mode` | session | Mode 'sur_place' (cast/local) |
+| `GET / POST / PUT` | `/api/reviews/[filmId]` | mixte | Reviews CRUD |
+| `GET / POST` | `/api/requests` | session | Commandes de films |
+| `GET / POST` | `/api/board` | publique | Sticky notes (lecture publique) |
+| `DELETE` | `/api/board/[noteId]` | session | Supprimer note |
+| `POST / PATCH / DELETE` | `/api/cast-sessions` | session | Chromecast session tracking |
+| `POST` | `/api/chat` | mixte | LLM manager streaming (cookie OR x-api-key) |
+| `POST` | `/api/chat/close` | mixte | Fermer session chat |
+| `GET` | `/api/poster/[...path]` | publique | Proxy TMDB images (disk cache 30j) |
+| `POST` | `/api/push-subscribe` | session | Web Push subscription |
+| `GET` | `/api/test/forced-video` | publique | Stream video forcee (dev/test) |
+| `POST` | `/api/admin/films` | admin | Ajouter film (TMDB id) |
+| `GET` | `/api/admin/films/status` | admin | Statut transcode batch |
+| `PATCH` | `/api/admin/films/[filmId]/aisle` | admin | Assigner allee / nouveaute |
+| `PATCH` | `/api/admin/films/[filmId]/availability` | admin | Toggle dispo |
+| `POST` | `/api/admin/films/[filmId]/download` | admin | Lancer Radarr VO+VF |
+| `GET` | `/api/admin/requests` | admin | Liste commandes en attente |
+| `PATCH` | `/api/admin/requests/[id]` | admin | Approve / reject commande |
+| `GET` | `/api/admin/stats` | admin | Stats globales |
+
+NB : il n'y a **pas** de `DELETE /api/rentals/[filmId]` (utiliser `POST /return`), ni `DELETE /api/reviews/[filmId]` (PUT à la place), ni `DELETE /api/requests` — le doc historique mentionnait ces routes, elles n'existent pas.
 
 ## Catalogue de films
 

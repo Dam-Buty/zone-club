@@ -369,7 +369,7 @@ export function Controls({
       try {
         controlsRef.current.lock();
       } catch (e) {
-        // eslint-disable-next-line no-console
+         
         console.warn('[Controls] pointer lock denied:', (e as Error)?.message)
       }
     }
