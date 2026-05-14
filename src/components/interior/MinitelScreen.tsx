@@ -128,7 +128,9 @@ export interface HitBox {
   xEnd?: number
 }
 
-const PAGE_SIZE = 8
+// 7 fits comfortably above the bezel curve (visible bottom of the CRT mesh
+// is ≈ y=305). 8 was overflowing the pagination strip into the curve.
+const PAGE_SIZE = 7
 const AISLES_ORDER: AisleType[] = [
   'action', 'aventure', 'bizarre', 'classiques', 'comedie',
   'drame', 'horreur', 'policier', 'romance', 'sf',
@@ -213,12 +215,13 @@ function drawBackButton(
   hitboxes: HitBox[],
   yPos?: number,
   xPos?: number,
+  focused?: boolean,
 ) {
   ctx.font = FONT
   const btnH = LINE_H + TOK.pillPadY * 2
   const x = xPos ?? PADDING
   const y = yPos ?? (SCREEN_H - PADDING - btnH - 36)
-  drawInversePill(ctx, label, hitboxes, { x, y, index: 0, bg: PALETTE.GREEN })
+  drawInversePill(ctx, label, hitboxes, { x, y, index: 0, bg: focused ? PALETTE.YELLOW : PALETTE.GREEN })
 }
 
 // Square green badge with a centered digit, à la Minitel 1-8 menu marker.
@@ -230,7 +233,9 @@ function drawNumberBadge(
   active: boolean,
 ): { w: number; h: number } {
   const w = Math.max(LINE_H + 4, 20)
-  const h = LINE_H + 4
+  // h was LINE_H+4 = 22 → tighter (LINE_H+2 = 20) shaves ~16 px off an 8-row
+  // list, keeping the pagination strip above the CRT bezel curve.
+  const h = LINE_H + 2
   ctx.fillStyle = active ? PALETTE.YELLOW : PALETTE.GREEN
   ctx.fillRect(x, y, w, h)
   ctx.fillStyle = PALETTE.BG
@@ -251,7 +256,7 @@ function drawScanlines(ctx: CanvasRenderingContext2D) {
   }
 }
 
-function drawSommaire(ctx: CanvasRenderingContext2D, highlight: number, hitboxes: HitBox[]) {
+function drawSommaire(ctx: CanvasRenderingContext2D, highlight: number, hitboxes: HitBox[], focusBack: boolean) {
   drawHeader(ctx, 'Z·CLUB    SOMMAIRE')
   ctx.textBaseline = 'top'
   let y = PADDING + 44
@@ -282,11 +287,11 @@ function drawSommaire(ctx: CanvasRenderingContext2D, highlight: number, hitboxes
   ctx.fillStyle = COLOR_DIM
   ctx.font = SMALL_FONT
   ctx.fillText('Z.CLUB · VIDEOCLUB EN LIGNE', PADDING, y + 14)
-  // FERMER kept for parity with the bridge (index 0 = back).
-  drawBackButton(ctx, 'FERMER', hitboxes, y + 36)
+  // FERMER kept for parity with the bridge (index 0 = back). Focused = yellow.
+  drawBackButton(ctx, 'FERMER', hitboxes, y + 36, undefined, focusBack)
 }
 
-function drawRecherche(ctx: CanvasRenderingContext2D, query: string, results: Film[], highlight: number, hitboxes: HitBox[]) {
+function drawRecherche(ctx: CanvasRenderingContext2D, query: string, results: Film[], highlight: number, hitboxes: HitBox[], focusBack: boolean) {
   drawHeader(ctx, 'Z·CLUB   RECHERCHE')
   // "TITRE :" yellow label, phosphor input on the same row.
   ctx.fillStyle = PALETTE.YELLOW
@@ -300,11 +305,14 @@ function drawRecherche(ctx: CanvasRenderingContext2D, query: string, results: Fi
   ctx.fillStyle = PALETTE.BLUE
   ctx.fillRect(PADDING + labelW, PADDING + 38 + LINE_H + 1, SAFE_RIGHT - (PADDING + labelW), 1)
 
+  // RETOUR bg flashes yellow when focused via ↑/↓, red otherwise.
+  const retourBg = focusBack ? PALETTE.YELLOW : PALETTE.RED
+  const retourFg = focusBack ? PALETTE.BG : PALETTE.WHITE
   ctx.font = SMALL_FONT
   if (!query) {
     ctx.fillStyle = COLOR_DIM
     ctx.fillText('TAPEZ LE TITRE D UN FILM', PADDING, PADDING + 80)
-    drawInversePill(ctx, 'RETOUR', hitboxes, { x: PADDING, y: PADDING + 110, index: 0, bg: PALETTE.RED, fg: PALETTE.WHITE })
+    drawInversePill(ctx, 'RETOUR', hitboxes, { x: PADDING, y: PADDING + 110, index: 0, bg: retourBg, fg: retourFg })
     return
   }
   if (results.length === 0) {
@@ -312,13 +320,13 @@ function drawRecherche(ctx: CanvasRenderingContext2D, query: string, results: Fi
     ctx.fillText('AUCUN RESULTAT', PADDING, PADDING + 80)
     ctx.fillStyle = COLOR_DIM
     ctx.fillText('ESSAYEZ COMMANDER UN FILM', PADDING, PADDING + 98)
-    drawInversePill(ctx, 'RETOUR', hitboxes, { x: PADDING, y: PADDING + 128, index: 0, bg: PALETTE.RED, fg: PALETTE.WHITE })
+    drawInversePill(ctx, 'RETOUR', hitboxes, { x: PADDING, y: PADDING + 128, index: 0, bg: retourBg, fg: retourFg })
     return
   }
   ctx.fillStyle = COLOR_DIM
   ctx.fillText(`${results.length} RESULTATS`, PADDING, PADDING + 80)
   let y = PADDING + 100
-  results.slice(0, 7).forEach((f, i) => {
+  results.slice(0, PAGE_SIZE).forEach((f, i) => {
     const num = i + 1
     const isHl = num === highlight
     const badge = drawNumberBadge(ctx, num, PADDING, y, isHl)
@@ -332,9 +340,9 @@ function drawRecherche(ctx: CanvasRenderingContext2D, query: string, results: Fi
     ctx.fillStyle = isHl ? PALETTE.BG : PALETTE.BLUE
     ctx.fillText(f.title.slice(0, 28), PADDING + badge.w + 10, y + 2)
     hitboxes.push({ index: num, yStart: y - 2, yEnd: y + rowH + 2 })
-    y += rowH + 2 + TOK.itemGap
+    y += rowH + 1 + TOK.itemGap
   })
-  drawInversePill(ctx, 'RETOUR', hitboxes, { x: PADDING, y: y + 8, index: 0, bg: PALETTE.RED, fg: PALETTE.WHITE })
+  drawInversePill(ctx, 'RETOUR', hitboxes, { x: PADDING, y: y + 8, index: 0, bg: retourBg, fg: retourFg })
 }
 
 // Shared row renderer for the paginated lists: green numbered badge + label
@@ -369,9 +377,10 @@ function drawListRow(
   return rowH
 }
 
-function drawPaginationStrip(ctx: CanvasRenderingContext2D, page: number, totalPages: number, y: number, hitboxes: HitBox[]) {
-  // Two inverse pills (PREC / SUIV) + a RETOUR pill on the right. Indices
-  // -1 / -2 / 0 are interpreted by MinitelOverlay's pendingMinitelPress bridge.
+function drawPaginationStrip(ctx: CanvasRenderingContext2D, page: number, totalPages: number, y: number, hitboxes: HitBox[], focusBack: boolean) {
+  // Two inverse pills (PREC / SUIV) + a RETOUR pill on the right. PREC/SUIV
+  // are not focusable via ↑/↓ — they're operated by PgUp/PgDn keys or the
+  // mobile ◀▶ pad. Only RETOUR has a focus state.
   let x = PADDING
   if (page > 0) {
     const r = drawInversePill(ctx, '< PREC', hitboxes, { x, y, index: -1, bg: PALETTE.CYAN })
@@ -381,28 +390,33 @@ function drawPaginationStrip(ctx: CanvasRenderingContext2D, page: number, totalP
     const r = drawInversePill(ctx, 'SUIV >', hitboxes, { x, y, index: -2, bg: PALETTE.CYAN })
     x += r.w + TOK.navGap
   }
-  // Right-aligned RETOUR.
+  // Right-aligned RETOUR — yellow on focus.
   ctx.font = FONT
   const retourW = ctx.measureText('RETOUR').width + TOK.pillPadX * 2
-  drawInversePill(ctx, 'RETOUR', hitboxes, { x: SAFE_RIGHT - retourW, y, index: 0, bg: PALETTE.RED, fg: PALETTE.WHITE })
+  const bg = focusBack ? PALETTE.YELLOW : PALETTE.RED
+  const fg = focusBack ? PALETTE.BG : PALETTE.WHITE
+  drawInversePill(ctx, 'RETOUR', hitboxes, { x: SAFE_RIGHT - retourW, y, index: 0, bg, fg })
 }
 
-function drawRayons(ctx: CanvasRenderingContext2D, films: Record<string, Film[]>, highlight: number, hitboxes: HitBox[]) {
-  drawHeader(ctx, 'Z·CLUB     RAYONS')
+function drawRayons(ctx: CanvasRenderingContext2D, films: Record<string, Film[]>, page: number, highlight: number, hitboxes: HitBox[], focusBack: boolean) {
+  // Build the list of non-empty aisles first so pagination math is correct
+  // (some aisles might have 0 films at this point in the catalogue lifecycle).
+  const nonEmpty = AISLES_ORDER.filter((a) => (films[a]?.length ?? 0) > 0)
+  const totalPages = Math.max(1, Math.ceil(nonEmpty.length / PAGE_SIZE))
+  const safePage = Math.max(0, Math.min(page, totalPages - 1))
+  const slice = nonEmpty.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE)
+  drawHeader(ctx, `Z·CLUB     RAYONS ${safePage + 1}/${totalPages}`)
   let y = PADDING + 40
-  let visibleIdx = 0
-  AISLES_ORDER.forEach((a) => {
-    const count = (films[a]?.length ?? 0)
-    if (count === 0) return
-    visibleIdx++
-    const num = visibleIdx
+  slice.forEach((a, i) => {
+    const num = i + 1
+    const count = films[a]!.length
     const rowH = drawListRow(ctx, num, aisleLabel(a).toUpperCase(), `${count} FILMS`, num === highlight, y, hitboxes)
-    y += rowH + 2 + TOK.itemGap
+    y += rowH + 1 + TOK.itemGap
   })
-  drawPaginationStrip(ctx, 0, 1, y + 8, hitboxes)
+  drawPaginationStrip(ctx, safePage, totalPages, y + 8, hitboxes, focusBack)
 }
 
-function drawAlpha(ctx: CanvasRenderingContext2D, films: Film[], page: number, highlight: number, hitboxes: HitBox[]) {
+function drawAlpha(ctx: CanvasRenderingContext2D, films: Film[], page: number, highlight: number, hitboxes: HitBox[], focusBack: boolean) {
   const totalPages = Math.max(1, Math.ceil(films.length / PAGE_SIZE))
   const safePage = Math.max(0, Math.min(page, totalPages - 1))
   drawHeader(ctx, `Z·CLUB  A-Z ${safePage + 1}/${totalPages}`)
@@ -412,12 +426,12 @@ function drawAlpha(ctx: CanvasRenderingContext2D, films: Film[], page: number, h
     const num = i + 1
     const year = f.release_date ? f.release_date.slice(0, 4) : ''
     const rowH = drawListRow(ctx, num, f.title, year, num === highlight, y, hitboxes)
-    y += rowH + 2 + TOK.itemGap
+    y += rowH + 1 + TOK.itemGap
   })
-  drawPaginationStrip(ctx, safePage, totalPages, y + 8, hitboxes)
+  drawPaginationStrip(ctx, safePage, totalPages, y + 8, hitboxes, focusBack)
 }
 
-function drawAisleList(ctx: CanvasRenderingContext2D, aisle: AisleType, films: Film[], page: number, highlight: number, hitboxes: HitBox[]) {
+function drawAisleList(ctx: CanvasRenderingContext2D, aisle: AisleType, films: Film[], page: number, highlight: number, hitboxes: HitBox[], focusBack: boolean) {
   const totalPages = Math.max(1, Math.ceil(films.length / PAGE_SIZE))
   const safePage = Math.max(0, Math.min(page, totalPages - 1))
   drawHeader(ctx, `Z·CLUB  ${aisleLabel(aisle).toUpperCase()} ${safePage + 1}/${totalPages}`)
@@ -427,12 +441,12 @@ function drawAisleList(ctx: CanvasRenderingContext2D, aisle: AisleType, films: F
     const num = i + 1
     const year = f.release_date ? f.release_date.slice(0, 4) : ''
     const rowH = drawListRow(ctx, num, f.title, year, num === highlight, y, hitboxes)
-    y += rowH + 2 + TOK.itemGap
+    y += rowH + 1 + TOK.itemGap
   })
-  drawPaginationStrip(ctx, safePage, totalPages, y + 8, hitboxes)
+  drawPaginationStrip(ctx, safePage, totalPages, y + 8, hitboxes, focusBack)
 }
 
-function drawDetail(ctx: CanvasRenderingContext2D, film: Film, location: string, hitboxes: HitBox[], illuminerPressed: boolean) {
+function drawDetail(ctx: CanvasRenderingContext2D, film: Film, location: string, hitboxes: HitBox[], illuminerPressed: boolean, focusPrimary: boolean, focusBack: boolean) {
   drawHeader(ctx, 'Z·CLUB     DETAIL')
   // Title in cyan, year + cert in dim phosphor underneath.
   ctx.fillStyle = PALETTE.CYAN
@@ -491,14 +505,17 @@ function drawDetail(ctx: CanvasRenderingContext2D, film: Film, location: string,
     yCursor += 16
   }
   // ILLUMINER (magenta) + RETOUR (red) — inverse-video pills side by side.
-  // ILLUMINER flashes to yellow on press so the click feedback is unmistakable.
+  // ILLUMINER flashes to yellow on press AND on keyboard focus so the active
+  // pill is unmistakable. RETOUR also turns yellow when focused.
   yCursor += 8
-  const illumBg = illuminerPressed ? PALETTE.YELLOW : PALETTE.MAGENTA
+  const illumBg = (illuminerPressed || focusPrimary) ? PALETTE.YELLOW : PALETTE.MAGENTA
   const r1 = drawInversePill(ctx, 'ILLUMINER LA K7', hitboxes, {
     x: PADDING, y: yCursor, index: 1, bg: illumBg, fg: PALETTE.BG,
   })
+  const retourBg = focusBack ? PALETTE.YELLOW : PALETTE.RED
+  const retourFg = focusBack ? PALETTE.BG : PALETTE.WHITE
   drawInversePill(ctx, 'RETOUR', hitboxes, {
-    x: PADDING + r1.w + 8, y: yCursor, index: 0, bg: PALETTE.RED, fg: PALETTE.WHITE,
+    x: PADDING + r1.w + 8, y: yCursor, index: 0, bg: retourBg, fg: retourFg,
   })
 }
 
@@ -542,7 +559,11 @@ function drawCommander(
   tmdbState: TmdbState,
   localTmdbIds: Set<number>,
   hitboxes: HitBox[],
+  highlight: number,
+  focusPrimary: boolean,
+  focusBack: boolean,
 ) {
+  void highlight // results row focus is already handled via the per-row drawRowPill highlight
   drawHeader(ctx, 'Z·CLUB  COMMANDER')
   ctx.font = FONT
   ctx.textBaseline = 'top'
@@ -554,8 +575,11 @@ function drawCommander(
     ctx.font = SMALL_FONT
     ctx.fillText('SE CONNECTER OUVRE LA FENETRE', PADDING, PADDING + 96)
     ctx.fillText('DE LOGIN INLINE.', PADDING, PADDING + 112)
-    const r = drawInversePill(ctx, 'SE CONNECTER', hitboxes, { x: PADDING, y: PADDING + 132, index: 1, bg: PALETTE.MAGENTA })
-    drawInversePill(ctx, 'RETOUR', hitboxes, { x: PADDING + r.w + 8, y: PADDING + 132, index: 0, bg: PALETTE.RED, fg: PALETTE.WHITE })
+    const connectBg = focusPrimary ? PALETTE.YELLOW : PALETTE.MAGENTA
+    const retourBg = focusBack ? PALETTE.YELLOW : PALETTE.RED
+    const retourFg = focusBack ? PALETTE.BG : PALETTE.WHITE
+    const r = drawInversePill(ctx, 'SE CONNECTER', hitboxes, { x: PADDING, y: PADDING + 132, index: 1, bg: connectBg })
+    drawInversePill(ctx, 'RETOUR', hitboxes, { x: PADDING + r.w + 8, y: PADDING + 132, index: 0, bg: retourBg, fg: retourFg })
     return
   }
   // TITRE: label + phosphor input on the same line as recherche.
@@ -567,15 +591,17 @@ function drawCommander(
   ctx.fillText(`${query || ''}_`, PADDING + labelW, PADDING + 38)
   ctx.fillRect(PADDING + labelW, PADDING + 38 + LINE_H + 1, SAFE_RIGHT - (PADDING + labelW), 1)
 
-  // RETOUR pinned top-right, red inverse-video so it's always findable.
+  // RETOUR pinned top-right — yellow on focus, red otherwise.
   ctx.font = FONT
   const retourPillW = ctx.measureText('RETOUR').width + TOK.pillPadX * 2
+  const retourBgAuth = focusBack ? PALETTE.YELLOW : PALETTE.RED
+  const retourFgAuth = focusBack ? PALETTE.BG : PALETTE.WHITE
   drawInversePill(ctx, 'RETOUR', hitboxes, {
     x: SAFE_RIGHT - retourPillW,
-    y: PADDING + LINE_H + 12, // just under the header
+    y: PADDING + LINE_H + 12,
     index: 0,
-    bg: PALETTE.RED,
-    fg: PALETTE.WHITE,
+    bg: retourBgAuth,
+    fg: retourFgAuth,
   })
 
   ctx.font = SMALL_FONT
@@ -782,17 +808,37 @@ export function useMinitelScreenTexture(props: MinitelScreenProps = {}) {
     ctx.fillStyle = COLOR_BG
     ctx.fillRect(0, 0, SCREEN_W, SCREEN_H)
     const hits: HitBox[] = []
-    if (minitelMode === 'idle' || minitelMode === 'sommaire') drawSommaire(ctx, minitelHighlightedItem, hits)
-    else if (minitelMode === 'recherche') drawRecherche(ctx, minitelQuery, searchResults, minitelHighlightedItem, hits)
-    else if (minitelMode === 'rayons') {
-      if (minitelSelectedAisle) drawAisleList(ctx, minitelSelectedAisle, aisleFilms, minitelPageIndex, minitelHighlightedItem, hits)
-      else drawRayons(ctx, films, minitelHighlightedItem, hits)
+    // Compute how many list rows the current screen has so we can tell apart
+    // a list highlight from a trailing-button highlight (RETOUR / FERMER /
+    // SE CONNECTER / ILLUMINER) when drawing focus state.
+    let listCount = 0
+    if (detailFilm) listCount = 0
+    else if (minitelMode === 'sommaire' || minitelMode === 'idle') listCount = 4
+    else if (minitelMode === 'rayons' && !minitelSelectedAisle) {
+      const nonEmpty = AISLES_ORDER.filter((a) => (films[a]?.length ?? 0) > 0).length
+      listCount = Math.min(PAGE_SIZE, nonEmpty - minitelPageIndex * PAGE_SIZE)
     }
-    else if (minitelMode === 'alpha') drawAlpha(ctx, allFilms, minitelPageIndex, minitelHighlightedItem, hits)
-    else if (minitelMode === 'commander') drawCommander(ctx, minitelQuery, tmdbResults, requestedIds, isAuthenticated, storeTmdbState, localTmdbIds, hits)
+    else if (minitelMode === 'rayons' && minitelSelectedAisle) listCount = Math.min(PAGE_SIZE, aisleFilms.length - minitelPageIndex * PAGE_SIZE)
+    else if (minitelMode === 'alpha') listCount = Math.min(PAGE_SIZE, allFilms.length - minitelPageIndex * PAGE_SIZE)
+    else if (minitelMode === 'recherche') listCount = Math.min(PAGE_SIZE, searchResults.length)
+    else if (minitelMode === 'commander') listCount = isAuthenticated ? Math.min(6, tmdbResults.length) : 0
+    // Trailing-button focus flags. Modes with 2 trailing buttons (detail,
+    // commander-unauthed) use both; everywhere else only focusBack matters.
+    const trailingIdx = Math.max(0, minitelHighlightedItem - listCount)
+    const focusPrimary = trailingIdx === 1
+    const focusBack = trailingIdx === 2 || (trailingIdx === 1 && !(detailFilm) && !(minitelMode === 'commander' && !isAuthenticated))
+
+    if (minitelMode === 'idle' || minitelMode === 'sommaire') drawSommaire(ctx, minitelHighlightedItem, hits, focusBack)
+    else if (minitelMode === 'recherche') drawRecherche(ctx, minitelQuery, searchResults, minitelHighlightedItem, hits, focusBack)
+    else if (minitelMode === 'rayons') {
+      if (minitelSelectedAisle) drawAisleList(ctx, minitelSelectedAisle, aisleFilms, minitelPageIndex, minitelHighlightedItem, hits, focusBack)
+      else drawRayons(ctx, films, minitelPageIndex, minitelHighlightedItem, hits, focusBack)
+    }
+    else if (minitelMode === 'alpha') drawAlpha(ctx, allFilms, minitelPageIndex, minitelHighlightedItem, hits, focusBack)
+    else if (minitelMode === 'commander') drawCommander(ctx, minitelQuery, tmdbResults, requestedIds, isAuthenticated, storeTmdbState, localTmdbIds, hits, minitelHighlightedItem, focusPrimary, focusBack)
     else if (minitelMode === 'detail') {
-      if (detailFilm) drawDetail(ctx, detailFilm, detailLocation, hits, minitelIlluminerFlash)
-      else drawSommaire(ctx, minitelHighlightedItem, hits)
+      if (detailFilm) drawDetail(ctx, detailFilm, detailLocation, hits, minitelIlluminerFlash, focusPrimary, focusBack)
+      else drawSommaire(ctx, minitelHighlightedItem, hits, focusBack)
     }
     drawScanlines(ctx)
     texture.needsUpdate = true

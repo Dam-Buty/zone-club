@@ -227,10 +227,14 @@ export function MinitelOverlay() {
 
   // Desktop keyboard handler
   // Compute the number of selectable items for arrow navigation bounds.
-  const itemCount = (() => {
+  // Number of focusable LIST rows in the current screen. The total focusable
+  // count (itemCount) also includes trailing buttons defined below.
+  const listItemCount = (() => {
+    if (minitelSelectedFilm != null) return 0 // detail mode: no list, only buttons
     if (minitelMode === 'sommaire' || minitelMode === 'idle') return 4
     if (minitelMode === 'rayons' && !minitelSelectedAisle) {
-      return AISLES_ORDER.filter((a) => (films[a]?.length ?? 0) > 0).length
+      const nonEmpty = AISLES_ORDER.filter((a) => (films[a]?.length ?? 0) > 0).length
+      return Math.min(PAGE_SIZE, nonEmpty - minitelPageIndex * PAGE_SIZE)
     }
     if (minitelMode === 'rayons' && minitelSelectedAisle) {
       const list = films[minitelSelectedAisle] || []
@@ -241,20 +245,46 @@ export function MinitelOverlay() {
     }
     if (minitelMode === 'recherche') {
       const results = searchFilms(buildAllFilms(), minitelQuery)
-      return Math.min(8, results.length)
+      return Math.min(PAGE_SIZE, results.length)
     }
-    if (minitelMode === 'commander') return Math.min(6, tmdbResults.length)
+    if (minitelMode === 'commander') {
+      if (!isAuthenticated) return 0
+      return Math.min(6, tmdbResults.length)
+    }
     return 0
   })()
+
+  // Trailing buttons reachable AFTER the list (1-based indices continue past
+  // listItemCount). 'envoi' = handleEnvoi (ILLUMINER, SE CONNECTER…), 'esc' =
+  // handleEsc (RETOUR / FERMER).
+  const trailingButtons: Array<'envoi' | 'esc'> = (() => {
+    if (minitelSelectedFilm != null) return ['envoi', 'esc']           // detail: ILLUMINER + RETOUR
+    if (minitelMode === 'commander' && !isAuthenticated) return ['envoi', 'esc']  // SE CONNECTER + RETOUR
+    return ['esc']                                                      // every other screen: RETOUR/FERMER
+  })()
+
+  const itemCount = listItemCount + trailingButtons.length
 
   const highlightedItem = useStore((s) => s.minitelHighlightedItem)
   const setHighlightedItem = useStore((s) => s.setMinitelHighlightedItem)
 
-  // Reset highlight when mode/page/aisle/query changes — otherwise Enter would
-  // dispatch a stale highlightedItem index from previous results.
+  // Dispatch the focused element (list row or trailing button).
+  const dispatchFocused = useCallback(() => {
+    if (listItemCount > 0 && highlightedItem <= listItemCount) {
+      handleNumberPress(highlightedItem)
+      return
+    }
+    const trailingIdx = highlightedItem - listItemCount - 1
+    const btn = trailingButtons[trailingIdx] ?? trailingButtons[trailingButtons.length - 1]
+    if (btn === 'envoi') handleEnvoi()
+    else handleEsc()
+  }, [listItemCount, trailingButtons, highlightedItem, handleNumberPress, handleEnvoi, handleEsc])
+
+  // Reset highlight when mode/page/aisle/query/selectedFilm changes — otherwise
+  // Enter would dispatch a stale highlightedItem index from previous results.
   useEffect(() => {
     setHighlightedItem(1)
-  }, [minitelMode, minitelSelectedAisle, minitelPageIndex, minitelQuery, setHighlightedItem])
+  }, [minitelMode, minitelSelectedAisle, minitelPageIndex, minitelQuery, minitelSelectedFilm, setHighlightedItem])
 
   useEffect(() => {
     if (!isInteractingWithMinitel) return
@@ -285,9 +315,7 @@ export function MinitelOverlay() {
       }
       if (e.key === 'Enter') {
         e.preventDefault()
-        if (minitelMode === 'detail') { handleEnvoi(); return }
-        if (itemCount > 0) { handleNumberPress(highlightedItem); return }
-        handleEnvoi()
+        dispatchFocused()
         return
       }
       if (e.key === 'Escape') { e.preventDefault(); handleEsc(); return }
@@ -299,7 +327,7 @@ export function MinitelOverlay() {
     return () => window.removeEventListener('keydown', onKey)
   }, [
     isInteractingWithMinitel, minitelMode, itemCount, highlightedItem,
-    setHighlightedItem, handleNumberPress, handleEnvoi, handleEsc, handleSuite, handleRetour,
+    setHighlightedItem, handleNumberPress, handleEnvoi, handleEsc, handleSuite, handleRetour, dispatchFocused,
   ])
 
   // Bridge: consume direct-clicks on the 3D screen plane forwarded by
@@ -331,7 +359,15 @@ export function MinitelOverlay() {
 
   const showInput = minitelMode === 'recherche' || minitelMode === 'commander'
   const isDetail = minitelSelectedFilm != null
-  const isPaged = (minitelMode === 'rayons' && minitelSelectedAisle != null) || minitelMode === 'alpha'
+  // RAYONS (aisle list) is now paginated when > PAGE_SIZE aisles exist.
+  const rayonsHasMultiplePages = (() => {
+    if (minitelMode !== 'rayons' || minitelSelectedAisle) return false
+    return AISLES_ORDER.filter((a) => (films[a]?.length ?? 0) > 0).length > PAGE_SIZE
+  })()
+  const isPaged =
+    (minitelMode === 'rayons' && minitelSelectedAisle != null) ||
+    minitelMode === 'alpha' ||
+    rayonsHasMultiplePages
   const helpLines = buildHelpLines(minitelMode, isDetail, isPaged)
 
   return (
@@ -439,7 +475,7 @@ export function MinitelOverlay() {
             disabled={itemCount === 0}
           />
           <PadButton
-            onPress={() => { if (minitelMode === 'detail') handleEnvoi(); else if (itemCount > 0) handleNumberPress(highlightedItem); else handleEnvoi() }}
+            onPress={dispatchFocused}
             label="OK"
             primary
           />
