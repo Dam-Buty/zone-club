@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createReadStream } from 'fs';
 import { stat } from 'fs/promises';
 import { Readable } from 'stream';
+import { cookies } from 'next/headers';
+import { getUserFromSession } from '@/lib/session';
 
 function parseRange(range: string, totalSize: number): { start: number; end: number } | null {
     const match = /^bytes=(\d*)-(\d*)$/.exec(range.trim());
@@ -22,6 +24,16 @@ function parseRange(range: string, totalSize: number): { start: number; end: num
 }
 
 export async function GET(request: NextRequest) {
+    // Auth gate — previously this route streamed an arbitrary video file to
+    // anyone hitting it. Require a valid session OR (admin) for prod safety.
+    // FORCED_RENTAL_FILE_PATH is a dev/staging convenience; we still let
+    // authenticated users use it (the original intent), but no longer anon.
+    const cookieStore = await cookies();
+    const user = getUserFromSession(cookieStore.get('session')?.value);
+    if (!user) {
+        return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
+    }
+
     const forcedPath = process.env.FORCED_RENTAL_FILE_PATH;
     if (!forcedPath) {
         return NextResponse.json(
