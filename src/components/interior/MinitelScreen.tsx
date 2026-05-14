@@ -463,11 +463,17 @@ function drawAisleList(ctx: CanvasRenderingContext2D, aisle: AisleType, films: F
 
 function drawDetail(ctx: CanvasRenderingContext2D, film: Film, location: string, hitboxes: HitBox[], illuminerPressed: boolean, focusPrimary: boolean, focusBack: boolean) {
   drawHeader(ctx, 'VIDEOCLUB DETAIL')
-  // Title in cyan, year + cert in dim phosphor underneath.
-  ctx.fillStyle = PALETTE.CYAN
+  // Title now in WHITE with a subtle phosphor glow — cyan was getting
+  // washed out on the curved CRT mesh and reading "fuzzy" from a distance.
+  // White-on-black gives the highest contrast while the soft glow keeps
+  // the period-CRT vibe without being intrusive.
+  ctx.fillStyle = PALETTE.WHITE
   ctx.font = FONT
   ctx.textBaseline = 'top'
+  ctx.shadowColor = PALETTE.CYAN
+  ctx.shadowBlur = 4
   ctx.fillText(film.title.slice(0, 28), PADDING, PADDING + 38)
+  ctx.shadowBlur = 0
   ctx.fillStyle = COLOR_DIM
   ctx.font = SMALL_FONT
   const year = film.release_date ? film.release_date.slice(0, 4) : ''
@@ -508,17 +514,21 @@ function drawDetail(ctx: CanvasRenderingContext2D, film: Film, location: string,
     }
   }
   yCursor += 6
-  // LOCALISATION yellow label, value cyan.
+  // RAYON yellow label, value WHITE + soft cyan glow (was pure cyan but
+  // rendered fuzzy on the CRT mesh at viewing distance).
   ctx.fillStyle = PALETTE.YELLOW
   ctx.font = SMALL_FONT
   ctx.fillText('RAYON', PADDING, yCursor)
   yCursor += 16
-  ctx.fillStyle = PALETTE.CYAN
+  ctx.fillStyle = PALETTE.WHITE
+  ctx.shadowColor = PALETTE.CYAN
+  ctx.shadowBlur = 3
   const locLines = wrapText(location, 38)
   for (const l of locLines.slice(0, 2)) {
     ctx.fillText(l, PADDING, yCursor)
     yCursor += 16
   }
+  ctx.shadowBlur = 0
   // ILLUMINER (magenta) + RETOUR (red) — inverse-video pills side by side.
   // ILLUMINER flashes to yellow on press AND on keyboard focus so the active
   // pill is unmistakable. RETOUR also turns yellow when focused.

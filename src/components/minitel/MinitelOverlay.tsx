@@ -566,7 +566,7 @@ function buildHelpLines(
   if (mode === 'recherche' || mode === 'commander') {
     const lines: Array<{ keys: string; label: string; color: string }> = [
       { keys: 'A-Z', label: 'TAPER', color: PILL_COLORS.blue },
-      { keys: '⏎', label: mode === 'commander' ? 'COMMANDER' : 'VALIDER', color: PILL_COLORS.cyan },
+      { keys: '⏎', label: mode === 'commander' ? 'COMMANDER' : 'VALIDER', color: PILL_COLORS.white },
     ]
     lines.push({ keys: '↑ ↓', label: 'NAVIGUER', color: PILL_COLORS.yellow })
     lines.push({ keys: 'Esc', label: 'RETOUR', color: PILL_COLORS.red })
@@ -575,7 +575,7 @@ function buildHelpLines(
   if (mode === 'sommaire' || mode === 'idle') {
     return [
       { keys: '↑ ↓', label: 'NAVIGUER', color: PILL_COLORS.yellow },
-      { keys: '⏎', label: 'VALIDER', color: PILL_COLORS.cyan },
+      { keys: '⏎', label: 'VALIDER', color: PILL_COLORS.white },
       { keys: 'Esc', label: 'QUITTER', color: PILL_COLORS.red },
     ]
   }
@@ -583,8 +583,8 @@ function buildHelpLines(
   const lines: Array<{ keys: string; label: string; color: string }> = [
     { keys: '↑ ↓', label: 'NAVIGUER', color: PILL_COLORS.yellow },
   ]
-  if (isPaged) lines.push({ keys: 'PgUp/Dn', label: 'PAGE', color: PILL_COLORS.cyan })
-  lines.push({ keys: '⏎', label: 'VALIDER', color: PILL_COLORS.cyan })
+  if (isPaged) lines.push({ keys: 'PgUp/Dn', label: 'PAGE', color: PILL_COLORS.white })
+  lines.push({ keys: '⏎', label: 'VALIDER', color: PILL_COLORS.white })
   lines.push({ keys: 'Esc', label: 'RETOUR', color: PILL_COLORS.red })
   return lines
 }
