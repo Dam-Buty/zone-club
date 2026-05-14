@@ -793,7 +793,11 @@ export const useStore = create<VideoClubState>()(
             isWatchingLaZone: false,
           });
         } else {
-          // UX 45: re-open minitel doit repartir du sommaire (idle)
+          // UX 45: re-open minitel doit repartir du sommaire (idle).
+          // NB: ne PAS reset highlightedCassetteKey ici — ILLUMINER LA K7
+          // ferme le minitel volontairement pour laisser la K7 illuminée
+          // dans le rayon. Le highlight est nettoyé ailleurs (au prochain
+          // ILLUMINER, sélection cassette, etc.).
           set({
             isInteractingWithMinitel: false,
             minitelMode: 'idle',
@@ -802,7 +806,6 @@ export const useStore = create<VideoClubState>()(
             minitelSelectedFilm: null,
             minitelPageIndex: 0,
             minitelHighlightedItem: 1,
-            highlightedCassetteKey: null,
             pendingMinitelPress: null,
           });
         }
