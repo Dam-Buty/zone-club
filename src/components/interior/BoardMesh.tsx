@@ -155,14 +155,16 @@ const LABEL_TEX = (() => {
   ctx.font = `bold 38px ${FONT}`
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  ctx.shadowColor = '#00ffff'
-  ctx.shadowBlur = 8
-  ctx.fillStyle = '#00ffff'
+  // Match the "La Zone TV" recipe (#00ffcc, blur 4) which reads sharp at
+  // distance. Pure #00ffff + blur 8-10 was blooming into a fuzzy halo.
+  ctx.shadowColor = '#00ffcc'
+  ctx.shadowBlur = 4
+  ctx.fillStyle = '#00ffcc'
   ctx.fillText('Ecrivez / Lisez un Post-it', W / 2, 40)
 
   // Arrow ▼
   ctx.font = `bold 54px ${FONT}`
-  ctx.shadowBlur = 10
+  ctx.shadowBlur = 5
   ctx.fillText('\u25BC', W / 2, 95)
 
   const tex = new THREE.CanvasTexture(canvas)
