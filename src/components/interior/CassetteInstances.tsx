@@ -486,8 +486,15 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
 
       // Explicit ILLUMINER highlight pushes the K7 out further than a regular
       // hover so it reads as a deliberate "look here" cue from across the room.
+      // Layered on top: a back-and-forth pulse that drives the K7 along the
+      // same hover axis as a raycast popout, but oscillating ~0.8x ↔ 1.6x the
+      // hover offset (~2.5s period). The compute-pass low-pass (speed 12)
+      // damps it ~2 %, so the target sine reaches the cassette almost intact.
       let newTarHoverZ = isTargeted ? hoverOffsets[i] : 0
-      if (isHighlighted) newTarHoverZ = hoverOffsets[i] * 1.5
+      if (isHighlighted) {
+        const pulse = 1.2 + 0.4 * Math.sin(state.clock.elapsedTime * 2.5)
+        newTarHoverZ = hoverOffsets[i] * pulse
+      }
       if (tarHoverArr[i] !== newTarHoverZ) {
         tarHoverArr[i] = newTarHoverZ
         tarHoverDirty = true
