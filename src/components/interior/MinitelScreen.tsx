@@ -445,7 +445,8 @@ function drawDetail(ctx: CanvasRenderingContext2D, film: Film, location: string,
   if (year) ctx.fillText(year, PADDING, PADDING + 60)
 
   let yCursor = PADDING + 80
-  // AVEC : label yellow, actor list phosphor blue.
+  // AVEC : label yellow, actor list phosphor blue. Wrap kept 32 because the
+  // "AVEC " prefix already eats 40 px of horizontal space.
   if (film.actors && film.actors.length > 0) {
     ctx.fillStyle = PALETTE.YELLOW
     ctx.font = SMALL_FONT
@@ -457,37 +458,40 @@ function drawDetail(ctx: CanvasRenderingContext2D, film: Film, location: string,
       ctx.fillText(l, PADDING + 40, yy)
       yy += 14
     }
-    yCursor = yy + 4
+    yCursor = yy + 6
   }
   // SYNOPSIS yellow label, body phosphor blue.
+  // Detail view exclusively uses a wider wrap (38 vs 32 chars) and shows up
+  // to 5 lines instead of 3 — same VT323 14px stack but VT323 is narrow
+  // enough that 38 chars still fits inside the safe-right band.
   const pitch = (film.tagline && film.tagline.trim()) || (film.overview ? film.overview : '')
   if (pitch) {
     ctx.fillStyle = PALETTE.YELLOW
     ctx.font = SMALL_FONT
     ctx.fillText('SYNOPSIS', PADDING, yCursor)
-    yCursor += 14
+    yCursor += 16
     ctx.fillStyle = PALETTE.BLUE
-    const wrapped = wrapText(pitch, 32)
-    for (const l of wrapped.slice(0, 3)) {
+    const wrapped = wrapText(pitch, 38)
+    for (const l of wrapped.slice(0, 5)) {
       ctx.fillText(l, PADDING, yCursor)
-      yCursor += 14
+      yCursor += 16
     }
   }
-  yCursor += 4
+  yCursor += 6
   // LOCALISATION yellow label, value cyan.
   ctx.fillStyle = PALETTE.YELLOW
   ctx.font = SMALL_FONT
   ctx.fillText('RAYON', PADDING, yCursor)
-  yCursor += 14
+  yCursor += 16
   ctx.fillStyle = PALETTE.CYAN
-  const locLines = wrapText(location, 32)
+  const locLines = wrapText(location, 38)
   for (const l of locLines.slice(0, 2)) {
     ctx.fillText(l, PADDING, yCursor)
-    yCursor += 14
+    yCursor += 16
   }
   // ILLUMINER (magenta) + RETOUR (red) — inverse-video pills side by side.
   // ILLUMINER flashes to yellow on press so the click feedback is unmistakable.
-  yCursor += 6
+  yCursor += 8
   const illumBg = illuminerPressed ? PALETTE.YELLOW : PALETTE.MAGENTA
   const r1 = drawInversePill(ctx, 'ILLUMINER LA K7', hitboxes, {
     x: PADDING, y: yCursor, index: 1, bg: illumBg, fg: PALETTE.BG,
