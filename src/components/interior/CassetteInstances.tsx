@@ -14,6 +14,10 @@ import { CASSETTE_DIMENSIONS } from './Cassette'
 
 const SHARED_CASSETTE_GEOMETRY = new THREE.BoxGeometry(CASSETTE_DIMENSIONS.width, CASSETTE_DIMENSIONS.height, CASSETTE_DIMENSIONS.depth)
 
+// Scratch color for the per-frame ILLUMINER emissive cycle — avoids per-frame
+// allocations inside the hot useFrame loop.
+const _highlightColor = new THREE.Color()
+
 const LOUE_OVERLAY_TEXTURE = (() => {
   const canvas = document.createElement('canvas')
   canvas.width = 200
@@ -428,7 +432,10 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
       targetedCassetteKey !== prevTargetedKeyRef.current ||
       highlightedCassetteKey !== prevHighlightedKeyRef.current ||
       hysteresisActiveRef.current ||
-      lerpFramesRef.current > 0
+      lerpFramesRef.current > 0 ||
+      // Keep iterating while an ILLUMINER highlight is active so its emissive
+      // can cycle through green / blue / violet every frame.
+      highlightedCassetteKey !== null
 
     if (!needsProcessing) {
       return
@@ -488,9 +495,16 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
 
       let tR = 0; let tG = 0; let tB = 0
       if (isHighlighted) {
-        // Strong blue emissive — the bloom pass turns this into a wide halo
-        // around the cassette outline, replacing the previous floating sphere.
-        tR = 0; tG = 0.35; tB = 1.6
+        // Time-driven HSL cycle: hue ∈ [0.33, 0.78] sweeps green → blue →
+        // violet (~4.5s round-trip). Intensity 1.7 keeps the bloom halo as
+        // strong as the previous static blue emissive.
+        const t = state.clock.elapsedTime
+        const h = 0.555 + 0.225 * Math.sin(t * 1.4)
+        _highlightColor.setHSL(h, 1, 0.5)
+        const intensity = 1.7
+        tR = _highlightColor.r * intensity
+        tG = _highlightColor.g * intensity
+        tB = _highlightColor.b * intensity
       } else if (isRented) {
         tR = 0; tG = 0.3; tB = 0
       } else if (isTargeted) {
