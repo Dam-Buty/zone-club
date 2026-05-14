@@ -59,21 +59,25 @@ const COLLISION_ZONES: {
     name: "tv",
   },
   {
+    // Étagère murale gauche — inner edge brought 3 cm closer to the wall
+    // (0.60 → 0.57) so the visitor can stand ~5 % nearer the K7 spines.
     minX: -ROOM_WIDTH / 2,
-    maxX: -ROOM_WIDTH / 2 + 0.6,
+    maxX: -ROOM_WIDTH / 2 + 0.57,
     minZ: -ROOM_DEPTH / 2,
     maxZ: ROOM_DEPTH / 2,
     name: "etagere-gauche",
   },
   {
+    // Étagère murale du fond — same 0.60 → 0.57 trim on the inner edge.
     minX: -ROOM_WIDTH / 2,
     maxX: ROOM_WIDTH / 2 - 1.5,
     minZ: -ROOM_DEPTH / 2,
-    maxZ: -ROOM_DEPTH / 2 + 0.6,
+    maxZ: -ROOM_DEPTH / 2 + 0.57,
     name: "etagere-fond",
   },
   {
-    minX: ROOM_WIDTH / 2 - 0.6,
+    // Étagère murale droite-nord — inner edge pulled 3 cm tighter.
+    minX: ROOM_WIDTH / 2 - 0.57,
     maxX: ROOM_WIDTH / 2,
     minZ: -ROOM_DEPTH / 2,
     maxZ: 0.5,
