@@ -8,7 +8,11 @@ import api from '../../api'
 import { AuthModal } from '../auth/AuthModal'
 import type { AisleType, Film } from '../../types'
 
-const PAGE_SIZE = 8
+// Must stay in sync with PAGE_SIZE in MinitelScreen.tsx.
+const PAGE_SIZE = 7
+// RECHERCHE has extra vertical chrome above the list (TITRE input + label)
+// so it fits one fewer row than the generic paginated screens.
+const RECHERCHE_PAGE_SIZE = 6
 
 const AISLES_ORDER: AisleType[] = [
   'action', 'aventure', 'bizarre', 'classiques', 'comedie',
@@ -43,6 +47,7 @@ export function MinitelOverlay() {
   const minitelPageIndex = useStore((s) => s.minitelPageIndex)
   const setMinitelPageIndex = useStore((s) => s.setMinitelPageIndex)
   const setHighlightedCassetteKey = useStore((s) => s.setHighlightedCassetteKey)
+  const setMinitelIlluminerFlash = useStore((s) => s.setMinitelIlluminerFlash)
   const films = useStore((s) => s.films)
   const isAuthenticated = useStore((s) => s.isAuthenticated)
   const minitelSelectedFilm = useStore((s) => s.minitelSelectedFilm)
@@ -181,14 +186,16 @@ export function MinitelOverlay() {
         return
       }
       setHighlightedCassetteKey(key)
-      // Eject the user from the minitel so they can walk the aisles and spot
-      // the now-glowing K7. Short delay so the canvas redraws once with the
-      // ILLUMINER click registered (button stays cyan, but the user gets a
-      // beat to register the interaction before the camera pulls back).
+      // Reverse-video flash on the ILLUMINER button so the click feedback is
+      // unmistakable before the camera pulls back. setInteractingWithMinitel
+      // (false) cleans up the rest of the minitel state via the store middleware.
+      setMinitelIlluminerFlash(true)
       setTimeout(() => {
-        setMinitelMode('idle')
-        setMinitelSelectedFilm(null)
+        setMinitelIlluminerFlash(false)
         setInteractingWithMinitel(false)
+        // Re-acquire pointer lock so the user can move without an extra click
+        // back to FPS controls. Controls.tsx no-ops on mobile.
+        useStore.getState().requestPointerLock()
       }, 320)
       return
     }
@@ -198,7 +205,7 @@ export function MinitelOverlay() {
       setShowAuthModal(true)
       return
     }
-  }, [minitelMode, minitelSelectedFilm, isAuthenticated, setHighlightedCassetteKey, setInteractingWithMinitel, setMinitelMode, setMinitelSelectedFilm])
+  }, [minitelMode, minitelSelectedFilm, isAuthenticated, setHighlightedCassetteKey, setInteractingWithMinitel, setMinitelIlluminerFlash])
 
   // ESC: contextual back navigation
   const handleEsc = useCallback(() => {
@@ -224,10 +231,14 @@ export function MinitelOverlay() {
 
   // Desktop keyboard handler
   // Compute the number of selectable items for arrow navigation bounds.
-  const itemCount = (() => {
+  // Number of focusable LIST rows in the current screen. The total focusable
+  // count (itemCount) also includes trailing buttons defined below.
+  const listItemCount = (() => {
+    if (minitelSelectedFilm != null) return 0 // detail mode: no list, only buttons
     if (minitelMode === 'sommaire' || minitelMode === 'idle') return 4
     if (minitelMode === 'rayons' && !minitelSelectedAisle) {
-      return AISLES_ORDER.filter((a) => (films[a]?.length ?? 0) > 0).length
+      const nonEmpty = AISLES_ORDER.filter((a) => (films[a]?.length ?? 0) > 0).length
+      return Math.min(PAGE_SIZE, nonEmpty - minitelPageIndex * PAGE_SIZE)
     }
     if (minitelMode === 'rayons' && minitelSelectedAisle) {
       const list = films[minitelSelectedAisle] || []
@@ -238,20 +249,74 @@ export function MinitelOverlay() {
     }
     if (minitelMode === 'recherche') {
       const results = searchFilms(buildAllFilms(), minitelQuery)
-      return Math.min(8, results.length)
+      return Math.min(RECHERCHE_PAGE_SIZE, results.length)
     }
-    if (minitelMode === 'commander') return Math.min(6, tmdbResults.length)
+    if (minitelMode === 'commander') {
+      if (!isAuthenticated) return 0
+      return Math.min(6, tmdbResults.length)
+    }
     return 0
   })()
+
+  // Total pages for the current paginated screen — used to decide whether
+  // 'prev' / 'next' trailing buttons are reachable in the focus cycle.
+  const totalPagesForMode = (() => {
+    if (minitelMode === 'alpha') return Math.max(1, Math.ceil(buildAllFilms().length / PAGE_SIZE))
+    if (minitelMode === 'rayons' && !minitelSelectedAisle) {
+      const nonEmpty = AISLES_ORDER.filter((a) => (films[a]?.length ?? 0) > 0).length
+      return Math.max(1, Math.ceil(nonEmpty / PAGE_SIZE))
+    }
+    if (minitelMode === 'rayons' && minitelSelectedAisle) {
+      return Math.max(1, Math.ceil((films[minitelSelectedAisle] || []).length / PAGE_SIZE))
+    }
+    return 1
+  })()
+
+  // Trailing buttons reachable AFTER the list (1-based indices continue past
+  // listItemCount). Paginated modes also expose 'prev' / 'next' so the user
+  // can reach SUIV with ↓ from the last list row instead of being shuttled
+  // straight onto RETOUR.
+  type TrailingBtn = 'envoi' | 'esc' | 'prev' | 'next'
+  const trailingButtons: TrailingBtn[] = (() => {
+    if (minitelSelectedFilm != null) return ['envoi', 'esc']            // detail: ILLUMINER + RETOUR
+    if (minitelMode === 'commander' && !isAuthenticated) return ['envoi', 'esc']  // SE CONNECTER + RETOUR
+    const isPaginated =
+      minitelMode === 'alpha' ||
+      (minitelMode === 'rayons' /* either aisle list or films list */)
+    if (isPaginated) {
+      const buttons: TrailingBtn[] = []
+      if (minitelPageIndex > 0) buttons.push('prev')
+      if (minitelPageIndex < totalPagesForMode - 1) buttons.push('next')
+      buttons.push('esc')
+      return buttons
+    }
+    return ['esc']                                                      // every other screen: RETOUR/FERMER
+  })()
+
+  const itemCount = listItemCount + trailingButtons.length
 
   const highlightedItem = useStore((s) => s.minitelHighlightedItem)
   const setHighlightedItem = useStore((s) => s.setMinitelHighlightedItem)
 
-  // Reset highlight when mode/page/aisle/query changes — otherwise Enter would
-  // dispatch a stale highlightedItem index from previous results.
+  // Dispatch the focused element (list row or trailing button).
+  const dispatchFocused = useCallback(() => {
+    if (listItemCount > 0 && highlightedItem <= listItemCount) {
+      handleNumberPress(highlightedItem)
+      return
+    }
+    const trailingIdx = highlightedItem - listItemCount - 1
+    const btn = trailingButtons[trailingIdx] ?? trailingButtons[trailingButtons.length - 1]
+    if (btn === 'envoi') handleEnvoi()
+    else if (btn === 'prev') handleRetour() // PREC = previous page
+    else if (btn === 'next') handleSuite()  // SUIV = next page
+    else handleEsc()
+  }, [listItemCount, trailingButtons, highlightedItem, handleNumberPress, handleEnvoi, handleEsc, handleRetour, handleSuite])
+
+  // Reset highlight when mode/page/aisle/query/selectedFilm changes — otherwise
+  // Enter would dispatch a stale highlightedItem index from previous results.
   useEffect(() => {
     setHighlightedItem(1)
-  }, [minitelMode, minitelSelectedAisle, minitelPageIndex, minitelQuery, setHighlightedItem])
+  }, [minitelMode, minitelSelectedAisle, minitelPageIndex, minitelQuery, minitelSelectedFilm, setHighlightedItem])
 
   useEffect(() => {
     if (!isInteractingWithMinitel) return
@@ -282,9 +347,7 @@ export function MinitelOverlay() {
       }
       if (e.key === 'Enter') {
         e.preventDefault()
-        if (minitelMode === 'detail') { handleEnvoi(); return }
-        if (itemCount > 0) { handleNumberPress(highlightedItem); return }
-        handleEnvoi()
+        dispatchFocused()
         return
       }
       if (e.key === 'Escape') { e.preventDefault(); handleEsc(); return }
@@ -296,7 +359,7 @@ export function MinitelOverlay() {
     return () => window.removeEventListener('keydown', onKey)
   }, [
     isInteractingWithMinitel, minitelMode, itemCount, highlightedItem,
-    setHighlightedItem, handleNumberPress, handleEnvoi, handleEsc, handleSuite, handleRetour,
+    setHighlightedItem, handleNumberPress, handleEnvoi, handleEsc, handleSuite, handleRetour, dispatchFocused,
   ])
 
   // Bridge: consume direct-clicks on the 3D screen plane forwarded by
@@ -327,6 +390,17 @@ export function MinitelOverlay() {
   if (!isInteractingWithMinitel) return null
 
   const showInput = minitelMode === 'recherche' || minitelMode === 'commander'
+  const isDetail = minitelSelectedFilm != null
+  // RAYONS (aisle list) is now paginated when > PAGE_SIZE aisles exist.
+  const rayonsHasMultiplePages = (() => {
+    if (minitelMode !== 'rayons' || minitelSelectedAisle) return false
+    return AISLES_ORDER.filter((a) => (films[a]?.length ?? 0) > 0).length > PAGE_SIZE
+  })()
+  const isPaged =
+    (minitelMode === 'rayons' && minitelSelectedAisle != null) ||
+    minitelMode === 'alpha' ||
+    rayonsHasMultiplePages
+  const helpLines = buildHelpLines(minitelMode, isDetail, isPaged)
 
   return (
     <div style={{
@@ -353,38 +427,199 @@ export function MinitelOverlay() {
             transform: 'translateX(-50%)',
             width: 280, padding: '8px 12px',
             background: 'rgba(0,0,0,0.85)',
-            border: '1px solid #00fff7',
-            color: '#00fff7',
-            fontFamily: "'Courier New', monospace",
-            fontSize: 16,
+            border: '1px solid #4FF0E8',
+            color: '#4FA8FF',
+            fontFamily: "'VT323', 'Courier New', monospace",
+            fontSize: 18,
             outline: 'none',
             pointerEvents: 'auto',
             opacity: isMobile ? 1 : 0.001,
           }}
         />
       )}
+
+      {/* Desktop help panel — keyboard legend on the right of the screen.
+          Fades in 200ms when the minitel opens, hidden on mobile (the on-
+          screen pad below replaces it). */}
+      {!isMobile && (
+        <div
+          style={{
+            position: 'absolute',
+            top: '50%', right: '6vw',
+            transform: 'translateY(-50%)',
+            minWidth: 180,
+            padding: '14px 16px',
+            background: 'rgba(0, 0, 0, 0.85)',
+            border: `1px solid ${PILL_COLORS.cyan}`,
+            color: PILL_COLORS.blue,
+            fontFamily: "'VT323', 'Courier New', monospace",
+            fontSize: 18,
+            lineHeight: 1.35,
+            letterSpacing: '0.04em',
+            animation: 'minitel-help-fade 200ms ease-out both',
+            pointerEvents: 'none',
+          }}
+        >
+          <div style={{
+            fontSize: 18,
+            color: PILL_COLORS.bg,
+            background: PILL_COLORS.cyan,
+            padding: '2px 8px',
+            margin: '-14px -16px 10px',
+            display: 'inline-block',
+            width: 'calc(100% + 32px)',
+            boxSizing: 'border-box',
+          }}>AIDE CLAVIER</div>
+          {helpLines.map((line, i) => (
+            <div key={i} style={{ display: 'flex', gap: 10, marginBottom: 6 }}>
+              <span style={{ color: line.color, minWidth: 56 }}>{line.keys}</span>
+              <span>{line.label}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Mobile control pad — replaces the desktop help panel. Cluster bottom-
+          right, TVTerminal style. ◀▶ hidden when not in paginated modes. */}
+      {isMobile && (
+        <div style={{
+          position: 'absolute',
+          right: 'max(env(safe-area-inset-right), 14px)',
+          bottom: showInput
+            ? 'calc(env(safe-area-inset-bottom, 0px) + 72px)'
+            : 'max(env(safe-area-inset-bottom), 14px)',
+          display: 'grid',
+          gridTemplateColumns: isPaged ? 'auto auto auto' : 'auto auto',
+          gridAutoRows: '56px',
+          gap: 8,
+          pointerEvents: 'none',
+        }}>
+          {isPaged && (
+            <>
+              <PadButton onPress={handleRetour} label="◀" disabled={minitelPageIndex <= 0} />
+              <PadButton onPress={handleSuite} label="▶" disabled={false} />
+              <div /> {/* spacer column to keep grid alignment */}
+            </>
+          )}
+          <PadButton
+            onPress={() => setHighlightedItem(highlightedItem <= 1 ? Math.max(itemCount, 1) : highlightedItem - 1)}
+            label="▲"
+            disabled={itemCount === 0}
+          />
+          <PadButton
+            onPress={dispatchFocused}
+            label="OK"
+            primary
+          />
+          <PadButton
+            onPress={() => setHighlightedItem(highlightedItem >= itemCount ? 1 : highlightedItem + 1)}
+            label="▼"
+            disabled={itemCount === 0}
+          />
+          <PadButton onPress={handleEsc} label="ESC" />
+        </div>
+      )}
+
       <AuthModal
         isOpen={showAuthModal}
         onClose={() => setShowAuthModal(false)}
         onSuccess={() => setShowAuthModal(false)}
       />
+
+      {/* Keyframes for the help panel fade-in. */}
+      <style>{`
+        @keyframes minitel-help-fade {
+          from { opacity: 0; transform: translateY(-50%) translateX(8px); }
+          to   { opacity: 1; transform: translateY(-50%) translateX(0); }
+        }
+      `}</style>
     </div>
   )
 }
 
-function mtBtnStyle(extra: Record<string, string | number> = {}): React.CSSProperties {
-  return {
-    background: 'rgba(0, 0, 0, 0.7)',
-    border: '1px solid #00fff7',
-    color: '#00fff7',
-    fontFamily: "'Courier New', monospace",
-    fontWeight: 'bold',
-    fontSize: '0.85rem',
-    padding: '10px 6px',
-    borderRadius: 4,
-    cursor: 'pointer',
-    letterSpacing: '0.05em',
-    minHeight: 44,
-    ...extra,
-  } as React.CSSProperties
+// Palette mirrored from MinitelScreen.tsx — kept inline so the overlay doesn't
+// import the canvas module just for these constants.
+const PILL_COLORS = {
+  bg: '#000000',
+  blue: '#4FA8FF',
+  cyan: '#4FF0E8',
+  green: '#4FF04F',
+  yellow: '#FFE74C',
+  magenta: '#FF52C0',
+  red: '#E63B3B',
+  white: '#FFFFFF',
+} as const
+
+// Build the contextual help legend (desktop). Each line returns the key glyph
+// + a short label + the colour applied to the key column.
+function buildHelpLines(
+  mode: string,
+  isDetail: boolean,
+  isPaged: boolean,
+): Array<{ keys: string; label: string; color: string }> {
+  if (isDetail) {
+    return [
+      { keys: '⏎', label: 'ILLUMINER', color: PILL_COLORS.magenta },
+      { keys: 'Esc', label: 'RETOUR', color: PILL_COLORS.red },
+    ]
+  }
+  if (mode === 'recherche' || mode === 'commander') {
+    const lines: Array<{ keys: string; label: string; color: string }> = [
+      { keys: 'A-Z', label: 'TAPER', color: PILL_COLORS.blue },
+      { keys: '⏎', label: mode === 'commander' ? 'COMMANDER' : 'VALIDER', color: PILL_COLORS.cyan },
+    ]
+    lines.push({ keys: '↑ ↓', label: 'NAVIGUER', color: PILL_COLORS.yellow })
+    lines.push({ keys: 'Esc', label: 'RETOUR', color: PILL_COLORS.red })
+    return lines
+  }
+  if (mode === 'sommaire' || mode === 'idle') {
+    return [
+      { keys: '↑ ↓', label: 'NAVIGUER', color: PILL_COLORS.yellow },
+      { keys: '⏎', label: 'VALIDER', color: PILL_COLORS.cyan },
+      { keys: 'Esc', label: 'QUITTER', color: PILL_COLORS.red },
+    ]
+  }
+  // rayons / alpha
+  const lines: Array<{ keys: string; label: string; color: string }> = [
+    { keys: '↑ ↓', label: 'NAVIGUER', color: PILL_COLORS.yellow },
+  ]
+  if (isPaged) lines.push({ keys: 'PgUp/Dn', label: 'PAGE', color: PILL_COLORS.cyan })
+  lines.push({ keys: '⏎', label: 'VALIDER', color: PILL_COLORS.cyan })
+  lines.push({ keys: 'Esc', label: 'RETOUR', color: PILL_COLORS.red })
+  return lines
 }
+
+interface PadBtnProps { label: string; onPress: () => void; disabled?: boolean; primary?: boolean }
+function PadButton({ label, onPress, disabled, primary }: PadBtnProps) {
+  return (
+    <button
+      type="button"
+      onClick={() => { if (!disabled) onPress() }}
+      style={{
+        width: 56, height: 56,
+        background: disabled
+          ? 'rgba(0,0,0,0.4)'
+          : primary
+            ? PILL_COLORS.cyan
+            : 'rgba(0,0,0,0.78)',
+        border: `1px solid ${primary ? PILL_COLORS.cyan : '#4FA8FF'}`,
+        color: disabled
+          ? 'rgba(79,168,255,0.35)'
+          : primary
+            ? PILL_COLORS.bg
+            : PILL_COLORS.blue,
+        fontFamily: "'VT323', 'Courier New', monospace",
+        fontSize: 26,
+        lineHeight: 1,
+        borderRadius: 4,
+        cursor: disabled ? 'default' : 'pointer',
+        pointerEvents: 'auto',
+        touchAction: 'manipulation',
+        userSelect: 'none',
+      }}
+    >
+      {label}
+    </button>
+  )
+}
+

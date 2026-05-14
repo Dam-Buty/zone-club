@@ -14,6 +14,10 @@ import { CASSETTE_DIMENSIONS } from './Cassette'
 
 const SHARED_CASSETTE_GEOMETRY = new THREE.BoxGeometry(CASSETTE_DIMENSIONS.width, CASSETTE_DIMENSIONS.height, CASSETTE_DIMENSIONS.depth)
 
+// Scratch color for the per-frame ILLUMINER emissive cycle — avoids per-frame
+// allocations inside the hot useFrame loop.
+const _highlightColor = new THREE.Color()
+
 const LOUE_OVERLAY_TEXTURE = (() => {
   const canvas = document.createElement('canvas')
   canvas.width = 200
@@ -335,7 +339,6 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
     // Progressive load — fetch posters from /api/poster proxy (HTTP + disk cache
     // already provided by the server). Previously cached in IndexedDB but the
     // structured-clone of 33MB atlas blocked the main thread 5-8s on Pixel 9.
-    const _tLoadStart = performance.now()
     let queueIdx = 0
     const loadNextBatch = async () => {
       if (cancelled || queueIdx >= queue.length) {
@@ -343,7 +346,6 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
           // Single full-atlas upload at end-of-load. Per-batch flushes would
           // trigger 35 × 33MB = 1.15GB of redundant GPU traffic.
           atlas.markDirty()
-          console.warn(`[POSTER-LOAD] complete ${(performance.now() - _tLoadStart).toFixed(0)}ms (${queue.length} posters)`)
         }
         return
       }
@@ -395,6 +397,7 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
   })
 
   const prevTargetedKeyRef = useRef<string | null>(null)
+  const prevHighlightedKeyRef = useRef<string | null>(null)
   const hysteresisActiveRef = useRef(false)
   const lerpFramesRef = useRef(0)
 
@@ -406,6 +409,7 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
 
     const storeState = useStore.getState()
     const targetedCassetteKey = storeState.targetedCassetteKey
+    const highlightedCassetteKey = storeState.highlightedCassetteKey
     const getRental = storeState.getRental
     const filmRentalCounts = storeState.filmRentalCounts
 
@@ -426,13 +430,18 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
 
     const needsProcessing =
       targetedCassetteKey !== prevTargetedKeyRef.current ||
+      highlightedCassetteKey !== prevHighlightedKeyRef.current ||
       hysteresisActiveRef.current ||
-      lerpFramesRef.current > 0
+      lerpFramesRef.current > 0 ||
+      // Keep iterating while an ILLUMINER highlight is active so its emissive
+      // can cycle through green / blue / violet every frame.
+      highlightedCassetteKey !== null
 
     if (!needsProcessing) {
       return
     }
     prevTargetedKeyRef.current = targetedCassetteKey
+    prevHighlightedKeyRef.current = highlightedCassetteKey
 
     const tarHoverArr = targetHoverZBuffer.value.array as Float32Array
     const tarEmissiveArr = targetEmissiveBuffer.value.array as Float32Array
@@ -473,15 +482,37 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
       }
 
       const isTargeted = hs.stableTargeted
+      const isHighlighted = highlightedCassetteKey != null && highlightedCassetteKey === instanceIdToKey[i]
 
-      const newTarHoverZ = isTargeted ? hoverOffsets[i] : 0
+      // Explicit ILLUMINER highlight pushes the K7 out further than a regular
+      // hover so it reads as a deliberate "look here" cue from across the room.
+      // Layered on top: a back-and-forth pulse that drives the K7 along the
+      // same hover axis as a raycast popout, but oscillating ~0.8x ↔ 1.6x the
+      // hover offset (~2.5s period). The compute-pass low-pass (speed 12)
+      // damps it ~2 %, so the target sine reaches the cassette almost intact.
+      let newTarHoverZ = isTargeted ? hoverOffsets[i] : 0
+      if (isHighlighted) {
+        const pulse = 1.2 + 0.4 * Math.sin(state.clock.elapsedTime * 2.5)
+        newTarHoverZ = hoverOffsets[i] * pulse
+      }
       if (tarHoverArr[i] !== newTarHoverZ) {
         tarHoverArr[i] = newTarHoverZ
         tarHoverDirty = true
       }
 
       let tR = 0; let tG = 0; let tB = 0
-      if (isRented) {
+      if (isHighlighted) {
+        // Time-driven HSL cycle: hue ∈ [0.33, 0.78] sweeps green → blue →
+        // violet (~4.5s round-trip). Intensity 1.7 keeps the bloom halo as
+        // strong as the previous static blue emissive.
+        const t = state.clock.elapsedTime
+        const h = 0.555 + 0.225 * Math.sin(t * 1.4)
+        _highlightColor.setHSL(h, 1, 0.5)
+        const intensity = 1.7
+        tR = _highlightColor.r * intensity
+        tG = _highlightColor.g * intensity
+        tB = _highlightColor.b * intensity
+      } else if (isRented) {
         tR = 0; tG = 0.3; tB = 0
       } else if (isTargeted) {
         tR = 0; tG = 0.5; tB = 0.1

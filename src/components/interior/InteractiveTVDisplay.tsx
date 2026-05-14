@@ -567,9 +567,12 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
     ctx.font = `bold 102px ${CRT_FONT}`
     ctx.textAlign = 'left'
     ctx.textBaseline = 'middle'
-    ctx.shadowColor = '#00ffff'
+    // Switched #00ffff → #00ffcc (aqua-cyan) to match the other in-world
+    // hints. Glow kept low (3) since the glyph stems are already chunky at
+    // 102 px and any extra blur would soften them on the CRT mesh.
+    ctx.shadowColor = '#00ffcc'
     ctx.shadowBlur = 3
-    ctx.fillStyle = '#00ffff'
+    ctx.fillStyle = '#00ffcc'
     ctx.fillText('CLICK POUR', LX * 3, h / 2 - 90)
     ctx.fillText('OUVRIR LE MENU', LX * 3, h / 2 + 90)
     ctx.shadowBlur = 0
@@ -703,19 +706,22 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
     canvas.height = h
     const ctx = canvas.getContext('2d')!
 
-    // Text
-    ctx.font = `bold 19px ${CRT_FONT}`
+    // Text — same #00ffcc + blur 4 recipe as the working "La Zone TV"
+    // floating label. Font bumped 19 → 26 px so the 512-wide canvas pushes
+    // more pixels per glyph onto the mesh (the previous 19 px was rendering
+    // sub-glyph at viewing distance once mapped onto the small plane).
+    ctx.font = `bold 26px ${CRT_FONT}`
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.shadowColor = '#00ffff'
-    ctx.shadowBlur = 8
-    ctx.fillStyle = '#00ffff'
-    ctx.fillText('Installez-vous dans le canapé', w / 2, 30)
+    ctx.shadowColor = '#00ffcc'
+    ctx.shadowBlur = 4
+    ctx.fillStyle = '#00ffcc'
+    ctx.fillText('Installez-vous dans le canapé', w / 2, 34)
 
-    // Downward arrow (▼) below text
-    ctx.font = `bold 27px ${CRT_FONT}`
-    ctx.shadowBlur = 10
-    ctx.fillText('▼', w / 2, 80)
+    // Downward arrow (▼) below text — slightly stronger blur for the glyph
+    ctx.font = `bold 32px ${CRT_FONT}`
+    ctx.shadowBlur = 5
+    ctx.fillText('▼', w / 2, 88)
 
     const texture = new THREE.CanvasTexture(canvas)
     texture.needsUpdate = true
@@ -746,7 +752,9 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
   const SETTINGS_COLORS = {
     green: '#00ff00',
     greenDim: '#009900',
-    cyan: '#00fff7',
+    // Bumped cyan from #00fff7 → light aqua: sharper at distance on the CRT
+    // mesh without becoming intrusive. Same hue family.
+    cyan: '#A8FCEC',
     gold: '#ffd700',
     red: '#ff4444',
     pink: '#ff2d95',

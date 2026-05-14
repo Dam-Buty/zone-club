@@ -51,14 +51,14 @@ export function DeskFilmPicker() {
         }}
       >
         <div style={{
-          color: '#00fff7',
+          color: '#A8FCEC',
           fontFamily: "'Courier New', monospace",
           fontSize: '0.75rem',
           textTransform: 'uppercase',
           letterSpacing: 2,
           textAlign: 'center',
           marginBottom: '0.25rem',
-          textShadow: '0 0 8px #00fff7',
+          textShadow: '0 0 8px #4FF0E8',
         }}>
           Derniers retours
         </div>

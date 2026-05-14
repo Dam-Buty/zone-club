@@ -202,6 +202,11 @@ interface VideoClubState {
   consumeMinitelItem: () => void;
   highlightedCassetteKey: string | null;
   setHighlightedCassetteKey: (k: string | null) => void;
+  // True for ~320ms after a user clicks ILLUMINER LA K7 — drives a brief
+  // reverse-video flash on the button so the click registers visually
+  // before the minitel closes.
+  minitelIlluminerFlash: boolean;
+  setMinitelIlluminerFlash: (v: boolean) => void;
   // TMDB search state for COMMANDER mode. Lives in the store so the canvas
   // (rendered by MinitelDisplay) and the action handlers (in MinitelOverlay)
   // both see the same results.
@@ -567,13 +572,22 @@ export const useStore = create<VideoClubState>()(
       setScene: (scene) => set({ currentScene: scene, isSceneReady: scene !== 'interior' }),
       setAisle: (aisle) => set({ currentAisle: aisle }),
       selectFilm: (filmId) => {
-        set({ selectedFilmId: filmId, targetedFilmId: null, targetedCassetteKey: null });
-        // Pre-fetch VHS cover data at click time (before VHSCaseViewer mounts)
-        // fetchVHSCoverData checks its own cache — no double-fetch risk
         if (filmId !== null) {
+          set({
+            selectedFilmId: filmId,
+            targetedFilmId: null,
+            targetedCassetteKey: null,
+            isSitting: false,
+            isInteractingWithMinitel: false,
+            isInteractingWithTV: false,
+            isInteractingWithLaZone: false,
+            isWatchingLaZone: false,
+          });
           const allFilms = Object.values(get().films).flat();
           const film = allFilms.find(f => f.id === filmId) || get().deskFilms.find(f => f.id === filmId);
           if (film) fetchVHSCoverData(film).catch(() => {});
+        } else {
+          set({ selectedFilmId: null, targetedFilmId: null, targetedCassetteKey: null });
         }
       },
 
@@ -752,7 +766,20 @@ export const useStore = create<VideoClubState>()(
 
       // Sitting on couch
       isSitting: false,
-      setSitting: (sitting) => set({ isSitting: sitting }),
+      setSitting: (sitting) => {
+        if (sitting) {
+          set({
+            isSitting: true,
+            selectedFilmId: null,
+            isInteractingWithMinitel: false,
+            isInteractingWithTV: false,
+            isInteractingWithLaZone: false,
+            isWatchingLaZone: false,
+          });
+        } else {
+          set({ isSitting: false });
+        }
+      },
 
       // TV zoom (Paramètres)
       isZoomedOnTV: false,
@@ -760,7 +787,34 @@ export const useStore = create<VideoClubState>()(
 
       // Minitel
       isInteractingWithMinitel: false,
-      setInteractingWithMinitel: (val) => set({ isInteractingWithMinitel: val }),
+      setInteractingWithMinitel: (val) => {
+        if (val) {
+          set({
+            isInteractingWithMinitel: true,
+            selectedFilmId: null,
+            isSitting: false,
+            isInteractingWithTV: false,
+            isInteractingWithLaZone: false,
+            isWatchingLaZone: false,
+          });
+        } else {
+          // UX 45: re-open minitel doit repartir du sommaire (idle).
+          // NB: ne PAS reset highlightedCassetteKey ici — ILLUMINER LA K7
+          // ferme le minitel volontairement pour laisser la K7 illuminée
+          // dans le rayon. Le highlight est nettoyé ailleurs (au prochain
+          // ILLUMINER, sélection cassette, etc.).
+          set({
+            isInteractingWithMinitel: false,
+            minitelMode: 'idle',
+            minitelQuery: '',
+            minitelSelectedAisle: null,
+            minitelSelectedFilm: null,
+            minitelPageIndex: 0,
+            minitelHighlightedItem: 1,
+            pendingMinitelPress: null,
+          });
+        }
+      },
       minitelMode: 'idle',
       setMinitelMode: (m) => set({ minitelMode: m }),
       minitelQuery: '',
@@ -778,6 +832,8 @@ export const useStore = create<VideoClubState>()(
       consumeMinitelItem: () => set({ pendingMinitelPress: null }),
       highlightedCassetteKey: null,
       setHighlightedCassetteKey: (k) => set({ highlightedCassetteKey: k }),
+      minitelIlluminerFlash: false,
+      setMinitelIlluminerFlash: (v) => set({ minitelIlluminerFlash: v }),
       minitelTmdbResults: [],
       setMinitelTmdbResults: (r) => set({ minitelTmdbResults: r }),
       minitelTmdbState: 'idle',
@@ -787,7 +843,20 @@ export const useStore = create<VideoClubState>()(
 
       // Standing TV interaction
       isInteractingWithTV: false,
-      setInteractingWithTV: (val) => set({ isInteractingWithTV: val }),
+      setInteractingWithTV: (val) => {
+        if (val) {
+          set({
+            isInteractingWithTV: true,
+            selectedFilmId: null,
+            isSitting: false,
+            isInteractingWithMinitel: false,
+            isInteractingWithLaZone: false,
+            isWatchingLaZone: false,
+          });
+        } else {
+          set({ isInteractingWithTV: false });
+        }
+      },
 
       // TV seated menu control
       tvMenuAction: null,
@@ -796,9 +865,35 @@ export const useStore = create<VideoClubState>()(
 
       // LaZone CRT interaction
       isInteractingWithLaZone: false,
-      setInteractingWithLaZone: (val) => set({ isInteractingWithLaZone: val }),
+      setInteractingWithLaZone: (val) => {
+        if (val) {
+          set({
+            isInteractingWithLaZone: true,
+            selectedFilmId: null,
+            isSitting: false,
+            isInteractingWithMinitel: false,
+            isInteractingWithTV: false,
+            isWatchingLaZone: false,
+          });
+        } else {
+          set({ isInteractingWithLaZone: false });
+        }
+      },
       isWatchingLaZone: false,
-      setWatchingLaZone: (val) => set({ isWatchingLaZone: val }),
+      setWatchingLaZone: (val) => {
+        if (val) {
+          set({
+            isWatchingLaZone: true,
+            selectedFilmId: null,
+            isSitting: false,
+            isInteractingWithMinitel: false,
+            isInteractingWithTV: false,
+            isInteractingWithLaZone: false,
+          });
+        } else {
+          set({ isWatchingLaZone: false });
+        }
+      },
       laZoneMenuAction: null,
       dispatchLaZoneMenu: (action) => set({ laZoneMenuAction: action }),
       clearLaZoneMenuAction: () => set({ laZoneMenuAction: null }),

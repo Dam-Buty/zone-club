@@ -113,15 +113,6 @@ export function MinitelDisplay({ position, scale = 0.025, rotation = [0, Math.PI
       mesh.userData.isMinitelScreen = true
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ;(window as any).__minitelScreenMesh = mesh
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ;(window as any).__minitelCandidates = candidates.map((c) => ({
-        name: c.name,
-        bbSize: (() => { const s = new THREE.Vector3(); c.geometry.boundingBox?.getSize(s); return [s.x, s.y, s.z]; })(),
-        vertexCount: c.geometry.getAttribute('position')?.count ?? 0,
-      }))
-      if (candidates.length > 1) {
-        console.warn(`[MINITEL] ${candidates.length} meshes share material ${SCREEN_MESH_MATERIAL_NAME}; tagged the largest by area=${bestArea.toFixed(4)}`)
-      }
     }
 
     // Compute the screen face center + normal in WORLD coords on the next
@@ -161,7 +152,6 @@ export function MinitelDisplay({ position, scale = 0.025, rotation = [0, Math.PI
 
         ;(window as unknown as { __minitelScreenInfo?: { center: THREE.Vector3; normal: THREE.Vector3 } })
           .__minitelScreenInfo = { center: worldCenter, normal: worldNormal }
-        console.warn(`[MINITEL] screen center=${worldCenter.x.toFixed(2)},${worldCenter.y.toFixed(2)},${worldCenter.z.toFixed(2)} normal=${worldNormal.x.toFixed(2)},${worldNormal.y.toFixed(2)},${worldNormal.z.toFixed(2)}`)
       })
       return () => {
         cancelAnimationFrame(id)

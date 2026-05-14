@@ -59,21 +59,25 @@ const COLLISION_ZONES: {
     name: "tv",
   },
   {
+    // Étagère murale gauche — inner edge brought 3 cm closer to the wall
+    // (0.60 → 0.57) so the visitor can stand ~5 % nearer the K7 spines.
     minX: -ROOM_WIDTH / 2,
-    maxX: -ROOM_WIDTH / 2 + 0.6,
+    maxX: -ROOM_WIDTH / 2 + 0.57,
     minZ: -ROOM_DEPTH / 2,
     maxZ: ROOM_DEPTH / 2,
     name: "etagere-gauche",
   },
   {
+    // Étagère murale du fond — same 0.60 → 0.57 trim on the inner edge.
     minX: -ROOM_WIDTH / 2,
     maxX: ROOM_WIDTH / 2 - 1.5,
     minZ: -ROOM_DEPTH / 2,
-    maxZ: -ROOM_DEPTH / 2 + 0.6,
+    maxZ: -ROOM_DEPTH / 2 + 0.57,
     name: "etagere-fond",
   },
   {
-    minX: ROOM_WIDTH / 2 - 0.6,
+    // Étagère murale droite-nord — inner edge pulled 3 cm tighter.
+    minX: ROOM_WIDTH / 2 - 0.57,
     maxX: ROOM_WIDTH / 2,
     minZ: -ROOM_DEPTH / 2,
     maxZ: 0.5,
@@ -412,18 +416,15 @@ export function Controls({
       showManager();
       return;
     }
-    if (interactive === "tv") {
+    if (interactive === "tv" || interactive === "couch") {
       if (isSitting) {
-        // Seated: route to TV menu instead of terminal
-        useStore.getState().dispatchTVMenu('select');
+        // Seated: TV click drives the seated menu. Couch click is a no-op
+        // (the player is already there).
+        if (interactive === "tv") useStore.getState().dispatchTVMenu('select');
       } else {
-        // Standing: show 2-option TV menu instead of terminal
-        useStore.getState().setInteractingWithTV(true);
-      }
-      return;
-    }
-    if (interactive === "couch") {
-      if (!isSitting) {
+        // Standing: clicking either the couch or the TV teleports the
+        // visitor onto the couch. The previous "standing TV menu" was
+        // removed — the seated menu handles all TV interactions.
         setSitting(true);
       }
       return;
@@ -431,13 +432,16 @@ export function Controls({
     if (interactive === "minitel") {
       const ms = useStore.getState();
       if (!ms.isInteractingWithMinitel) {
+        // Clear any stale crosshair / hover target so the previous K7 doesn't
+        // stay "armed" while the player is busy in the minitel.
+        ms.setTargetedFilm(null, null);
         ms.setInteractingWithMinitel(true);
-        // Desktop: release pointer lock so the user can move the cursor to
-        // click directly on items rendered on the 3D screen. Mobile uses tap.
+        // Desktop: release pointer lock so the keyboard takes over (↑↓ ⏎ Esc
+        // drive the menu; help panel on the right shows the legend).
         if (!isMobile) requestPointerUnlock();
-      } else if (targetedMinitelHitboxRef.current != null) {
-        ms.dispatchMinitelItem(targetedMinitelHitboxRef.current);
       }
+      // Minitel is keyboard/button-only — clicks on the screen do not dispatch
+      // any item. See MinitelOverlay for the input bridge.
       return;
     }
     if (interactive === "lazone") {
@@ -529,32 +533,9 @@ export function Controls({
     handleClickRef.current = (e?: MouseEvent) => {
       const minitelOpen = useStore.getState().isInteractingWithMinitel;
       if (!controls.isLocked && minitelOpen && e) {
-        const rect = gl.domElement.getBoundingClientRect();
-        const ndcX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-        const ndcY = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-        _tapNDC.set(ndcX, ndcY);
-        raycasterRef.current.setFromCamera(_tapNDC, camera);
-        raycasterRef.current.far = 8;
-        const intersects = raycasterRef.current.intersectObjects(scene.children, true);
-        for (const intersect of intersects) {
-          if (intersect.object?.userData?.isMinitelScreen && intersect.uv) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const mh = (window as any).__minitelHitboxes;
-            if (mh) {
-              const canvasV = intersect.uv.y + mh.textureOffsetY;
-              const canvasY = (1 - canvasV) * mh.screenHeight;
-              const canvasU = intersect.uv.x + mh.textureOffsetX;
-              const canvasX = canvasU * (mh.screenWidth ?? 512);
-              const match = mh.getHitboxes().find((h: { yStart: number; yEnd: number; xStart?: number; xEnd?: number }) =>
-                canvasY >= h.yStart && canvasY <= h.yEnd &&
-                (h.xStart === undefined || h.xEnd === undefined ||
-                 (canvasX >= h.xStart && canvasX <= h.xEnd))
-              );
-              if (match) useStore.getState().dispatchMinitelItem(match.index);
-            }
-            return;
-          }
-        }
+        // Minitel is keyboard/button-only. Clicks on the screen are swallowed
+        // so the camera stays in zoom and no item dispatch happens. The
+        // overlay help panel (desktop) and on-screen pad (mobile) drive the UI.
         return;
       }
       if (controls.isLocked) {
@@ -834,21 +815,9 @@ export function Controls({
     // DIAGNOSTIC : détecte les spikes frame > 100ms pour identifier QUAND
     // le freeze se produit. À corréler avec les logs [COMPUTE-PIPE] côté
     // InteriorScene pour identifier la cause racine.
-    {
-      const _now = performance.now();
-      const _last = frameSpikeRef.current.last;
-      if (_last > 0) {
-        const _dt = _now - _last;
-        if (_dt > 100) {
-          console.warn(
-            `[FRAME-SPIKE] ${_dt.toFixed(0)}ms ` +
-            `cam=(${camera.position.x.toFixed(2)},${camera.position.y.toFixed(2)},${camera.position.z.toFixed(2)}) ` +
-            `rot=(${camera.rotation.x.toFixed(2)},${camera.rotation.y.toFixed(2)})`
-          );
-        }
-      }
-      frameSpikeRef.current.last = _now;
-    }
+    // Frame-spike detector disabled at load — flip to true locally to chase
+    // a freeze.
+    frameSpikeRef.current.last = performance.now();
 
     // === Tutorial camera override — lerp to waypoint, block all inputs ===
     const tutorialTarget = useStore.getState().tutorialCameraTarget;
@@ -914,6 +883,15 @@ export function Controls({
             true,
           );
 
+          // When in minitel mode, taps on the screen are swallowed — the
+          // mobile control pad (▲▼ ◀▶ OK ESC) is the only valid input. This
+          // also prevents accidental teleports to the couch/TV behind the
+          // minitel when the player taps off-target.
+          const minitelOpenForTap = useStore.getState().isInteractingWithMinitel;
+          if (minitelOpenForTap) {
+            return;
+          }
+
           for (const intersect of intersects) {
             // Check InstancedMesh cassettes
             if (
@@ -948,6 +926,9 @@ export function Controls({
                 handled = true;
                 break;
               }
+              // Couch + TV CRT share the same tap action when standing:
+              // teleport onto the couch. When seated, only the TV dispatches
+              // the seated menu select (couch tap is a no-op).
               if (obj.userData?.isCouch && intersect.distance <= 3.0) {
                 if (!useStore.getState().isSitting) {
                   useStore.getState().setSitting(true);
@@ -955,11 +936,11 @@ export function Controls({
                 handled = true;
                 break;
               }
-              if (obj.userData?.isTVScreen && intersect.distance <= 2.5) {
+              if (obj.userData?.isTVScreen && intersect.distance <= 3.0) {
                 if (useStore.getState().isSitting) {
                   useStore.getState().dispatchTVMenu('select');
                 } else {
-                  useStore.getState().setInteractingWithTV(true);
+                  useStore.getState().setSitting(true);
                 }
                 handled = true;
                 break;
@@ -967,20 +948,12 @@ export function Controls({
               if (obj.userData?.isMinitel) {
                 const minitelState = useStore.getState();
                 if (!minitelState.isInteractingWithMinitel) {
+                  // Clear any stale hover target on entry (see desktop path).
+                  minitelState.setTargetedFilm(null, null);
                   minitelState.setInteractingWithMinitel(true);
-                } else if (obj.userData?.isMinitelScreen && intersect.uv) {
-                  // Already in minitel — convert UV → canvas Y → matching hitbox → dispatch
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  const mh = (window as any).__minitelHitboxes;
-                  if (mh) {
-                    const canvasV = intersect.uv.y + mh.textureOffsetY;
-                    const canvasY = (1 - canvasV) * mh.screenHeight;
-                    const match = mh.getHitboxes().find((h: { yStart: number; yEnd: number }) =>
-                      canvasY >= h.yStart && canvasY <= h.yEnd
-                    );
-                    if (match) minitelState.dispatchMinitelItem(match.index);
-                  }
                 }
+                // Already in minitel: tap on the screen is a no-op. The mobile
+                // pad in MinitelOverlay drives the menu via store actions.
                 handled = true;
                 break;
               }
@@ -1072,31 +1045,17 @@ export function Controls({
               foundInteractive = "couch";
               break;
             }
-            if (obj.userData?.isTVScreen && intersect.distance <= 2.5) {
+            // TV CRT shares the couch's tap distance (3 m) — clicking the TV
+            // while standing teleports onto the couch.
+            if (obj.userData?.isTVScreen && intersect.distance <= 3.0) {
               foundInteractive = "tv";
               break;
             }
             if (obj.userData?.isMinitel) {
               foundInteractive = "minitel";
-              // If the camera is already aimed at the screen mesh AND user is
-              // inside minitel, resolve UV → hitbox index for the desktop click
-              // path to consume.
-              if (obj.userData?.isMinitelScreen && intersect.uv && useStore.getState().isInteractingWithMinitel) {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const mh = (window as any).__minitelHitboxes;
-                if (mh) {
-                  const canvasV = intersect.uv.y + mh.textureOffsetY;
-                  const canvasY = (1 - canvasV) * mh.screenHeight;
-                  const m = mh.getHitboxes().find((h: { yStart: number; yEnd: number }) =>
-                    canvasY >= h.yStart && canvasY <= h.yEnd
-                  );
-                  targetedMinitelHitboxRef.current = m ? m.index : null;
-                } else {
-                  targetedMinitelHitboxRef.current = null;
-                }
-              } else {
-                targetedMinitelHitboxRef.current = null;
-              }
+              // Minitel is keyboard/button only — no per-frame hitbox aim
+              // tracking needed.
+              targetedMinitelHitboxRef.current = null;
               break;
             }
             if (obj.userData?.isBoardNote) {
@@ -1253,7 +1212,9 @@ export function Controls({
       if (info) {
         // Mobile gets a much tighter zoom so the canvas text reads at finger
         // distance (FOV 80-90° on phones spreads it thin otherwise).
-        const dist = isMobile ? 0.13 : 0.29;
+        // Desktop dist 0.232 ≈ –20 % vs the previous 0.29 — text reads
+        // ~25 % bigger on the viewport with the new VT323 stack.
+        const dist = isMobile ? 0.13 : 0.232;
         targetPos = info.center.clone().addScaledVector(info.normal, dist);
         targetLookAt = info.center;
       } else {

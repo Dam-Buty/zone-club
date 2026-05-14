@@ -28,7 +28,6 @@ import type { MobileInput } from '../../types/mobile'
 // Lazy loading du composant Aisle (contient tous les modèles 3D)
 const Aisle = lazy(() => import('./Aisle').then(module => ({ default: module.Aisle })))
 import { VHSCaseViewer } from './VHSCaseViewer'
-import { CassetteHighlight } from './CassetteHighlight'
 import { TVTerminal } from '../terminal/TVTerminal'
 import { AuthModal } from '../auth/AuthModal'
 import { SearchModal } from '../search/SearchModal'
@@ -131,7 +130,6 @@ const SceneContent = memo(function SceneContent({
         isMobile={isMobile}
       />
       {selectedFilm && <VHSCaseViewer key={selectedFilm.id} film={selectedFilm} />}
-      <CassetteHighlight />
     </>
   )
 })
@@ -607,10 +605,11 @@ function UIOverlays({ isMobile }: { isMobile: boolean }) {
         let hint = ''
         if (isSitting) {
           hint = '↑↓ Naviguer  ·  [E] Sélectionner  ·  [Échap] Se lever'
-        } else if (targetedInteractive === 'couch') {
+        } else if (targetedInteractive === 'couch' || targetedInteractive === 'tv') {
+          // TV CRT click is routed to "sit on couch" while standing — share
+          // the same hint so the player gets a consistent label across the
+          // whole couch + TV interaction zone.
           hint = "S'asseoir [E]"
-        } else if (targetedInteractive === 'tv') {
-          hint = 'Terminal [E]'
         } else if (targetedInteractive === 'manager' || targetedInteractive === 'bell') {
           hint = 'Parler [E]'
         } else if (targetedInteractive === 'lazone') {
@@ -655,10 +654,10 @@ function UIOverlays({ isMobile }: { isMobile: boolean }) {
             padding: '0.5rem 1rem',
             backgroundColor: 'rgba(0, 0, 0, 0.6)',
             borderRadius: '4px',
-            color: '#00fff7',
+            color: '#A8FCEC',
             fontFamily: 'Orbitron, sans-serif',
             fontSize: '0.75rem',
-            textShadow: '0 0 8px #00fff7',
+            textShadow: '0 0 8px #4FF0E8',
             zIndex: 10,
           }}
         >
@@ -896,25 +895,15 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
             let rpCount = 0
             if (origRP) {
               dev.createRenderPipeline = (desc: GPURenderPipelineDescriptor) => {
-                const t0 = performance.now()
                 const p = origRP(desc)
-                const dt = performance.now() - t0
                 rpCount++
-                console.warn(`[RENDER-PIPE #${rpCount}] sync ${dt.toFixed(1)}ms label="${desc.label || ''}"`)
                 return p
               }
             }
             if (origRPAsync) {
               dev.createRenderPipelineAsync = (desc: GPURenderPipelineDescriptor) => {
-                const t0 = performance.now()
                 rpCount++
-                const id = rpCount
-                return origRPAsync(desc).then((p: GPURenderPipeline) => {
-                  const dt = performance.now() - t0
-                  // Only log slow async compiles (>50ms) to avoid log flood
-                  if (dt > 50) console.warn(`[RENDER-PIPE #${id}] async DONE ${dt.toFixed(1)}ms label="${desc.label || ''}"`)
-                  return p
-                })
+                return origRPAsync(desc)
               }
             }
             // Expose pipeline count for the warmup gate to detect stability.
@@ -958,7 +947,6 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
           const finish = () => {
             if (resolved) return
             resolved = true
-            console.warn(`[SCENE-READY] fired at t+${(performance.now() - startTime).toFixed(0)}ms`)
             useStore.getState().setSceneReady(true)
           }
 

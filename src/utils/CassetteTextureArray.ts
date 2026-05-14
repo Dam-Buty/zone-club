@@ -183,7 +183,6 @@ export class CassetteTextureAtlas {
 
   flush(): boolean {
     if (this._dirty) {
-      console.warn(`[ATLAS-FULL-UPLOAD] needsUpdate=true (${(this.data.byteLength / 1024 / 1024).toFixed(1)}MB)`)
       this.texture.needsUpdate = true
       this._dirty = false
       return true
@@ -197,7 +196,6 @@ export class CassetteTextureAtlas {
    * single 33MB upload instead of one per batch.
    */
   markDirty(): void {
-    console.warn('[ATLAS-MARK-DIRTY]')
     this._dirty = true
   }
 
