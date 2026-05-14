@@ -260,7 +260,7 @@ function drawScanlines(ctx: CanvasRenderingContext2D) {
 }
 
 function drawSommaire(ctx: CanvasRenderingContext2D, highlight: number, hitboxes: HitBox[], focusBack: boolean) {
-  drawHeader(ctx, 'Z·CLUB    SOMMAIRE')
+  drawHeader(ctx, 'VIDEOCLUB SOMMAIRE')
   ctx.textBaseline = 'top'
   let y = PADDING + 44
   const items = [
@@ -289,13 +289,13 @@ function drawSommaire(ctx: CanvasRenderingContext2D, highlight: number, hitboxes
   // Tagline under the menu — phosphor blue, small.
   ctx.fillStyle = COLOR_DIM
   ctx.font = SMALL_FONT
-  ctx.fillText('Z.CLUB · VIDEOCLUB EN LIGNE', PADDING, y + 14)
+  ctx.fillText('VIDEOCLUB EN LIGNE', PADDING, y + 14)
   // FERMER kept for parity with the bridge (index 0 = back). Focused = yellow.
   drawBackButton(ctx, 'FERMER', hitboxes, y + 36, undefined, focusBack)
 }
 
 function drawRecherche(ctx: CanvasRenderingContext2D, query: string, results: Film[], highlight: number, hitboxes: HitBox[], focusBack: boolean) {
-  drawHeader(ctx, 'Z·CLUB   RECHERCHE')
+  drawHeader(ctx, 'VIDEOCLUB RECHERCHE')
   // "TITRE :" yellow label, phosphor input on the same row.
   ctx.fillStyle = PALETTE.YELLOW
   ctx.font = FONT
@@ -408,7 +408,7 @@ function drawRayons(ctx: CanvasRenderingContext2D, films: Record<string, Film[]>
   const totalPages = Math.max(1, Math.ceil(nonEmpty.length / PAGE_SIZE))
   const safePage = Math.max(0, Math.min(page, totalPages - 1))
   const slice = nonEmpty.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE)
-  drawHeader(ctx, `Z·CLUB     RAYONS ${safePage + 1}/${totalPages}`)
+  drawHeader(ctx, `VIDEOCLUB RAYONS ${safePage + 1}/${totalPages}`)
   let y = PADDING + 40
   slice.forEach((a, i) => {
     const num = i + 1
@@ -422,7 +422,7 @@ function drawRayons(ctx: CanvasRenderingContext2D, films: Record<string, Film[]>
 function drawAlpha(ctx: CanvasRenderingContext2D, films: Film[], page: number, highlight: number, hitboxes: HitBox[], focusBack: boolean) {
   const totalPages = Math.max(1, Math.ceil(films.length / PAGE_SIZE))
   const safePage = Math.max(0, Math.min(page, totalPages - 1))
-  drawHeader(ctx, `Z·CLUB  A-Z ${safePage + 1}/${totalPages}`)
+  drawHeader(ctx, `VIDEOCLUB A-Z ${safePage + 1}/${totalPages}`)
   const slice = films.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE)
   let y = PADDING + 40
   slice.forEach((f, i) => {
@@ -437,7 +437,7 @@ function drawAlpha(ctx: CanvasRenderingContext2D, films: Film[], page: number, h
 function drawAisleList(ctx: CanvasRenderingContext2D, aisle: AisleType, films: Film[], page: number, highlight: number, hitboxes: HitBox[], focusBack: boolean) {
   const totalPages = Math.max(1, Math.ceil(films.length / PAGE_SIZE))
   const safePage = Math.max(0, Math.min(page, totalPages - 1))
-  drawHeader(ctx, `Z·CLUB  ${aisleLabel(aisle).toUpperCase()} ${safePage + 1}/${totalPages}`)
+  drawHeader(ctx, `VIDEOCLUB ${aisleLabel(aisle).toUpperCase()} ${safePage + 1}/${totalPages}`)
   const slice = films.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE)
   let y = PADDING + 40
   slice.forEach((f, i) => {
@@ -450,7 +450,7 @@ function drawAisleList(ctx: CanvasRenderingContext2D, aisle: AisleType, films: F
 }
 
 function drawDetail(ctx: CanvasRenderingContext2D, film: Film, location: string, hitboxes: HitBox[], illuminerPressed: boolean, focusPrimary: boolean, focusBack: boolean) {
-  drawHeader(ctx, 'Z·CLUB     DETAIL')
+  drawHeader(ctx, 'VIDEOCLUB DETAIL')
   // Title in cyan, year + cert in dim phosphor underneath.
   ctx.fillStyle = PALETTE.CYAN
   ctx.font = FONT
@@ -567,7 +567,7 @@ function drawCommander(
   focusBack: boolean,
 ) {
   void highlight // results row focus is already handled via the per-row drawRowPill highlight
-  drawHeader(ctx, 'Z·CLUB  COMMANDER')
+  drawHeader(ctx, 'VIDEOCLUB COMMANDER')
   ctx.font = FONT
   ctx.textBaseline = 'top'
   if (!authed) {
