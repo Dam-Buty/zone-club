@@ -22,6 +22,11 @@ export default function RootLayout({
                 <link rel="manifest" href="/manifest.json" />
                 <link rel="icon" href="/logo-icone.png" />
                 <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+                {/* VT323 — CRT-style monospace used by the minitel canvas. Preconnect
+                    so the woff2 is in-flight before the minitel screen is opened. */}
+                <link rel="preconnect" href="https://fonts.googleapis.com" />
+                <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+                <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet" />
                 {/* Preload critical assets for interior scene (start download before JS requests them) */}
                 <link rel="preload" href="/textures/env/indoor_night.hdr" as="fetch" crossOrigin="anonymous" />
                 <link rel="preload" href="/models/vhs_cassette_tape.glb" as="fetch" crossOrigin="anonymous" />

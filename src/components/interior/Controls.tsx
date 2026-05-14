@@ -435,12 +435,12 @@ export function Controls({
         // stay "armed" while the player is busy in the minitel.
         ms.setTargetedFilm(null, null);
         ms.setInteractingWithMinitel(true);
-        // Desktop: release pointer lock so the user can move the cursor to
-        // click directly on items rendered on the 3D screen. Mobile uses tap.
+        // Desktop: release pointer lock so the keyboard takes over (↑↓ ⏎ Esc
+        // drive the menu; help panel on the right shows the legend).
         if (!isMobile) requestPointerUnlock();
-      } else if (targetedMinitelHitboxRef.current != null) {
-        ms.dispatchMinitelItem(targetedMinitelHitboxRef.current);
       }
+      // Minitel is keyboard/button-only — clicks on the screen do not dispatch
+      // any item. See MinitelOverlay for the input bridge.
       return;
     }
     if (interactive === "lazone") {
@@ -532,32 +532,9 @@ export function Controls({
     handleClickRef.current = (e?: MouseEvent) => {
       const minitelOpen = useStore.getState().isInteractingWithMinitel;
       if (!controls.isLocked && minitelOpen && e) {
-        const rect = gl.domElement.getBoundingClientRect();
-        const ndcX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-        const ndcY = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-        _tapNDC.set(ndcX, ndcY);
-        raycasterRef.current.setFromCamera(_tapNDC, camera);
-        raycasterRef.current.far = 8;
-        const intersects = raycasterRef.current.intersectObjects(scene.children, true);
-        for (const intersect of intersects) {
-          if (intersect.object?.userData?.isMinitelScreen && intersect.uv) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const mh = (window as any).__minitelHitboxes;
-            if (mh) {
-              const canvasV = intersect.uv.y + mh.textureOffsetY;
-              const canvasY = (1 - canvasV) * mh.screenHeight;
-              const canvasU = intersect.uv.x + mh.textureOffsetX;
-              const canvasX = canvasU * (mh.screenWidth ?? 512);
-              const match = mh.getHitboxes().find((h: { yStart: number; yEnd: number; xStart?: number; xEnd?: number }) =>
-                canvasY >= h.yStart && canvasY <= h.yEnd &&
-                (h.xStart === undefined || h.xEnd === undefined ||
-                 (canvasX >= h.xStart && canvasX <= h.xEnd))
-              );
-              if (match) useStore.getState().dispatchMinitelItem(match.index);
-            }
-            return;
-          }
-        }
+        // Minitel is keyboard/button-only. Clicks on the screen are swallowed
+        // so the camera stays in zoom and no item dispatch happens. The
+        // overlay help panel (desktop) and on-screen pad (mobile) drive the UI.
         return;
       }
       if (controls.isLocked) {
@@ -905,36 +882,12 @@ export function Controls({
             true,
           );
 
-          // When in minitel mode, the only valid tap target is the minitel
-          // screen itself — anything else (couch behind the minitel, TV across
-          // the room, cassettes through walls) would teleport / reset the
-          // session unexpectedly.
+          // When in minitel mode, taps on the screen are swallowed — the
+          // mobile control pad (▲▼ ◀▶ OK ESC) is the only valid input. This
+          // also prevents accidental teleports to the couch/TV behind the
+          // minitel when the player taps off-target.
           const minitelOpenForTap = useStore.getState().isInteractingWithMinitel;
           if (minitelOpenForTap) {
-            for (const intersect of intersects) {
-              let obj: THREE.Object3D | null = intersect.object;
-              while (obj) {
-                if (obj.userData?.isMinitelScreen && intersect.uv) {
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  const mh = (window as any).__minitelHitboxes;
-                  if (mh) {
-                    const canvasV = intersect.uv.y + mh.textureOffsetY;
-                    const canvasY = (1 - canvasV) * mh.screenHeight;
-                    const canvasU = intersect.uv.x + mh.textureOffsetX;
-                    const canvasX = canvasU * (mh.screenWidth ?? 512);
-                    const match = mh.getHitboxes().find((h: { yStart: number; yEnd: number; xStart?: number; xEnd?: number }) =>
-                      canvasY >= h.yStart && canvasY <= h.yEnd &&
-                      (h.xStart === undefined || h.xEnd === undefined ||
-                       (canvasX >= h.xStart && canvasX <= h.xEnd))
-                    );
-                    if (match) useStore.getState().dispatchMinitelItem(match.index);
-                  }
-                  break;
-                }
-                obj = obj.parent;
-              }
-              if (obj) break; // matched isMinitelScreen
-            }
             return;
           }
 
@@ -994,19 +947,9 @@ export function Controls({
                   // Clear any stale hover target on entry (see desktop path).
                   minitelState.setTargetedFilm(null, null);
                   minitelState.setInteractingWithMinitel(true);
-                } else if (obj.userData?.isMinitelScreen && intersect.uv) {
-                  // Already in minitel — convert UV → canvas Y → matching hitbox → dispatch
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  const mh = (window as any).__minitelHitboxes;
-                  if (mh) {
-                    const canvasV = intersect.uv.y + mh.textureOffsetY;
-                    const canvasY = (1 - canvasV) * mh.screenHeight;
-                    const match = mh.getHitboxes().find((h: { yStart: number; yEnd: number }) =>
-                      canvasY >= h.yStart && canvasY <= h.yEnd
-                    );
-                    if (match) minitelState.dispatchMinitelItem(match.index);
-                  }
                 }
+                // Already in minitel: tap on the screen is a no-op. The mobile
+                // pad in MinitelOverlay drives the menu via store actions.
                 handled = true;
                 break;
               }
@@ -1104,25 +1047,9 @@ export function Controls({
             }
             if (obj.userData?.isMinitel) {
               foundInteractive = "minitel";
-              // If the camera is already aimed at the screen mesh AND user is
-              // inside minitel, resolve UV → hitbox index for the desktop click
-              // path to consume.
-              if (obj.userData?.isMinitelScreen && intersect.uv && useStore.getState().isInteractingWithMinitel) {
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                const mh = (window as any).__minitelHitboxes;
-                if (mh) {
-                  const canvasV = intersect.uv.y + mh.textureOffsetY;
-                  const canvasY = (1 - canvasV) * mh.screenHeight;
-                  const m = mh.getHitboxes().find((h: { yStart: number; yEnd: number }) =>
-                    canvasY >= h.yStart && canvasY <= h.yEnd
-                  );
-                  targetedMinitelHitboxRef.current = m ? m.index : null;
-                } else {
-                  targetedMinitelHitboxRef.current = null;
-                }
-              } else {
-                targetedMinitelHitboxRef.current = null;
-              }
+              // Minitel is keyboard/button only — no per-frame hitbox aim
+              // tracking needed.
+              targetedMinitelHitboxRef.current = null;
               break;
             }
             if (obj.userData?.isBoardNote) {
@@ -1279,7 +1206,9 @@ export function Controls({
       if (info) {
         // Mobile gets a much tighter zoom so the canvas text reads at finger
         // distance (FOV 80-90° on phones spreads it thin otherwise).
-        const dist = isMobile ? 0.13 : 0.29;
+        // Desktop dist 0.232 ≈ –20 % vs the previous 0.29 — text reads
+        // ~25 % bigger on the viewport with the new VT323 stack.
+        const dist = isMobile ? 0.13 : 0.232;
         targetPos = info.center.clone().addScaledVector(info.normal, dist);
         targetLookAt = info.center;
       } else {

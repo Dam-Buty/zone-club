@@ -330,6 +330,9 @@ export function MinitelOverlay() {
   if (!isInteractingWithMinitel) return null
 
   const showInput = minitelMode === 'recherche' || minitelMode === 'commander'
+  const isDetail = minitelSelectedFilm != null
+  const isPaged = (minitelMode === 'rayons' && minitelSelectedAisle != null) || minitelMode === 'alpha'
+  const helpLines = buildHelpLines(minitelMode, isDetail, isPaged)
 
   return (
     <div style={{
@@ -356,38 +359,199 @@ export function MinitelOverlay() {
             transform: 'translateX(-50%)',
             width: 280, padding: '8px 12px',
             background: 'rgba(0,0,0,0.85)',
-            border: '1px solid #00fff7',
-            color: '#00fff7',
-            fontFamily: "'Courier New', monospace",
-            fontSize: 16,
+            border: '1px solid #4FF0E8',
+            color: '#4FA8FF',
+            fontFamily: "'VT323', 'Courier New', monospace",
+            fontSize: 18,
             outline: 'none',
             pointerEvents: 'auto',
             opacity: isMobile ? 1 : 0.001,
           }}
         />
       )}
+
+      {/* Desktop help panel — keyboard legend on the right of the screen.
+          Fades in 200ms when the minitel opens, hidden on mobile (the on-
+          screen pad below replaces it). */}
+      {!isMobile && (
+        <div
+          style={{
+            position: 'absolute',
+            top: '50%', right: '6vw',
+            transform: 'translateY(-50%)',
+            minWidth: 180,
+            padding: '14px 16px',
+            background: 'rgba(0, 0, 0, 0.85)',
+            border: `1px solid ${PILL_COLORS.cyan}`,
+            color: PILL_COLORS.blue,
+            fontFamily: "'VT323', 'Courier New', monospace",
+            fontSize: 18,
+            lineHeight: 1.35,
+            letterSpacing: '0.04em',
+            animation: 'minitel-help-fade 200ms ease-out both',
+            pointerEvents: 'none',
+          }}
+        >
+          <div style={{
+            fontSize: 18,
+            color: PILL_COLORS.bg,
+            background: PILL_COLORS.cyan,
+            padding: '2px 8px',
+            margin: '-14px -16px 10px',
+            display: 'inline-block',
+            width: 'calc(100% + 32px)',
+            boxSizing: 'border-box',
+          }}>AIDE CLAVIER</div>
+          {helpLines.map((line, i) => (
+            <div key={i} style={{ display: 'flex', gap: 10, marginBottom: 6 }}>
+              <span style={{ color: line.color, minWidth: 56 }}>{line.keys}</span>
+              <span>{line.label}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Mobile control pad — replaces the desktop help panel. Cluster bottom-
+          right, TVTerminal style. ◀▶ hidden when not in paginated modes. */}
+      {isMobile && (
+        <div style={{
+          position: 'absolute',
+          right: 'max(env(safe-area-inset-right), 14px)',
+          bottom: showInput
+            ? 'calc(env(safe-area-inset-bottom, 0px) + 72px)'
+            : 'max(env(safe-area-inset-bottom), 14px)',
+          display: 'grid',
+          gridTemplateColumns: isPaged ? 'auto auto auto' : 'auto auto',
+          gridAutoRows: '56px',
+          gap: 8,
+          pointerEvents: 'none',
+        }}>
+          {isPaged && (
+            <>
+              <PadButton onPress={handleRetour} label="◀" disabled={minitelPageIndex <= 0} />
+              <PadButton onPress={handleSuite} label="▶" disabled={false} />
+              <div /> {/* spacer column to keep grid alignment */}
+            </>
+          )}
+          <PadButton
+            onPress={() => setHighlightedItem(highlightedItem <= 1 ? Math.max(itemCount, 1) : highlightedItem - 1)}
+            label="▲"
+            disabled={itemCount === 0}
+          />
+          <PadButton
+            onPress={() => { if (minitelMode === 'detail') handleEnvoi(); else if (itemCount > 0) handleNumberPress(highlightedItem); else handleEnvoi() }}
+            label="OK"
+            primary
+          />
+          <PadButton
+            onPress={() => setHighlightedItem(highlightedItem >= itemCount ? 1 : highlightedItem + 1)}
+            label="▼"
+            disabled={itemCount === 0}
+          />
+          <PadButton onPress={handleEsc} label="ESC" />
+        </div>
+      )}
+
       <AuthModal
         isOpen={showAuthModal}
         onClose={() => setShowAuthModal(false)}
         onSuccess={() => setShowAuthModal(false)}
       />
+
+      {/* Keyframes for the help panel fade-in. */}
+      <style>{`
+        @keyframes minitel-help-fade {
+          from { opacity: 0; transform: translateY(-50%) translateX(8px); }
+          to   { opacity: 1; transform: translateY(-50%) translateX(0); }
+        }
+      `}</style>
     </div>
   )
 }
 
-function mtBtnStyle(extra: Record<string, string | number> = {}): React.CSSProperties {
-  return {
-    background: 'rgba(0, 0, 0, 0.7)',
-    border: '1px solid #00fff7',
-    color: '#00fff7',
-    fontFamily: "'Courier New', monospace",
-    fontWeight: 'bold',
-    fontSize: '0.85rem',
-    padding: '10px 6px',
-    borderRadius: 4,
-    cursor: 'pointer',
-    letterSpacing: '0.05em',
-    minHeight: 44,
-    ...extra,
-  } as React.CSSProperties
+// Palette mirrored from MinitelScreen.tsx — kept inline so the overlay doesn't
+// import the canvas module just for these constants.
+const PILL_COLORS = {
+  bg: '#000000',
+  blue: '#4FA8FF',
+  cyan: '#4FF0E8',
+  green: '#4FF04F',
+  yellow: '#FFE74C',
+  magenta: '#FF52C0',
+  red: '#E63B3B',
+  white: '#FFFFFF',
+} as const
+
+// Build the contextual help legend (desktop). Each line returns the key glyph
+// + a short label + the colour applied to the key column.
+function buildHelpLines(
+  mode: string,
+  isDetail: boolean,
+  isPaged: boolean,
+): Array<{ keys: string; label: string; color: string }> {
+  if (isDetail) {
+    return [
+      { keys: '⏎', label: 'ILLUMINER', color: PILL_COLORS.magenta },
+      { keys: 'Esc', label: 'RETOUR', color: PILL_COLORS.red },
+    ]
+  }
+  if (mode === 'recherche' || mode === 'commander') {
+    const lines: Array<{ keys: string; label: string; color: string }> = [
+      { keys: 'A-Z', label: 'TAPER', color: PILL_COLORS.blue },
+      { keys: '⏎', label: mode === 'commander' ? 'COMMANDER' : 'VALIDER', color: PILL_COLORS.cyan },
+    ]
+    lines.push({ keys: '↑ ↓', label: 'NAVIGUER', color: PILL_COLORS.yellow })
+    lines.push({ keys: 'Esc', label: 'RETOUR', color: PILL_COLORS.red })
+    return lines
+  }
+  if (mode === 'sommaire' || mode === 'idle') {
+    return [
+      { keys: '↑ ↓', label: 'NAVIGUER', color: PILL_COLORS.yellow },
+      { keys: '⏎', label: 'VALIDER', color: PILL_COLORS.cyan },
+      { keys: 'Esc', label: 'QUITTER', color: PILL_COLORS.red },
+    ]
+  }
+  // rayons / alpha
+  const lines: Array<{ keys: string; label: string; color: string }> = [
+    { keys: '↑ ↓', label: 'NAVIGUER', color: PILL_COLORS.yellow },
+  ]
+  if (isPaged) lines.push({ keys: 'PgUp/Dn', label: 'PAGE', color: PILL_COLORS.cyan })
+  lines.push({ keys: '⏎', label: 'VALIDER', color: PILL_COLORS.cyan })
+  lines.push({ keys: 'Esc', label: 'RETOUR', color: PILL_COLORS.red })
+  return lines
 }
+
+interface PadBtnProps { label: string; onPress: () => void; disabled?: boolean; primary?: boolean }
+function PadButton({ label, onPress, disabled, primary }: PadBtnProps) {
+  return (
+    <button
+      type="button"
+      onClick={() => { if (!disabled) onPress() }}
+      style={{
+        width: 56, height: 56,
+        background: disabled
+          ? 'rgba(0,0,0,0.4)'
+          : primary
+            ? PILL_COLORS.cyan
+            : 'rgba(0,0,0,0.78)',
+        border: `1px solid ${primary ? PILL_COLORS.cyan : '#4FA8FF'}`,
+        color: disabled
+          ? 'rgba(79,168,255,0.35)'
+          : primary
+            ? PILL_COLORS.bg
+            : PILL_COLORS.blue,
+        fontFamily: "'VT323', 'Courier New', monospace",
+        fontSize: 26,
+        lineHeight: 1,
+        borderRadius: 4,
+        cursor: disabled ? 'default' : 'pointer',
+        pointerEvents: 'auto',
+        touchAction: 'manipulation',
+        userSelect: 'none',
+      }}
+    >
+      {label}
+    </button>
+  )
+}
+
