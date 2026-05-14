@@ -202,6 +202,11 @@ interface VideoClubState {
   consumeMinitelItem: () => void;
   highlightedCassetteKey: string | null;
   setHighlightedCassetteKey: (k: string | null) => void;
+  // True for ~320ms after a user clicks ILLUMINER LA K7 — drives a brief
+  // reverse-video flash on the button so the click registers visually
+  // before the minitel closes.
+  minitelIlluminerFlash: boolean;
+  setMinitelIlluminerFlash: (v: boolean) => void;
   // TMDB search state for COMMANDER mode. Lives in the store so the canvas
   // (rendered by MinitelDisplay) and the action handlers (in MinitelOverlay)
   // both see the same results.
@@ -827,6 +832,8 @@ export const useStore = create<VideoClubState>()(
       consumeMinitelItem: () => set({ pendingMinitelPress: null }),
       highlightedCassetteKey: null,
       setHighlightedCassetteKey: (k) => set({ highlightedCassetteKey: k }),
+      minitelIlluminerFlash: false,
+      setMinitelIlluminerFlash: (v) => set({ minitelIlluminerFlash: v }),
       minitelTmdbResults: [],
       setMinitelTmdbResults: (r) => set({ minitelTmdbResults: r }),
       minitelTmdbState: 'idle',

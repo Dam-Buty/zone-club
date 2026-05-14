@@ -43,6 +43,7 @@ export function MinitelOverlay() {
   const minitelPageIndex = useStore((s) => s.minitelPageIndex)
   const setMinitelPageIndex = useStore((s) => s.setMinitelPageIndex)
   const setHighlightedCassetteKey = useStore((s) => s.setHighlightedCassetteKey)
+  const setMinitelIlluminerFlash = useStore((s) => s.setMinitelIlluminerFlash)
   const films = useStore((s) => s.films)
   const isAuthenticated = useStore((s) => s.isAuthenticated)
   const minitelSelectedFilm = useStore((s) => s.minitelSelectedFilm)
@@ -181,14 +182,16 @@ export function MinitelOverlay() {
         return
       }
       setHighlightedCassetteKey(key)
-      // Eject the user from the minitel so they can walk the aisles and spot
-      // the now-glowing K7. Short delay so the canvas redraws once with the
-      // ILLUMINER click registered (button stays cyan, but the user gets a
-      // beat to register the interaction before the camera pulls back).
+      // Reverse-video flash on the ILLUMINER button so the click feedback is
+      // unmistakable before the camera pulls back. setInteractingWithMinitel
+      // (false) cleans up the rest of the minitel state via the store middleware.
+      setMinitelIlluminerFlash(true)
       setTimeout(() => {
-        setMinitelMode('idle')
-        setMinitelSelectedFilm(null)
+        setMinitelIlluminerFlash(false)
         setInteractingWithMinitel(false)
+        // Re-acquire pointer lock so the user can move without an extra click
+        // back to FPS controls. Controls.tsx no-ops on mobile.
+        useStore.getState().requestPointerLock()
       }, 320)
       return
     }
@@ -198,7 +201,7 @@ export function MinitelOverlay() {
       setShowAuthModal(true)
       return
     }
-  }, [minitelMode, minitelSelectedFilm, isAuthenticated, setHighlightedCassetteKey, setInteractingWithMinitel, setMinitelMode, setMinitelSelectedFilm])
+  }, [minitelMode, minitelSelectedFilm, isAuthenticated, setHighlightedCassetteKey, setInteractingWithMinitel, setMinitelIlluminerFlash])
 
   // ESC: contextual back navigation
   const handleEsc = useCallback(() => {

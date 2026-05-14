@@ -381,7 +381,7 @@ function drawAisleList(ctx: CanvasRenderingContext2D, aisle: AisleType, films: F
   drawNavRow(ctx, hitboxes, { x: PADDING, y: y + 8, currentPage: safePage, totalPages })
 }
 
-function drawDetail(ctx: CanvasRenderingContext2D, film: Film, location: string, hitboxes: HitBox[]) {
+function drawDetail(ctx: CanvasRenderingContext2D, film: Film, location: string, hitboxes: HitBox[], illuminerPressed: boolean) {
   drawHeader(ctx, '> DETAIL FILM')
   // Title
   ctx.fillStyle = COLOR_ACCENT
@@ -446,15 +446,16 @@ function drawDetail(ctx: CanvasRenderingContext2D, film: Film, location: string,
   const illumX = PADDING
   const illumY = yCursor
   ctx.strokeStyle = COLOR_ACCENT
-  ctx.lineWidth = 1
-  ctx.fillStyle = 'rgba(0, 255, 247, 0.15)'
+  ctx.lineWidth = illuminerPressed ? 2 : 1
+  // Pressed: solid cyan fill, dark text (reverse video). Idle: tinted bg.
+  ctx.fillStyle = illuminerPressed ? COLOR_ACCENT : 'rgba(0, 255, 247, 0.15)'
   ctx.fillRect(illumX, illumY, illumW, illumH)
   ctx.strokeRect(illumX, illumY, illumW, illumH)
-  ctx.fillStyle = COLOR_ACCENT
+  ctx.fillStyle = illuminerPressed ? COLOR_BG : COLOR_ACCENT
   ctx.textBaseline = 'top'
   ctx.textAlign = 'left'
   ctx.shadowColor = COLOR_ACCENT
-  ctx.shadowBlur = 8
+  ctx.shadowBlur = illuminerPressed ? 14 : 8
   ctx.fillText(illumLabel, illumX + illumPadX, illumY + illumPadY)
   ctx.shadowBlur = 0
   hitboxes.push({
@@ -668,6 +669,7 @@ export function useMinitelScreenTexture(props: MinitelScreenProps = {}) {
   const minitelSelectedFilm = useStore((s) => s.minitelSelectedFilm)
   const minitelPageIndex = useStore((s) => s.minitelPageIndex)
   const minitelHighlightedItem = useStore((s) => s.minitelHighlightedItem)
+  const minitelIlluminerFlash = useStore((s) => s.minitelIlluminerFlash)
   const films = useStore((s) => s.films)
   const isAuthenticated = useStore((s) => s.isAuthenticated)
   const isMobile = useIsCoarsePointer()
@@ -767,7 +769,7 @@ export function useMinitelScreenTexture(props: MinitelScreenProps = {}) {
     else if (minitelMode === 'alpha') drawAlpha(ctx, allFilms, minitelPageIndex, minitelHighlightedItem, hits)
     else if (minitelMode === 'commander') drawCommander(ctx, minitelQuery, tmdbResults, requestedIds, isAuthenticated, storeTmdbState, localTmdbIds, hits)
     else if (minitelMode === 'detail') {
-      if (detailFilm) drawDetail(ctx, detailFilm, detailLocation, hits)
+      if (detailFilm) drawDetail(ctx, detailFilm, detailLocation, hits, minitelIlluminerFlash)
       else drawSommaire(ctx, minitelHighlightedItem, hits)
     }
     drawScanlines(ctx)
@@ -777,6 +779,7 @@ export function useMinitelScreenTexture(props: MinitelScreenProps = {}) {
     canvas, texture, minitelMode, minitelQuery, minitelSelectedAisle,
     minitelPageIndex, minitelHighlightedItem, searchResults, aisleFilms, allFilms, films, detailFilm,
     detailLocation, tmdbResults, requestedIds, storeTmdbState, localTmdbIds, isAuthenticated, isMobile,
+    minitelIlluminerFlash,
   ])
 
   // Reference helper for cassette position (used by overlay's "ILLUMINER")
