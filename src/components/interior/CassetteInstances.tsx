@@ -400,6 +400,9 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
   const prevHighlightedKeyRef = useRef<string | null>(null)
   const hysteresisActiveRef = useRef(false)
   const lerpFramesRef = useRef(0)
+  // Cached instance index of the currently illuminated cassette so the hot
+  // path can update a single row instead of scanning all ~520 every frame.
+  const highlightedIdxRef = useRef<number>(-1)
 
   useFrame((state, delta) => {
     const mesh = meshRef.current
@@ -428,19 +431,57 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
       ap.elapsedTime = 0
     }
 
-    const needsProcessing =
+    // Cold pass runs the full per-instance loop when *something other than the
+    // highlight pulse* moves. Hot pass (below) handles the per-frame pulse on
+    // the single illuminated K7 without scanning the other ~519 cassettes.
+    const needsColdPass =
       targetedCassetteKey !== prevTargetedKeyRef.current ||
       highlightedCassetteKey !== prevHighlightedKeyRef.current ||
       hysteresisActiveRef.current ||
-      lerpFramesRef.current > 0 ||
-      // Keep iterating while an ILLUMINER highlight is active so its emissive
-      // can cycle through green / blue / violet every frame.
-      highlightedCassetteKey !== null
+      lerpFramesRef.current > 0
 
-    if (!needsProcessing) {
+    // === HOT PATH ===
+    // Highlight active and nothing else changed → only the highlighted index
+    // needs a fresh pulse Z + HSL emissive. Skip the 520-row loop entirely.
+    if (!needsColdPass && highlightedCassetteKey != null && highlightedIdxRef.current >= 0) {
+      const i = highlightedIdxRef.current
+      const hoverOffsets = hoverOffsetsRef.current
+      const tarHoverArr = targetHoverZBuffer.value.array as Float32Array
+      const tarEmissiveArr = targetEmissiveBuffer.value.array as Float32Array
+
+      const t = state.clock.elapsedTime
+      // Back-and-forth pulse along the hover axis (~2.5 s period).
+      const pulse = 1.2 + 0.4 * Math.sin(t * 2.5)
+      tarHoverArr[i] = hoverOffsets[i] * pulse
+
+      // HSL cycle green → blue → violet (~4.5 s round-trip).
+      const h = 0.555 + 0.225 * Math.sin(t * 1.4)
+      _highlightColor.setHSL(h, 1, 0.5)
+      const idx3 = i * 3
+      const intensity = 1.7
+      tarEmissiveArr[idx3] = _highlightColor.r * intensity
+      tarEmissiveArr[idx3 + 1] = _highlightColor.g * intensity
+      tarEmissiveArr[idx3 + 2] = _highlightColor.b * intensity
+
+      targetHoverZBuffer.value.needsUpdate = true
+      targetEmissiveBuffer.value.needsUpdate = true
+
+      // Dispatch compute so the GPU low-pass advances toward the new target.
+      const renderer = gl as unknown as THREE.WebGPURenderer
+      renderer.compute(computeNode)
+      return
+    }
+
+    if (!needsColdPass) {
       return
     }
     prevTargetedKeyRef.current = targetedCassetteKey
+    // Recompute the cached highlighted index whenever the key changes.
+    if (highlightedCassetteKey !== prevHighlightedKeyRef.current) {
+      highlightedIdxRef.current = highlightedCassetteKey == null
+        ? -1
+        : instanceIdToKey.indexOf(highlightedCassetteKey)
+    }
     prevHighlightedKeyRef.current = highlightedCassetteKey
 
     const tarHoverArr = targetHoverZBuffer.value.array as Float32Array

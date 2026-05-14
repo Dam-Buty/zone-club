@@ -41,6 +41,9 @@ try {
     db.exec("ALTER TABLE films ADD COLUMN is_nouveaute BOOLEAN DEFAULT FALSE");
   }
   db.exec("CREATE INDEX IF NOT EXISTS idx_films_aisle ON films(aisle)");
+  // Admin stats scans rented_at over a 14-day window — index added to keep
+  // /api/admin/stats off a full-table scan as the rentals table grows.
+  db.exec("CREATE INDEX IF NOT EXISTS idx_rentals_rented_at ON rentals(rented_at)");
 } catch {
   // Migration already done or not needed
 }

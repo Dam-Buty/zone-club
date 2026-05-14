@@ -167,6 +167,8 @@ CREATE INDEX IF NOT EXISTS idx_rentals_active ON rentals(is_active, expires_at);
 CREATE INDEX IF NOT EXISTS idx_rentals_film_active ON rentals(film_id, is_active, expires_at);
 CREATE INDEX IF NOT EXISTS idx_rentals_user_active ON rentals(user_id, is_active, expires_at);
 CREATE INDEX IF NOT EXISTS idx_rentals_expires ON rentals(expires_at);
+-- Admin stats: 14-day window scan on rented_at (recentRentals + topRentedFilms).
+CREATE INDEX IF NOT EXISTS idx_rentals_rented_at ON rentals(rented_at);
 CREATE INDEX IF NOT EXISTS idx_reviews_film ON reviews(film_id);
 CREATE INDEX IF NOT EXISTS idx_films_available ON films(is_available);
 CREATE INDEX IF NOT EXISTS idx_films_tmdb ON films(tmdb_id);
