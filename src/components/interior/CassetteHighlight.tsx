@@ -35,8 +35,9 @@ export function CassetteHighlight() {
     return () => clearTimeout(t)
   }, [highlightedCassetteKey])
 
-  // Radial gradient texture: opaque cyan center fading to transparent edge.
-  // Drawn once into an offscreen canvas, then reused as a sprite map.
+  // Radial gradient texture: white center fading to transparent edge so the
+  // material.color tint shows cleanly (otherwise a hard-coded blue gradient
+  // would clash with the per-frame hue shift below).
   const haloMap = useMemo(() => {
     const c = document.createElement('canvas')
     c.width = 256
@@ -44,10 +45,10 @@ export function CassetteHighlight() {
     const ctx = c.getContext('2d')
     if (!ctx) return null
     const g = ctx.createRadialGradient(128, 128, 0, 128, 128, 128)
-    g.addColorStop(0.0, 'rgba(120, 200, 255, 1)')
-    g.addColorStop(0.25, 'rgba(0, 170, 255, 0.85)')
-    g.addColorStop(0.55, 'rgba(0, 120, 255, 0.4)')
-    g.addColorStop(1.0, 'rgba(0, 90, 255, 0)')
+    g.addColorStop(0.0, 'rgba(255, 255, 255, 1)')
+    g.addColorStop(0.25, 'rgba(255, 255, 255, 0.85)')
+    g.addColorStop(0.55, 'rgba(255, 255, 255, 0.40)')
+    g.addColorStop(1.0, 'rgba(255, 255, 255, 0)')
     ctx.fillStyle = g
     ctx.fillRect(0, 0, 256, 256)
     const tex = new THREE.CanvasTexture(c)
@@ -70,13 +71,18 @@ export function CassetteHighlight() {
   }, [haloMap])
 
   useFrame((state) => {
-    if (!meshRef.current || !worldPos) return
+    if (!meshRef.current || !worldPos || !material) return
     // Billboard: always face the camera.
     meshRef.current.lookAt(camera.position)
-    // Gentle pulsing scale.
     const t = state.clock.elapsedTime
-    const s = 0.28 + 0.04 * Math.sin(t * 3)
+    // Pulse on scale — wider amplitude than the previous hover halo so the
+    // K7 reads as a "deliberate" beacon from across the room.
+    const s = 0.30 + 0.08 * Math.sin(t * 3)
     meshRef.current.scale.setScalar(s)
+    // Hue cycle: green (H≈0.33) → blue (H≈0.66) → violet (H≈0.78) → back.
+    // sin maps [-1,1] → hue in [0.33, 0.78]. ~2π / (1.4) ≈ 4.5s round-trip.
+    const h = 0.555 + 0.225 * Math.sin(t * 1.4)
+    material.color.setHSL(h, 1, 0.58)
   })
 
   if (!worldPos || !material) return null
