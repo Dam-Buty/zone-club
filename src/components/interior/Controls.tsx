@@ -416,18 +416,15 @@ export function Controls({
       showManager();
       return;
     }
-    if (interactive === "tv") {
+    if (interactive === "tv" || interactive === "couch") {
       if (isSitting) {
-        // Seated: route to TV menu instead of terminal
-        useStore.getState().dispatchTVMenu('select');
+        // Seated: TV click drives the seated menu. Couch click is a no-op
+        // (the player is already there).
+        if (interactive === "tv") useStore.getState().dispatchTVMenu('select');
       } else {
-        // Standing: show 2-option TV menu instead of terminal
-        useStore.getState().setInteractingWithTV(true);
-      }
-      return;
-    }
-    if (interactive === "couch") {
-      if (!isSitting) {
+        // Standing: clicking either the couch or the TV teleports the
+        // visitor onto the couch. The previous "standing TV menu" was
+        // removed — the seated menu handles all TV interactions.
         setSitting(true);
       }
       return;
@@ -929,6 +926,9 @@ export function Controls({
                 handled = true;
                 break;
               }
+              // Couch + TV CRT share the same tap action when standing:
+              // teleport onto the couch. When seated, only the TV dispatches
+              // the seated menu select (couch tap is a no-op).
               if (obj.userData?.isCouch && intersect.distance <= 3.0) {
                 if (!useStore.getState().isSitting) {
                   useStore.getState().setSitting(true);
@@ -936,11 +936,11 @@ export function Controls({
                 handled = true;
                 break;
               }
-              if (obj.userData?.isTVScreen && intersect.distance <= 2.5) {
+              if (obj.userData?.isTVScreen && intersect.distance <= 3.0) {
                 if (useStore.getState().isSitting) {
                   useStore.getState().dispatchTVMenu('select');
                 } else {
-                  useStore.getState().setInteractingWithTV(true);
+                  useStore.getState().setSitting(true);
                 }
                 handled = true;
                 break;
@@ -1045,7 +1045,9 @@ export function Controls({
               foundInteractive = "couch";
               break;
             }
-            if (obj.userData?.isTVScreen && intersect.distance <= 2.5) {
+            // TV CRT shares the couch's tap distance (3 m) — clicking the TV
+            // while standing teleports onto the couch.
+            if (obj.userData?.isTVScreen && intersect.distance <= 3.0) {
               foundInteractive = "tv";
               break;
             }

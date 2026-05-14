@@ -605,10 +605,11 @@ function UIOverlays({ isMobile }: { isMobile: boolean }) {
         let hint = ''
         if (isSitting) {
           hint = '↑↓ Naviguer  ·  [E] Sélectionner  ·  [Échap] Se lever'
-        } else if (targetedInteractive === 'couch') {
+        } else if (targetedInteractive === 'couch' || targetedInteractive === 'tv') {
+          // TV CRT click is routed to "sit on couch" while standing — share
+          // the same hint so the player gets a consistent label across the
+          // whole couch + TV interaction zone.
           hint = "S'asseoir [E]"
-        } else if (targetedInteractive === 'tv') {
-          hint = 'Terminal [E]'
         } else if (targetedInteractive === 'manager' || targetedInteractive === 'bell') {
           hint = 'Parler [E]'
         } else if (targetedInteractive === 'lazone') {
