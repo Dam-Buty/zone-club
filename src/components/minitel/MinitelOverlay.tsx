@@ -8,7 +8,11 @@ import api from '../../api'
 import { AuthModal } from '../auth/AuthModal'
 import type { AisleType, Film } from '../../types'
 
-const PAGE_SIZE = 8
+// Must stay in sync with PAGE_SIZE in MinitelScreen.tsx.
+const PAGE_SIZE = 7
+// RECHERCHE has extra vertical chrome above the list (TITRE input + label)
+// so it fits one fewer row than the generic paginated screens.
+const RECHERCHE_PAGE_SIZE = 6
 
 const AISLES_ORDER: AisleType[] = [
   'action', 'aventure', 'bizarre', 'classiques', 'comedie',
@@ -245,7 +249,7 @@ export function MinitelOverlay() {
     }
     if (minitelMode === 'recherche') {
       const results = searchFilms(buildAllFilms(), minitelQuery)
-      return Math.min(PAGE_SIZE, results.length)
+      return Math.min(RECHERCHE_PAGE_SIZE, results.length)
     }
     if (minitelMode === 'commander') {
       if (!isAuthenticated) return 0

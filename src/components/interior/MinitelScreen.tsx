@@ -131,6 +131,9 @@ export interface HitBox {
 // 7 fits comfortably above the bezel curve (visible bottom of the CRT mesh
 // is ≈ y=305). 8 was overflowing the pagination strip into the curve.
 const PAGE_SIZE = 7
+// RECHERCHE shows fewer rows because the TITRE input + label above push the
+// list start ~40 px lower than the generic paginated screens.
+const RECHERCHE_PAGE_SIZE = 6
 const AISLES_ORDER: AisleType[] = [
   'action', 'aventure', 'bizarre', 'classiques', 'comedie',
   'drame', 'horreur', 'policier', 'romance', 'sf',
@@ -326,7 +329,7 @@ function drawRecherche(ctx: CanvasRenderingContext2D, query: string, results: Fi
   ctx.fillStyle = COLOR_DIM
   ctx.fillText(`${results.length} RESULTATS`, PADDING, PADDING + 80)
   let y = PADDING + 100
-  results.slice(0, PAGE_SIZE).forEach((f, i) => {
+  results.slice(0, RECHERCHE_PAGE_SIZE).forEach((f, i) => {
     const num = i + 1
     const isHl = num === highlight
     const badge = drawNumberBadge(ctx, num, PADDING, y, isHl)
@@ -820,7 +823,7 @@ export function useMinitelScreenTexture(props: MinitelScreenProps = {}) {
     }
     else if (minitelMode === 'rayons' && minitelSelectedAisle) listCount = Math.min(PAGE_SIZE, aisleFilms.length - minitelPageIndex * PAGE_SIZE)
     else if (minitelMode === 'alpha') listCount = Math.min(PAGE_SIZE, allFilms.length - minitelPageIndex * PAGE_SIZE)
-    else if (minitelMode === 'recherche') listCount = Math.min(PAGE_SIZE, searchResults.length)
+    else if (minitelMode === 'recherche') listCount = Math.min(RECHERCHE_PAGE_SIZE, searchResults.length)
     else if (minitelMode === 'commander') listCount = isAuthenticated ? Math.min(6, tmdbResults.length) : 0
     // Trailing-button focus flags. Modes with 2 trailing buttons (detail,
     // commander-unauthed) use both; everywhere else only focusBack matters.
