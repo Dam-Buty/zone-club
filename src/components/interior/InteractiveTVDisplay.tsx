@@ -746,7 +746,9 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
   const SETTINGS_COLORS = {
     green: '#00ff00',
     greenDim: '#009900',
-    cyan: '#00fff7',
+    // Bumped cyan from #00fff7 → light aqua: sharper at distance on the CRT
+    // mesh without becoming intrusive. Same hue family.
+    cyan: '#A8FCEC',
     gold: '#ffd700',
     red: '#ff4444',
     pink: '#ff2d95',

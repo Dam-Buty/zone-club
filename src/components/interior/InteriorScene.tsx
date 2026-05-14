@@ -654,10 +654,10 @@ function UIOverlays({ isMobile }: { isMobile: boolean }) {
             padding: '0.5rem 1rem',
             backgroundColor: 'rgba(0, 0, 0, 0.6)',
             borderRadius: '4px',
-            color: '#00fff7',
+            color: '#A8FCEC',
             fontFamily: 'Orbitron, sans-serif',
             fontSize: '0.75rem',
-            textShadow: '0 0 8px #00fff7',
+            textShadow: '0 0 8px #4FF0E8',
             zIndex: 10,
           }}
         >

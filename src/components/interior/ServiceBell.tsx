@@ -34,8 +34,11 @@ export function ServiceBell({ position, rotation = [0, 0, 0] }: ServiceBellProps
 
   const managerTexture = useMemo(() => createTextTexture('MANAGER', {
     fontSize: 32,
-    color: '#00fff7',
-    glowColor: '#00fff7',
+    // Light aqua reads much sharper than pure cyan (#00fff7) on the dark
+    // shop interior — same hue family but the higher luminance survives the
+    // softening that small 3D-text textures suffer from at viewing distance.
+    color: '#A8FCEC',
+    glowColor: '#4FF0E8',
     width: 200,
     height: 50,
   }), [])
