@@ -1,10 +1,11 @@
 import { cookies } from 'next/headers';
-import { after } from 'next/server';
+import { NextResponse, after } from 'next/server';
 import { streamText, convertToModelMessages, stepCountIs } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 import { getUserFromSession, getUserFromApiKey } from '@/lib/session';
 import { buildSystemPrompt, buildGuestSystemPrompt } from '@/lib/chat';
 import { createChatTools, createGuestChatTools } from '@/lib/chat-tools';
+import { checkRateLimit, getRateLimitKey } from '@/lib/rate-limit';
 import { db } from '@/lib/db';
 import { langfuseSpanProcessor } from '@/instrumentation';
 
@@ -18,6 +19,25 @@ const openrouter = createOpenAI({
 export async function POST(req: Request) {
   const cookieStore = await cookies();
   const user = getUserFromApiKey(req) ?? getUserFromSession(cookieStore.get('session')?.value);
+
+  // Rate limit — guests are throttled harder than authed users (they burn
+  // OpenRouter credits on our key). API-key callers are not rate-limited
+  // (server-to-server use, already authenticated by their key).
+  const isApiKey = !!getUserFromApiKey(req);
+  if (!isApiKey) {
+    const key = user
+      ? `chat:user:${user.id}`
+      : getRateLimitKey(req, 'chat-guest');
+    const maxAttempts = user ? 40 : 8;
+    const windowMs = 60 * 60 * 1000; // 1 hour
+    const retryAfter = checkRateLimit(key, maxAttempts, windowMs);
+    if (retryAfter !== null) {
+      return NextResponse.json(
+        { error: `Trop de requêtes. Réessayez dans ${retryAfter}s.` },
+        { status: 429, headers: { 'Retry-After': String(retryAfter) } },
+      );
+    }
+  }
 
   const body = await req.json();
   const { messages, events, sessionId } = body;

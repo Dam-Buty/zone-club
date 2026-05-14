@@ -5,11 +5,12 @@ import { createSessionToken } from '@/lib/session';
 import { checkRateLimit, getRateLimitKey } from '@/lib/rate-limit';
 
 export async function POST(request: NextRequest) {
-    const rateLimitKey = getRateLimitKey(request, 'login');
-    const retryAfter = checkRateLimit(rateLimitKey, 5, 15 * 60 * 1000);
-    if (retryAfter !== null) {
+    // IP-keyed bucket — defends against a single host hammering the endpoint.
+    const ipKey = getRateLimitKey(request, 'login');
+    const ipRetryAfter = checkRateLimit(ipKey, 5, 15 * 60 * 1000);
+    if (ipRetryAfter !== null) {
         return NextResponse.json(
-            { error: `Trop de tentatives. Reessayez dans ${Math.ceil(retryAfter / 60)} minutes.` },
+            { error: `Trop de tentatives. Reessayez dans ${Math.ceil(ipRetryAfter / 60)} minutes.` },
             { status: 429 },
         );
     }
@@ -18,6 +19,19 @@ export async function POST(request: NextRequest) {
 
     if (!username || !password) {
         return NextResponse.json({ error: 'Pseudo et mot de passe requis' }, { status: 400 });
+    }
+
+    // Per-username bucket — defends against credential stuffing with rotated
+    // IPs targeting a single account. Slightly more permissive window than
+    // IP bucket since a legitimate user retyping their password should not
+    // be locked out as easily.
+    const usernameKey = `login:user:${username.toLowerCase()}`;
+    const userRetryAfter = checkRateLimit(usernameKey, 10, 60 * 60 * 1000);
+    if (userRetryAfter !== null) {
+        return NextResponse.json(
+            { error: `Trop de tentatives sur ce compte. Reessayez dans ${Math.ceil(userRetryAfter / 60)} minutes.` },
+            { status: 429 },
+        );
     }
 
     const user = await loginUser(username, password);
