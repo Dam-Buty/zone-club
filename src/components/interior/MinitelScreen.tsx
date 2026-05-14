@@ -461,9 +461,10 @@ function drawDetail(ctx: CanvasRenderingContext2D, film: Film, location: string,
     yCursor = yy + 6
   }
   // SYNOPSIS yellow label, body phosphor blue.
-  // Detail view exclusively uses a wider wrap (38 vs 32 chars) and shows up
-  // to 5 lines instead of 3 — same VT323 14px stack but VT323 is narrow
-  // enough that 38 chars still fits inside the safe-right band.
+  // Detail view exclusively uses a wider wrap (46 vs 32 chars) and shows up
+  // to 5 lines instead of 3 — VT323 at 14 px is narrow enough that 46 chars
+  // (~+20 % horizontal vs the previous 38) stays within the visible face of
+  // the CRT mesh. Past ≈48 chars the texture starts wrapping onto the bezel.
   const pitch = (film.tagline && film.tagline.trim()) || (film.overview ? film.overview : '')
   if (pitch) {
     ctx.fillStyle = PALETTE.YELLOW
@@ -471,7 +472,7 @@ function drawDetail(ctx: CanvasRenderingContext2D, film: Film, location: string,
     ctx.fillText('SYNOPSIS', PADDING, yCursor)
     yCursor += 16
     ctx.fillStyle = PALETTE.BLUE
-    const wrapped = wrapText(pitch, 38)
+    const wrapped = wrapText(pitch, 46)
     for (const l of wrapped.slice(0, 5)) {
       ctx.fillText(l, PADDING, yCursor)
       yCursor += 16
