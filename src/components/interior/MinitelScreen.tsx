@@ -259,7 +259,9 @@ function drawScanlines(ctx: CanvasRenderingContext2D) {
   }
 }
 
-function drawSommaire(ctx: CanvasRenderingContext2D, highlight: number, hitboxes: HitBox[], focusBack: boolean) {
+function drawSommaire(ctx: CanvasRenderingContext2D, highlight: number, hitboxes: HitBox[], focusedTrailing: number) {
+  // 1 trailing button (FERMER). 1-based focusedTrailing → boolean.
+  const focusBack = focusedTrailing === 1
   drawHeader(ctx, 'VIDEOCLUB SOMMAIRE')
   ctx.textBaseline = 'top'
   let y = PADDING + 44
@@ -294,7 +296,9 @@ function drawSommaire(ctx: CanvasRenderingContext2D, highlight: number, hitboxes
   drawBackButton(ctx, 'FERMER', hitboxes, y + 36, undefined, focusBack)
 }
 
-function drawRecherche(ctx: CanvasRenderingContext2D, query: string, results: Film[], highlight: number, hitboxes: HitBox[], focusBack: boolean) {
+function drawRecherche(ctx: CanvasRenderingContext2D, query: string, results: Film[], highlight: number, hitboxes: HitBox[], focusedTrailing: number) {
+  // 1 trailing button (RETOUR). 1-based focusedTrailing → boolean.
+  const focusBack = focusedTrailing === 1
   drawHeader(ctx, 'VIDEOCLUB RECHERCHE')
   // "TITRE :" yellow label, phosphor input on the same row.
   ctx.fillStyle = PALETTE.YELLOW
@@ -380,28 +384,36 @@ function drawListRow(
   return rowH
 }
 
-function drawPaginationStrip(ctx: CanvasRenderingContext2D, page: number, totalPages: number, y: number, hitboxes: HitBox[], focusBack: boolean) {
-  // Two inverse pills (PREC / SUIV) + a RETOUR pill on the right. PREC/SUIV
-  // are not focusable via ↑/↓ — they're operated by PgUp/PgDn keys or the
-  // mobile ◀▶ pad. Only RETOUR has a focus state.
+function drawPaginationStrip(ctx: CanvasRenderingContext2D, page: number, totalPages: number, y: number, hitboxes: HitBox[], focusedTrailing: number) {
+  // Trailing buttons rendered for this page: PREC (if page>0), SUIV (if not
+  // last), RETOUR (always). focusedTrailing is 1-based and indexes into the
+  // same order, so ↓ from the last list row lands on the first trailing
+  // button (PREC if any, otherwise SUIV, otherwise RETOUR).
+  const order: Array<'prev' | 'next' | 'back'> = []
+  if (page > 0) order.push('prev')
+  if (page < totalPages - 1) order.push('next')
+  order.push('back')
+  const focused = order[focusedTrailing - 1] // undefined when a list row is focused
+
   let x = PADDING
   if (page > 0) {
-    const r = drawInversePill(ctx, '< PREC', hitboxes, { x, y, index: -1, bg: PALETTE.CYAN })
+    const bg = focused === 'prev' ? PALETTE.YELLOW : PALETTE.CYAN
+    const r = drawInversePill(ctx, '< PREC', hitboxes, { x, y, index: -1, bg })
     x += r.w + TOK.navGap
   }
   if (page < totalPages - 1) {
-    const r = drawInversePill(ctx, 'SUIV >', hitboxes, { x, y, index: -2, bg: PALETTE.CYAN })
+    const bg = focused === 'next' ? PALETTE.YELLOW : PALETTE.CYAN
+    const r = drawInversePill(ctx, 'SUIV >', hitboxes, { x, y, index: -2, bg })
     x += r.w + TOK.navGap
   }
-  // Right-aligned RETOUR — yellow on focus.
   ctx.font = FONT
   const retourW = ctx.measureText('RETOUR').width + TOK.pillPadX * 2
-  const bg = focusBack ? PALETTE.YELLOW : PALETTE.RED
-  const fg = focusBack ? PALETTE.BG : PALETTE.WHITE
+  const bg = focused === 'back' ? PALETTE.YELLOW : PALETTE.RED
+  const fg = focused === 'back' ? PALETTE.BG : PALETTE.WHITE
   drawInversePill(ctx, 'RETOUR', hitboxes, { x: SAFE_RIGHT - retourW, y, index: 0, bg, fg })
 }
 
-function drawRayons(ctx: CanvasRenderingContext2D, films: Record<string, Film[]>, page: number, highlight: number, hitboxes: HitBox[], focusBack: boolean) {
+function drawRayons(ctx: CanvasRenderingContext2D, films: Record<string, Film[]>, page: number, highlight: number, hitboxes: HitBox[], focusedTrailing: number) {
   // Build the list of non-empty aisles first so pagination math is correct
   // (some aisles might have 0 films at this point in the catalogue lifecycle).
   const nonEmpty = AISLES_ORDER.filter((a) => (films[a]?.length ?? 0) > 0)
@@ -416,10 +428,10 @@ function drawRayons(ctx: CanvasRenderingContext2D, films: Record<string, Film[]>
     const rowH = drawListRow(ctx, num, aisleLabel(a).toUpperCase(), `${count} FILMS`, num === highlight, y, hitboxes)
     y += rowH + 1 + TOK.itemGap
   })
-  drawPaginationStrip(ctx, safePage, totalPages, y + 8, hitboxes, focusBack)
+  drawPaginationStrip(ctx, safePage, totalPages, y + 8, hitboxes, focusedTrailing)
 }
 
-function drawAlpha(ctx: CanvasRenderingContext2D, films: Film[], page: number, highlight: number, hitboxes: HitBox[], focusBack: boolean) {
+function drawAlpha(ctx: CanvasRenderingContext2D, films: Film[], page: number, highlight: number, hitboxes: HitBox[], focusedTrailing: number) {
   const totalPages = Math.max(1, Math.ceil(films.length / PAGE_SIZE))
   const safePage = Math.max(0, Math.min(page, totalPages - 1))
   drawHeader(ctx, `VIDEOCLUB A-Z ${safePage + 1}/${totalPages}`)
@@ -431,10 +443,10 @@ function drawAlpha(ctx: CanvasRenderingContext2D, films: Film[], page: number, h
     const rowH = drawListRow(ctx, num, f.title, year, num === highlight, y, hitboxes)
     y += rowH + 1 + TOK.itemGap
   })
-  drawPaginationStrip(ctx, safePage, totalPages, y + 8, hitboxes, focusBack)
+  drawPaginationStrip(ctx, safePage, totalPages, y + 8, hitboxes, focusedTrailing)
 }
 
-function drawAisleList(ctx: CanvasRenderingContext2D, aisle: AisleType, films: Film[], page: number, highlight: number, hitboxes: HitBox[], focusBack: boolean) {
+function drawAisleList(ctx: CanvasRenderingContext2D, aisle: AisleType, films: Film[], page: number, highlight: number, hitboxes: HitBox[], focusedTrailing: number) {
   const totalPages = Math.max(1, Math.ceil(films.length / PAGE_SIZE))
   const safePage = Math.max(0, Math.min(page, totalPages - 1))
   drawHeader(ctx, `VIDEOCLUB ${aisleLabel(aisle).toUpperCase()} ${safePage + 1}/${totalPages}`)
@@ -446,7 +458,7 @@ function drawAisleList(ctx: CanvasRenderingContext2D, aisle: AisleType, films: F
     const rowH = drawListRow(ctx, num, f.title, year, num === highlight, y, hitboxes)
     y += rowH + 1 + TOK.itemGap
   })
-  drawPaginationStrip(ctx, safePage, totalPages, y + 8, hitboxes, focusBack)
+  drawPaginationStrip(ctx, safePage, totalPages, y + 8, hitboxes, focusedTrailing)
 }
 
 function drawDetail(ctx: CanvasRenderingContext2D, film: Film, location: string, hitboxes: HitBox[], illuminerPressed: boolean, focusPrimary: boolean, focusBack: boolean) {
@@ -825,23 +837,27 @@ export function useMinitelScreenTexture(props: MinitelScreenProps = {}) {
     else if (minitelMode === 'alpha') listCount = Math.min(PAGE_SIZE, allFilms.length - minitelPageIndex * PAGE_SIZE)
     else if (minitelMode === 'recherche') listCount = Math.min(RECHERCHE_PAGE_SIZE, searchResults.length)
     else if (minitelMode === 'commander') listCount = isAuthenticated ? Math.min(6, tmdbResults.length) : 0
-    // Trailing-button focus flags. Modes with 2 trailing buttons (detail,
-    // commander-unauthed) use both; everywhere else only focusBack matters.
-    const trailingIdx = Math.max(0, minitelHighlightedItem - listCount)
-    const focusPrimary = trailingIdx === 1
-    const focusBack = trailingIdx === 2 || (trailingIdx === 1 && !(detailFilm) && !(minitelMode === 'commander' && !isAuthenticated))
+    // 1-based trailing index of the focused button (0 means a list row is
+    // focused). Each draw fn decodes this against its own trailing list.
+    const focusedTrailing = Math.max(0, minitelHighlightedItem - listCount)
+    // For draws with 2 fixed trailing buttons (detail, commander-unauthed)
+    // we keep the simpler focusPrimary / focusBack booleans.
+    const focusPrimary = focusedTrailing === 1
+    const focusBackSimple = focusedTrailing === 1 && !(detailFilm) && !(minitelMode === 'commander' && !isAuthenticated)
+      ? true
+      : focusedTrailing === 2
 
-    if (minitelMode === 'idle' || minitelMode === 'sommaire') drawSommaire(ctx, minitelHighlightedItem, hits, focusBack)
-    else if (minitelMode === 'recherche') drawRecherche(ctx, minitelQuery, searchResults, minitelHighlightedItem, hits, focusBack)
+    if (minitelMode === 'idle' || minitelMode === 'sommaire') drawSommaire(ctx, minitelHighlightedItem, hits, focusedTrailing)
+    else if (minitelMode === 'recherche') drawRecherche(ctx, minitelQuery, searchResults, minitelHighlightedItem, hits, focusedTrailing)
     else if (minitelMode === 'rayons') {
-      if (minitelSelectedAisle) drawAisleList(ctx, minitelSelectedAisle, aisleFilms, minitelPageIndex, minitelHighlightedItem, hits, focusBack)
-      else drawRayons(ctx, films, minitelPageIndex, minitelHighlightedItem, hits, focusBack)
+      if (minitelSelectedAisle) drawAisleList(ctx, minitelSelectedAisle, aisleFilms, minitelPageIndex, minitelHighlightedItem, hits, focusedTrailing)
+      else drawRayons(ctx, films, minitelPageIndex, minitelHighlightedItem, hits, focusedTrailing)
     }
-    else if (minitelMode === 'alpha') drawAlpha(ctx, allFilms, minitelPageIndex, minitelHighlightedItem, hits, focusBack)
-    else if (minitelMode === 'commander') drawCommander(ctx, minitelQuery, tmdbResults, requestedIds, isAuthenticated, storeTmdbState, localTmdbIds, hits, minitelHighlightedItem, focusPrimary, focusBack)
+    else if (minitelMode === 'alpha') drawAlpha(ctx, allFilms, minitelPageIndex, minitelHighlightedItem, hits, focusedTrailing)
+    else if (minitelMode === 'commander') drawCommander(ctx, minitelQuery, tmdbResults, requestedIds, isAuthenticated, storeTmdbState, localTmdbIds, hits, minitelHighlightedItem, focusPrimary, focusBackSimple)
     else if (minitelMode === 'detail') {
-      if (detailFilm) drawDetail(ctx, detailFilm, detailLocation, hits, minitelIlluminerFlash, focusPrimary, focusBack)
-      else drawSommaire(ctx, minitelHighlightedItem, hits, focusBack)
+      if (detailFilm) drawDetail(ctx, detailFilm, detailLocation, hits, minitelIlluminerFlash, focusPrimary, focusBackSimple)
+      else drawSommaire(ctx, minitelHighlightedItem, hits, focusedTrailing)
     }
     drawScanlines(ctx)
     texture.needsUpdate = true

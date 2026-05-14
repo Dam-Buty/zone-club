@@ -258,12 +258,38 @@ export function MinitelOverlay() {
     return 0
   })()
 
+  // Total pages for the current paginated screen — used to decide whether
+  // 'prev' / 'next' trailing buttons are reachable in the focus cycle.
+  const totalPagesForMode = (() => {
+    if (minitelMode === 'alpha') return Math.max(1, Math.ceil(buildAllFilms().length / PAGE_SIZE))
+    if (minitelMode === 'rayons' && !minitelSelectedAisle) {
+      const nonEmpty = AISLES_ORDER.filter((a) => (films[a]?.length ?? 0) > 0).length
+      return Math.max(1, Math.ceil(nonEmpty / PAGE_SIZE))
+    }
+    if (minitelMode === 'rayons' && minitelSelectedAisle) {
+      return Math.max(1, Math.ceil((films[minitelSelectedAisle] || []).length / PAGE_SIZE))
+    }
+    return 1
+  })()
+
   // Trailing buttons reachable AFTER the list (1-based indices continue past
-  // listItemCount). 'envoi' = handleEnvoi (ILLUMINER, SE CONNECTER…), 'esc' =
-  // handleEsc (RETOUR / FERMER).
-  const trailingButtons: Array<'envoi' | 'esc'> = (() => {
-    if (minitelSelectedFilm != null) return ['envoi', 'esc']           // detail: ILLUMINER + RETOUR
+  // listItemCount). Paginated modes also expose 'prev' / 'next' so the user
+  // can reach SUIV with ↓ from the last list row instead of being shuttled
+  // straight onto RETOUR.
+  type TrailingBtn = 'envoi' | 'esc' | 'prev' | 'next'
+  const trailingButtons: TrailingBtn[] = (() => {
+    if (minitelSelectedFilm != null) return ['envoi', 'esc']            // detail: ILLUMINER + RETOUR
     if (minitelMode === 'commander' && !isAuthenticated) return ['envoi', 'esc']  // SE CONNECTER + RETOUR
+    const isPaginated =
+      minitelMode === 'alpha' ||
+      (minitelMode === 'rayons' /* either aisle list or films list */)
+    if (isPaginated) {
+      const buttons: TrailingBtn[] = []
+      if (minitelPageIndex > 0) buttons.push('prev')
+      if (minitelPageIndex < totalPagesForMode - 1) buttons.push('next')
+      buttons.push('esc')
+      return buttons
+    }
     return ['esc']                                                      // every other screen: RETOUR/FERMER
   })()
 
@@ -281,8 +307,10 @@ export function MinitelOverlay() {
     const trailingIdx = highlightedItem - listItemCount - 1
     const btn = trailingButtons[trailingIdx] ?? trailingButtons[trailingButtons.length - 1]
     if (btn === 'envoi') handleEnvoi()
+    else if (btn === 'prev') handleRetour() // PREC = previous page
+    else if (btn === 'next') handleSuite()  // SUIV = next page
     else handleEsc()
-  }, [listItemCount, trailingButtons, highlightedItem, handleNumberPress, handleEnvoi, handleEsc])
+  }, [listItemCount, trailingButtons, highlightedItem, handleNumberPress, handleEnvoi, handleEsc, handleRetour, handleSuite])
 
   // Reset highlight when mode/page/aisle/query/selectedFilm changes — otherwise
   // Enter would dispatch a stale highlightedItem index from previous results.
