@@ -4,6 +4,8 @@ import { useStore } from '../../store'
 import { searchFilms } from '../../utils/minitelSearch'
 import { aisleLabel, cassetteKeyToHumanLocation } from '../../utils/cassetteLocation'
 import { getCassetteWorldPosition } from '../../utils/cassetteRegistry'
+import { useIsMobile } from '../../hooks/useIsMobile'
+import { PAGE_SIZE, RECHERCHE_PAGE_SIZE, AISLES_ORDER } from '../minitel/shared'
 import type { AisleType, Film } from '../../types'
 
 const SCREEN_W = 512
@@ -101,21 +103,6 @@ function setTokens(t: Tokens) {
   SMALL_FONT = t.smallFont
 }
 
-function useIsCoarsePointer(): boolean {
-  const [coarse, setCoarse] = useState(() => {
-    if (typeof window === 'undefined') return false
-    return window.matchMedia?.('(pointer: coarse)')?.matches ?? false
-  })
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    const mq = window.matchMedia('(pointer: coarse)')
-    const onChange = (e: MediaQueryListEvent) => setCoarse(e.matches)
-    mq.addEventListener('change', onChange)
-    return () => mq.removeEventListener('change', onChange)
-  }, [])
-  return coarse
-}
-
 // Each clickable item's canvas range. `index` is 1-based (0 reserved for
 // back/exit) and matches what handleNumberPress expects in MinitelOverlay.
 // xStart/xEnd are optional — when present (e.g. side-by-side buttons), the
@@ -127,18 +114,6 @@ export interface HitBox {
   xStart?: number
   xEnd?: number
 }
-
-// 7 fits comfortably above the bezel curve (visible bottom of the CRT mesh
-// is ≈ y=305). 8 was overflowing the pagination strip into the curve.
-const PAGE_SIZE = 7
-// RECHERCHE shows fewer rows because the TITRE input + label above push the
-// list start ~40 px lower than the generic paginated screens.
-const RECHERCHE_PAGE_SIZE = 6
-const AISLES_ORDER: AisleType[] = [
-  'action', 'aventure', 'bizarre', 'classiques', 'comedie',
-  'drame', 'horreur', 'policier', 'romance', 'sf',
-  'thriller', 'animation', 'nouveautes',
-] as AisleType[]
 
 // Cyan inverse-video title bar that spans the full safe width. The black "F"
 // in the top-right is a small nod to the real Minitel screens (TF1's France
@@ -722,7 +697,7 @@ export function useMinitelScreenTexture(props: MinitelScreenProps = {}) {
   const minitelIlluminerFlash = useStore((s) => s.minitelIlluminerFlash)
   const films = useStore((s) => s.films)
   const isAuthenticated = useStore((s) => s.isAuthenticated)
-  const isMobile = useIsCoarsePointer()
+  const isMobile = useIsMobile()
   // VT323 ships from Google Fonts via the <link> in app/layout.tsx. Canvas
   // `ctx.font = '...VT323...'` falls back to monospace until the woff2 is in
   // the document's FontFaceSet, so we explicitly await it and bump a counter

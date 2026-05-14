@@ -9,8 +9,9 @@ import {
 } from 'three/tsl'
 import { CassetteTextureAtlas, type CassetteInstanceData } from '../../utils/CassetteTextureArray'
 import { useStore } from '../../store'
+import { useIsMobile } from '../../hooks/useIsMobile'
 import { RAYCAST_LAYER_CASSETTE } from './Controls'
-import { CASSETTE_DIMENSIONS } from './Cassette'
+import { CASSETTE_DIMENSIONS } from './cassette-constants'
 
 const SHARED_CASSETTE_GEOMETRY = new THREE.BoxGeometry(CASSETTE_DIMENSIONS.width, CASSETTE_DIMENSIONS.height, CASSETTE_DIMENSIONS.depth)
 
@@ -91,6 +92,7 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
   const meshRef = useRef<THREE.InstancedMesh>(null!)
   const count = instances.length
   const gl = useThree(state => state.gl)
+  const isMobile = useIsMobile()
 
   const instancesRef = useRef(instances)
   instancesRef.current = instances
@@ -324,8 +326,7 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
 
     // Load unique poster textures — try IndexedDB cache first, else throttled decode
     let cancelled = false
-    const _isMobileDevice = window.matchMedia?.('(pointer: coarse)')?.matches || window.innerWidth <= 768
-    const POSTERS_PER_FRAME = _isMobileDevice ? 4 : 10
+    const POSTERS_PER_FRAME = isMobile ? 4 : 10
     const queue: { slot: number; url: string }[] = []
     for (const [url, slot] of urlToSlot) {
       queue.push({ slot, url })

@@ -61,7 +61,7 @@ import {
   ISLAND_SHELF_TOP_WIDTH,
 } from './IslandShelf'
 import { CassetteInstances } from './CassetteInstances'
-import { CASSETTE_DIMENSIONS, CASSETTE_COLORS } from './Cassette'
+import { CASSETTE_DIMENSIONS, CASSETTE_COLORS } from './cassette-constants'
 import { GenreSectionPanel, GenrePanelAnimator, GENRE_CONFIG } from './GenreSectionPanel'
 import { PosterWall } from './Poster'
 import { Storefront } from './Storefront'
