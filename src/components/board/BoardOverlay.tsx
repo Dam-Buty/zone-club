@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useStore } from '../../store'
+import { useBackGuard } from '../../hooks/useBackGuard'
 import api from '../../api'
 
 const NOTE_COLORS: Record<string, string> = {
@@ -32,6 +33,9 @@ export default function BoardOverlay() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const openTimeRef = useRef(0)
+
+  // Mobile back-gesture closes the board overlay instead of leaving the app.
+  useBackGuard(boardOverlayMode !== null, closeBoard)
 
   // Timing guard (300ms) for mobile touch propagation
   useEffect(() => {

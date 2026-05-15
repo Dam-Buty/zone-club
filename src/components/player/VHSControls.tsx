@@ -292,10 +292,20 @@ export function VHSControls({
           <div className={styles.remoteControls}>
             <button
               onClick={onCast}
+              disabled={!isCastReady && !isCastConnected}
               className={`${styles.remoteBtn} ${isCastConnected ? styles.remoteBtnActive : ''}`}
-              title={isCastConnected ? 'Casting actif' : isCastReady ? 'Google Cast' : 'Google Cast indisponible'}
+              title={
+                isCastConnected
+                  ? 'Casting actif'
+                  : !isCastReady
+                    ? 'Google Cast en cours de chargement…'
+                    : hasCastDevices
+                      ? 'Google Cast'
+                      : 'Aucun appareil Cast sur le réseau'
+              }
+              style={!isCastReady && !isCastConnected ? { opacity: 0.5, cursor: 'wait' } : undefined}
             >
-              {isCastConnected ? 'CAST ON' : isCastConnecting ? 'CAST…' : hasCastDevices ? 'CAST' : 'CAST ?'}
+              {isCastConnected ? 'CAST ON' : isCastConnecting ? 'CAST…' : !isCastReady ? 'CAST…' : hasCastDevices ? 'CAST' : 'CAST ?'}
             </button>
             <button
               onClick={onAirPlay}
