@@ -32,7 +32,9 @@
     "cinema:logs": "docker compose logs -f cinema-stream",
     "loopback:start": "pactl load-module module-loopback source=zone-cinema.monitor latency_msec=50 >/dev/null && echo 'Loopback zone-cinema → default sink : ON'",
     "loopback:stop": "pactl list short modules | awk '$2 == \"module-loopback\" && /zone-cinema/ {print $1}' | xargs -rn1 pactl unload-module && echo 'Loopback : OFF'",
-    "loopback:status": "pactl list short modules | awk '$2 == \"module-loopback\" && /zone-cinema/' | grep -q . && echo 'Loopback : ON' || echo 'Loopback : OFF'"
+    "loopback:status": "pactl list short modules | awk '$2 == \"module-loopback\" && /zone-cinema/' | grep -q . && echo 'Loopback : ON' || echo 'Loopback : OFF'",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.30",
@@ -71,12 +73,14 @@
     "@types/react-dom": "^19.2.3",
     "@types/uuid": "^10.0.0",
     "@types/web-push": "^3.6.4",
+    "@vitest/coverage-v8": "^4.1.6",
     "@webgpu/types": "^0.1.69",
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",
     "globals": "^16.5.0",
     "sharp": "^0.34.5",
     "typescript": "~5.9.3",
-    "typescript-eslint": "^8.46.4"
+    "typescript-eslint": "^8.46.4",
+    "vitest": "^4.1.6"
   }
 }

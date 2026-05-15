@@ -48,6 +48,7 @@
     "node_modules",
     "archive",
     "cinema-stream",
-    "zone-discord-bot"
+    "zone-discord-bot",
+    "tests"
   ]
 }
