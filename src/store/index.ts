@@ -979,6 +979,16 @@ if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production') {
   (window as any).__store = useStore;
 }
 
+// Single source of truth for the displayed credit count. Picks authUser.credits
+// when signed in, falls back to localUser.credits (guest welcome bonus = 5)
+// otherwise. Returning the number directly lets Zustand re-render only on
+// value change — selecting the `getCredits` function (stable reference) misses
+// updates, which is what 3 call-sites used to do.
+export const useCredits = (): number =>
+  useStore((s) =>
+    s.isAuthenticated && s.authUser ? s.authUser.credits : s.localUser.credits,
+  );
+
 // Hook pour initialiser l'auth au démarrage
 export function useInitAuth() {
   const fetchMe = useStore((state) => state.fetchMe);
