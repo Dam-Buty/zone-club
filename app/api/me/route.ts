@@ -31,6 +31,9 @@ export async function GET() {
         reviews,
         weeklyBonus
     });
-    response.headers.set('Cache-Control', 'private, max-age=60');
+    // Auth-sensitive payload: never cache. The old `private, max-age=60` was
+    // leaking session data after logout — the browser kept serving the cached
+    // response for 60s, so the app stayed "logged in" client-side.
+    response.headers.set('Cache-Control', 'no-store');
     return response;
 }
