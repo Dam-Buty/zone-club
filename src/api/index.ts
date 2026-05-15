@@ -108,8 +108,12 @@ async function request<T>(
   });
 
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({ message: 'Erreur inconnue' }));
-    throw new ApiError(response.status, errorData.message || `Erreur ${response.status}`);
+    // Backend convention: errors are { error: string } (NextResponse.json
+    // across all 79 sites + middleware.ts). Older code wrote `message` — kept
+    // as fallback for compat with any drift.
+    const errorData = await response.json().catch(() => ({ error: 'Erreur inconnue' }));
+    const msg = errorData.error || errorData.message || `Erreur ${response.status}`;
+    throw new ApiError(response.status, msg);
   }
 
   // Handle empty responses (204)
@@ -395,10 +399,6 @@ export const me = {
 
   async getNotifications(): Promise<{ notifications: ApiReturnRequest[] }> {
     return request('/api/me/notifications');
-  },
-
-  async getWeeklyBonusStatus(): Promise<WeeklyBonusStatus> {
-    return request('/api/me/weekly-bonus');
   },
 
   async claimWeeklyBonus(): Promise<{ credits_awarded: number; new_balance: number }> {
