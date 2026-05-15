@@ -19,6 +19,10 @@ export async function POST(request: NextRequest) {
 
     const { content, color, grid_row, grid_col } = await request.json();
 
+    if (typeof content !== 'string' || !content.trim()) {
+        return NextResponse.json({ error: 'Contenu requis' }, { status: 400 });
+    }
+
     try {
         const note = createNote(user.id, content, color || 'yellow', grid_row, grid_col);
         return NextResponse.json({ note });

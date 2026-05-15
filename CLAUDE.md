@@ -106,7 +106,11 @@ scripts/
 
 - Same-origin (pas de CORS, `API_BASE = ''`)
 - Auth par cookies signes httpOnly (`credentials: 'include'`)
-- Les IDs films dans les URLs sont des `tmdb_id`, pas des `id` internes
+- Convention `filmId` (asymetrique, attention) :
+  - `/api/films/[tmdbId]` -> lookup par `films.tmdb_id`
+  - `/api/rentals/[filmId]`, `/api/reviews/[filmId]`, `/api/cast-sessions { filmId }`,
+    `/api/admin/films/[filmId]/{aisle,availability,download}` -> lookup par `films.id` interne
+  - `src/api/index.ts:173` documente : `// filmId ici est l'ID interne du film (pas tmdb_id)`
 - Dual Radarr : `radarr_vo_id` + `radarr_vf_id` pour films VO/VF
 
 ### Routes admin (auth admin requise)
@@ -123,7 +127,7 @@ scripts/
 
 | Methode | Route | Description |
 |---|---|---|
-| `GET` | `/api/films/aisle/[aisle]` | Films par allee (action, horreur, sf, comedie, classiques, bizarre, nouveautes) |
+| `GET` | `/api/films/aisle/[aisle]` | Films par allee (12 valeurs, voir section "Allees valides") |
 
 ### Toutes les routes (source: `app/api/**/route.ts`)
 
@@ -176,7 +180,7 @@ NB : il n'y a **pas** de `DELETE /api/rentals/[filmId]` (utiliser `POST /return`
 ### Schema DB (table `films`)
 
 Colonnes cles pour le catalogue :
-- `aisle TEXT` — allee dans le videoclub (action, horreur, sf, comedie, classiques, bizarre)
+- `aisle TEXT` — allee dans le videoclub (12 valeurs, voir section "Allees valides")
 - `is_nouveaute BOOLEAN` — badge "nouveau" (un film peut etre dans une allee ET nouveaute)
 - `radarr_vo_id INTEGER` — ID dans Radarr VO (null = pas encore telecharge)
 - `radarr_vf_id INTEGER` — ID dans Radarr VF (null = pas encore telecharge)
@@ -217,9 +221,28 @@ Colonnes cles pour le catalogue :
 
 ### Allees valides
 
-`action` | `horreur` | `sf` | `comedie` | `classiques` | `bizarre` | `nouveautes` (virtual)
+12 allees physiques + 1 virtuelle. Source de verite TS : `AisleType` dans `src/types/index.ts`.
 
-`nouveautes` n'est pas une allee physique — c'est un filtre sur `is_nouveaute = 1`. Un film peut etre dans `action` ET `nouveautes`.
+| Allee | Notes |
+|---|---|
+| `action` | |
+| `aventure` | |
+| `bizarre` | |
+| `classiques` | |
+| `comedie` | |
+| `drame` | |
+| `horreur` | |
+| `policier` | |
+| `romance` | |
+| `sf` | |
+| `thriller` | |
+| `animation` | |
+| `nouveautes` | **virtuel** — filtre sur `is_nouveaute = 1`, pas une etagere physique. Un film peut etre dans `action` ET `nouveautes`. |
+
+- Backend whitelist (`app/api/films/aisle/[aisle]/route.ts` `VALID_AISLES`) = les 12 physiques.
+- Frontend ordre (`src/components/minitel/shared.ts` `AISLES_ORDER`) = les 12 physiques + `nouveautes`.
+- Le 3D consomme les 13 (`src/components/interior/Aisle.tsx`).
+- Le schema SQLite ne contraint pas la valeur (`aisle TEXT`) — la validation est applicative.
 
 ### Script seed (`npm run seed`)
 
@@ -243,7 +266,7 @@ Panel admin cache accessible via code "admin" tape au clavier quand le terminal 
 Fonctionnalites :
 - **Ajouter un film** : saisir TMDB ID → fetch metadata → insert DB
 - **Gestion films** : liste avec controles par film :
-  - Dropdown allee (--/action/horreur/sf/comedie/classiques/bizarre)
+  - Dropdown allee (12 valeurs, voir section "Allees valides")
   - Toggle NEW (is_nouveaute)
   - Bouton DL (lance telechargement Radarr VO+VF, disparait une fois lance)
   - Toggle DISPO (is_available)

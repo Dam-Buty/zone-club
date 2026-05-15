@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useDrag } from "@use-gesture/react";
-import { useStore } from "../../store";
+import { useStore, useCredits } from "../../store";
 import { tmdb, type TMDBVideo } from "../../services/tmdb";
 import api, { type FilmWithRentalStatus, type FilmRatings } from "../../api";
 import { AuthModal } from "../auth/AuthModal";
@@ -348,7 +348,7 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
   const films = useStore((state) => state.films);
   const selectFilm = useStore((state) => state.selectFilm);
   const setVHSNavDirection = useStore((state) => state.setVHSNavDirection);
-  const getCredits = useStore((state) => state.getCredits);
+  const credits = useCredits();
   const getRental = useStore((state) => state.getRental);
   const storeRentFilm = useStore((state) => state.rentFilm);
   const storeReturnFilm = useStore((state) => state.returnFilm);
@@ -521,7 +521,6 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const couchPopupTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const credits = getCredits();
   const rental = film ? getRental(film.id) : undefined;
   const isRented = !!rental;
 

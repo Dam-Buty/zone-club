@@ -2,7 +2,7 @@ import { useRef, useState, useMemo, useCallback, useEffect } from 'react'
 import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { useTexture } from '@react-three/drei'
-import { useStore } from '../../store'
+import { useStore, useCredits } from '../../store'
 import { useIsMobile } from '../../hooks/useIsMobile'
 import { createTextTexture } from '../../utils/createTextTexture'
 import { Couch } from './Couch'
@@ -461,6 +461,7 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
   const isAuthenticated = useStore(state => state.isAuthenticated)
   const authUser = useStore(state => state.authUser)
   const localUser = useStore(state => state.localUser)
+  const credits = useCredits()
   const rentalHistory = useStore(state => state.rentalHistory)
   const userReviews = useStore(state => state.userReviews)
 
@@ -977,7 +978,6 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
     ctx.fillStyle = SETTINGS_COLORS.green
     ctx.fillText('MES CREDITS', subOX, 65 + subOY)
 
-    const credits = isAuthenticated && authUser ? authUser.credits : localUser.credits
     ctx.font = `bold 120px ${CRT_FONT}`
     ctx.textAlign = 'center'
     ctx.shadowColor = SETTINGS_COLORS.green
@@ -1042,7 +1042,7 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
     }
     rows.push(['Niveau', localUser.level.toUpperCase(), SETTINGS_COLORS.gold])
     rows.push(['Total locations', `${rentals.length + rentalHistory.length}`, SETTINGS_COLORS.green])
-    rows.push(['Crédits', `${isAuthenticated && authUser ? authUser.credits : localUser.credits}`, SETTINGS_COLORS.green])
+    rows.push(['Crédits', `${credits}`, SETTINGS_COLORS.green])
     rows.push(['Locations actives', `${rentals.length}`, SETTINGS_COLORS.green])
     rows.push(['Critiques publiées', `${userReviews.length}`, SETTINGS_COLORS.green])
 

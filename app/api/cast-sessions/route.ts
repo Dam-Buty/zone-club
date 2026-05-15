@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { getUserFromSession } from "@/lib/session";
+import { getFilmById } from "@/lib/films";
 import {
   createCastSession,
   updateCastSession,
@@ -21,6 +22,10 @@ export async function POST(request: NextRequest) {
       { error: "filmId et durationSeconds requis" },
       { status: 400 },
     );
+  }
+
+  if (!getFilmById(filmId)) {
+    return NextResponse.json({ error: "Film inconnu" }, { status: 404 });
   }
 
   try {
@@ -56,6 +61,10 @@ export async function PATCH(request: NextRequest) {
     );
   }
 
+  if (!getFilmById(filmId)) {
+    return NextResponse.json({ error: "Film inconnu" }, { status: 404 });
+  }
+
   try {
     updateCastSession(user.id, filmId, currentPosition);
     return NextResponse.json({ ok: true });
@@ -79,6 +88,10 @@ export async function DELETE(request: NextRequest) {
 
   if (!filmId) {
     return NextResponse.json({ error: "filmId requis" }, { status: 400 });
+  }
+
+  if (!getFilmById(filmId)) {
+    return NextResponse.json({ error: "Film inconnu" }, { status: 404 });
   }
 
   try {

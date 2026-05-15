@@ -22,6 +22,15 @@ export async function createRentalSymlinks(
     }
 ): Promise<SymlinkPaths> {
     const uuid = uuidv4();
+
+    // Dev/seed reality: a film row can exist with no file_path yet (Radarr
+    // hasn't downloaded, transcoder hasn't run). Returning a UUID stub lets
+    // the rental row be created so the user can browse the rental flow —
+    // the player will just have nothing to stream.
+    if (!filePaths.vf && !filePaths.vo && !filePaths.subtitles) {
+        return { uuid, vf: null, vo: null, subtitles: null };
+    }
+
     const symlinkDir = join(SYMLINKS_PATH, uuid);
 
     await mkdir(symlinkDir, { recursive: true });

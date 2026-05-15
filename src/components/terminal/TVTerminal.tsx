@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { useStore } from '../../store';
+import { useStore, useCredits } from '../../store';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { useBackGuard } from '../../hooks/useBackGuard';
 import { formatTimeRemaining } from '../../utils/formatTime';
@@ -97,15 +97,16 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
   const [bulkProgress, setBulkProgress] = useState('');
 
   // Utiliser authUser si connecté, sinon localUser
+  const credits = useCredits();
   const user = isAuthenticated && authUser
     ? {
-        credits: authUser.credits,
+        credits,
         totalRentals: rentals.length + rentalHistory.length,
         level: localUser.level, // Le niveau est calculé localement
         badges: localUser.badges,
         username: authUser.username
       }
-    : localUser;
+    : { ...localUser, credits };
 
   // Récupérer les infos des films depuis le cache
   const allFilms = Object.values(films).flat();
