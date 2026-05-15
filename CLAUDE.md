@@ -106,7 +106,11 @@ scripts/
 
 - Same-origin (pas de CORS, `API_BASE = ''`)
 - Auth par cookies signes httpOnly (`credentials: 'include'`)
-- Les IDs films dans les URLs sont des `tmdb_id`, pas des `id` internes
+- Convention `filmId` (asymetrique, attention) :
+  - `/api/films/[tmdbId]` -> lookup par `films.tmdb_id`
+  - `/api/rentals/[filmId]`, `/api/reviews/[filmId]`, `/api/cast-sessions { filmId }`,
+    `/api/admin/films/[filmId]/{aisle,availability,download}` -> lookup par `films.id` interne
+  - `src/api/index.ts:173` documente : `// filmId ici est l'ID interne du film (pas tmdb_id)`
 - Dual Radarr : `radarr_vo_id` + `radarr_vf_id` pour films VO/VF
 
 ### Routes admin (auth admin requise)
