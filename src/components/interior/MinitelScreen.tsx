@@ -516,7 +516,7 @@ function drawRowPill(
   ctx: CanvasRenderingContext2D,
   label: string,
   hitboxes: HitBox[],
-  opts: { x: number; y: number; index: number | null; clickable: boolean; bg: string; fg?: string },
+  opts: { x: number; y: number; index: number | null; clickable: boolean; bg: string; fg?: string; focused?: boolean },
 ): { w: number; h: number } {
   const padX = 6
   const padY = 2
@@ -524,9 +524,19 @@ function drawRowPill(
   const textW = ctx.measureText(label).width
   const btnW = textW + padX * 2
   const btnH = 16
-  ctx.fillStyle = opts.clickable ? opts.bg : 'rgba(79, 168, 255, 0.18)'
+  // Always render the semantic bg color (green for DISPO, red for DEMANDE,
+  // magenta for COMMANDER). The previous dim-blue fallback for !clickable
+  // washed out DISPO so it didn't read as green anymore.
+  ctx.fillStyle = opts.bg
   ctx.fillRect(opts.x, opts.y, btnW, btnH)
-  ctx.fillStyle = opts.clickable ? (opts.fg ?? PALETTE.BG) : COLOR_DIM
+  // White 1px outline on the focused row's pill — pairs with the yellow row
+  // bar to make the active action target unmistakable.
+  if (opts.focused) {
+    ctx.strokeStyle = PALETTE.WHITE
+    ctx.lineWidth = 1
+    ctx.strokeRect(opts.x + 0.5, opts.y + 0.5, btnW - 1, btnH - 1)
+  }
+  ctx.fillStyle = opts.fg ?? PALETTE.BG
   ctx.textBaseline = 'top'
   ctx.textAlign = 'left'
   ctx.fillText(label, opts.x + padX, opts.y + padY)
@@ -553,7 +563,6 @@ function drawCommander(
   focusPrimary: boolean,
   focusBack: boolean,
 ) {
-  void highlight // results row focus is already handled via the per-row drawRowPill highlight
   drawHeader(ctx, 'VIDEOCLUB COMMANDER')
   ctx.font = FONT
   ctx.textBaseline = 'top'
@@ -632,6 +641,8 @@ function drawCommander(
   results.slice(0, 6).forEach((r, i) => {
     const inLocal = localTmdbIds.has(r.id)
     const isReq = requested.has(r.id)
+    const clickable = !inLocal && !isReq
+    const isHl = clickable && (i + 1) === highlight
     const yr = r.release_date ? ` ${r.release_date.slice(0, 4)}` : ''
     ctx.font = FONT
     let text = `${r.title}${yr}`
@@ -639,12 +650,21 @@ function drawCommander(
       text = text.slice(0, -2)
     }
     if (text !== `${r.title}${yr}`) text = text.slice(0, -1) + '…'
+    // Row-wide yellow bar on focus, matching drawListRow's pattern. Painted
+    // before the title so the text reads black-on-yellow.
+    const rowH = LINE_H + 4
+    if (isHl) {
+      ctx.fillStyle = PALETTE.YELLOW
+      ctx.fillRect(PADDING - 2, y - 2, SAFE_RIGHT - PADDING + 4, rowH)
+    }
     const dim = inLocal || isReq
-    ctx.fillStyle = dim ? COLOR_DIM : PALETTE.BLUE
+    ctx.fillStyle = isHl ? PALETTE.BG : (dim ? COLOR_DIM : PALETTE.BLUE)
     ctx.textBaseline = 'top'
     ctx.fillText(text, PADDING, y + 2)
     // Right-aligned status pill: DISPO = green, DEMANDE = red,
-    // COMMANDER = magenta. Inverse-video, black text.
+    // COMMANDER = magenta. Inverse-video, black text. We pass index:null so
+    // drawRowPill skips its narrow pill-only hitbox — we push a full-row
+    // hitbox below instead so mouse hover tracks the whole line.
     const label = inLocal ? 'DISPO' : isReq ? 'DEMANDE' : 'COMMANDER'
     const bg = inLocal ? PALETTE.GREEN : isReq ? PALETTE.RED : PALETTE.MAGENTA
     const fg = isReq ? PALETTE.WHITE : PALETTE.BG
@@ -653,11 +673,15 @@ function drawCommander(
     drawRowPill(ctx, label, hitboxes, {
       x: SAFE_RIGHT - measuredW,
       y: y,
-      index: !inLocal && !isReq ? i + 1 : null,
-      clickable: !inLocal && !isReq,
+      index: null,
+      clickable,
       bg, fg,
+      focused: isHl,
     })
-    y += LINE_H + 4 + TOK.itemGap
+    if (clickable) {
+      hitboxes.push({ index: i + 1, yStart: y - 2, yEnd: y + rowH })
+    }
+    y += rowH + TOK.itemGap
   })
 }
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { useStore } from '../../store'
 import { searchFilms } from '../../utils/minitelSearch'
 import { tmdb } from '../../services/tmdb'
@@ -85,6 +85,27 @@ export function MinitelOverlay() {
     return () => clearTimeout(t)
   }, [minitelMode, minitelQuery, setTmdbResults, setTmdbState])
 
+  // Set of TMDB ids already in the local catalog. Commander rows for these
+  // films render as DISPO and are NOT actionable — keyboard nav skips them and
+  // handleNumberPress no-ops on them.
+  const commanderLocalTmdbIds = useMemo<Set<number>>(() => {
+    const s = new Set<number>()
+    for (const list of Object.values(films)) for (const f of list) if (f.tmdb_id) s.add(f.tmdb_id)
+    return s
+  }, [films])
+
+  // 1-based indices into tmdbResults.slice(0,6) that are actionable in
+  // commander mode (not in local catalog and not already requested). When
+  // empty, the keyboard nav goes straight to the trailing button (RETOUR).
+  const commanderClickableIndices = useMemo<number[]>(() => {
+    if (minitelMode !== 'commander' || !isAuthenticated) return []
+    const out: number[] = []
+    tmdbResults.slice(0, 6).forEach((r, i) => {
+      if (!commanderLocalTmdbIds.has(r.id) && !requestedIds.has(r.id)) out.push(i + 1)
+    })
+    return out
+  }, [minitelMode, isAuthenticated, tmdbResults, requestedIds, commanderLocalTmdbIds])
+
   // Build flat A→Z list of all films (deduped)
   const buildAllFilms = useCallback((): Film[] => {
     const seen = new Set<number>()
@@ -136,22 +157,26 @@ export function MinitelOverlay() {
     }
     if (minitelMode === 'commander') {
       const r = tmdbResults[n - 1]
-      if (r && isAuthenticated && !requestedIds.has(r.id)) {
-        api.filmRequests.create({
-          tmdb_id: r.id,
-          title: r.title,
-          poster_url: r.poster_path ? tmdb.posterUrl(r.poster_path, 'w342') : null,
-        }).then(() => {
-          const next = new Set(requestedIds)
-          next.add(r.id)
-          setRequestedIds(next)
-        }).catch(() => {})
-      }
+      if (!r || !isAuthenticated) return
+      // Defensive: rows where the film is already in the local catalog
+      // (DISPO) or already requested (DEMANDE) have no actionable command.
+      // Arrow nav already skips them, but a stale mouse-hover index could
+      // route here — keep the POST guarded.
+      if (commanderLocalTmdbIds.has(r.id) || requestedIds.has(r.id)) return
+      api.filmRequests.create({
+        tmdb_id: r.id,
+        title: r.title,
+        poster_url: r.poster_path ? tmdb.posterUrl(r.poster_path, 'w342') : null,
+      }).then(() => {
+        const next = new Set(requestedIds)
+        next.add(r.id)
+        setRequestedIds(next)
+      }).catch(() => {})
       return
     }
   }, [
     minitelMode, minitelSelectedAisle, films, minitelPageIndex, minitelQuery,
-    tmdbResults, isAuthenticated, requestedIds, buildAllFilms, setRequestedIds,
+    tmdbResults, isAuthenticated, requestedIds, commanderLocalTmdbIds, buildAllFilms, setRequestedIds,
     setMinitelMode, setMinitelQuery, setMinitelSelectedAisle, setMinitelSelectedFilm, setMinitelPageIndex,
   ])
 
@@ -276,6 +301,21 @@ export function MinitelOverlay() {
 
   const itemCount = listItemCount + trailingButtons.length
 
+  // 1-based indices that keyboard nav should cycle through. For commander
+  // mode this is the actionable rows only (DISPO/DEMANDE rows are skipped)
+  // followed by the trailing buttons; for every other mode it's a dense
+  // 1..listItemCount range followed by trailing.
+  const navigableIndices = useMemo<number[]>(() => {
+    const out: number[] = []
+    if (minitelMode === 'commander' && isAuthenticated) {
+      out.push(...commanderClickableIndices)
+    } else {
+      for (let i = 1; i <= listItemCount; i++) out.push(i)
+    }
+    for (let i = 1; i <= trailingButtons.length; i++) out.push(listItemCount + i)
+    return out
+  }, [minitelMode, isAuthenticated, commanderClickableIndices, listItemCount, trailingButtons])
+
   const highlightedItem = useStore((s) => s.minitelHighlightedItem)
   const setHighlightedItem = useStore((s) => s.setMinitelHighlightedItem)
 
@@ -299,6 +339,18 @@ export function MinitelOverlay() {
     setHighlightedItem(1)
   }, [minitelMode, minitelSelectedAisle, minitelPageIndex, minitelQuery, minitelSelectedFilm, setHighlightedItem])
 
+  // When the navigable set changes (TMDB results arrive, requestedIds update,
+  // local catalog mutates), make sure the highlight points at a navigable
+  // index. Without this, the reset above leaves highlightedItem=1 even when
+  // row 1 is DISPO/DEMANDE — Enter would then dispatch a no-op AND the user
+  // would see no focus on any visible row.
+  useEffect(() => {
+    if (navigableIndices.length === 0) return
+    if (!navigableIndices.includes(highlightedItem)) {
+      setHighlightedItem(navigableIndices[0])
+    }
+  }, [navigableIndices, highlightedItem, setHighlightedItem])
+
   useEffect(() => {
     if (!isInteractingWithMinitel) return
     const onKey = (e: KeyboardEvent) => {
@@ -313,16 +365,24 @@ export function MinitelOverlay() {
       }
       // Arrow Up/Down work even when typing in the search input, so the user
       // can pick a result without leaving the keyboard. Left/Right stay
-      // text-edit-only when input is focused.
-      if (itemCount > 0) {
+      // text-edit-only when input is focused. Nav steps through
+      // navigableIndices so non-clickable commander rows (DISPO/DEMANDE) are
+      // skipped automatically.
+      if (navigableIndices.length > 0) {
         if (e.key === 'ArrowDown' || (!inInput && e.key === 'ArrowRight')) {
           e.preventDefault()
-          setHighlightedItem(highlightedItem >= itemCount ? 1 : highlightedItem + 1)
+          const i = navigableIndices.indexOf(highlightedItem)
+          const next = i === -1 ? navigableIndices[0] : navigableIndices[(i + 1) % navigableIndices.length]
+          setHighlightedItem(next)
           return
         }
         if (e.key === 'ArrowUp' || (!inInput && e.key === 'ArrowLeft')) {
           e.preventDefault()
-          setHighlightedItem(highlightedItem <= 1 ? itemCount : highlightedItem - 1)
+          const i = navigableIndices.indexOf(highlightedItem)
+          const prev = i === -1
+            ? navigableIndices[navigableIndices.length - 1]
+            : navigableIndices[(i - 1 + navigableIndices.length) % navigableIndices.length]
+          setHighlightedItem(prev)
           return
         }
       }
@@ -339,7 +399,7 @@ export function MinitelOverlay() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [
-    isInteractingWithMinitel, minitelMode, itemCount, highlightedItem,
+    isInteractingWithMinitel, minitelMode, itemCount, navigableIndices, highlightedItem,
     setHighlightedItem, handleNumberPress, handleEnvoi, handleEsc, handleSuite, handleRetour, dispatchFocused,
   ])
 

@@ -533,9 +533,25 @@ export function Controls({
     handleClickRef.current = (e?: MouseEvent) => {
       const minitelOpen = useStore.getState().isInteractingWithMinitel;
       if (!controls.isLocked && minitelOpen && e) {
-        // Minitel is keyboard/button-only. Clicks on the screen are swallowed
-        // so the camera stays in zoom and no item dispatch happens. The
-        // overlay help panel (desktop) and on-screen pad (mobile) drive the UI.
+        // Commander mode: dispatch a click as a confirmation of the row the
+        // mouse is currently hovering. The mousemove handler keeps
+        // minitelHighlightedItem in sync with the cursor; we just forward it
+        // to the existing pendingMinitelPress pipeline so the overlay's
+        // handleNumberPress (which defends against DISPO/DEMANDE rows) fires.
+        // Other modes stay keyboard-only — clicks swallowed as before.
+        const ms = useStore.getState();
+        if (ms.minitelMode === 'commander') {
+          const hb = (window as unknown as {
+            __minitelHitboxes?: {
+              getHitboxes: () => Array<{ index: number }>
+            }
+          }).__minitelHitboxes;
+          const h = ms.minitelHighlightedItem;
+          const indices = hb?.getHitboxes?.().map((x) => x.index) ?? [];
+          if (h >= 1 && h <= 6 && indices.includes(h)) {
+            ms.dispatchMinitelItem(h);
+          }
+        }
         return;
       }
       if (controls.isLocked) {
