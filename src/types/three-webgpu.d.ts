@@ -46,7 +46,8 @@ declare module 'three/webgpu' {
         [key: string]: any;
     }
 
-    export class PostProcessing {
+    // Renamed from PostProcessing in r182 (alias kept for backward compat).
+    export class RenderPipeline {
         constructor(renderer: any);
         outputNode: any;
         render(): void;
