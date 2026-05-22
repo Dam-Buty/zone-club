@@ -10,6 +10,18 @@ useGLTF.preload('/models/crt_tv.glb', true)
 // CRT screen aspect ratio (4:3) — used for "cover on height" texture mapping
 const CRT_SCREEN_AR = 4 / 3
 
+const CATEGORIES = ['films', 'series', 'shows', 'anime'] as const
+type Category = (typeof CATEGORIES)[number]
+const BLOCKED_CHANNELS = new Set(['malcolm', 'etchebesme'])
+
+function pickRandom<T>(arr: readonly T[], exclude?: T): T | null {
+  if (!arr.length) return null
+  if (arr.length === 1 || exclude === undefined) return arr[Math.floor(Math.random() * arr.length)]
+  let pick: T
+  do { pick = arr[Math.floor(Math.random() * arr.length)] } while (pick === exclude)
+  return pick
+}
+
 interface LaZoneVideo {
   title: string
   duration: number
@@ -19,6 +31,7 @@ interface LaZoneVideo {
 interface LaZoneChannel {
   id: string
   title: string
+  tags?: string[]
   videos: LaZoneVideo[]
 }
 
@@ -73,8 +86,10 @@ function createVideoTexture(video: HTMLVideoElement): THREE.VideoTexture {
 export function LaZoneCRT({ position, rotation = [0, 0, 0], tilt = -10 }: LaZoneCRTProps) {
   const { scene: glbScene } = useGLTF('/models/crt_tv.glb', true)
   const screenMeshRef = useRef<THREE.Mesh | null>(null)
-  const playlistRef = useRef<LaZoneVideo[]>([])
-  const indexRef = useRef(-1)
+  const poolsRef = useRef<Map<Category, LaZoneVideo[]>>(new Map())
+  const currentCategoryRef = useRef<Category | null>(null)
+  const currentVideoRef = useRef<LaZoneVideo | null>(null)
+  const skipToNextRef = useRef<() => void>(() => {})
   const soundEnabledRef = useRef(false)
   const fadeIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const wasWatchingRef = useRef(false)
@@ -213,30 +228,25 @@ export function LaZoneCRT({ position, rotation = [0, 0, 0], tilt = -10 }: LaZone
     wasWatchingRef.current = isWatching
   }, [isWatching, soundOn])
 
-  // Play video at a specific playlist index (wraps around)
-  // Uses generation counter to ignore stale callbacks from previous source switches
-  // Creates a fresh VideoTexture after play() succeeds to fix WebGPU stale GPU texture
-  const playAtIndex = useCallback((idx: number) => {
-    const playlist = playlistRef.current
-    if (!playlist.length || !video) return
-    const wrapped = ((idx % playlist.length) + playlist.length) % playlist.length
-    indexRef.current = wrapped
+  // Play a specific video. Uses generation counter to ignore stale callbacks
+  // from previous source switches. Creates a fresh VideoTexture after play()
+  // succeeds to fix WebGPU stale GPU texture.
+  const playVideo = useCallback((next: LaZoneVideo) => {
+    if (!video) return
+    currentVideoRef.current = next
 
     // Bump generation — any in-flight callback from previous switch is now stale
     const gen = ++srcGenRef.current
-    // Reset stuck detection
     lastTimeRef.current = 0
     stuckFramesRef.current = 0
 
-    // Cancel any pending safety timeout from previous switch
     if (switchTimeoutRef.current) {
       clearTimeout(switchTimeoutRef.current)
       switchTimeoutRef.current = null
     }
 
-    // Reset video element and set new source
     video.pause()
-    video.src = playlist[wrapped].url
+    video.src = next.url
     video.muted = true
     video.load()
 
@@ -244,7 +254,7 @@ export function LaZoneCRT({ position, rotation = [0, 0, 0], tilt = -10 }: LaZone
     switchTimeoutRef.current = setTimeout(() => {
       switchTimeoutRef.current = null
       if (srcGenRef.current !== gen) return
-      playAtIndex(indexRef.current + 1)
+      skipToNextRef.current()
     }, 6000)
 
     video.play()
@@ -266,7 +276,6 @@ export function LaZoneCRT({ position, rotation = [0, 0, 0], tilt = -10 }: LaZone
         screenMat.emissiveMap = newTexture
         screenMat.needsUpdate = true
 
-        // Unmute after play succeeds if sound is enabled
         if (soundEnabledRef.current) {
           video.muted = false
         }
@@ -274,26 +283,35 @@ export function LaZoneCRT({ position, rotation = [0, 0, 0], tilt = -10 }: LaZone
       .catch(() => {
         if (switchTimeoutRef.current) { clearTimeout(switchTimeoutRef.current); switchTimeoutRef.current = null }
         if (srcGenRef.current !== gen) return // stale
-        // Skip to next on failure
-        playAtIndex(indexRef.current + 1)
+        skipToNextRef.current()
       })
   }, [video, screenMat])
 
-  // Pick a random index different from current
-  const playRandom = useCallback(() => {
-    const len = playlistRef.current.length
-    if (len <= 1) { playAtIndex(0); return }
-    let next: number
-    do {
-      next = Math.floor(Math.random() * len)
-    } while (next === indexRef.current)
-    playAtIndex(next)
-  }, [playAtIndex])
+  // Auto-advance (video ended / play failed): stay in same category, pick another random video
+  const playNextInCategory = useCallback(() => {
+    const cat = currentCategoryRef.current
+    const pool = cat ? poolsRef.current.get(cat) : null
+    if (!pool?.length) return
+    const next = pickRandom(pool, currentVideoRef.current ?? undefined)
+    if (next) playVideo(next)
+  }, [playVideo])
 
-  // Sequential for auto-advance (ended), random for manual zapping
-  const playNext = useCallback(() => {
-    playAtIndex(indexRef.current + 1)
-  }, [playAtIndex])
+  // Zap (channel up/down): pick a random category, then a random video in that pool
+  const playRandom = useCallback(() => {
+    const available = CATEGORIES.filter((c) => poolsRef.current.get(c)?.length)
+    if (!available.length) return
+    const cat = available[Math.floor(Math.random() * available.length)]
+    currentCategoryRef.current = cat
+    const pool = poolsRef.current.get(cat)!
+    const next = pickRandom(pool, currentVideoRef.current ?? undefined)
+    if (next) playVideo(next)
+  }, [playVideo])
+
+  // Mirror playNextInCategory into a ref so playVideo can retry without
+  // creating a circular useCallback dependency.
+  useEffect(() => {
+    skipToNextRef.current = playNextInCategory
+  }, [playNextInCategory])
 
   // --- Channel zapping (up/down while watching) → random pick ---
   useEffect(() => {
@@ -323,47 +341,47 @@ export function LaZoneCRT({ position, rotation = [0, 0, 0], tilt = -10 }: LaZone
     return () => clearTimeout(t)
   }, [shouldStartTV])
 
-  // Fetch La Zone TV data + start ambient playback
+  // Fetch La Zone TV data, build per-category pools, start ambient playback
   useEffect(() => {
     if (!shouldStartTV) return
     if (!video) return
     let cancelled = false
 
-    const onEnded = () => playNext()
-    const onError = () => playNext()
+    const onEnded = () => playNextInCategory()
+    const onError = () => playNextInCategory()
 
     fetch('https://tv.lazone.at/data.json')
       .then((r) => r.json())
       .then((data: { channels?: LaZoneChannel[] }) => {
         if (cancelled || !data.channels?.length) return
-        // Domains with invalid SSL certs or CORS issues
-        const BAD_HOSTS = ['etchebesme.lazone.at', 'heaven.lazone.at', 'fatso.lazone.at']
-        const BLOCKED_SHOWS = ['top%20chef', 'topchef', 'top_chef']
-        const allVideos = data.channels.flatMap((ch) =>
-          ch.videos.filter((v) => {
-            if (!v.url.includes('lazone.bourlypokertour.fr') && !v.url.includes('.lazone.at/')) return false
-            if (BAD_HOSTS.some((h) => v.url.includes(h))) return false
-            const urlLower = v.url.toLowerCase()
-            if (BLOCKED_SHOWS.some((s) => urlLower.includes(s))) return false
+
+        const pools = new Map<Category, LaZoneVideo[]>()
+        for (const cat of CATEGORIES) pools.set(cat, [])
+
+        for (const ch of data.channels) {
+          if (BLOCKED_CHANNELS.has(ch.id)) continue
+          if (!ch.tags?.includes('fr')) continue
+          const chanCats = CATEGORIES.filter((c) => ch.tags?.includes(c))
+          if (!chanCats.length) continue
+
+          for (const v of ch.videos) {
             // Reject URLs with invalid percent encoding (Latin-1 instead of UTF-8)
-            // These cause CORS failures from cross-origin contexts
-            try { decodeURIComponent(v.url); return true } catch { return false }
-          })
-        )
-        if (!allVideos.length) return
-        // Fisher-Yates shuffle (uniform distribution)
-        for (let i = allVideos.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
-          [allVideos[i], allVideos[j]] = [allVideos[j], allVideos[i]]
+            // — these cause CORS failures from cross-origin contexts.
+            try { decodeURIComponent(v.url) } catch { continue }
+            // A channel can carry multiple category tags (e.g. disney = films + anime);
+            // each of its videos is pushed into every matching pool.
+            for (const cat of chanCats) pools.get(cat)!.push(v)
+          }
         }
-        playlistRef.current = allVideos
-        indexRef.current = -1
+
+        if (![...pools.values()].some((p) => p.length)) return
+        poolsRef.current = pools
 
         video.muted = true
         video.loop = false
         video.addEventListener('ended', onEnded)
         video.addEventListener('error', onError)
-        playNext()
+        playRandom()
       })
       .catch(() => {})
 
@@ -376,7 +394,7 @@ export function LaZoneCRT({ position, rotation = [0, 0, 0], tilt = -10 }: LaZone
       if (switchTimeoutRef.current) { clearTimeout(switchTimeoutRef.current); switchTimeoutRef.current = null }
       video.pause()
     }
-  }, [shouldStartTV, video, playNext])
+  }, [shouldStartTV, video, playRandom, playNextInCategory])
 
   // --- Screen flicker effect + stuck detection ---
   // Only show video when play() has succeeded for the current source (playGenRef matches srcGenRef)
@@ -402,7 +420,7 @@ export function LaZoneCRT({ position, rotation = [0, 0, 0], tilt = -10 }: LaZone
         stuckFramesRef.current++
         if (stuckFramesRef.current > 150) { // ~2.5s at 60fps — video frozen, skip
           stuckFramesRef.current = 0
-          playAtIndex(indexRef.current + 1)
+          skipToNextRef.current()
           return
         }
       } else {
