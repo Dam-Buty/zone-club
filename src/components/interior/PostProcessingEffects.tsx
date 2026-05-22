@@ -14,7 +14,7 @@ interface PostProcessingEffectsProps {
 
 export function PostProcessingEffects({ isMobile = false }: PostProcessingEffectsProps) {
   const { gl: renderer, scene, camera } = useThree()
-  const postProcessingRef = useRef<THREE.RenderPipeline | null>(null)
+  const postProcessingRef = useRef<THREE.PostProcessing | null>(null)
   const bokehRef = useRef<ReturnType<typeof uniform> | null>(null)
   const bloomStrengthRef = useRef<ReturnType<typeof uniform> | null>(null)
   const bloomBaseStrength = isMobile ? 0.12 : 0.18
@@ -22,7 +22,7 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
   const dofTrigger = isMobile ? false : isVHSCaseOpen
 
   useEffect(() => {
-    const postProcessing = new THREE.RenderPipeline(renderer as unknown as THREE.WebGPURenderer)
+    const postProcessing = new THREE.PostProcessing(renderer as unknown as THREE.WebGPURenderer)
 
     // Vignette — shared between mobile and desktop
     const applyVignette = (input: ReturnType<typeof pass>) => {
@@ -88,14 +88,14 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
     // in the PostProcessing render-target context (HalfFloat) — pipelines compiled
     // for the default RT in compileAsync are useless here, the actual render uses
     // PassNode's render target which has a different format.
-    ;(window as unknown as { __postProcessing?: THREE.RenderPipeline }).__postProcessing = postProcessing
+    ;(window as unknown as { __postProcessing?: THREE.PostProcessing }).__postProcessing = postProcessing
 
     return () => {
       postProcessing.dispose()
       postProcessingRef.current = null
       bokehRef.current = null
       bloomStrengthRef.current = null
-      ;(window as unknown as { __postProcessing?: THREE.RenderPipeline | null }).__postProcessing = null
+      ;(window as unknown as { __postProcessing?: THREE.PostProcessing | null }).__postProcessing = null
     }
   }, [renderer, scene, camera, isMobile, dofTrigger])
 

@@ -46,8 +46,10 @@ declare module 'three/webgpu' {
         [key: string]: any;
     }
 
-    // Renamed from PostProcessing in r182 (alias kept for backward compat).
-    export class RenderPipeline {
+    // r182 renamed this to RenderPipeline but kept the old name as an alias
+    // for backward compat. We use the old name to stay compatible with any
+    // build that may still have a cached r183 three in node_modules.
+    export class PostProcessing {
         constructor(renderer: any);
         outputNode: any;
         render(): void;
