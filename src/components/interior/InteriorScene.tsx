@@ -22,6 +22,7 @@ import { PostProcessingEffects } from './PostProcessingEffects'
 import { Environment } from '@react-three/drei'
 import { useIsMobile } from '../../hooks/useIsMobile'
 import { useBackGuard } from '../../hooks/useBackGuard'
+import { preloadCastSdk } from '../../hooks/useGoogleCast'
 import { createMobileInput } from '../../types/mobile'
 import type { MobileInput } from '../../types/mobile'
 
@@ -770,6 +771,16 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
   useBackGuard(isInteractingWithTV, () => setInteractingWithTV(false))
   useBackGuard(isInteractingWithLaZone, () => setInteractingWithLaZone(false))
   useBackGuard(isWatchingLaZone, () => { setWatchingLaZone(false); setInteractingWithLaZone(false) })
+
+  // Preload the Google Cast SDK script when the player sits on the couch — this
+  // is the strongest signal of "I'm about to watch a film". By the time the user
+  // taps a cassette + opens the player + sees the "Watch on TV" prompt, the SDK
+  // is already cached (script load takes 1-3s on mobile). Without this prefetch,
+  // tapping "TV" too fast races with the SDK load and falls through to the
+  // mirroring fallback, leaving the video playing on the phone.
+  useEffect(() => {
+    if (isSitting) preloadCastSdk()
+  }, [isSitting])
 
   useEffect(() => {
     return () => {

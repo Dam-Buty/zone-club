@@ -5,7 +5,7 @@ import { VHSControls } from './VHSControls';
 import { RentalTimer } from '../ui/RentalTimer';
 import api, { type ReviewsResponse } from '../../api';
 import type { PlayerState } from '../../types';
-import { useGoogleCast } from '../../hooks/useGoogleCast';
+import { useGoogleCast, preloadCastSdk } from '../../hooks/useGoogleCast';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { useBackGuard } from '../../hooks/useBackGuard';
 import styles from './VHSPlayer.module.css';
@@ -703,19 +703,26 @@ export function VHSPlayer() {
       return;
     }
 
-    if (!isCastReady) {
+    // Pause local video immediately so the user doesn't hear/see playback on
+    // the phone while the SDK loads and the device picker is open. Track
+    // whether it was playing so we can resume on a cast failure (e.g. user
+    // dismisses the picker, no devices found).
+    const video = videoRef.current;
+    const wasPlaying = Boolean(video && !video.paused);
+    if (video && wasPlaying) video.pause();
+
+    // Force-resolve the SDK. Idempotent — instant if already loaded (the
+    // preloadCastSdk() call on couch-sit warms the cache, see InteriorScene).
+    // This is the safety net for users who tap "TV" faster than the SDK can
+    // load — instead of falling through to the mirroring help, we wait briefly.
+    const sdkReady = await preloadCastSdk();
+    if (!sdkReady) {
       setRemoteError('Google Cast indisponible sur ce navigateur.');
       openMirroringFallback('cast');
+      if (video && wasPlaying) void video.play().catch(() => {});
       return;
     }
 
-    if (!hasCastDevices && !isCastConnected) {
-      setRemoteError('Aucun appareil Cast détecté sur le même réseau.');
-      openMirroringFallback('cast');
-      return;
-    }
-
-    const video = videoRef.current;
     // Fallback to rental.watchPosition if local video hasn't seeked yet (canplay
     // race when user clicks Cast before <video> reaches its resume position).
     const startTime = Math.max(video?.currentTime || 0, rental?.watchPosition || 0);
@@ -723,27 +730,36 @@ export function VHSPlayer() {
       url: videoUrl,
       title: currentFilm?.title || 'Zone Club',
       currentTime: startTime,
-      autoplay: Boolean(video && !video.paused),
+      // Always autoplay on the receiver — when the user picks a TV they expect
+      // playback to start there. (Previous code passed !video.paused, which
+      // meant a paused local would load a paused stream on the receiver too.)
+      autoplay: true,
     });
 
     if (!result.ok) {
       setRemoteError(result.error || 'Impossible de lancer Google Cast.');
       openMirroringFallback('cast');
+      // User dismissed picker or no devices — resume local so they keep watching.
+      if (video && wasPlaying) void video.play().catch(() => {});
       return;
     }
 
-    // Switch to casting mode — pause local video, track remote
-    if (video && !video.paused) {
-      video.pause();
-    }
+    // Switch to casting mode — local already paused above.
     setPlayerState('casting');
     setActiveCastFilmId(currentPlayingFilm);
     castFilmIdRef.current = currentPlayingFilm ?? null;
     castDurationRef.current = video?.duration || 0;
     if (currentPlayingFilm) {
-      api.castSessions.create(currentPlayingFilm, video?.duration || 0, video?.currentTime || 0).catch(() => {});
+      api.castSessions.create(currentPlayingFilm, video?.duration || 0, startTime).catch(() => {});
+      // Also persist the handoff position to rental.watchPosition so a close +
+      // reopen during cast resumes at the right spot even if the 30s save
+      // loop hasn't fired yet.
+      if (video && video.duration > 0) {
+        const progress = Math.round((startTime / video.duration) * 100);
+        updateRentalProgress(currentPlayingFilm, progress, startTime).catch(() => {});
+      }
     }
-  }, [videoUrl, isCastReady, hasCastDevices, isCastConnected, castMedia, currentFilm?.title, openMirroringFallback, currentPlayingFilm, setActiveCastFilmId, rental?.watchPosition]);
+  }, [videoUrl, castMedia, currentFilm?.title, openMirroringFallback, currentPlayingFilm, setActiveCastFilmId, rental?.watchPosition, updateRentalProgress]);
 
   const handleAirPlayPicker = useCallback(() => {
     setRemoteError(null);
@@ -766,16 +782,22 @@ export function VHSPlayer() {
 
   const handleWatchOnTVFromPrompt = useCallback(() => {
     setShowMobileRemotePrompt(false);
-    if (isCastReady || hasCastDevices || isCastConnected) {
-      void handleCastCurrentVideo();
-      return;
-    }
-    if (isAirPlaySupported) {
+
+    // Apple devices: Cast SDK is blocked by Apple — go straight to AirPlay.
+    const isApple = typeof navigator !== 'undefined' && /(iPad|iPhone|iPod|Macintosh)/.test(navigator.userAgent);
+    if (isApple && isAirPlaySupported) {
       handleAirPlayPicker();
       return;
     }
-    openMirroringFallback('generic');
-  }, [isCastReady, hasCastDevices, isCastConnected, isAirPlaySupported, handleCastCurrentVideo, handleAirPlayPicker, openMirroringFallback]);
+
+    // Everywhere else: try Cast. handleCastCurrentVideo handles SDK loading
+    // (awaits preloadCastSdk), pauses local immediately, resumes local on
+    // failure, and falls back to the mirroring help if the SDK can't load.
+    // We no longer gate on isCastReady/hasCastDevices because those state
+    // flags lag the actual SDK readiness — letting requestSession() decide
+    // is more robust to race conditions.
+    void handleCastCurrentVideo();
+  }, [isAirPlaySupported, handleCastCurrentVideo, handleAirPlayPicker]);
 
   // Push notification subscription handler
   const handleEnablePushNotifications = useCallback(async () => {
@@ -829,10 +851,37 @@ export function VHSPlayer() {
       const progress = Math.round((video.currentTime / video.duration) * 100);
       updateRentalProgress(currentPlayingFilm, progress, video.currentTime).catch(() => {});
 
-    }, 30000);
+    }, 10000);
 
     return () => clearInterval(interval);
   }, [isPlayerOpen, currentPlayingFilm, playerState, remoteCastMediaLoaded, remoteCastDuration, getRemoteCurrentTime]);
+
+  // ===== Flush position on player close =====
+  //
+  // The 10s save loop above can miss the final position if the user closes
+  // the player mid-interval — especially in the local-paused → cast → close
+  // flow, where the pause skips the local save branch entirely. This ref
+  // captures the latest snapshot-saver closure on every render, and the
+  // useEffect cleanup invokes it when isPlayerOpen flips false (or the
+  // component unmounts), guaranteeing one final write to rental.watchPosition.
+  const flushPositionRef = useRef<(() => void) | null>(null);
+  flushPositionRef.current = () => {
+    if (!currentPlayingFilm) return;
+    if (playerState === 'casting' && lastKnownCastTimeRef.current > 0 && castDurationRef.current > 0) {
+      const progress = Math.round((lastKnownCastTimeRef.current / castDurationRef.current) * 100);
+      updateRentalProgress(currentPlayingFilm, progress, lastKnownCastTimeRef.current).catch(() => {});
+      return;
+    }
+    const v = videoRef.current;
+    if (v && v.duration > 0) {
+      const progress = Math.round((v.currentTime / v.duration) * 100);
+      updateRentalProgress(currentPlayingFilm, progress, v.currentTime).catch(() => {});
+    }
+  };
+  useEffect(() => {
+    if (!isPlayerOpen) return;
+    return () => { flushPositionRef.current?.(); };
+  }, [isPlayerOpen]);
 
   // ===== Page Visibility API (background resilience during cast) =====
   useEffect(() => {
@@ -1153,7 +1202,11 @@ export function VHSPlayer() {
     };
 
     const apply = () => {
-      if (checkPortraitMobile()) disableAutoHide();
+      // Always keep controls visible during cast — the remote buttons are the
+      // primary UI the user needs (play/pause/stop on the TV). Letting them
+      // fade out after 4s of inactivity leaves only the info overlay visible,
+      // which feels like "no controls at all" to the user.
+      if (checkPortraitMobile() || playerState === 'casting') disableAutoHide();
       else enableAutoHide();
     };
 
@@ -1164,7 +1217,7 @@ export function VHSPlayer() {
       window.removeEventListener('resize', apply);
       disableAutoHide();
     };
-  }, [isPlayerOpen, rewindPhase, rewindingToStart, resetIdleTimer, isMobile]);
+  }, [isPlayerOpen, rewindPhase, rewindingToStart, resetIdleTimer, isMobile, playerState]);
 
   if (!isPlayerOpen || !rental) return null;
   const connectedTvLabel = castDeviceName || (isAirPlayConnected ? 'TV AirPlay connectée' : null);
@@ -1203,6 +1256,14 @@ export function VHSPlayer() {
           // Don't override rewinding/fastforwarding state or transition in progress
           if (!isTransitioningRef.current && playerState !== 'rewinding' && playerState !== 'fastforwarding') {
             setPlayerState('paused');
+            // Persist the local pause position. Without this, the 30s save loop
+            // bails on `video.paused` (see watch-progress useEffect), so a user
+            // who pauses then switches to cast loses the pre-pause timestamp.
+            const v = videoRef.current;
+            if (v && currentPlayingFilm && v.duration > 0) {
+              const progress = Math.round((v.currentTime / v.duration) * 100);
+              updateRentalProgress(currentPlayingFilm, progress, v.currentTime).catch(() => {});
+            }
           }
         }}
       >
