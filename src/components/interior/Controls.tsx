@@ -1488,7 +1488,86 @@ export function Controls({
     // Collision check with wall sliding
     const collisionDist = 0.5 * COLLISION_MARGIN * 10;
     if (checkCollision(newX, newZ, collisionDist)) {
-      // Try each axis independently — keep whichever slides freely
+      // First pass: if we're hitting a rounded-corner zone in a corner
+      // quadrant, project the desired movement onto the corner-circle
+      // tangent and slide along it. The axis-aligned slide below works
+      // for flat walls but at a curved corner it produces micro-
+      // oscillation between X-only and Z-only slides as the angle
+      // changes frame to frame, which the player perceives as tremor.
+      let slidAlongCorner = false;
+      for (const zone of COLLISION_ZONES) {
+        const r = zone.cornerRadius ?? 0;
+        if (r <= 0) continue;
+        const eMinX = zone.minX - collisionDist;
+        const eMaxX = zone.maxX + collisionDist;
+        const eMinZ = zone.minZ - collisionDist;
+        const eMaxZ = zone.maxZ + collisionDist;
+        if (oldX < eMinX || oldX > eMaxX || oldZ < eMinZ || oldZ > eMaxZ) continue;
+        const innerMinX = eMinX + r;
+        const innerMaxX = eMaxX - r;
+        const innerMinZ = eMinZ + r;
+        const innerMaxZ = eMaxZ - r;
+        const inCornerQuadrant =
+          (oldX < innerMinX || oldX > innerMaxX) &&
+          (oldZ < innerMinZ || oldZ > innerMaxZ);
+        if (!inCornerQuadrant) continue;
+        const cx = oldX < innerMinX ? innerMinX : innerMaxX;
+        const cz = oldZ < innerMinZ ? innerMinZ : innerMaxZ;
+        const dxFromCenter = oldX - cx;
+        const dzFromCenter = oldZ - cz;
+        const distFromCenter = Math.sqrt(dxFromCenter * dxFromCenter + dzFromCenter * dzFromCenter);
+        if (distFromCenter < 1e-6) continue; // degenerate — fall through to AABB nudge
+        // Unit normal pointing away from corner center, at the player.
+        const nx = dxFromCenter / distFromCenter;
+        const nz = dzFromCenter / distFromCenter;
+        // Desired delta this frame.
+        const moveX = newX - oldX;
+        const moveZ = newZ - oldZ;
+        const moveDotNormal = moveX * nx + moveZ * nz;
+        // Only meaningful when the player is pushing inward (toward center).
+        // If they're moving outward we don't need to project — but in that
+        // case checkCollision shouldn't fire anyway.
+        if (moveDotNormal >= 0) continue;
+        // Project: keep only the tangent component (perpendicular to normal).
+        const tangentMoveX = moveX - moveDotNormal * nx;
+        const tangentMoveZ = moveZ - moveDotNormal * nz;
+        let slidX = oldX + tangentMoveX;
+        let slidZ = oldZ + tangentMoveZ;
+        // Numerical safety: if the slide would still fall inside the
+        // circle (floating-point), clamp to its exterior plus epsilon.
+        const slidDx = slidX - cx;
+        const slidDz = slidZ - cz;
+        const slidDist = Math.sqrt(slidDx * slidDx + slidDz * slidDz);
+        if (slidDist < r) {
+          const factor = (r + 0.001) / Math.max(slidDist, 1e-6);
+          slidX = cx + slidDx * factor;
+          slidZ = cz + slidDz * factor;
+        }
+        // Verify the tangent-slid position isn't inside ANOTHER collision
+        // zone (e.g. a wall behind the corner). If it is, abandon tangent
+        // slide and let the axis-aligned/AABB fallback handle it.
+        if (!checkCollision(slidX, slidZ, collisionDist)) {
+          newX = slidX;
+          newZ = slidZ;
+          slidAlongCorner = true;
+          break;
+        }
+      }
+      if (slidAlongCorner) {
+        // Heavily damp velocity to break the "push into corner every
+        // frame → collision → snap back" cycle that produces the
+        // visible tremor. With damping, residual velocity is too small
+        // to re-trigger collision unless the user keeps actively
+        // pushing — which produces natural slide instead of jitter.
+        velocity.current.x *= 0.15;
+        velocity.current.z *= 0.15;
+        camera.position.x = newX;
+        camera.position.z = newZ;
+        camera.position.y = 1.52;
+        return;
+      }
+
+      // Fall through to axis-aligned slide for non-corner cases (flat walls).
       const canSlideX = !checkCollision(newX, oldZ, collisionDist);
       const canSlideZ = !checkCollision(oldX, newZ, collisionDist);
 
@@ -1502,27 +1581,65 @@ export function Controls({
       } else if (canSlideZ) {
         newX = oldX;
       } else {
-        // Both axes blocked — try nudging away from the nearest collision zone edge
-        // This prevents getting "stuck" when exactly on the boundary
-        const nudge = 0.01;
+        // Both axes blocked. Two cases:
+        //
+        // 1. We're against a rounded-corner zone: push the player out along
+        //    the corner-circle normal (radial push-out). This places them
+        //    exactly tangent to the circle, so on the next frame any
+        //    tangential input slides naturally instead of re-triggering the
+        //    collision and bouncing — which is what produced the permanent
+        //    high-frequency tremor at corners.
+        //
+        // 2. We're against a square (non-rounded) zone: fall back to the
+        //    original AABB nudge to the nearest expanded edge.
+        let resolved = false;
         for (const zone of COLLISION_ZONES) {
+          const r = zone.cornerRadius ?? 0;
+          if (r <= 0) continue;
           const eMinX = zone.minX - collisionDist;
           const eMaxX = zone.maxX + collisionDist;
           const eMinZ = zone.minZ - collisionDist;
           const eMaxZ = zone.maxZ + collisionDist;
-          if (oldX >= eMinX && oldX <= eMaxX && oldZ >= eMinZ && oldZ <= eMaxZ) {
-            // Find closest edge and nudge outward
-            const dLeft = oldX - eMinX;
-            const dRight = eMaxX - oldX;
-            const dTop = oldZ - eMinZ;
-            const dBottom = eMaxZ - oldZ;
-            const minD = Math.min(dLeft, dRight, dTop, dBottom);
-            if (minD === dLeft) newX = eMinX - nudge;
-            else if (minD === dRight) newX = eMaxX + nudge;
-            else if (minD === dTop) newZ = eMinZ - nudge;
-            else newZ = eMaxZ + nudge;
-            break;
-          }
+          if (oldX < eMinX || oldX > eMaxX || oldZ < eMinZ || oldZ > eMaxZ) continue;
+          const innerMinX = eMinX + r;
+          const innerMaxX = eMaxX - r;
+          const innerMinZ = eMinZ + r;
+          const innerMaxZ = eMaxZ - r;
+          const inCornerQuadrant =
+            (oldX < innerMinX || oldX > innerMaxX) &&
+            (oldZ < innerMinZ || oldZ > innerMaxZ);
+          if (!inCornerQuadrant) continue;
+          const cx = oldX < innerMinX ? innerMinX : innerMaxX;
+          const cz = oldZ < innerMinZ ? innerMinZ : innerMaxZ;
+          let dx = oldX - cx;
+          let dz = oldZ - cz;
+          const dist = Math.sqrt(dx * dx + dz * dz);
+          if (dist < 1e-6) continue; // degenerate — let the AABB nudge handle it
+          dx /= dist;
+          dz /= dist;
+          // Place exactly on the corner-circle exterior, plus a small
+          // epsilon so the next checkCollision quick-rejects (the corner
+          // test uses `>` for the outside check, so equality is borderline).
+          newX = cx + dx * (r + 0.001);
+          newZ = cz + dz * (r + 0.001);
+          resolved = true;
+          break;
+        }
+        if (!resolved) {
+          // Both axes blocked AND no rounded-corner slide possible — this is
+          // a concave corner between two perpendicular straight walls.
+          // There's no valid slide direction, so cancel the move entirely
+          // (stay at oldX/oldZ) and damp velocity to prevent the input from
+          // re-triggering the collision every frame.
+          //
+          // The old behaviour nudged a single axis to an AABB edge then
+          // `break`'d, leaving the other wall still violated. Next frame
+          // the loop would nudge the OTHER axis, producing a frame-by-
+          // frame alternation that the player saw as permanent tremor.
+          newX = oldX;
+          newZ = oldZ;
+          velocity.current.x *= 0.15;
+          velocity.current.z *= 0.15;
         }
       }
     }
