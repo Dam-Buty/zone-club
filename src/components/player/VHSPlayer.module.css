@@ -597,6 +597,288 @@
   max-width: 360px;
 }
 
+/* ===== Awaiting Cast — emanating radio waves + dots animation ===== */
+/* The satellite dish sits in the center of three concentric rings that
+   pulse outward, mimicking the radio-signal iconography most users have
+   internalised from "loading / connecting" patterns. Pure CSS — no JS
+   tick needed. */
+.awaitingIcon {
+  position: relative;
+  width: 96px;
+  height: 96px;
+  margin-bottom: 8px;
+  display: grid;
+  place-items: center;
+}
+.awaitingIcon::before,
+.awaitingIcon::after,
+.awaitingIcon > .awaitingRing {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  border: 2px solid rgba(0, 255, 247, 0.55);
+  inset: 0;
+  animation: awaitingRingPulse 2.2s ease-out infinite;
+}
+.awaitingIcon::after { animation-delay: 0.73s; }
+.awaitingIcon > .awaitingRing { animation-delay: 1.46s; }
+
+.awaitingDish {
+  position: relative;
+  z-index: 1;
+  font-size: 2.6rem;
+  filter: drop-shadow(0 0 14px rgba(0, 255, 247, 0.55));
+  /* slight wobble so it feels alive — not just pulsing ringly */
+  animation: awaitingDishTilt 3.4s ease-in-out infinite;
+}
+
+@keyframes awaitingRingPulse {
+  0%   { transform: scale(0.6); opacity: 0.9; border-width: 2px; }
+  70%  { opacity: 0.15; }
+  100% { transform: scale(1.6); opacity: 0; border-width: 1px; }
+}
+@keyframes awaitingDishTilt {
+  0%, 100% { transform: rotate(-4deg); }
+  50%      { transform: rotate(4deg); }
+}
+
+/* Trailing dots after "Connexion à la TV" — three dots fading in sequence */
+.awaitingDots {
+  display: inline-block;
+  margin-left: 2px;
+}
+.awaitingDots span {
+  display: inline-block;
+  opacity: 0.2;
+  animation: awaitingDotBlink 1.4s infinite;
+}
+.awaitingDots span:nth-child(2) { animation-delay: 0.2s; }
+.awaitingDots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes awaitingDotBlink {
+  0%, 100% { opacity: 0.2; }
+  40%      { opacity: 1; }
+}
+
+.awaitingDeviceName {
+  font-family: var(--font-display);
+  color: #fff;
+  background: rgba(0, 255, 247, 0.12);
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid rgba(0, 255, 247, 0.35);
+  margin: 0 2px;
+}
+
+.awaitingCancelBtn {
+  margin-top: 28px;
+  font-family: 'VT323', 'Courier New', monospace;
+  font-size: 1rem;
+  letter-spacing: 0.16em;
+  padding: 10px 24px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 4px;
+  cursor: pointer;
+  text-transform: uppercase;
+  transition: all 180ms ease;
+}
+.awaitingCancelBtn:hover,
+.awaitingCancelBtn:active {
+  color: #fff;
+  border-color: rgba(255, 70, 100, 0.65);
+  background: rgba(255, 70, 100, 0.08);
+}
+
+/* Subtle CRT scanlines overlaid on cast UIs to dialogue with the VHS
+   aesthetic of the player chrome. Applied via a pseudo on .castingOverlay
+   so we don't have to add a wrapper. 1.5px stripes at 4px interval, very
+   low contrast to avoid eye strain. */
+.castingOverlay::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.02) 0px,
+    rgba(255, 255, 255, 0.02) 1px,
+    transparent 1px,
+    transparent 4px
+  );
+  mix-blend-mode: overlay;
+  z-index: 0;
+}
+.castingOverlay > * { position: relative; z-index: 1; }
+
+/* ===== Now Playing panel (cast active) ===== */
+/* Single cohesive surface that replaces the previous split between an info
+   overlay and a duplicate VCR remote underneath. Header + timeline +
+   transport row + secondary actions, all in one card so the user has one
+   thing to look at and one thing to operate. */
+.nowPlayingHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 24px;
+  max-width: 420px;
+  text-align: center;
+  flex-direction: column;
+}
+.nowPlayingDeviceChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  background: rgba(0, 255, 247, 0.12);
+  border: 1px solid rgba(0, 255, 247, 0.4);
+  border-radius: 999px;
+  font-family: var(--font-display, 'VT323'), 'Courier New', monospace;
+  font-size: 0.85rem;
+  letter-spacing: 0.12em;
+  color: var(--color-neon-cyan);
+  text-shadow: 0 0 8px rgba(0, 255, 247, 0.45);
+}
+.nowPlayingDeviceChip::before {
+  content: '●';
+  color: #00ff88;
+  font-size: 0.65rem;
+  animation: nowPlayingDot 1.6s ease-in-out infinite;
+}
+@keyframes nowPlayingDot {
+  0%, 100% { opacity: 0.45; }
+  50%      { opacity: 1; }
+}
+.nowPlayingFilmTitle {
+  font-family: var(--font-display, 'VT323'), 'Courier New', monospace;
+  font-size: 1.2rem;
+  letter-spacing: 0.08em;
+  color: #fff;
+  text-shadow: 0 0 8px rgba(0, 255, 247, 0.25);
+  margin-top: 4px;
+  line-height: 1.2;
+}
+
+.nowPlayingTransport {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 16px;
+}
+.nowPlayingBtn {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1.5px solid rgba(0, 255, 247, 0.45);
+  color: #fff;
+  font-family: 'VT323', 'Courier New', monospace;
+  font-size: 0.78rem;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: all 160ms ease;
+  box-shadow: 0 0 12px rgba(0, 255, 247, 0.15);
+  -webkit-tap-highlight-color: transparent;
+}
+.nowPlayingBtn:hover,
+.nowPlayingBtn:active {
+  background: rgba(0, 255, 247, 0.18);
+  border-color: rgba(0, 255, 247, 0.85);
+  box-shadow: 0 0 18px rgba(0, 255, 247, 0.4);
+  transform: translateY(-1px);
+}
+.nowPlayingBtnPrimary {
+  width: 78px;
+  height: 78px;
+  background: linear-gradient(135deg, rgba(0, 255, 247, 0.25), rgba(0, 255, 136, 0.15));
+  border-color: rgba(0, 255, 247, 0.8);
+  font-size: 2rem;
+}
+.nowPlayingBtnPrimary:hover,
+.nowPlayingBtnPrimary:active {
+  background: linear-gradient(135deg, rgba(0, 255, 247, 0.4), rgba(0, 255, 136, 0.25));
+}
+
+.nowPlayingSecondary {
+  display: flex;
+  gap: 12px;
+  margin-top: 26px;
+}
+.nowPlayingSecondaryBtn {
+  padding: 10px 18px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 4px;
+  color: rgba(255, 255, 255, 0.78);
+  font-family: 'VT323', 'Courier New', monospace;
+  font-size: 0.95rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 160ms ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.nowPlayingSecondaryBtn:hover,
+.nowPlayingSecondaryBtn:active {
+  color: #fff;
+  border-color: rgba(0, 255, 247, 0.6);
+  background: rgba(0, 255, 247, 0.06);
+}
+.nowPlayingStopBtn {
+  border-color: rgba(255, 80, 100, 0.4);
+  color: rgba(255, 200, 200, 0.85);
+}
+.nowPlayingStopBtn:hover,
+.nowPlayingStopBtn:active {
+  color: #fff;
+  border-color: rgba(255, 80, 100, 0.9);
+  background: rgba(255, 80, 100, 0.12);
+}
+
+.nowPlayingVolumeRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 18px;
+  width: 240px;
+  max-width: 80%;
+  color: rgba(255, 255, 255, 0.55);
+  font-family: 'VT323', 'Courier New', monospace;
+  font-size: 1.1rem;
+}
+.nowPlayingVolumeSlider {
+  flex: 1;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 2px;
+  outline: none;
+}
+.nowPlayingVolumeSlider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--color-neon-cyan);
+  cursor: pointer;
+  box-shadow: 0 0 8px rgba(0, 255, 247, 0.6);
+}
+.nowPlayingVolumeSlider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--color-neon-cyan);
+  cursor: pointer;
+  border: none;
+}
+
 
 @keyframes flicker {
   0%, 100% { opacity: 1; }

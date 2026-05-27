@@ -29,6 +29,7 @@ const AuthModal = lazy(() => import('./components/auth/AuthModal').then(m => ({ 
 const ManagerChat = lazy(() => import('./components/manager/ManagerChat').then(m => ({ default: m.ManagerChat })));
 const BoardOverlay = lazy(() => import('./components/board/BoardOverlay'));
 const VHSPlayer = lazy(() => import('./components/player/VHSPlayer').then(m => ({ default: m.VHSPlayer })));
+const ActiveCastIndicator = lazy(() => import('./components/player/ActiveCastIndicator').then(m => ({ default: m.ActiveCastIndicator })));
 const MinitelOverlay = lazy(() => import('./components/minitel/MinitelOverlay').then(m => ({ default: m.MinitelOverlay })));
 
 // Eagerly preload heavy interior assets (HDR, PBR textures, GLBs) while user is on exterior/onboarding.
@@ -597,6 +598,14 @@ function App() {
 
         {/* VHS Player — overlays on top of scene (scene stays mounted to preserve WebGPU state) */}
         {isPlayerOpen && <VHSPlayer />}
+
+        {/* Floating "Now Playing on TV" chip — appears whenever a cast is
+            active but the player overlay is closed (user walks around the
+            videoclub while the TV plays). Tap to reopen the player and
+            land directly in the remote-control panel. */}
+        <Suspense fallback={null}>
+          <ActiveCastIndicator />
+        </Suspense>
 
         {/* Minitel HTML overlay — input + buttons (3D screen rendered via CanvasTexture in MinitelDisplay) */}
         <MinitelOverlay />

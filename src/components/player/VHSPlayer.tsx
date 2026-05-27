@@ -118,6 +118,8 @@ export function VHSPlayer() {
     remoteIsMediaLoaded: remoteCastMediaLoaded,
     remotePlayOrPause,
     remoteStop,
+    remoteSeek,
+    remoteSetVolume,
     getRemoteCurrentTime,
   } = useGoogleCast({
     enabled: isPlayerOpen,
@@ -806,6 +808,25 @@ export function VHSPlayer() {
     }
   }, [videoUrl, castMedia, currentFilm?.title, openMirroringFallback, currentPlayingFilm, setActiveCastFilmId, rental?.watchPosition, updateRentalProgress]);
 
+  // Switch playback back to the phone without terminating the receiver
+  // session via the user-facing Stop flow (which triggers the eject + rewind
+  // prompt). Saves the current cast position, seeks the local <video> to it,
+  // calls remoteStop (which the SDK uses to free the receiver) and lets the
+  // disconnect useEffect resume local playback.
+  const handleSwitchToPhone = useCallback(() => {
+    const remoteTime = getRemoteCurrentTime();
+    if (currentPlayingFilm && remoteCastDuration > 0) {
+      const progress = Math.round((remoteTime / remoteCastDuration) * 100);
+      updateRentalProgress(currentPlayingFilm, progress, remoteTime).catch(() => {});
+      api.castSessions.end(currentPlayingFilm).catch(() => {});
+    }
+    // Seed lastKnownCastTimeRef so the disconnect resume logic picks up
+    // the right position even if the SDK has already started resetting state.
+    if (remoteTime > 0) lastKnownCastTimeRef.current = remoteTime;
+    remoteStop();
+    endCast();
+  }, [getRemoteCurrentTime, currentPlayingFilm, remoteCastDuration, remoteStop, endCast, updateRentalProgress]);
+
   const handleAirPlayPicker = useCallback(() => {
     setRemoteError(null);
 
@@ -1370,27 +1391,63 @@ export function VHSPlayer() {
         </div>
       )}
 
-      {/* Awaiting-cast overlay — "Connexion à la TV…" */}
+      {/* Awaiting-cast overlay — radio-wave pulse + animated dots. The
+          satellite dish tilts while three concentric rings emanate from it,
+          producing a visceral "signal en cours" feedback. If the SDK has
+          already published the receiver's friendlyName we surface it in a
+          pill so the user sees exactly which device they're connecting to. */}
       {playerState === 'awaitingCast' && rewindPhase === 'none' && (
         <div className={styles.castingOverlay}>
-          <div className={styles.castingIcon}>&#x1F4E1;</div>
+          <div className={styles.awaitingIcon}>
+            <span className={styles.awaitingRing} />
+            <span className={styles.awaitingDish} role="img" aria-label="satellite">📡</span>
+          </div>
           <div className={styles.castingTitle}>
-            Connexion à la TV{castDeviceName ? ` "${castDeviceName}"` : ''}…
+            Connexion à{' '}
+            {castDeviceName ? (
+              <span className={styles.awaitingDeviceName}>{castDeviceName}</span>
+            ) : (
+              'ta TV'
+            )}
+            <span className={styles.awaitingDots} aria-hidden="true">
+              <span>.</span><span>.</span><span>.</span>
+            </span>
           </div>
           <div style={{ fontSize: '0.85rem', opacity: 0.7, marginTop: '0.5rem', textAlign: 'center', padding: '0 1.5rem' }}>
             Choisis ton appareil dans la fenêtre Google Cast.
           </div>
+          <button
+            type="button"
+            className={styles.awaitingCancelBtn}
+            onClick={() => {
+              endCast();
+              setPlayerState('paused');
+            }}
+          >
+            Annuler
+          </button>
         </div>
       )}
 
-      {/* Casting overlay — "Diffusion en cours" */}
+      {/* Now Playing — unified cast control surface. Replaces the old
+          split "info overlay on top + VHS remote duplicate below". Header
+          identifies the receiver + film title, then the timeline, then a
+          three-button transport row, then secondary actions (switch back
+          to phone, stop the cast). Volume slider only renders when the
+          SDK has reported a media-loaded state — before that, the receiver
+          isn't actually responding to volume changes yet. */}
       {playerState === 'casting' && rewindPhase === 'none' && (
         <div className={styles.castingOverlay}>
-          <div className={styles.castingIcon}>&#x1F4FA;</div>
-          <div className={styles.castingTitle}>
-            Diffusion en cours{castDeviceName ? ` sur "${castDeviceName}"` : ''}
+          <div className={styles.nowPlayingHeader}>
+            <div className={styles.nowPlayingDeviceChip}>
+              {castDeviceName || (isAirPlayConnected ? 'AirPlay' : 'TV')}
+            </div>
+            {currentFilm && (
+              <div className={styles.nowPlayingFilmTitle}>{currentFilm.title}</div>
+            )}
           </div>
-          <div className={styles.castingTimer}>
+
+          <div className={styles.castingTimer} style={{ marginTop: 18 }}>
             {formatCastTime(remoteCastTime)} / {formatCastTime(remoteCastDuration)}
           </div>
           {remoteCastDuration > 0 && (
@@ -1406,8 +1463,72 @@ export function VHSPlayer() {
               </div>
             </>
           )}
-          <div className={styles.castingHint}>
-            Vous pouvez minimiser l&apos;app. La lecture reprendra automatiquement a votre retour.
+
+          <div className={styles.nowPlayingTransport}>
+            <button
+              type="button"
+              className={styles.nowPlayingBtn}
+              onClick={() => {
+                const t = Math.max(0, getRemoteCurrentTime() - 15);
+                remoteSeek(t);
+              }}
+              aria-label="Reculer de 15 secondes"
+            >
+              −15s
+            </button>
+            <button
+              type="button"
+              className={`${styles.nowPlayingBtn} ${styles.nowPlayingBtnPrimary}`}
+              onClick={remotePlayOrPause}
+              aria-label={remoteCastPaused ? 'Lecture' : 'Pause'}
+            >
+              {remoteCastPaused ? '▶' : '⏸'}
+            </button>
+            <button
+              type="button"
+              className={styles.nowPlayingBtn}
+              onClick={() => {
+                const max = remoteCastDuration > 0 ? remoteCastDuration : Infinity;
+                const t = Math.min(max, getRemoteCurrentTime() + 15);
+                remoteSeek(t);
+              }}
+              aria-label="Avancer de 15 secondes"
+            >
+              +15s
+            </button>
+          </div>
+
+          {remoteCastMediaLoaded && (
+            <div className={styles.nowPlayingVolumeRow}>
+              <span aria-hidden="true">🔉</span>
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.05}
+                defaultValue={1}
+                onChange={(e) => remoteSetVolume(Number(e.target.value))}
+                className={styles.nowPlayingVolumeSlider}
+                aria-label="Volume TV"
+              />
+            </div>
+          )}
+
+          <div className={styles.nowPlayingSecondary}>
+            <button
+              type="button"
+              className={styles.nowPlayingSecondaryBtn}
+              onClick={handleSwitchToPhone}
+            >
+              📱 Sur le tel
+            </button>
+            <button
+              type="button"
+              className={`${styles.nowPlayingSecondaryBtn} ${styles.nowPlayingStopBtn}`}
+              onClick={handleStop}
+            >
+              ⏹ Arrêter
+            </button>
           </div>
         </div>
       )}
@@ -1420,7 +1541,7 @@ export function VHSPlayer() {
         <RentalTimer expiresAt={rental.expiresAt} />
       </div>
 
-      {showMobileRemotePrompt && rewindPhase === 'none' && (
+      {showMobileRemotePrompt && rewindPhase === 'none' && playerState !== 'casting' && playerState !== 'awaitingCast' && (
         <div className={styles.mobileRemotePrompt}>
           <div className={styles.mobileRemotePromptTitle}>Regarder sur TV ?</div>
           <div className={styles.mobileRemotePromptText}>
@@ -1697,8 +1818,10 @@ export function VHSPlayer() {
         </div>
       )}
 
-      {/* VCR Controls — only show when not in rewind sequence */}
-      {rewindPhase === 'none' && !rewindingToStart && (
+      {/* VCR Controls — only show when not in rewind sequence AND not
+          casting (the Now Playing panel above provides cast-specific
+          controls; rendering both produced the duplicate-UI bug). */}
+      {rewindPhase === 'none' && !rewindingToStart && playerState !== 'casting' && playerState !== 'awaitingCast' && (
         <div style={{
           opacity: overlayVisible ? 1 : 0,
           transition: 'opacity 0.4s',
@@ -1733,7 +1856,7 @@ export function VHSPlayer() {
           isAirPlayAvailable={isAirPlayAvailable}
           isAirPlayConnected={isAirPlayConnected}
           remoteError={remoteError}
-          isCasting={playerState === 'casting'}
+          isCasting={false /* casting renders the Now Playing panel above; VHSControls is local-only here */}
           remoteCastTime={remoteCastTime}
           remoteCastDuration={remoteCastDuration}
           remoteCastPaused={remoteCastPaused}
