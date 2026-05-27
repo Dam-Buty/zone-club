@@ -392,6 +392,16 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
   const [bounceLeft, setBounceLeft] = useState(false);
   const [bounceRight, setBounceRight] = useState(false);
 
+  // Rent error popup — replaces silent disabled-button state. When `null`,
+  // no popup is shown. When set, displays a modal with the reason + an
+  // optional action to open the manager chat (for credit issues).
+  const [rentErrorPopup, setRentErrorPopup] = useState<
+    | { kind: 'insufficient'; cost: number; credits: number }
+    | { kind: 'alreadyRented' }
+    | { kind: 'server'; message: string }
+    | null
+  >(null);
+
   // Tutorial step 3: cycling highlight on buttons
   const TUTORIAL_HIGHLIGHT_TARGETS = ['credits', 'louer', 'trailer', 'gerant'] as const;
   type TutorialHighlightTarget = typeof TUTORIAL_HIGHLIGHT_TARGETS[number];
@@ -748,34 +758,63 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
       setShowAuthModal(true);
       return;
     }
+    if (isRenting) return;
 
     const tier = getRentalTier(film);
     const cost = RENTAL_COSTS[tier];
     const alreadyRented = !!getRental(film.id);
-    const canAfford = credits >= cost;
 
-    if (!canAfford || alreadyRented || isRenting) return;
+    // Pre-flight checks now surface as popups instead of silent returns.
+    // The previous behaviour disabled the button when canAfford was false,
+    // so the tap was eaten by the browser with no feedback — users
+    // (especially on mobile) thought the rent system was broken.
+    if (alreadyRented) {
+      setRentErrorPopup({ kind: 'alreadyRented' });
+      return;
+    }
+    if (credits < cost) {
+      setRentErrorPopup({ kind: 'insufficient', cost, credits });
+      return;
+    }
+
     setIsRenting(true);
-
-    const result = await storeRentFilm(film.id);
-    if (result) {
-      setRentSuccess(true);
-      // Show success briefly, then auto-set viewing mode to sur_place
-      setTimeout(async () => {
-        setRentSuccess(false);
+    try {
+      const result = await storeRentFilm(film.id);
+      if (result) {
+        setRentSuccess(true);
+        setTimeout(async () => {
+          setRentSuccess(false);
+          setIsRenting(false);
+          setSettingMode(true);
+          const updatedRental = await storeSetViewingMode(film.id, 'sur_place');
+          setSettingMode(false);
+          if (updatedRental) {
+            showCouchMeetingPopup();
+          }
+        }, 1500);
+      } else {
         setIsRenting(false);
-        // Auto-set viewing mode without user choice
-        setSettingMode(true);
-        const updatedRental = await storeSetViewingMode(film.id, 'sur_place');
-        setSettingMode(false);
-        if (updatedRental) {
-          showCouchMeetingPopup();
-        }
-      }, 1500);
-    } else {
+      }
+    } catch (err) {
+      // Server rejected the rental (out of stock, race on credits, etc.).
+      // Surface the message instead of swallowing it.
       setIsRenting(false);
+      const message = err instanceof Error ? err.message : 'Erreur de location.';
+      setRentErrorPopup({ kind: 'server', message });
     }
   }, [film, isAuthenticated, credits, isRenting, getRental, storeRentFilm, storeSetViewingMode, showCouchMeetingPopup]);
+
+  // Action used by the "insufficient credits" popup — close the overlay,
+  // open the manager chat with a pre-seeded request so the user lands on a
+  // useful starting point instead of having to think.
+  const handleAskManagerForCredits = useCallback(() => {
+    setRentErrorPopup(null);
+    if (film) {
+      pushEvent(`Le client demande des crédits au manager pour louer "${film.title}" (id:${film.id}).`);
+    }
+    onClose();
+    showManager();
+  }, [film, onClose, showManager, pushEvent]);
 
   const handleSetViewingMode = useCallback(async () => {
     if (!film || settingMode) return;
@@ -1172,7 +1211,7 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
         </div>
         <button
           onClick={handleRent}
-          disabled={isAuthenticated && (!canAfford || isRenting)}
+          disabled={isAuthenticated && isRenting}
           style={sideButtonStyle(rentBorderColor, rentTextColor, {
             width: "100%",
             justifyContent: "center",
@@ -1287,7 +1326,7 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
     return (
       <button
         onClick={handleRent}
-        disabled={isAuthenticated && (!canAfford || isRenting)}
+        disabled={isAuthenticated && isRenting}
         style={mobilePillStyle(rentBorderColor, rentTextColor, {
           background: rentBg,
           cursor: rentCursor,
@@ -2515,6 +2554,148 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
         onClose={() => setShowAuthModal(false)}
         onSuccess={handleAuthSuccess}
       />
+
+      {/* Rent Error Popup — replaces silent button-disabled feedback */}
+      {rentErrorPopup && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 1000,
+            background: "rgba(0,0,0,0.7)",
+            backdropFilter: "blur(8px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "1.5rem",
+            animation: "rentPopupFadeIn 200ms ease-out",
+          }}
+          onClick={() => setRentErrorPopup(null)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              maxWidth: "26rem",
+              width: "100%",
+              padding: "1.5rem",
+              background: "linear-gradient(135deg, rgba(20,10,30,0.95), rgba(40,15,60,0.95))",
+              border: "1px solid rgba(255,45,149,0.5)",
+              borderRadius: "12px",
+              boxShadow: "0 0 40px rgba(255,45,149,0.3), 0 8px 32px rgba(0,0,0,0.5)",
+              fontFamily: "Orbitron, sans-serif",
+              color: "#fff",
+              textAlign: "center",
+            }}
+          >
+            {rentErrorPopup.kind === "insufficient" && (
+              <>
+                <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>💸</div>
+                <div style={{ fontSize: "1.1rem", fontWeight: 700, marginBottom: "0.75rem", color: "#ff2d95" }}>
+                  Trop pauvre pour cette location
+                </div>
+                <div style={{ fontSize: "0.9rem", lineHeight: 1.5, color: "rgba(255,255,255,0.85)", marginBottom: "1.25rem" }}>
+                  Cette {getRentalTier(film!) === "nouveaute" ? "nouveauté" : "location"} coûte{" "}
+                  <strong style={{ color: "#ffd700" }}>{rentErrorPopup.cost} crédits</strong>, tu n'en as que{" "}
+                  <strong style={{ color: "#ffd700" }}>{rentErrorPopup.credits}</strong>.
+                  <br />
+                  <span style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.85rem" }}>
+                    Va quémander au manager — il a souvent quelques crédits à filer.
+                  </span>
+                </div>
+                <div style={{ display: "flex", gap: "0.5rem", justifyContent: "center" }}>
+                  <button
+                    onClick={() => setRentErrorPopup(null)}
+                    style={{
+                      padding: "0.6rem 1.2rem",
+                      background: "transparent",
+                      border: "1px solid rgba(255,255,255,0.3)",
+                      borderRadius: "6px",
+                      color: "rgba(255,255,255,0.7)",
+                      fontFamily: "inherit",
+                      fontSize: "0.8rem",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Plus tard
+                  </button>
+                  <button
+                    onClick={handleAskManagerForCredits}
+                    style={{
+                      padding: "0.6rem 1.2rem",
+                      background: "linear-gradient(135deg, #ff2d95, #8a2be2)",
+                      border: "none",
+                      borderRadius: "6px",
+                      color: "#fff",
+                      fontFamily: "inherit",
+                      fontSize: "0.8rem",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      boxShadow: "0 0 16px rgba(255,45,149,0.4)",
+                    }}
+                  >
+                    Voir le Manager
+                  </button>
+                </div>
+              </>
+            )}
+            {rentErrorPopup.kind === "alreadyRented" && (
+              <>
+                <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>📼</div>
+                <div style={{ fontSize: "1.1rem", fontWeight: 700, marginBottom: "0.75rem", color: "#00ff88" }}>
+                  Déjà loué
+                </div>
+                <div style={{ fontSize: "0.9rem", lineHeight: 1.5, color: "rgba(255,255,255,0.85)", marginBottom: "1.25rem" }}>
+                  Tu as déjà cette K7 dans tes locations actives.
+                </div>
+                <button
+                  onClick={() => setRentErrorPopup(null)}
+                  style={{
+                    padding: "0.6rem 1.5rem",
+                    background: "linear-gradient(135deg, #00ff88, #008844)",
+                    border: "none",
+                    borderRadius: "6px",
+                    color: "#000",
+                    fontFamily: "inherit",
+                    fontSize: "0.85rem",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                >
+                  OK
+                </button>
+              </>
+            )}
+            {rentErrorPopup.kind === "server" && (
+              <>
+                <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>⚠️</div>
+                <div style={{ fontSize: "1.1rem", fontWeight: 700, marginBottom: "0.75rem", color: "#ff5555" }}>
+                  Location refusée
+                </div>
+                <div style={{ fontSize: "0.9rem", lineHeight: 1.5, color: "rgba(255,255,255,0.85)", marginBottom: "1.25rem" }}>
+                  {rentErrorPopup.message}
+                </div>
+                <button
+                  onClick={() => setRentErrorPopup(null)}
+                  style={{
+                    padding: "0.6rem 1.5rem",
+                    background: "rgba(255,85,85,0.2)",
+                    border: "1px solid #ff5555",
+                    borderRadius: "6px",
+                    color: "#ff5555",
+                    fontFamily: "inherit",
+                    fontSize: "0.85rem",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                >
+                  Fermer
+                </button>
+              </>
+            )}
+          </div>
+          <style>{`@keyframes rentPopupFadeIn { from { opacity: 0; } to { opacity: 1; } }`}</style>
+        </div>
+      )}
 
       {/* Review Modal */}
       <ReviewModal

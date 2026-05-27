@@ -515,35 +515,33 @@ export const useStore = create<VideoClubState>()(
         const { isAuthenticated } = get();
 
         if (!isAuthenticated) {
-          return null;
+          throw new Error('Connecte-toi pour louer un film.');
         }
 
+        // Let the API error (insufficient credits, out of stock, etc.)
+        // propagate so the calling component can surface it to the user.
+        // The previous catch + return null produced silent failures where
+        // tapping the rent button did nothing visible on mobile.
+        const { rental } = await api.rentals.rent(filmId);
+        const frontendRental = apiRentalToRental(rental);
+
+        set((state) => ({
+          rentals: [...state.rentals.filter(r => r.filmId !== filmId), frontendRental],
+        }));
+
+        // Refresh user data to get updated credits
         try {
-          const { rental } = await api.rentals.rent(filmId);
-          const frontendRental = apiRentalToRental(rental);
+          const meData = await api.me.get();
+          set({ authUser: { id: meData.user.id, username: meData.user.username, credits: meData.user.credits, is_admin: meData.user.is_admin } });
+        } catch { /* credits will be stale until next refresh */ }
 
-          // Refresh credits from /api/me instead of hardcoded -1
-          set((state) => ({
-            rentals: [...state.rentals.filter(r => r.filmId !== filmId), frontendRental],
-          }));
-
-          // Refresh user data to get updated credits
-          try {
-            const meData = await api.me.get();
-            set({ authUser: { id: meData.user.id, username: meData.user.username, credits: meData.user.credits, is_admin: meData.user.is_admin } });
-          } catch { /* credits will be stale until next refresh */ }
-
-          // Increment active rental count
-          const current = get().filmRentalCounts[filmId];
-          if (current) {
-            get().setFilmRentalCounts(filmId, current.stock, current.activeRentals + 1);
-          }
-
-          return frontendRental;
-        } catch (error) {
-          console.error('Erreur location:', error);
-          return null;
+        // Increment active rental count
+        const current = get().filmRentalCounts[filmId];
+        if (current) {
+          get().setFilmRentalCounts(filmId, current.stock, current.activeRentals + 1);
         }
+
+        return frontendRental;
       },
 
       setViewingMode: async (filmId, mode) => {

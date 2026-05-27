@@ -16,11 +16,18 @@ export function GenUIRentCard({ data }: Props) {
 
   const handleRent = async () => {
     setState('renting');
-    const rental = await rentFilm(data.film.id);
-    if (rental) {
-      await fetchMe();
-      setState('rented');
-    } else {
+    try {
+      const rental = await rentFilm(data.film.id);
+      if (rental) {
+        await fetchMe();
+        setState('rented');
+      } else {
+        setState('error');
+      }
+    } catch {
+      // rentFilm now throws on insufficient credits / server errors instead
+      // of returning null silently. We surface a generic 'error' state here;
+      // the VHSCaseOverlay flow has a richer popup with action buttons.
       setState('error');
     }
   };
