@@ -42,6 +42,8 @@ export function VHSPlayer() {
   const isAuthenticated = useStore(state => state.isAuthenticated);
   const addCredits = useStore(state => state.addCredits);
   const setActiveCastFilmId = useStore(state => state.setActiveCastFilmId);
+  const activeCastFilmId = useStore(state => state.activeCastFilmId);
+  const endCast = useStore(state => state.endCast);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [playerState, setPlayerState] = useState<PlayerState>('paused');
   const [audioTrack, setAudioTrack] = useState<AudioTrack>('vf');
@@ -213,22 +215,68 @@ export function VHSPlayer() {
     return () => video.removeEventListener('canplay', handleCanPlay);
   }, [isPlayerOpen, rental?.watchPosition]);
 
-  // ===== Auto-detect existing cast session (ORIGIN_SCOPED reconnect) =====
+  // ===== Auto-detect existing cast session on player open =====
+  //
+  // Two paths into casting mode:
+  //   1) SDK confirms an active receiver session (isCastConnected &&
+  //      remoteCastMediaLoaded) → go straight to 'casting'.
+  //   2) Store-side `activeCastFilmId` matches the film just opened, but
+  //      the SDK hasn't republished its events yet (typical of close +
+  //      reopen — the cast is live on the TV but the SDK takes a moment
+  //      to fire CAST_STATE_CHANGED). Show 'awaitingCast' meanwhile. The
+  //      SDK-confirmation effect below will promote to 'casting' once
+  //      events catch up; the timeout effect below will give up after 6s.
   useEffect(() => {
     if (!isPlayerOpen) return;
-    if (isCastConnected && remoteCastMediaLoaded && playerState !== 'casting') {
+    if (playerState === 'casting' || playerState === 'awaitingCast') return;
+
+    const sdkSeesCast = isCastConnected && remoteCastMediaLoaded;
+    const storeKnowsCast =
+      activeCastFilmId !== null && activeCastFilmId === currentPlayingFilm;
+
+    if (sdkSeesCast) {
       const video = videoRef.current;
       if (video && !video.paused) video.pause();
       setPlayerState('casting');
-      setActiveCastFilmId(currentPlayingFilm);
+      if (!storeKnowsCast) setActiveCastFilmId(currentPlayingFilm);
       castFilmIdRef.current = currentPlayingFilm ?? null;
-      castDurationRef.current = remoteCastDuration || 0;
+      castDurationRef.current = remoteCastDuration || video?.duration || 0;
       if (currentPlayingFilm) {
-        api.castSessions.create(currentPlayingFilm, remoteCastDuration || 0, getRemoteCurrentTime()).catch(() => {});
+        api.castSessions
+          .create(currentPlayingFilm, castDurationRef.current, getRemoteCurrentTime())
+          .catch(() => {});
       }
+      return;
+    }
+
+    if (storeKnowsCast) {
+      const video = videoRef.current;
+      if (video && !video.paused) video.pause();
+      setPlayerState('awaitingCast');
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally triggers only on reconnect signals
-  }, [isPlayerOpen, isCastConnected, remoteCastMediaLoaded]);
+  }, [isPlayerOpen, isCastConnected, remoteCastMediaLoaded, activeCastFilmId, currentPlayingFilm]);
+
+  // ===== Awaiting-cast safety timeout =====
+  // If we entered 'awaitingCast' on reopen but the SDK never confirms the
+  // session (TV powered off mid-cast, network change, etc.) we don't want
+  // to leave the user staring at "Connexion à la TV…" forever. After 6s
+  // without confirmation, drop the cast tracking and let the user retry.
+  useEffect(() => {
+    if (playerState !== 'awaitingCast') return;
+    const timer = setTimeout(() => {
+      // Re-check freshest state inside timer; the cast may have just
+      // confirmed and we'd otherwise wipe a valid casting state.
+      const stillAwaiting = playerState === 'awaitingCast';
+      const sdkConfirmed = isCastConnected && remoteCastMediaLoaded;
+      if (stillAwaiting && !sdkConfirmed) {
+        endCast();
+        setPlayerState('paused');
+      }
+    }, 6000);
+    return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally tied to awaitingCast entry only
+  }, [playerState]);
 
   // ===== FF/RW Logic =====
 
@@ -703,22 +751,24 @@ export function VHSPlayer() {
       return;
     }
 
-    // Pause local video immediately so the user doesn't hear/see playback on
-    // the phone while the SDK loads and the device picker is open. Track
-    // whether it was playing so we can resume on a cast failure (e.g. user
-    // dismisses the picker, no devices found).
+    // Pause local video immediately AND enter the awaiting state so the
+    // UI swaps from "playing locally" to "connecting to TV…" before the
+    // SDK device picker even opens. Without this transition the user
+    // sees a paused phone player with no indication that something is
+    // happening — which is what produced the "the cast didn't work,
+    // film still plays on phone" report.
     const video = videoRef.current;
     const wasPlaying = Boolean(video && !video.paused);
     if (video && wasPlaying) video.pause();
+    setPlayerState('awaitingCast');
 
     // Force-resolve the SDK. Idempotent — instant if already loaded (the
     // preloadCastSdk() call on couch-sit warms the cache, see InteriorScene).
-    // This is the safety net for users who tap "TV" faster than the SDK can
-    // load — instead of falling through to the mirroring help, we wait briefly.
     const sdkReady = await preloadCastSdk();
     if (!sdkReady) {
       setRemoteError('Google Cast indisponible sur ce navigateur.');
       openMirroringFallback('cast');
+      setPlayerState(wasPlaying ? 'playing' : 'paused');
       if (video && wasPlaying) void video.play().catch(() => {});
       return;
     }
@@ -730,30 +780,25 @@ export function VHSPlayer() {
       url: videoUrl,
       title: currentFilm?.title || 'Zone Club',
       currentTime: startTime,
-      // Always autoplay on the receiver — when the user picks a TV they expect
-      // playback to start there. (Previous code passed !video.paused, which
-      // meant a paused local would load a paused stream on the receiver too.)
       autoplay: true,
     });
 
     if (!result.ok) {
       setRemoteError(result.error || 'Impossible de lancer Google Cast.');
       openMirroringFallback('cast');
-      // User dismissed picker or no devices — resume local so they keep watching.
+      setPlayerState(wasPlaying ? 'playing' : 'paused');
       if (video && wasPlaying) void video.play().catch(() => {});
       return;
     }
 
-    // Switch to casting mode — local already paused above.
+    // Cast confirmed — switch to casting mode. Local already paused above
+    // (and autoplay is gated by playerState below in the <video> element).
     setPlayerState('casting');
     setActiveCastFilmId(currentPlayingFilm);
     castFilmIdRef.current = currentPlayingFilm ?? null;
     castDurationRef.current = video?.duration || 0;
     if (currentPlayingFilm) {
       api.castSessions.create(currentPlayingFilm, video?.duration || 0, startTime).catch(() => {});
-      // Also persist the handoff position to rental.watchPosition so a close +
-      // reopen during cast resumes at the right spot even if the 30s save
-      // loop hasn't fired yet.
       if (video && video.duration > 0) {
         const progress = Math.round((startTime / video.duration) * 100);
         updateRentalProgress(currentPlayingFilm, progress, startTime).catch(() => {});
@@ -1000,11 +1045,24 @@ export function VHSPlayer() {
     }
   }, [remoteCastPlayerState, playerState, currentPlayingFilm, rental?.rewindClaimed, closePlayer, remoteCastDuration, getRemoteCurrentTime, setActiveCastFilmId]);
 
+  // Track whether the SDK has EVER reported a connected cast session in
+  // this player mount. Without this gate, the disconnect handler below
+  // fires immediately on re-mount with `isCastConnected=false` and tears
+  // down a legitimately active receiver-side session before the SDK has
+  // had a chance to re-publish its CAST_STATE_CHANGED event. The gate
+  // ensures we only handle TRANSITIONS from connected→disconnected, not
+  // the initial unmounted-yet state.
+  const wasCastConnectedRef = useRef(false);
+  useEffect(() => {
+    if (isCastConnected) wasCastConnectedRef.current = true;
+  }, [isCastConnected]);
+
   // ===== Unexpected Cast Disconnect — Resume Local =====
   useEffect(() => {
+    if (!wasCastConnectedRef.current) return;
     if (!isCastConnected && playerState === 'casting') {
       // Cast disconnected — end session
-      setActiveCastFilmId(null);
+      endCast();
       if (castFilmIdRef.current) {
         api.castSessions.end(castFilmIdRef.current).catch(() => {});
       }
@@ -1139,11 +1197,12 @@ export function VHSPlayer() {
       castFilmIdRef.current = null;
       castDurationRef.current = 0;
       lastKnownCastTimeRef.current = 0;
-      // End cast session if active (use getState to avoid stale closure)
-      const castFilmId = useStore.getState().activeCastFilmId;
-      if (castFilmId) {
-        api.castSessions.end(castFilmId).catch(() => {});
-      }
+      // Important: do NOT end the cast session here. The receiver on the TV
+      // continues playing independent of whether the phone player overlay is
+      // open, and the next openPlayer call reads activeCastFilmId to enter
+      // remote-control mode automatically. Calling castSessions.end here is
+      // what made closing the player wipe the cast tracking and forced users
+      // to manually re-cast on reopen.
       // Reset review state
       setReviewContent('');
       setRatingDirection(3);
@@ -1239,14 +1298,28 @@ export function VHSPlayer() {
         </div>
       )}
 
-      {/* Video element with key to force reload on track change */}
+      {/* Video element with key to force reload on track change.
+          autoPlay is gated by playerState so that when we're casting or
+          awaiting the cast device, the <video> doesn't fire its own play
+          event after a remount — which would race with the cast handoff
+          and produce "film plays on phone AND TV" or restart from start
+          on player reopen during an active cast. */}
       <video
         key={`${audioTrack}-${videoUrl}`}
         ref={videoRef}
         className={styles.video}
-        autoPlay
+        autoPlay={playerState !== 'casting' && playerState !== 'awaitingCast'}
         playsInline
         onPlay={() => {
+          // Ignore play events while we're handing off to the cast device —
+          // the receiver is the canonical playback target, not the local
+          // <video>. Without this guard, an autoplay-triggered play event
+          // would flip playerState back to 'playing' and break the casting UI.
+          if (playerState === 'casting' || playerState === 'awaitingCast') {
+            const v = videoRef.current;
+            if (v && !v.paused) v.pause();
+            return;
+          }
           if (!isTransitioningRef.current) {
             setPlayerState('playing');
             setShowBlueScreen(false);
@@ -1254,7 +1327,13 @@ export function VHSPlayer() {
         }}
         onPause={() => {
           // Don't override rewinding/fastforwarding state or transition in progress
-          if (!isTransitioningRef.current && playerState !== 'rewinding' && playerState !== 'fastforwarding') {
+          if (
+            !isTransitioningRef.current &&
+            playerState !== 'rewinding' &&
+            playerState !== 'fastforwarding' &&
+            playerState !== 'casting' &&
+            playerState !== 'awaitingCast'
+          ) {
             setPlayerState('paused');
             // Persist the local pause position. Without this, the 30s save loop
             // bails on `video.paused` (see watch-progress useEffect), so a user
@@ -1288,6 +1367,19 @@ export function VHSPlayer() {
       {showBlueScreen && (
         <div className={styles.blueScreen}>
           <div className={styles.blueScreenText}>NO SIGNAL</div>
+        </div>
+      )}
+
+      {/* Awaiting-cast overlay — "Connexion à la TV…" */}
+      {playerState === 'awaitingCast' && rewindPhase === 'none' && (
+        <div className={styles.castingOverlay}>
+          <div className={styles.castingIcon}>&#x1F4E1;</div>
+          <div className={styles.castingTitle}>
+            Connexion à la TV{castDeviceName ? ` "${castDeviceName}"` : ''}…
+          </div>
+          <div style={{ fontSize: '0.85rem', opacity: 0.7, marginTop: '0.5rem', textAlign: 'center', padding: '0 1.5rem' }}>
+            Choisis ton appareil dans la fenêtre Google Cast.
+          </div>
         </div>
       )}
 

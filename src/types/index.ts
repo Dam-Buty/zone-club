@@ -138,4 +138,4 @@ export interface PersonDetail {
 export type SceneType = 'exterior' | 'interior';
 
 // Player types
-export type PlayerState = 'playing' | 'paused' | 'seeking' | 'rewinding' | 'fastforwarding' | 'casting';
+export type PlayerState = 'playing' | 'paused' | 'seeking' | 'rewinding' | 'fastforwarding' | 'casting' | 'awaitingCast';

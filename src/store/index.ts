@@ -121,9 +121,13 @@ export interface VideoClubState {
   openPlayer: (filmId: number) => void;
   closePlayer: () => void;
 
-  // Cast tracking (ephemeral — not persisted)
+  // Cast tracking — kept across player open/close so the next openPlayer
+  // can detect an active receiver session and enter remote-control mode.
   activeCastFilmId: number | null;
   setActiveCastFilmId: (filmId: number | null) => void;
+  // End the cast tracking. Call when the cast actually ends (Stop button,
+  // receiver disconnect, film completion) — NOT on player close.
+  endCast: () => void;
 
   // Targeting (pour le hover via raycasting central)
   targetedFilmId: number | null;
@@ -688,12 +692,26 @@ export const useStore = create<VideoClubState>()(
       currentPlayingFilm: null,
       activeCastFilmId: null,
       setActiveCastFilmId: (filmId) => set({ activeCastFilmId: filmId }),
+      // End cast — clears activeCastFilmId. Call this when the cast genuinely
+      // ends (user taps Stop/Eject on phone, receiver disconnects, film ends).
+      // Do NOT call this when the player just closes — the cast on the TV
+      // is independent of the player overlay and should keep going.
+      endCast: () => set({ activeCastFilmId: null }),
       openPlayer: (filmId) => {
-        const { activeCastFilmId } = get();
-        if (activeCastFilmId !== null && activeCastFilmId !== filmId) return;
+        // Always allow opening — even if another film is already casting.
+        // The player overlay will read activeCastFilmId on mount and:
+        //   - if it matches `filmId` → auto-resume in remote-control mode
+        //   - if it differs → user is opening a different film; we still
+        //     show the player (the K7 overlay already shows the cast-busy
+        //     state separately). The previous silent return left users
+        //     wondering why the "Watch" button did nothing.
         set({ isPlayerOpen: true, currentPlayingFilm: filmId, managerVisible: false, chatBackdropUrl: null });
       },
-      closePlayer: () => set({ isPlayerOpen: false, currentPlayingFilm: null, activeCastFilmId: null }),
+      // closePlayer no longer wipes activeCastFilmId. The cast continues on
+      // the receiver independent of whether the player overlay is open, and
+      // we want the next openPlayer to find the active cast and auto-enter
+      // remote-control mode without forcing the user to manually re-cast.
+      closePlayer: () => set({ isPlayerOpen: false, currentPlayingFilm: null }),
 
       // Targeting
       targetedFilmId: null,
