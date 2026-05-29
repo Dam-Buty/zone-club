@@ -7,10 +7,21 @@ import { ssgi } from 'three/addons/tsl/display/SSGINode.js'
 import { fxaa } from 'three/addons/tsl/display/FXAANode.js'
 import { dof } from 'three/addons/tsl/display/DepthOfFieldNode.js'
 import { useStore } from '../../store'
+import { getLastRenderActivity, installRenderActivityListeners } from '../../utils/renderActivity'
 
 interface PostProcessingEffectsProps {
   isMobile?: boolean
 }
+
+// Adaptive render throttle (see utils/renderActivity.ts for the rationale).
+// ACTIVE: player moving / looking / mid-transition → smooth 60 fps (capped from 120).
+// IDLE:   no input past ACTIVE_GRACE_MS → drop to IDLE_FPS; ambient anims keep ticking
+//         in their own useFrame loops, we just re-render the post chain far less often.
+const ACTIVE_FPS = 60
+const IDLE_FPS = 20
+const ACTIVE_GRACE_MS = 800
+const ACTIVE_INTERVAL = 1 / ACTIVE_FPS
+const IDLE_INTERVAL = 1 / IDLE_FPS
 
 export function PostProcessingEffects({ isMobile = false }: PostProcessingEffectsProps) {
   const { gl: renderer, scene, camera } = useThree()
@@ -99,9 +110,14 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
     }
   }, [renderer, scene, camera, isMobile, dofTrigger])
 
-  const frameSkipRef = useRef(0)
+  const renderAccumRef = useRef(0)
   const isTerminalOpen = useStore(state => state.isTerminalOpen)
   const isPlayerOpen = useStore(state => state.isPlayerOpen)
+
+  // Install the global activity listeners once (idempotent).
+  useEffect(() => {
+    installRenderActivityListeners()
+  }, [])
 
   useFrame((_, delta) => {
     if (document.hidden) return
@@ -110,31 +126,46 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
     // The last rendered frame stays on the canvas; rendering resumes seamlessly on close.
     if (isTerminalOpen || isPlayerOpen) return
 
-    if (postProcessingRef.current) {
-      if (isVHSCaseOpen && bokehRef.current) {
-        const target = 4.0
-        const current = bokehRef.current.value
-        bokehRef.current.value += (target - current) * Math.min(delta * 8, 1)
-      }
+    const pp = postProcessingRef.current
+    if (!pp) return
 
-      if (bloomStrengthRef.current) {
-        const bloomTarget = isVHSCaseOpen ? 0.0 : bloomBaseStrength
-        const currentBloom = bloomStrengthRef.current.value
-        bloomStrengthRef.current.value += (bloomTarget - currentBloom) * Math.min(delta * 8, 1)
-      }
-
-      if (isVHSCaseOpen) {
-        const { vhsCaseAnimating } = useStore.getState()
-        if (!vhsCaseAnimating) {
-          frameSkipRef.current++
-          if (frameSkipRef.current % 8 !== 0) return
-        } else {
-          frameSkipRef.current = 0
-        }
-      }
-
-      postProcessingRef.current.render()
+    // Lerp the post uniforms every tick (cheap; keeps transitions smooth even when
+    // the render itself is throttled, since transitions force the ACTIVE budget below).
+    if (isVHSCaseOpen && bokehRef.current) {
+      const target = 4.0
+      bokehRef.current.value += (target - bokehRef.current.value) * Math.min(delta * 8, 1)
     }
+    if (bloomStrengthRef.current) {
+      const bloomTarget = isVHSCaseOpen ? 0.0 : bloomBaseStrength
+      bloomStrengthRef.current.value += (bloomTarget - bloomStrengthRef.current.value) * Math.min(delta * 8, 1)
+    }
+
+    // --- Adaptive render throttle -------------------------------------------
+    // Static scene re-rendered ~15 post passes/frame at 120 fps = wasted GPU.
+    // Render at 60 fps while active, drop to IDLE_FPS once idle. A zoomed VHS case
+    // that has finished animating is treated as idle (it's a still image).
+    const st = useStore.getState()
+    const caseOpenAndSettled = isVHSCaseOpen && !st.vhsCaseAnimating
+    const active =
+      !caseOpenAndSettled && (
+        (performance.now() - getLastRenderActivity()) < ACTIVE_GRACE_MS ||
+        st.vhsCaseAnimating ||
+        st.tutorialStep != null ||
+        st.isInteractingWithLaZone ||
+        st.isWatchingLaZone ||
+        st.isInteractingWithMinitel ||
+        st.isInteractingWithTV
+      )
+    const interval = active ? ACTIVE_INTERVAL : IDLE_INTERVAL
+
+    renderAccumRef.current += delta
+    if (renderAccumRef.current < interval) return
+    // Carry the remainder for an accurate cadence (resetting to 0 drops the
+    // overshoot and under-shoots the target rate); clamp so a long stall
+    // — tab switch, GC pause — can't unleash a burst of catch-up renders.
+    renderAccumRef.current = Math.min(renderAccumRef.current - interval, interval)
+
+    pp.render()
   }, 1)
 
   return null

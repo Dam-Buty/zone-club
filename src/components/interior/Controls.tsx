@@ -3,6 +3,7 @@ import { useThree, useFrame } from "@react-three/fiber";
 import { PointerLockControls as PointerLockControlsImpl } from "three/addons/controls/PointerLockControls.js";
 import * as THREE from "three";
 import { useStore } from "../../store";
+import { markRenderActivity } from "../../utils/renderActivity";
 import type { MobileInput } from "../../types/mobile";
 import { ROOM_WIDTH, ROOM_DEPTH } from "./constants";
 
@@ -1451,6 +1452,9 @@ export function Controls({
     }
 
     if (direction.current.z !== 0 || direction.current.x !== 0) {
+      // Held-key walking / joystick fires no repeated DOM events — keep the scene
+      // at full framerate while the player is actually moving.
+      markRenderActivity();
       velocity.current.z -= direction.current.z * speed * delta;
       velocity.current.x -= direction.current.x * speed * delta;
     }
