@@ -1,8 +1,9 @@
-// Service Worker — cache-first for 3D assets and film catalog, network-only for posters
+// Service Worker — cache-first for immutable 3D assets, stale-while-revalidate for the
+// film catalog API, network-only for everything else (posters, auth, rentals…).
 // (posters are served by /api/poster proxy with HTTP Cache-Control: max-age=2592000 immutable,
 // so the browser HTTP cache handles them — duplicating in SW cache wasted ~58 MB on mobile).
 // Bump VERSION on every deploy to invalidate stale caches.
-const VERSION = 'v4'
+const VERSION = 'v5'
 const CACHE_NAME = `zone-club-${VERSION}`
 
 // Assets to pre-cache on install (critical path)
@@ -53,11 +54,13 @@ function getStrategy(url) {
   // max-age=2592000 immutable. Browser HTTP cache handles repeat fetches without
   // SW intervention; duplicating in SW cache wasted ~58 MB on mobile.
 
-  // Film catalog API — cache-first (instead of stale-while-revalidate).
-  // Eliminates ~1 MB of background revalidation on every visit.
-  // New films appear on next deploy (VERSION bump invalidates cache).
+  // Film catalog API — stale-while-revalidate: serve the cached catalog
+  // instantly, then refresh it in the background so newly-added films surface
+  // on the NEXT visit without needing a deploy + VERSION bump. (Was cache-first,
+  // which stranded new films in stale caches until a redeploy — the trade-off
+  // saved ~1 MB of revalidation per visit but caused a freshness bug.)
   if (path.startsWith('/api/films/')) {
-    return 'cache-first'
+    return 'stale-while-revalidate'
   }
 
   // Everything else (auth, rentals, reviews, admin, etc.)
@@ -115,6 +118,28 @@ self.addEventListener('fetch', (event) => {
         })
       )
     )
+    return
+  }
+
+  if (strategy === 'stale-while-revalidate') {
+    event.respondWith(
+      caches.open(CACHE_NAME).then((cache) =>
+        cache.match(request).then((cached) => {
+          // Background refresh; .catch keeps it from ever rejecting so waitUntil is safe.
+          const networkFetch = fetch(request)
+            .then((response) => {
+              if (response.ok) cache.put(request, response.clone())
+              return response
+            })
+            .catch(() => undefined)
+          // Keep the SW alive until the background revalidation settles.
+          event.waitUntil(networkFetch)
+          // Serve cache instantly when present; otherwise wait for the network.
+          return cached || networkFetch.then((response) => response || fetch(request))
+        })
+      )
+    )
+    return
   }
 })
 
