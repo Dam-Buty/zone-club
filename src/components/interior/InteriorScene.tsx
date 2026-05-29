@@ -28,6 +28,12 @@ import type { MobileInput } from '../../types/mobile'
 
 // Lazy loading du composant Aisle (contient tous les modèles 3D)
 const Aisle = lazy(() => import('./Aisle').then(module => ({ default: module.Aisle })))
+
+// Desktop supersampling factor: render ABOVE native device pixels, then let the
+// browser downsample to the display → true SSAA that anti-aliases texture-content
+// edges (the cassette "liseret") which post AA passes (FXAA/SMAA/MSAA) can't reach.
+// Cost scales ~×factor² per frame. 1.0 = native (off). Capped at dpr 3 below.
+const DESKTOP_SUPERSAMPLE = 1.25
 import { VHSCaseViewer } from './VHSCaseViewer'
 import { TVTerminal } from '../terminal/TVTerminal'
 import { AuthModal } from '../auth/AuthModal'
@@ -830,7 +836,7 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
     <div style={{ position: 'fixed', inset: 0, touchAction: 'none' }}>
       <Canvas
         shadows
-        dpr={isMobile ? Math.min(window.devicePixelRatio, 1.7) : Math.min(window.devicePixelRatio, 2)}
+        dpr={isMobile ? Math.min(window.devicePixelRatio, 1.7) : Math.min(window.devicePixelRatio * DESKTOP_SUPERSAMPLE, 3)}
         gl={(async (props: any) => {
 
 

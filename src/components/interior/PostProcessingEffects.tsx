@@ -5,6 +5,7 @@ import { pass, mrt, output, normalView, viewportUV, clamp, float, uniform } from
 import { bloom } from 'three/addons/tsl/display/BloomNode.js'
 import { ssgi } from 'three/addons/tsl/display/SSGINode.js'
 import { fxaa } from 'three/addons/tsl/display/FXAANode.js'
+import { smaa } from 'three/addons/tsl/display/SMAANode.js'
 import { dof } from 'three/addons/tsl/display/DepthOfFieldNode.js'
 import { sharpen } from 'three/addons/tsl/display/SharpenNode.js'
 import { useStore } from '../../store'
@@ -94,12 +95,12 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
         postBloom = dof(withBloom, scenePassViewZ, 0.4725, 1.0, bokehScale)
       }
 
-      // 5. Vignette + final FXAA
+      // 5. Vignette + AA (SMAA, desktop) + final RCAS sharpen
       const withVignette = applyVignette(postBloom)
-      const withFXAA = fxaa(withVignette)
-      // Final contrast-adaptive sharpen (RCAS) — recovers crispness lost to the
-      // trilinear mips + FXAA on distant posters, no extra VRAM. Desktop only.
-      postProcessing.outputNode = sharpen(withFXAA, SHARPEN_AMOUNT)
+      // SMAA (sharper edge AA than FXAA — less overall blur). Desktop only; mobile
+      // keeps FXAA for cost. Then a final RCAS sharpen for crispness, no extra VRAM.
+      const withAA = smaa(withVignette)
+      postProcessing.outputNode = sharpen(withAA, SHARPEN_AMOUNT)
     }
 
     postProcessingRef.current = postProcessing

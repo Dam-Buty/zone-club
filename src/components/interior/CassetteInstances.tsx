@@ -15,6 +15,11 @@ import { CASSETTE_DIMENSIONS } from './cassette-constants'
 
 const SHARED_CASSETTE_GEOMETRY = new THREE.BoxGeometry(CASSETTE_DIMENSIONS.width, CASSETTE_DIMENSIONS.height, CASSETTE_DIMENSIONS.depth)
 
+// Negative mipmap LOD bias for the atlas sampling (desktop). Pulls a finer mip at
+// distance → sharper far cassettes within the fixed 200px source. Trade: a touch
+// of aliasing, tamed by FXAA + the RCAS pass. -0.25 = safe, -1.5 = aggressive.
+const MIP_LOD_BIAS = -0.25
+
 // Scratch color for the per-frame ILLUMINER emissive cycle — avoids per-frame
 // allocations inside the hot useFrame loop.
 const _highlightColor = new THREE.Color()
@@ -112,8 +117,8 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
     }
 
     const uniqueSlotCount = nextSlot
-    // Desktop: trilinear mipmaps for crisp distant cassettes. Mobile: off (Pixel 9
-    // mip-gen spike — see CassetteTextureArray constructor).
+    // Desktop: trilinear mipmaps (motion stability) + negative LOD bias on sampling
+    // (see MIP_LOD_BIAS) to claw back distant sharpness. Mobile: off (Pixel 9 spike).
     const _atlas = new CassetteTextureAtlas(uniqueSlotCount, !isMobile)
 
     // Build per-instance atlasRect (vec4: uOffset, vOffset, uScale, vScale)
@@ -219,7 +224,9 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
       atlasRect.x.add(atlasRect.z.mul(uv().x)),
       atlasRect.y.add(atlasRect.w.mul(float(1.0).sub(uv().y)))
     )
-    const baseColor = atlasNode.sample(posterUV)
+    // Desktop: negative LOD bias → sharper distant tiles (needs mips). Mobile: plain sample (no mips).
+    const sampledPoster = atlasNode.sample(posterUV)
+    const baseColor = isMobile ? sampledPoster : sampledPoster.bias(float(MIP_LOD_BIAS))
 
     // "LOUE!" overlay blending (per-instance rentedOut factor 0-1)
     const overlayNode = texture(LOUE_OVERLAY_TEXTURE)
