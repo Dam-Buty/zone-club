@@ -65,6 +65,10 @@ declare module 'three/webgpu' {
     export class StorageInstancedBufferAttribute extends THREE.InstancedBufferAttribute {
         constructor(array: any, itemSize: number);
     }
+
+    export class StorageBufferAttribute extends THREE.BufferAttribute {
+        constructor(array: any, itemSize: number);
+    }
 }
 
 declare module 'three/tsl' {
@@ -125,6 +129,8 @@ declare module 'three/tsl' {
     export const select: any;
     export const storage: any;
     export const storageObject: any;
+    export const wgslFn: any;
+    export const wgsl: any;
     export const timerLocal: any;
     export const hash: any;
     export const pass: any;
