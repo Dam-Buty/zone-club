@@ -7,7 +7,7 @@ Frontend 3D immersif pour Zone Club, un videoclub en ligne. Experience FPS dans 
 ## Stack
 
 - **Framework** : Next.js 15 App Router + React 19
-- **3D** : Three.js 0.182 via React Three Fiber (WebGPU renderer)
+- **3D** : Three.js 0.184 via React Three Fiber (WebGPU renderer)
 - **Etat** : Zustand 5 avec persistance localStorage
 - **Styles** : Tailwind CSS v4
 - **DB** : SQLite via `better-sqlite3` (server-side only)
@@ -277,11 +277,12 @@ Fonctionnalites :
 
 ### Composants cles
 - **Controls.tsx** : FPS controls + raycasting + collisions (ZQSD/WASD) + tutorial camera waypoints
-- **Cassette.tsx / CassetteInstances.tsx** : VHS interactives (InstancedMesh + DataArrayTexture)
+- **Cassette.tsx / CassetteInstances.tsx** : VHS interactives (InstancedMesh + atlas 2D DataTexture). PAS DataArrayTexture — driver bugs sur NVIDIA Vulkan / iOS Metal, voir `memory/data-array-texture-tearing.md`.
 - **TVTerminal.tsx** : Interface CRT retro (compte, locations, admin)
-- **VHSPlayer.tsx** : Player video avec switch VF/VO/sous-titres + Google Cast
+- **VHSPlayer.tsx** : Player video VF/VO/sous-titres + Google Cast (machine a etats unifiee — voir section dediee)
+- **ActiveCastIndicator.tsx** : Chip flottant "Now Playing on TV" quand cast actif + player ferme. Tap → reouvre le player en mode telecommande.
 - **TutorialOverlay.tsx** : Visite guidee 7 etapes, portrait Rick, dialogues, chevrons swipe
-- **VHSCaseOverlay.tsx** : Panel K7 detail + annotations tutorial + glow cyclique
+- **VHSCaseOverlay.tsx** : Panel K7 detail + annotations tutorial + glow cyclique + popup "credits insuffisants" avec action "Voir le Manager"
 - **VHSCaseViewer.tsx** : Positionnement 3D de la K7 (fix cameraDirWithPitch pour tutorial)
 - **WeeklyBonusToast.tsx** : Notification bonus credits hebdomadaire
 
@@ -291,7 +292,55 @@ Double hysteresis pour eviter le flickering aux bords des cassettes :
 - **Cassette** : 50ms select / 250ms deselect (asymetrique)
 
 ### Collisions
-Zones definies dans Controls.tsx : `{ minX, maxX, minZ, maxZ, name }`.
+Zones definies dans `Controls.tsx` : `{ minX, maxX, minZ, maxZ, name, cornerRadius? }`. `cornerRadius > 0` donne un coin arrondi (le coin de la zone est rogne par un quart-de-cercle, le joueur glisse autour au lieu de buter).
+
+**Collision response** (3 paths, dans cet ordre) :
+1. **Tangent projection sur coin arrondi** : si on heurte un quadrant de coin (cornerRadius > 0), on projette le mouvement sur la tangente du cercle → glissement continu le long du coin, plus de tremblement frame-par-frame.
+2. **Axis-aligned slide** : pour les murs droits, slide sur l'axe libre (canSlideX ou canSlideZ).
+3. **Cancel + damp velocity** : si les deux axes sont bloques (coin concave de deux murs droits perpendiculaires), on annule le mouvement et amortit la velocite a 15% pour casser le cycle "input → push → bounce".
+
+L'AABB nudge precedent (qui poussait un seul axe et break) etait la source du tremblement permanent dans les coins.
+
+### Player + Cast — machine a etats unifiee
+
+`PlayerState` (`src/types/index.ts`): `'playing' | 'paused' | 'seeking' | 'rewinding' | 'fastforwarding' | 'casting' | 'awaitingCast'`.
+
+**Pattern central** : `activeCastFilmId` (store) persiste a travers `closePlayer()` — la session Cast vit sur le receiver (TV) independamment de l'overlay player. Cela permet le flow "tap cast → ferme player pour marcher dans le clubvideo → reouvre player → retombe direct en mode telecommande".
+
+**Transitions cle** :
+- `tap "Regarder sur TV"` → `paused → awaitingCast` (local pause immediat, overlay 📡 anime) → `castMedia()` → succes : `awaitingCast → casting` / echec : `awaitingCast → paused` + resume local
+- `closePlayer()` ne touche PAS `activeCastFilmId`. Le `castSessions.end()` au cleanup est aussi retire. La session DB reste tracee.
+- `openPlayer(filmId)` declenche auto-detect : si `activeCastFilmId === currentPlayingFilm` ET SDK pas encore reconnect → `awaitingCast` avec timeout 6s. SDK confirme → promote `casting`. Timeout sans confirmation → endCast + paused.
+- Disconnect detector (`!isCastConnected && playerState === 'casting'`) gated par `wasCastConnectedRef.current` : evite le tear-down premature au remount avant que le SDK ait re-publie ses events.
+
+**Store actions liees** :
+- `setActiveCastFilmId(id)` : set normal
+- `endCast()` : clear activeCastFilmId. Appele UNIQUEMENT a la fin reelle du cast (Stop, disconnect, fin de film). PAS au closePlayer.
+- `closePlayer()` : `isPlayerOpen=false, currentPlayingFilm=null`. **NE TOUCHE PAS activeCastFilmId**.
+- `openPlayer(filmId)` : autorise toujours l'ouverture meme pendant un cast d'un autre film.
+
+**`<video>` autoplay** : `autoPlay={playerState !== 'casting' && playerState !== 'awaitingCast'}`. Empeche le tag video de redemarrer une lecture locale quand on est cense caster.
+
+**UI cast** (mobile-focus, voir `VHSPlayer.module.css`) :
+- `castingOverlay` (full-screen) avec scanlines CSS (::before pseudo) pour coherence VHS/CRT
+- `awaitingIcon` : 3 cercles concentriques pulsants emanent du disque satellite incline
+- `awaitingDots` : 3 dots blinkent en sequence apres le titre
+- `nowPlayingHeader` : chip device + titre film
+- `nowPlayingTransport` : -15s · Play/Pause · +15s (circulaire central)
+- `nowPlayingVolumeRow` : slider volume TV via `remoteSetVolume`
+- `nowPlayingSecondary` : "📱 Sur le tel" (switch back local en preservant la position via `lastKnownCastTimeRef`) + "⏹ Arreter" (Stop classique)
+
+VHSControls (les boutons VHS classiques) sont CACHES quand `playerState === 'casting' || 'awaitingCast'` — sinon double UI.
+
+**Hook `useGoogleCast.ts`** :
+- `preloadCastSdk()` exporte — appele dans `InteriorScene` quand `isSitting=true` pour pre-charger le script 1-3s avant que user tape "TV".
+- Le SDK promise est cache (subsequent calls = instant).
+- `wasCastConnectedRef.current` flippe true des que SDK publie `isCastConnected=true`. Gate du disconnect handler.
+
+**Sync position local ↔ cast** :
+- Save loop : `updateRentalProgress` toutes les 10s (avant : 30s). Save sur `<video>.onPause` event. Save sur `handleCastCurrentVideo` success (handoff position). Final flush via `flushPositionRef` au unmount du player.
+- Resume : `<video>.currentTime = rental.watchPosition` au canplay event.
+- Disconnect cast → resume local : `video.currentTime = lastKnownCastTimeRef.current` (SDK reset `remoteTime=0` AVANT que disconnect effect fire, donc on lit le ref maintenu pendant le throttle 1s).
 
 ### Tutorial (visite guidee)
 
@@ -452,6 +501,22 @@ CORRECT:   camera.getWorldDirection(_dir) → sauver {x,y,z} → _dir.y = 0 → 
 ```
 
 **Build cache Next.js** : Un cache `.next` corrompu peut causer des `PageNotFoundError` fantomes sur des routes API valides. Toujours `rm -rf .next` avant un build de verification.
+
+**Three.js bump + cache prod (27/05/2026)** : Bumper la version de `three` dans `package.json` ne suffit pas si le serveur de prod a un `node_modules` cache. Le rename `THREE.PostProcessing → THREE.RenderPipeline` (r182 alias) a crash en prod parce que le serveur build avec r183 cache ou `RenderPipeline` n'existe pas. **Toujours prefer le nom long-vivant** (`PostProcessing` ici) quand le rename a juste un alias backward-compat, sauf si on controle 100% le cache de deploiement.
+
+**Cast SDK ne se charge qu'a l'ouverture du player** (27/05/2026) : `useGoogleCast({ enabled: isPlayerOpen })` retarde le `loadCastSdk()` de 1-3s. Si le user tape "TV" rapidement au prompt, `isCastReady=false` → fall through au mirroring fallback → user pense que le cast est casse. Fix : appeler `preloadCastSdk()` quand `isSitting=true` (intent fort pre-cast) pour pre-chauffer le cache du SDK promise.
+
+**closePlayer wipait activeCastFilmId** (29/05/2026) : Le design original traitait le cast comme ephemeral, tied au player overlay. Mais la TV continue de jouer apres close. La pattern correcte : `activeCastFilmId` est persistant. `closePlayer` ne le touche pas. `endCast()` est une action separee appelee uniquement a la fin reelle du cast.
+
+**SDK reset state on disconnect avant qu'on lise** : Quand l'utilisateur stop le cast, `onIsConnectedChanged` fire et set `remoteTime=0, isMediaLoaded=false, playerState='UNKNOWN'` AVANT que le disconnect-resume useEffect ait pu lire. Pattern : `lastKnownCastTimeRef.current = remoteCastTime if remoteCastTime > 0` mis a jour a chaque render. Le ref garde la derniere valeur valide.
+
+**Disconnect detector gate `wasCastConnectedRef`** : Le useEffect `!isCastConnected && playerState === 'casting'` fire au mount avec `isCastConnected=false` (SDK pas encore reconnect) → tear-down premature. Fix : flag local qui flippe true des que SDK publie connected=true. Le disconnect handler skip si jamais ete connecte dans cette session.
+
+**TAAU 0.75x sur mobile rejete** (22/05/2026) : Voir `memory/taau-mobile-rejected.md`. Le rendu temporal upscaling brise les posters K7 au-dessous du seuil de lisibilite. Pas re-essayer en-dessous de 0.85x tant que les K7 sont le contenu principal.
+
+**Tremblement coin = AABB nudge alternant** (24/05/2026) : Quand deux axes sont bloques, l'ancien fallback poussait UN seul axe puis break → l'autre mur restait viole → frame suivante poussait l'autre axe. Resultat : oscillation 60Hz. Fix : tangent projection pour coins arrondis, cancel-move + velocity damp pour coins concaves de murs droits.
+
+**Boutons disabled = silent fail sur mobile** (27/05/2026) : `<button disabled>` avale le tap event sans aucun feedback. Pattern correct : laisser le bouton actif, le `onClick` decide si l'action est faisable et surface une popup explicative. Le user comprend pourquoi ca marche pas + a une action.
 
 ## Skills
 
