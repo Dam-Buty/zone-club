@@ -112,7 +112,9 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
     }
 
     const uniqueSlotCount = nextSlot
-    const _atlas = new CassetteTextureAtlas(uniqueSlotCount)
+    // Desktop: trilinear mipmaps for crisp distant cassettes. Mobile: off (Pixel 9
+    // mip-gen spike — see CassetteTextureArray constructor).
+    const _atlas = new CassetteTextureAtlas(uniqueSlotCount, !isMobile)
 
     // Build per-instance atlasRect (vec4: uOffset, vOffset, uScale, vScale)
     const _atlasRectData = new Float32Array(count * 4)

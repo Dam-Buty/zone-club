@@ -830,7 +830,7 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
     <div style={{ position: 'fixed', inset: 0, touchAction: 'none' }}>
       <Canvas
         shadows
-        dpr={isMobile ? Math.min(window.devicePixelRatio, 1.7) : Math.min(window.devicePixelRatio, 1.5)}
+        dpr={isMobile ? Math.min(window.devicePixelRatio, 1.7) : Math.min(window.devicePixelRatio, 2)}
         gl={(async (props: any) => {
 
 

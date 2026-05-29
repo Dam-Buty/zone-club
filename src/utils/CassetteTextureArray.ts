@@ -89,7 +89,7 @@ export class CassetteTextureAtlas {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private _renderer: any = null
 
-  constructor(maxSlots: number) {
+  constructor(maxSlots: number, enableMipmaps = false) {
     this.cols = Math.ceil(Math.sqrt(maxSlots))
     this.rows = Math.ceil(maxSlots / this.cols)
     this.atlasWidth = this.cols * POSTER_WIDTH
@@ -104,12 +104,21 @@ export class CassetteTextureAtlas {
     this.texture = new THREE.DataTexture(this.data, this.atlasWidth, this.atlasHeight)
     this.texture.format = THREE.RGBAFormat
     this.texture.type = THREE.UnsignedByteType
-    // Test: mipmaps disabled. Hypothesis: backend.generateMipmaps() on a 33MB
-    // atlas does ~11 render passes to fill mip levels + compiles a mipmap
-    // shader, which on Pixel 9 takes 1-2s and triggers post-load spikes.
-    this.texture.minFilter = THREE.LinearFilter
+    // Mipmaps: enabled on desktop for crisp minification of distant cassettes.
+    // Without them, far K7 (>2 m) alias on minification and FXAA blurs the detail
+    // away; anisotropy is also a no-op without a mip chain. Disabled on mobile —
+    // backend.generateMipmaps() on this ~33MB atlas runs ~11 render passes +
+    // compiles a mipmap shader (~1-2s post-load spike on Pixel 9). The atlas is
+    // uploaded in a SINGLE flush() at end-of-load (see markDirty), so the mip
+    // chain is generated only once, not per poster batch.
+    if (enableMipmaps) {
+      this.texture.minFilter = THREE.LinearMipmapLinearFilter // trilinear
+      this.texture.generateMipmaps = true
+    } else {
+      this.texture.minFilter = THREE.LinearFilter
+      this.texture.generateMipmaps = false
+    }
     this.texture.magFilter = THREE.LinearFilter
-    this.texture.generateMipmaps = false
     this.texture.flipY = false
     this.texture.colorSpace = THREE.SRGBColorSpace
     this._dirty = true
