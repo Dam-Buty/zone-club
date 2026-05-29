@@ -10,6 +10,8 @@
 
 **Proven foundation (the spike):** `app/radiosity-spike/page.tsx` proved, self-verified via Playwright: (1) `three-mesh-bvh/webgpu` BVH intersect works in our stack; (2) a 1-bounce hemisphere gather with `getVertexAttribute` albedo lookup produces real colour bleed (red wall → red floor). See `memory/lightbake-workstream.md` "SPIKE RESULT" for the exact working buffer pattern.
 
+**Design:** this plan delivers **Phase 1** of the two-phase design `docs/superpowers/specs/2026-05-29-neon-noir-baked-lighting-design.md` — Phase 1 = static-surface lightmap (here); **Phase 2 = irradiance probe volume** for the instanced shelf planks + dynamics (K7/manager/TV), authored ONLY after this plan's M1 validation gate (Task 9) passes. Both phases share the same WebGPU/TSL BVH gather.
+
 **Supersedes:** `2026-05-29-neon-noir-shell-lightmap.md` (the WebGL2 direct+AO plan). That direction is abandoned — bake is now WebGPU-native radiosity.
 
 ---
