@@ -6,6 +6,7 @@ import { bloom } from 'three/addons/tsl/display/BloomNode.js'
 import { ssgi } from 'three/addons/tsl/display/SSGINode.js'
 import { fxaa } from 'three/addons/tsl/display/FXAANode.js'
 import { dof } from 'three/addons/tsl/display/DepthOfFieldNode.js'
+import { sharpen } from 'three/addons/tsl/display/SharpenNode.js'
 import { useStore } from '../../store'
 import { getLastRenderActivity, installRenderActivityListeners } from '../../utils/renderActivity'
 
@@ -22,6 +23,11 @@ const IDLE_FPS = 20
 const ACTIVE_GRACE_MS = 800
 const ACTIVE_INTERVAL = 1 / ACTIVE_FPS
 const IDLE_INTERVAL = 1 / IDLE_FPS
+
+// RCAS (Robust Contrast-Adaptive Sharpening) strength: 0 = max sharpening, 2 = none.
+// Final desktop pass — counters the trilinear-mip + FXAA softness on distant K7
+// posters without adding source resolution / VRAM. Tunable.
+const SHARPEN_AMOUNT = 0.4
 
 export function PostProcessingEffects({ isMobile = false }: PostProcessingEffectsProps) {
   const { gl: renderer, scene, camera } = useThree()
@@ -91,7 +97,9 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
       // 5. Vignette + final FXAA
       const withVignette = applyVignette(postBloom)
       const withFXAA = fxaa(withVignette)
-      postProcessing.outputNode = withFXAA
+      // Final contrast-adaptive sharpen (RCAS) — recovers crispness lost to the
+      // trilinear mips + FXAA on distant posters, no extra VRAM. Desktop only.
+      postProcessing.outputNode = sharpen(withFXAA, SHARPEN_AMOUNT)
     }
 
     postProcessingRef.current = postProcessing

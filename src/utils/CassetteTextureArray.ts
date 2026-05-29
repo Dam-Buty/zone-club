@@ -114,6 +114,10 @@ export class CassetteTextureAtlas {
     if (enableMipmaps) {
       this.texture.minFilter = THREE.LinearMipmapLinearFilter // trilinear
       this.texture.generateMipmaps = true
+      // Set anisotropy HERE (not only in setRenderer): the sampler is built on
+      // first render (warmup runs before setRenderer), so setting it late can
+      // leave the cached sampler at aniso=1 → grazing shelves blur. GPU clamps 16.
+      this.texture.anisotropy = 16
     } else {
       this.texture.minFilter = THREE.LinearFilter
       this.texture.generateMipmaps = false
