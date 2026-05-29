@@ -1,5 +1,7 @@
 # Offline GI Lightmap Bake Pipeline — Implementation Plan
 
+> 🛑 **SUPERSEDED (29/05/2026) — DO NOT EXECUTE.** This was the first direction (WebGL2 vendored baker + legacy-rig transcription). It was superseded twice. The authoritative plan is **`2026-05-29-webgpu-radiosity-lightmap.md`** (WebGPU/TSL radiosity, néon-noir). Kept for history only. See `memory/lightbake-workstream.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Bake the video-club's static-shell lighting (soft area-light shadows + AO + indirect) into a lightmap **offline**, ship the texture, and have the WebGPU runtime light the shell with a cheap lightmap lookup instead of ~14 RectAreaLights — cheaper on the Mac Mini M1 *and* more realistic.

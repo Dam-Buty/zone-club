@@ -1,6 +1,8 @@
 # Néon-noir — Éclairage baké (lightmap shell + volume de sondes) — Design
 
-> **Statut** : design validé en brainstorming (29/05/2026). Dé-risqué par le workflow `lightbake-probe-derisk` (13 agents, confiance haute, 0 claim réfuté). Étend `docs/superpowers/plans/2026-05-29-lightmap-bake-pipeline.md` — ne le remplace pas.
+> ⚠️ **PARTIELLEMENT SUPERSEDED (29/05/2026).** Le spike a ensuite prouvé qu'on peut faire le bake **100 % WebGPU/TSL radiosité** (pas WebGL2, pas de cubemap-depuis-shell, pas de GLB). Donc : les sections **bake du shell = raycaster WebGL2 vendored** et **sondes = cubemap-from-lit-shell** sont **OBSOLÈTES** — le plan autoritaire est **`docs/superpowers/plans/2026-05-29-webgpu-radiosity-lightmap.md`**. Restent VALIDES comme entrée : l'ambiance néon-noir, le rig 7 émetteurs, et la justification de l'encodage **SH-L1** des sondes (pour le futur plan sondes). Source de vérité : `memory/lightbake-workstream.md`.
+>
+> _(historique) design validé en brainstorming + dé-risqué par le workflow `lightbake-probe-derisk` (13 agents)._
 
 ## 1. Objectif
 

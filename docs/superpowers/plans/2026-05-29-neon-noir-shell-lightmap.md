@@ -1,5 +1,7 @@
 # Néon-noir Shell Lightmap — Implementation Plan (subsystem 1 of 2)
 
+> 🛑 **SUPERSEDED (29/05/2026) — DO NOT EXECUTE.** This baked direct+AO in **WebGL2** and deferred colour. The spike then proved true colour-bleed is achievable **WebGPU-native**, so the authoritative plan is **`2026-05-29-webgpu-radiosity-lightmap.md`**. Only the néon-noir 7-emitter rig idea carries over. Kept for history only. See `memory/lightbake-workstream.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Bake the static shell's néon-noir lighting (soft area-light shadows + AO + indirect) into a `uv1` lightmap **offline**, ship it, and light the shell at runtime via `material.lightMap` instead of the legacy ~14 RectAreaLights — cheaper on the Mac Mini M1 *and* more photoreal.
