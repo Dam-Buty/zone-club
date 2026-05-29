@@ -814,7 +814,7 @@ export const Aisle = memo(function Aisle({ films, filmsByAisle }: AisleProps) {
   return (
     <group>
       {/* ===== SOL ===== */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>
+      <mesh name="bake-floor" rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>
         <planeGeometry args={[ROOM_WIDTH, ROOM_DEPTH]} />
         <meshStandardMaterial
           map={floorTextures.map}
@@ -828,7 +828,7 @@ export const Aisle = memo(function Aisle({ films, filmsByAisle }: AisleProps) {
       </mesh>
 
       {/* ===== PLAFOND — Faux plafond dalles 60×60cm (Canvas2D procedural) ===== */}
-      <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, ROOM_HEIGHT, 0]} receiveShadow>
+      <mesh name="bake-ceiling" rotation={[Math.PI / 2, 0, 0]} position={[0, ROOM_HEIGHT, 0]} receiveShadow>
         <planeGeometry args={[ROOM_WIDTH, ROOM_DEPTH]} />
         <meshStandardMaterial
           map={ceilingTextures.map}

@@ -55,8 +55,12 @@
     "react-dom": "^19.2.4",
     "tailwindcss": "^4.1.18",
     "three": "^0.184.0",
+    "three-gpu-pathtracer": "^0.0.24",
+    "three-mesh-bvh": "^0.9.10",
     "uuid": "^13.0.0",
     "web-push": "^3.6.7",
+    "xatlas-three": "^0.2.1",
+    "xatlas-web": "^0.1.0",
     "zustand": "^5.0.10"
   },
   "devDependencies": {
