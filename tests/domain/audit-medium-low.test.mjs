@@ -197,7 +197,7 @@ test('U-13: ReviewModal star groups must have aria-labelledby', () => {
 test('U-14: App loading overlay must have role="status"', () => {
   const source = readText(path.join(ROOT, 'src/App.tsx'));
   // Find the loading overlay section
-  const loadingStart = source.indexOf('Vidéoclub en cours de chargement');
+  const loadingStart = source.indexOf('Chargement en cours');
   assert.ok(loadingStart > 0, 'Loading text must exist');
 
   // role="status" should be on the container div before the loading text
@@ -210,7 +210,7 @@ test('U-14: App loading overlay must have role="status"', () => {
 
 test('U-14: App loading overlay must have aria-live="polite"', () => {
   const source = readText(path.join(ROOT, 'src/App.tsx'));
-  const loadingStart = source.indexOf('Vidéoclub en cours de chargement');
+  const loadingStart = source.indexOf('Chargement en cours');
   const ariaLive = source.lastIndexOf('aria-live="polite"', loadingStart);
   assert.ok(
     ariaLive > 0,

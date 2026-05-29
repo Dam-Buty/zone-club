@@ -81,16 +81,32 @@ test('domain: aisle constants stay consistent across app/store/types', () => {
   assert.deepEqual(fromStore, fromTypes, 'aisles in store must match AisleType');
 });
 
-test('domain: ApiFilm -> Film mapper keys stay aligned between App and store', () => {
+test('domain: apiFilmToFilm is a single shared mapper consumed by App and store', () => {
+  // apiFilmToFilm used to be duplicated in App.tsx and store/index.ts (this test
+  // guarded that the two copies stayed aligned). It was since extracted into the
+  // API client (src/api/index.ts) as a single source of truth, so the invariant
+  // is now "defined once, imported — never re-implemented" instead of "kept in sync".
+  const apiSource = readText(path.join(ROOT, 'src/api/index.ts'));
   const appSource = readText(path.join(ROOT, 'src/App.tsx'));
   const storeSource = readText(path.join(ROOT, 'src/store/index.ts'));
 
-  const appKeys = extractMapperKeys(appSource).sort();
-  const storeKeys = extractMapperKeys(storeSource).sort();
+  // 1. The mapper is defined in the API client with a non-empty return shape.
+  const apiKeys = extractMapperKeys(apiSource);
+  assert.ok(apiKeys.length > 0, 'apiFilmToFilm must be defined in src/api/index.ts');
 
-  assert.deepEqual(
-    appKeys,
-    storeKeys,
-    `apiFilmToFilm shape mismatch:\nApp keys: ${appKeys.join(', ')}\nStore keys: ${storeKeys.join(', ')}`
+  // 2. App and store must NOT redefine their own copy of the mapper.
+  assert.equal(
+    appSource.includes('function apiFilmToFilm'),
+    false,
+    'App.tsx must not redefine apiFilmToFilm — import it from ./api instead'
   );
+  assert.equal(
+    storeSource.includes('function apiFilmToFilm'),
+    false,
+    'store/index.ts must not redefine apiFilmToFilm — import it from ../api instead'
+  );
+
+  // 3. Both consumers actually reference the shared mapper.
+  assert.ok(appSource.includes('apiFilmToFilm'), 'App.tsx must use the shared apiFilmToFilm');
+  assert.ok(storeSource.includes('apiFilmToFilm'), 'store/index.ts must use the shared apiFilmToFilm');
 });
