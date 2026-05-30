@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu'
-import { wgsl, wgslFn, attribute, positionWorld, normalWorld, uv, vec2, vec3, vec4, float, sub, storage, texture } from 'three/tsl'
+import { wgsl, wgslFn, attribute, positionWorld, normalLocal, uv, vec2, vec3, vec4, float, sub, storage, texture } from 'three/tsl'
 import { bvhIntersectFirstHit, getVertexAttribute } from 'three-mesh-bvh/webgpu'
 import type { MeshBVH } from 'three-mesh-bvh'
 import { gpuStorages, WGSL_HELPERS } from './bvhGpu.ts'
@@ -121,7 +121,10 @@ export async function radiosityBake(
   gatherMat.vertexNode = unwrap
   gatherMat.colorNode = gather({
     P: positionWorld,
-    N: normalWorld,
+    // RAW geometry normal (renderGeometry is in world space, mesh identity → local == world).
+    // NOT normalWorld: three flips that toward the view for two-sided faces, which inverts
+    // the hemisphere on UV-mirrored surfaces → rays shot outside the room → black walls.
+    N: normalLocal,
     selfEmission: attribute('emission'),
     selfAlbedo: attribute('color'),
     seed: uv(1),

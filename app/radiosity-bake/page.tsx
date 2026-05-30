@@ -123,10 +123,10 @@ async function runBake(canvas: HTMLCanvasElement, setS: (s: string) => void, isD
     mesh.frustumCulled = false
     const scene = new THREE.Scene()
     scene.add(mesh)
-    const camera = new THREE.PerspectiveCamera(80, Wd / Ht, 0.05, 50)
-    // eye-level, slightly off-centre, looking down the aisles toward the back-left corner
-    camera.position.set(2.6, 1.55, 2.4)
-    camera.lookAt(-3.2, 1.0, -3.6)
+    const camera = new THREE.PerspectiveCamera(78, Wd / Ht, 0.05, 50)
+    // overview from near the entrance, slightly angled → north wall + left wall + floor + ceiling
+    camera.position.set(1.8, 1.5, 3.2)
+    camera.lookAt(-1.5, 1.05, -4.25)
     camera.updateMatrixWorld()
     await renderer.renderAsync(scene, camera)
   }
