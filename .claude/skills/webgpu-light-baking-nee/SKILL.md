@@ -30,7 +30,7 @@ NEE is step 4. Getting the surrounding steps right is what makes it *usable*:
 
 ```
 1. Collect bakeable geometry → build BVH (occluders included)
-2. UV2 atlas + valid-texel mask          (see "UV note" below)
+2. Lightmap-UV atlas (the `uv1` channel) + valid-texel mask   (see "UV note" — procedural, NOT xatlas)
 3. UV-space GBuffer: worldPos, RAW geometry normal, albedo, emission, validMask
 4. DIRECT (NEE): per texel, sample each emitter → BVH shadow ray → accumulate
 5. INDIRECT bounce: hemisphere gather, read REFLECTED radiance only (emitters → 0)
@@ -41,7 +41,7 @@ NEE is step 4. Getting the surrounding steps right is what makes it *usable*:
 
 **A single UV-space fragment pass** that computes worldPos/normal on the fly (no separate GBuffer, no compute) is a valid simpler form; the GBuffer + compute-pass + `StorageTexture` version is the scalable upgrade, not a prerequisite.
 
-**UV note (our project):** the standard is xatlas (`xatlas-three`) for UV2. But xatlas is **non-deterministic and mutates geometry** → it breaks a "deterministic procedural UV, ship no asset" pipeline. For **flat** surfaces, a planar-per-slot projection + a gutter is fine and deterministic; reserve xatlas for curved/complex geometry that planar projection would distort.
+**UV note (terminology + our choice):** a lightmap ALWAYS needs its own UV set, separate from the diffuse-texture UV — in Three.js r184 that is the **`uv1`** attribute (channel 1; "UV2" is the industry's old name for the same thing). We DO produce it, but **procedurally** (`applyShellUv1`: planar-per-slot projection + gutter), NOT with **xatlas**. xatlas (`xatlas-three`) is the standard auto-unwrapper, but it is **non-deterministic and mutates geometry**, so it can't be recomputed identically at runtime → it would force shipping a UV asset. Planar projection is deterministic and distortion-free for **flat** surfaces; reserve xatlas for curved geometry it would stretch.
 
 ## The estimator (rectangular area light, diffuse surface)
 
@@ -135,6 +135,6 @@ NEE removes the lottery of randomly hitting small lights: every texel gets every
 - **Saarland NEE+MIS assignment** — naive→NEE→MIS, the double-count pitfall, area→solid-angle pdf. graphics.cg.uni-saarland.de
 - **Ureña, Fajardo, King 2013** — spherical-rectangle (solid-angle) sampling upgrade. ugr.es/~curena/publ/2013-egsr
 - **ndotl "Baking artifact-free lightmaps on the GPU"** — seams/padding/dilation/bias/leaks. ndotl.wordpress.com
-- **xatlas-three / jpcy/xatlas** — UV2 (standard; non-deterministic — see UV note). github.com/repalash/xatlas-three
+- **xatlas-three / jpcy/xatlas** — auto UV-unwrap generator (standard, but non-deterministic; we use procedural `uv1` instead — see UV note). github.com/repalash/xatlas-three
 - **JamesRandall webgpu path tracer (2026)** — modern WebGPU compute architecture. jamesdrandall.com
 - **Three.js docs** — WebGPURenderer / TSL / StorageTexture. threejs.org/docs
