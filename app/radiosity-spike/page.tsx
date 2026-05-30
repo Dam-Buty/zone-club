@@ -174,10 +174,11 @@ async function runUvBake(canvas: HTMLCanvasElement, setS: (s: string) => void, i
 
   const geometry = buildBakeGeometry()
   const bvh = new MeshBVH(geometry, { maxLeafSize: 1, strategy: SAH })
-  setS('baking uv1 lightmap…')
+  const bounces = parseInt(new URLSearchParams(window.location.search).get('bounces') || '3', 10)
+  setS(`baking uv1 lightmap (${bounces} bounce${bounces > 1 ? 's' : ''})…`)
 
   const lightmap = await radiosityBake(renderer, geometry, bvh, {
-    resolution: 1024, samples: 96, bounces: 1, sky: [0.015, 0.025, 0.05],
+    resolution: 1024, samples: 96, bounces, sky: [0.015, 0.025, 0.05],
   })
   if (isDisposed()) return
   setS('lightmap baked, re-applying via uv1…')
