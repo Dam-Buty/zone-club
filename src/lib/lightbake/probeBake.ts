@@ -141,6 +141,10 @@ export async function probeBakeRaw(
   const kernel = Fn(() => {
     const idx = instanceIndex
     const P = ppS.element(idx)
+    // Reference shOut via `.element()` in the TSL graph FIRST so three registers it as a compute
+    // storage OUTPUT (with a readable GPU buffer). A storage written only through a wgslFn `ptr`
+    // param is bound for the shader but its buffer isn't exposed to getArrayBufferAsync.
+    shOut.element(idx.mul(4)).assign(shOut.element(idx.mul(4)))
     gather({
       P, base: idx.mul(4), seed: vec2(idx.toFloat(), idx.toFloat().mul(0.137)),
       samples: float(SAMPLES), neeSamples: float(NEE_SAMPLES), emitterCount: float(NE),

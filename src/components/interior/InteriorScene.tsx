@@ -5,6 +5,7 @@ import { RectAreaLightTexturesLib } from 'three/addons/lights/RectAreaLightTextu
 import { useStore } from '../../store'
 import { Lighting } from './Lighting'
 import { BakedShellLighting } from './BakedShellLighting'
+import { ProbeVolumeContext, type ProbeVolumes } from './ProbeVolumeContext'
 
 // Poster loading progress (set by CassetteInstances)
 declare global {
@@ -122,15 +123,16 @@ const SceneContent = memo(function SceneContent({
   mobileInputRef: React.MutableRefObject<MobileInput>
   benchmarkMode: boolean
 }) {
+  const [probeVolumes, setProbeVolumes] = useState<ProbeVolumes | null>(null)
   return (
-    <>
+    <ProbeVolumeContext.Provider value={probeVolumes}>
       <Environment
         files="/textures/env/indoor_night.hdr"
         background={false}
         environmentIntensity={0.12}
       />
       <Lighting isMobile={isMobile} baked={BAKED_MODE} />
-      {BAKED_MODE && <BakedShellLighting enabled />}
+      {BAKED_MODE && <BakedShellLighting enabled onProbeVolumes={setProbeVolumes} />}
       <Aisle films={films} filmsByAisle={filmsByAisle} />
       <Controls
         onCassetteClick={onCassetteClick}
@@ -143,7 +145,7 @@ const SceneContent = memo(function SceneContent({
         isMobile={isMobile}
       />
       {selectedFilm && <VHSCaseViewer key={selectedFilm.id} film={selectedFilm} />}
-    </>
+    </ProbeVolumeContext.Provider>
   )
 })
 

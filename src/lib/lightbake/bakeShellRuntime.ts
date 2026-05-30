@@ -43,11 +43,19 @@ export interface RuntimeBakeOptions {
  *   mesh's uv1 is computed in the SAME world frame (`applyShellUv1World`), so the atlas maps back
  *   exactly (no floor V-flip — see shellUv1).
  */
+export interface ShellBakeResult {
+  lightmap: THREE.Texture
+  /** The world-space shell geometry (with uv1) + its BVH — reused by the Phase-2 probe bake. */
+  bvhGeo: THREE.BufferGeometry
+  bvh: MeshBVH
+  lightmapRes: number
+}
+
 export async function bakeAndAttachShell(
   renderer: THREE.WebGPURenderer,
   root: THREE.Object3D,
   opts: RuntimeBakeOptions = {},
-): Promise<THREE.Texture> {
+): Promise<ShellBakeResult> {
   const {
     albedo = 0.7, resolution = 1024, samples = 48, neeSamples = 8, bounces = 2, blur = 2,
     intensity = 1.4, sky = [0.008, 0.012, 0.025] as [number, number, number],
@@ -88,5 +96,5 @@ export async function bakeAndAttachShell(
     mat.lightMapIntensity = intensity
     mat.needsUpdate = true
   }
-  return lightmap
+  return { lightmap, bvhGeo, bvh, lightmapRes: resolution }
 }
