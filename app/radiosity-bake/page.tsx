@@ -98,9 +98,9 @@ async function runBake(canvas: HTMLCanvasElement, setS: (s: string) => void, isD
   const bvh = new MeshBVH(bvhGeo, { maxLeafSize: 1, strategy: SAH })
   setS(`baking shell lightmap (${grayscale ? 'grayscale' : 'colour'}, ${bounces} bounces)…`)
 
-  const sky: [number, number, number] = grayscale ? [0.02, 0.02, 0.02] : [0.012, 0.018, 0.035]
+  const sky: [number, number, number] = grayscale ? [0.02, 0.02, 0.02] : [0.008, 0.012, 0.025]
   const lightmap = await radiosityBake(renderer, render, bvhGeo, bvh, {
-    resolution: 1024, samples: 256, bounces, sky,
+    resolution: 1024, samples: 256, bounces, sky, blur: 3,
   })
   if (isDisposed()) return
   setS('baked, previewing…')
@@ -123,10 +123,10 @@ async function runBake(canvas: HTMLCanvasElement, setS: (s: string) => void, isD
     mesh.frustumCulled = false
     const scene = new THREE.Scene()
     scene.add(mesh)
-    const camera = new THREE.PerspectiveCamera(72, Wd / Ht, 0.05, 50)
-    // low near-corner looking at the opposite high corner → floor + walls + ceiling in frame
-    camera.position.set(W / 2 - 0.5, 0.7, D / 2 - 0.5)
-    camera.lookAt(-W / 2, H, -D / 2)
+    const camera = new THREE.PerspectiveCamera(80, Wd / Ht, 0.05, 50)
+    // eye-level, slightly off-centre, looking down the aisles toward the back-left corner
+    camera.position.set(2.6, 1.55, 2.4)
+    camera.lookAt(-3.2, 1.0, -3.6)
     camera.updateMatrixWorld()
     await renderer.renderAsync(scene, camera)
   }

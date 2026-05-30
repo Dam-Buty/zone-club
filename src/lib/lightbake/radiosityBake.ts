@@ -9,9 +9,10 @@ export interface RadiosityBakeOptions {
   samples?: number // hemisphere rays per texel per bounce
   bounces?: number // gather iterations
   sky?: [number, number, number] // cold miss term (moonlight through the vitrine)
+  blur?: number // post-bake denoise passes (3×3 box; the slot gutter prevents inter-slot bleed)
 }
 
-const DEFAULTS = { resolution: 1024, samples: 64, bounces: 3, sky: [0.0, 0.0, 0.0] as [number, number, number] }
+const DEFAULTS = { resolution: 1024, samples: 64, bounces: 3, sky: [0.0, 0.0, 0.0] as [number, number, number], blur: 0 }
 
 /**
  * UV-space iterative radiosity bake (Phase 1 core), proven-pattern WebGPU/TSL.
@@ -141,6 +142,40 @@ export async function radiosityBake(
     renderer.setRenderTarget(rtCur)
     await renderer.renderAsync(scene, cam)
     const t = rtPrev; rtPrev = rtCur; rtCur = t // result now in rtPrev
+  }
+
+  // Denoise: N passes of a 3×3 box blur in atlas space (fullscreen). The per-slot gutter
+  // (pad in applyShellUv1 + empty-slot uv1) keeps the blur from bleeding across surfaces.
+  if (opts.blur > 0) {
+    const blurFn = wgslFn(/* wgsl */`
+      fn boxBlur(fragUv: vec2f, res: f32, src: texture_2d<f32>) -> vec3f {
+        let px = vec2i(i32(fragUv.x * res), i32(fragUv.y * res));
+        var sum = vec3f(0.0);
+        for (var dy = -1; dy <= 1; dy = dy + 1) {
+          for (var dx = -1; dx <= 1; dx = dx + 1) {
+            sum = sum + textureLoad(src, px + vec2i(dx, dy), 0).rgb;
+          }
+        }
+        return sum / 9.0;
+      }
+    `)
+    const blurTex = texture(rtPrev.texture)
+    const blurMat = new THREE.MeshBasicNodeMaterial()
+    blurMat.colorNode = blurFn({ fragUv: uv(), res: float(opts.resolution), src: blurTex })
+    const quad = new THREE.BufferGeometry()
+    quad.setAttribute('position', new THREE.BufferAttribute(new Float32Array([-1, -1, 0, 3, -1, 0, -1, 3, 0]), 3))
+    quad.setAttribute('uv', new THREE.BufferAttribute(new Float32Array([0, 0, 2, 0, 0, 2]), 2))
+    const quadMesh = new THREE.Mesh(quad, blurMat)
+    quadMesh.frustumCulled = false
+    const blurScene = new THREE.Scene()
+    blurScene.add(quadMesh)
+    for (let b = 0; b < opts.blur; b++) {
+      blurTex.value = rtPrev.texture
+      renderer.setRenderTarget(rtCur)
+      await renderer.renderAsync(blurScene, cam)
+      const t = rtPrev; rtPrev = rtCur; rtCur = t
+    }
+    blurMat.dispose()
   }
 
   renderer.setRenderTarget(prevTarget)
