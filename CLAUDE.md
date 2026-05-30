@@ -26,9 +26,9 @@ Frontend 3D immersif pour Zone Club, un videoclub en ligne. Experience FPS dans 
 npm run dev          # Dev server (port 3000)
 npm run build        # Build production standalone
 npm run start        # Start production server
-npm run seed         # Seed films database
+SEED_MOCK=1 npm run seed  # Seed films DB (garde-fou : exit 1 sans SEED_MOCK=1)
 npm run deploy       # Deploy complet : down app, clean .next, build, up app
-docker compose up -d # Production (5 services)
+docker compose up -d # Production (7 services)
 ```
 
 **Deploy** : `npm run deploy` gere tout le cycle (down → clean → build → up). Le container app monte le dossier du projet et sert le build standalone — on build depuis la machine hote (bien plus rapide que dans le container).
@@ -86,15 +86,20 @@ src/
 ├── api/index.ts             # Frontend API client
 ├── store/index.ts           # Zustand store
 ├── components/
-│   ├── interior/            # 3D scene (Aisle, Cassette, Controls, Lighting, etc.)
+│   ├── interior/            # 3D scene (Aisle, CassetteInstances, Controls, Lighting, etc.)
 │   ├── exterior/            # Building exterior + idle video
 │   ├── terminal/            # TVTerminal (retro CRT interface)
 │   ├── player/              # VHSPlayer (video player + Google Cast)
 │   ├── tutorial/            # TutorialOverlay (guided tour, 7 steps, Rick portrait)
-│   ├── ui/                  # Modals (film detail, search, auth, review, WeeklyBonusToast)
 │   ├── videoclub/           # VHSCaseOverlay (K7 detail panel + tutorial annotations)
-│   ├── mobile/              # Touch controls + joystick
-│   └── manager/             # NPC manager avatar + chat
+│   ├── manager/             # NPC manager avatar + chat (GenUI forms)
+│   ├── minitel/             # MinitelOverlay + shared.ts (AISLES_ORDER)
+│   ├── search/              # SearchModal
+│   ├── auth/                # AuthModal
+│   ├── review/              # ReviewModal
+│   ├── board/               # BoardOverlay (sticky board UI)
+│   ├── ui/                  # WeeklyBonusToast, RentalTimer
+│   └── mobile/              # Touch controls + joystick
 ├── services/tmdb.ts         # TMDB client (frontend)
 └── types/three-webgpu.d.ts  # Custom WebGPU type declarations
 instrumentation.ts           # Startup code (cleanup scheduler, Radarr poller)
@@ -190,7 +195,7 @@ Colonnes cles pour le catalogue :
 ### Flow complet : ajouter un film
 
 ```
-1. SEED (bulk)           npm run seed
+1. SEED (bulk)           SEED_MOCK=1 npm run seed   (exit 1 sans SEED_MOCK=1)
    └─ Lit src/data/mock/films.json (structure: { aisle: [tmdb_id, ...] })
    └─ Fetch metadata TMDB pour chaque film
    └─ Insert en DB avec aisle + is_nouveaute
@@ -244,9 +249,9 @@ Colonnes cles pour le catalogue :
 - Le 3D consomme les 13 (`src/components/interior/Aisle.tsx`).
 - Le schema SQLite ne contraint pas la valeur (`aisle TEXT`) — la validation est applicative.
 
-### Script seed (`npm run seed`)
+### Script seed (`SEED_MOCK=1 npm run seed`)
 
-Lit `src/data/mock/films.json` :
+**Garde-fou** : `scripts/seed-films.ts` exit 1 sans `SEED_MOCK=1` (dev/test only) — `npm run seed` seul affiche une erreur et ne seed pas. Lit `src/data/mock/films.json` :
 ```json
 {
   "action": [550, 603, ...],
@@ -277,7 +282,7 @@ Fonctionnalites :
 
 ### Composants cles
 - **Controls.tsx** : FPS controls + raycasting + collisions (ZQSD/WASD) + tutorial camera waypoints
-- **Cassette.tsx / CassetteInstances.tsx** : VHS interactives (InstancedMesh + atlas 2D DataTexture). PAS DataArrayTexture — driver bugs sur NVIDIA Vulkan / iOS Metal, voir `memory/data-array-texture-tearing.md`.
+- **CassetteInstances.tsx** : VHS interactives (InstancedMesh + atlas 2D DataTexture). PAS DataArrayTexture — driver bugs sur NVIDIA Vulkan / iOS Metal, voir `memory/data-array-texture-tearing.md`. (Le legacy `Cassette.tsx` a été supprimé — remplacé par CassetteInstances ; ses constantes vivent dans `cassette-constants.ts`.)
 - **TVTerminal.tsx** : Interface CRT retro (compte, locations, admin)
 - **VHSPlayer.tsx** : Player video VF/VO/sous-titres + Google Cast (machine a etats unifiee — voir section dediee)
 - **ActiveCastIndicator.tsx** : Chip flottant "Now Playing on TV" quand cast actif + player ferme. Tap → reouvre le player en mode telecommande.
@@ -289,7 +294,7 @@ Fonctionnalites :
 ### Hysteresis de selection
 Double hysteresis pour eviter le flickering aux bords des cassettes :
 - **Controls** : 400ms delay avant deselection + compteur hits consecutifs
-- **Cassette** : 50ms select / 250ms deselect (asymetrique)
+- **CassetteInstances** : 50ms select / 250ms deselect (HYSTERESIS_SELECT=0.05 / HYSTERESIS_DESELECT=0.25, asymetrique)
 
 ### Collisions
 Zones definies dans `Controls.tsx` : `{ minX, maxX, minZ, maxZ, name, cornerRadius? }`. `cornerRadius > 0` donne un coin arrondi (le coin de la zone est rogne par un quart-de-cercle, le joueur glisse autour au lieu de buter).
@@ -377,10 +382,10 @@ Systeme de visite guidee en 7 etapes avec le manager Rick comme guide.
 | Optimisation | Detail |
 |---|---|
 | Lumieres | 8 au lieu de 21 (-62%) via mode optimise |
-| Raycast | Throttle tous les 2 frames (30/sec) |
+| Raycast | Throttle tous les 3 frames (~20/sec, `RAYCAST_INTERVAL=3`) |
 | Cassettes | 1 InstancedMesh + geometrie partagee pour ~520 cassettes |
 | Shadows | `castShadow={false}` sur cassettes (-520 shadow renders) |
-| Textures | TMDB w200 + DataArrayTexture + anisotropic filtering |
+| Textures | TMDB w200 + atlas 2D DataTexture (PAS DataArrayTexture) + anisotropic filtering |
 | Materials | Module-level shared materials (pas inline dans les loops) |
 | useFrame | Registry Map + single useFrame au lieu de 500+ callbacks |
 | Zustand | Selectors individuels dans Canvas (jamais full-store) |
@@ -399,17 +404,19 @@ Systeme de visite guidee en 7 etapes avec le manager Rick comme guide.
 - `useMemo` pour geometries/textures (eviter recreation)
 - `React.memo` sur tous les composants Canvas
 
-## Docker (5 services, 0 builds)
+## Docker (7 services, 3 builds)
 
-| Service | Image | Role |
+| Service | Image / Build | Role |
 |---|---|---|
-| `app` | `node:22-slim` | Next.js standalone (`server.js`) |
+| `app` | **build `.`** → `zone-app` (Dockerfile `FROM node:22-slim`) | Next.js standalone — build l'image ET monte `.:/app`, entrypoint `scripts/docker-entrypoint.sh` |
 | `storage` | `sebp/lighttpd` | Streaming video (films VO/VF) |
 | `radarr-vo` | `linuxserver/radarr` | Gestion films VO |
 | `radarr-vf` | `linuxserver/radarr` | Gestion films VF |
 | `bazarr` | `linuxserver/bazarr` | Sous-titres |
+| `cinema-stream` | **build `./cinema-stream`** | Flux HLS "cinéma live" (FFmpeg playlist VF → `media/public/symlinks/cinema-live`) |
+| `zone-discord-bot` | **build `./zone-discord-bot`** | Bot Discord (network_mode: host) |
 
-Pas de Docker build — l'app monte `.next/standalone` directement dans le container.
+3 services se buildent (`app`, `cinema-stream`, `zone-discord-bot`) ; les 4 autres tirent des images upstream. Le service `app` monte le dossier du projet (`.:/app`) — on build le standalone sur la machine hôte (plus rapide que dans le container).
 
 ## Variables d'environnement
 
@@ -425,6 +432,9 @@ Pas de Docker build — l'app monte `.next/standalone` directement dans le conta
 | `DOMAIN` | Domaine de base |
 | `SUBDOMAIN` | Sous-domaine app |
 | `STORAGE_SUBDOMAIN` | Sous-domaine storage |
+| `OPENROUTER_API_KEY` | Clef API OpenRouter (LLM manager, `app/api/chat`) — requis pour le manager |
+| `CHAT_MODEL` | Modèle LLM OpenRouter (défaut `z-ai/glm-4.7-flash`) |
+| `RADARR_VO_URL` / `RADARR_VF_URL` | URLs Radarr (défaut `http://radarr-vo:7878` / `…-vf:7878`) |
 | `LANGFUSE_SECRET_KEY` | Langfuse secret key (observabilite LLM) |
 | `LANGFUSE_PUBLIC_KEY` | Langfuse public key |
 | `LANGFUSE_BASEURL` | Langfuse base URL (`https://cloud.langfuse.com`) |
@@ -455,7 +465,7 @@ Tracing OpenTelemetry via `@langfuse/otel` dans `instrumentation.ts`.
 
 ## Build Notes
 
-- `eslint: { ignoreDuringBuilds: true }` — lint issues pre-existants de l'ere Vite
+- `eslint: { ignoreDuringBuilds: false }` — **CI gate** : `next build` ECHOUE sur les erreurs ESLint (les warnings ne bloquent pas). Voir `next.config.ts:10-15`.
 - `serverExternalPackages: ['better-sqlite3', 'bcrypt']` — modules natifs
 - Three.js WebGPU types : augmentation `ArrayBufferView<any>` sur `GPUQueue.writeBuffer`
 - `src/types/three-webgpu.d.ts` — declarations custom pour three/webgpu, three/tsl, addons
@@ -523,3 +533,4 @@ CORRECT:   camera.getWorldDirection(_dir) → sauver {x,y,z} → _dir.y = 0 → 
 - **threejs-webgpu-architect** : Architecture Three.js/R3F, performance, photorealisme, assets
 - **webgpu-pure** : WebGPU pur (sans Three.js), WGSL, pipelines, post-processing
 - **webgpu-canvas-text** : Texte dans scenes WebGPU via CanvasTexture (Troika incompatible WebGPU)
+- **webgpu-light-baking-nee** : Bake lightmap/GI WebGPU/TSL (Next-Event Estimation, three-mesh-bvh gather) — bruit, émetteurs néon, ombres, seams UV
