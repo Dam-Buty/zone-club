@@ -14,19 +14,13 @@ import { MeshBVH, SAH } from 'three-mesh-bvh'
 import { ROOM_WIDTH as W, ROOM_DEPTH as D, ROOM_HEIGHT as H } from '../../src/components/interior/constants'
 import { SHELL_SLOTS, applyShellUv1, ATLAS_SLOT_COUNT } from '../../src/lib/lightbake/shellUv1'
 import { emissiveRig } from '../../src/lib/lightbake/emissiveRig'
-import { radiosityBake } from '../../src/lib/lightbake/radiosityBake'
+import { radiosityBake, type NeeEmitter } from '../../src/lib/lightbake/radiosityBake'
 
 function setVec3(geo: THREE.BufferGeometry, name: string, rgb: [number, number, number]) {
   const n = geo.attributes.position.count
   const a = new Float32Array(n * 3)
   for (let i = 0; i < n; i++) { a[i * 3] = rgb[0]; a[i * 3 + 1] = rgb[1]; a[i * 3 + 2] = rgb[2] }
   geo.setAttribute(name, new THREE.BufferAttribute(a, 3))
-}
-function setConstUv1(geo: THREE.BufferGeometry, u: number, v: number) {
-  const n = geo.attributes.position.count
-  const a = new Float32Array(n * 2)
-  for (let i = 0; i < n; i++) { a[i * 2] = u; a[i * 2 + 1] = v }
-  geo.setAttribute('uv1', new THREE.BufferAttribute(a, 2))
 }
 function reindex(geo: THREE.BufferGeometry): THREE.BufferGeometry {
   const c = geo.attributes.position.count
@@ -35,14 +29,24 @@ function reindex(geo: THREE.BufferGeometry): THREE.BufferGeometry {
   geo.setIndex(new THREE.BufferAttribute(idx, 1))
   return geo
 }
-const lum = (r: number, g: number, b: number) => 0.2126 * r + 0.7152 * g + 0.0722 * b
 
-// Centre of the first EMPTY atlas slot (no lightmapped surface) → black at textureLoad.
-const emptyUv = (() => {
-  const grid = Math.round(Math.sqrt(ATLAS_SLOT_COUNT))
-  const s = SHELL_SLOTS.length // first free slot index
-  return [((s % grid) + 0.5) / grid, (Math.floor(s / grid) + 0.5) / grid] as [number, number]
-})()
+// ?rig=center — a single warm-white glowing cube at room centre (6 outward one-sided faces),
+// a clean omni-ish source to OBSERVE how light reflects/bounces onto every surface, instead of
+// the busy 21-emitter wall rig. Not in the BVH (a light must not occlude its own shadow rays).
+function centerLightRig(): NeeEmitter[] {
+  const cx = 0, cy = H / 2, cz = 0, s = 0.25, E = 6.0
+  const emission: [number, number, number] = [E, E * 0.96, E * 0.88] // warm white
+  const x0 = cx - s, x1 = cx + s, y0 = cy - s, y1 = cy + s, z0 = cz - s, z1 = cz + s, d = 2 * s
+  const faces: { facing: [number, number, number]; corner: [number, number, number]; edge1: [number, number, number]; edge2: [number, number, number] }[] = [
+    { facing: [1, 0, 0], corner: [x1, y0, z0], edge1: [0, 0, d], edge2: [0, d, 0] }, // +X
+    { facing: [-1, 0, 0], corner: [x0, y0, z0], edge1: [0, d, 0], edge2: [0, 0, d] }, // -X
+    { facing: [0, 1, 0], corner: [x0, y1, z0], edge1: [d, 0, 0], edge2: [0, 0, d] }, // +Y (up)
+    { facing: [0, -1, 0], corner: [x0, y0, z0], edge1: [0, 0, d], edge2: [d, 0, 0] }, // -Y (down)
+    { facing: [0, 0, 1], corner: [x0, y0, z1], edge1: [d, 0, 0], edge2: [0, d, 0] }, // +Z
+    { facing: [0, 0, -1], corner: [x0, y0, z0], edge1: [0, d, 0], edge2: [d, 0, 0] }, // -Z
+  ]
+  return faces.map((f) => ({ emission, rect: { corner: f.corner, edge1: f.edge1, edge2: f.edge2, facing: f.facing } }))
+}
 
 // The 6 lightmapped surfaces in WORLD space, matching Aisle.tsx geometry construction.
 function shellSurfaces(): { name: string; geo: THREE.BufferGeometry }[] {
@@ -63,30 +67,22 @@ function shellSurfaces(): { name: string; geo: THREE.BufferGeometry }[] {
   ]
 }
 
-function buildBakeScene(grayscale: boolean): { render: THREE.BufferGeometry; bvhGeo: THREE.BufferGeometry } {
+function buildBakeScene(): { render: THREE.BufferGeometry; bvhGeo: THREE.BufferGeometry } {
   const surfaces = shellSurfaces()
   for (const s of surfaces) applyShellUv1(s.geo, SHELL_SLOTS.indexOf(s.name as (typeof SHELL_SLOTS)[number]), ATLAS_SLOT_COUNT)
   const lit = surfaces.map((s) => s.geo)
-
-  // Emitters: néon-noir rig as non-lightmapped emitters (uv1 → empty slot).
-  const emitters = emissiveRig().map((e) => {
-    const g = e.geometry.toNonIndexed()
-    setVec3(g, 'color', [0, 0, 0])
-    const [er, eg, eb] = e.emission
-    const em = grayscale ? lum(er, eg, eb) : 0
-    setVec3(g, 'emission', grayscale ? [em, em, em] : [er, eg, eb])
-    setConstUv1(g, emptyUv[0], emptyUv[1])
-    return g
-  })
-
+  // Emitters are NOT in the BVH (a light must not occlude its own shadow rays) — they are
+  // sampled directly via emissiveRig().rect inside radiosityBake (NEE). The BVH = the surfaces
+  // (occluders like shelves get added here later). render = the same surfaces, unwrapped.
   const render = reindex(mergeGeometries(lit.map((g) => g.clone()), false)!)
-  const bvhGeo = reindex(mergeGeometries([...lit, ...emitters], false)!)
+  const bvhGeo = reindex(mergeGeometries(lit.map((g) => g.clone()), false)!)
   return { render, bvhGeo }
 }
 
 async function runBake(canvas: HTMLCanvasElement, setS: (s: string) => void, isDisposed: () => boolean) {
   const params = new URLSearchParams(window.location.search)
   const grayscale = params.get('color') !== '1'
+  const centerMode = params.get('rig') === 'center' // single central source to read the bounce
   const bounces = parseInt(params.get('bounces') || '4', 10)
   const Wd = 1000, Ht = 640
   const renderer = new THREE.WebGPURenderer({ canvas, antialias: true, forceWebGL: false })
@@ -94,13 +90,16 @@ async function runBake(canvas: HTMLCanvasElement, setS: (s: string) => void, isD
   await renderer.init()
   setS('webgpu OK, building shell…')
 
-  const { render, bvhGeo } = buildBakeScene(grayscale)
+  const { render, bvhGeo } = buildBakeScene()
   const bvh = new MeshBVH(bvhGeo, { maxLeafSize: 1, strategy: SAH })
-  setS(`baking shell lightmap (${grayscale ? 'grayscale' : 'colour'}, ${bounces} bounces)…`)
+  const rig: NeeEmitter[] = centerMode ? centerLightRig() : emissiveRig()
+  setS(`baking — NEE (${centerMode ? 'CENTER light' : grayscale ? 'grayscale' : 'colour'}, ${bounces} bounces)…`)
 
-  const sky: [number, number, number] = grayscale ? [0.02, 0.02, 0.02] : [0.008, 0.012, 0.025]
-  const lightmap = await radiosityBake(renderer, render, bvhGeo, bvh, {
-    resolution: 1024, samples: 256, bounces, sky, blur: 3,
+  // NEE does the direct lighting (low variance) → far fewer indirect hemisphere samples needed.
+  // Center mode → zero sky so the ONLY light is the central source + its bounces (pure GI read).
+  const sky: [number, number, number] = centerMode ? [0, 0, 0] : grayscale ? [0.02, 0.02, 0.02] : [0.008, 0.012, 0.025]
+  const lightmap = await radiosityBake(renderer, render, bvhGeo, bvh, rig, {
+    resolution: 1024, samples: 48, neeSamples: 8, bounces, sky, blur: 2, grayscale,
   })
   if (isDisposed()) return
   setS('baked, previewing…')
@@ -118,15 +117,24 @@ async function runBake(canvas: HTMLCanvasElement, setS: (s: string) => void, isD
   } else {
     const viewMat = new THREE.MeshBasicNodeMaterial()
     viewMat.side = THREE.DoubleSide
-    viewMat.colorNode = texture(lightmap).sample(uv(1)).mul(1.6) // lightMapIntensity preview
+    const exposure = parseFloat(params.get('exp') || '1.0')
+    viewMat.colorNode = texture(lightmap).sample(uv(1)).mul(exposure) // lightMapIntensity preview
     const mesh = new THREE.Mesh(render, viewMat)
     mesh.frustumCulled = false
     const scene = new THREE.Scene()
     scene.add(mesh)
-    const camera = new THREE.PerspectiveCamera(78, Wd / Ht, 0.05, 50)
-    // overview from near the entrance, slightly angled → north wall + left wall + floor + ceiling
-    camera.position.set(1.8, 1.5, 3.2)
-    camera.lookAt(-1.5, 1.05, -4.25)
+    const camera = new THREE.PerspectiveCamera(60, Wd / Ht, 0.05, 50)
+    // URL-driven framing (?cam=x,y,z&look=x,y,z). Default = stand mid-room facing the LEFT
+    // wall (green horreur / magenta bizarre / cyan polar / orange thriller signs + their
+    // coloured pools on wall and floor) — the real néon-noir test, not the washed centre floor.
+    const parseVec = (s: string | null, dflt: [number, number, number]): [number, number, number] => {
+      const p = (s ?? '').split(',').map(Number)
+      return p.length === 3 && p.every((n) => Number.isFinite(n)) ? [p[0], p[1], p[2]] : dflt
+    }
+    const camPos = parseVec(params.get('cam'), [1.4, 1.55, -1.0])
+    const camLook = parseVec(params.get('look'), [-4.5, 1.25, -1.2])
+    camera.position.set(camPos[0], camPos[1], camPos[2])
+    camera.lookAt(camLook[0], camLook[1], camLook[2])
     camera.updateMatrixWorld()
     await renderer.renderAsync(scene, camera)
   }

@@ -1,4 +1,4 @@
-import { PlaneGeometry, Color, type BufferGeometry } from 'three'
+import { PlaneGeometry, Color, Matrix4, Vector3, type BufferGeometry } from 'three'
 
 // The néon-noir emitter rig as offline emissive proxy quads (world-space geometry + linear
 // HDR emission). At bake, rays that hit these read their `emission` → coloured indirect
@@ -34,18 +34,20 @@ const GENRE_SIGNS: EmitterSpec[] = [
   { name: 'sf', pos: [0.05, 2.24, -0.2], size: [1.44, 0.36], face: 'x-', color: '#00ccff', intensity: 4.5 },
 ]
 
-// Cold ceiling fluo — DIM (nocturnal ambient, lets the neon accents dominate).
+// Cold ceiling fluo — DIM (nocturnal ambient, lets the neon accents dominate). Big white area
+// emitters: even at low intensity they deliver more lumens to floor/walls than the small neon
+// signs, so they must stay well below the signs or they grey-wash the néon-noir.
 const CEILING_FLUO: EmitterSpec[] = [
-  { name: 'fluo-0', pos: [-3.3, 2.72, 0], size: [0.45, 6.6], face: 'y-', color: '#eaf0ff', intensity: 1.6 },
-  { name: 'fluo-1', pos: [-1.0, 2.72, 0], size: [0.45, 6.6], face: 'y-', color: '#eaf0ff', intensity: 1.1 },
-  { name: 'fluo-2', pos: [2.3, 2.72, 0], size: [0.45, 6.6], face: 'y-', color: '#eaf0ff', intensity: 1.1 },
-  { name: 'fluo-3', pos: [3.8, 2.72, 0], size: [0.45, 6.6], face: 'y-', color: '#eaf0ff', intensity: 1.6 },
+  { name: 'fluo-0', pos: [-3.3, 2.72, 0], size: [0.45, 6.6], face: 'y-', color: '#eaf0ff', intensity: 0.5 },
+  { name: 'fluo-1', pos: [-1.0, 2.72, 0], size: [0.45, 6.6], face: 'y-', color: '#eaf0ff', intensity: 0.35 },
+  { name: 'fluo-2', pos: [2.3, 2.72, 0], size: [0.45, 6.6], face: 'y-', color: '#eaf0ff', intensity: 0.35 },
+  { name: 'fluo-3', pos: [3.8, 2.72, 0], size: [0.45, 6.6], face: 'y-', color: '#eaf0ff', intensity: 0.5 },
 ]
 
 const OTHER: EmitterSpec[] = [
   // 2 island overhead tubes (cool).
-  { name: 'island-tube-0', pos: [-2.2, 2.66, -0.2], size: [0.5, 3.8], face: 'y-', color: '#eaf0ff', intensity: 1.3 },
-  { name: 'island-tube-1', pos: [0.05, 2.66, -0.2], size: [0.5, 3.8], face: 'y-', color: '#eaf0ff', intensity: 1.3 },
+  { name: 'island-tube-0', pos: [-2.2, 2.66, -0.2], size: [0.5, 3.8], face: 'y-', color: '#eaf0ff', intensity: 0.45 },
+  { name: 'island-tube-1', pos: [0.05, 2.66, -0.2], size: [0.5, 3.8], face: 'y-', color: '#eaf0ff', intensity: 0.45 },
   // Warm counter tube.
   { name: 'comptoir', pos: [3, 2.66, 3], size: [0.14, 1.4], face: 'y-', color: '#ffe2b0', intensity: 3.0 },
   // Cold vitrine moonlight (south wall, into the room).
@@ -62,30 +64,70 @@ export interface EmissiveProxy {
   geometry: BufferGeometry
   /** Linear HDR radiance (sRGB colour × intensity). */
   emission: [number, number, number]
+  /** World rectangle (corner + 2 edges) for NEE direct light sampling. */
+  rect: EmitterRect
+}
+
+/** World-space rectangle: a sampled point is `corner + u·edge1 + v·edge2`, u,v ∈ [0,1]. */
+export interface EmitterRect {
+  corner: [number, number, number]
+  edge1: [number, number, number]
+  edge2: [number, number, number]
+  /** Unit room-facing normal. NEE emits ONE-sided along it (no backward leak onto the
+   *  wall/ceiling the sign is mounted on). Authoritative — resolves cross(edge1,edge2)'s
+   *  winding ambiguity (the ceiling case flips it). */
+  facing: [number, number, number]
 }
 
 const _c = new Color()
 const EPS = 0.03 // nudge into the room so the surface doesn't self-occlude the proxy
 
-function orient(geo: PlaneGeometry, face: Face, pos: [number, number, number]) {
-  let [x, y, z] = pos
-  switch (face) {
-    case 'z+': z += EPS; break // north wall, faces +Z (no rotation)
-    case 'z-': geo.rotateY(Math.PI); z -= EPS; break // south wall, faces -Z
-    case 'x+': geo.rotateY(Math.PI / 2); x += EPS; break // left wall, faces +X
-    case 'x-': geo.rotateY(-Math.PI / 2); x -= EPS; break // right wall, faces -X
-    case 'y-': geo.rotateX(-Math.PI / 2); y -= EPS; break // ceiling, faces down
-  }
-  geo.translate(x, y, z)
+// Room-facing unit normal per wall — the direction the emitter actually shines INTO the room.
+const FACE_NORMAL: Record<Face, [number, number, number]> = {
+  'z+': [0, 0, 1], // north wall → +Z
+  'z-': [0, 0, -1], // south wall → -Z
+  'x+': [1, 0, 0], // left wall → +X
+  'x-': [-1, 0, 0], // right wall → -X
+  'y-': [0, -1, 0], // ceiling → down
 }
 
-/** Build the offline emissive proxy quads for the full néon-noir rig. */
+// One transform per emitter (rotation by face + translation), the single source of truth
+// for both the BVH geometry and the NEE rectangle. world = T · R (rotate then translate).
+function emitterMatrix(face: Face, pos: [number, number, number]): Matrix4 {
+  const m = new Matrix4()
+  let [x, y, z] = pos
+  switch (face) {
+    case 'z+': m.makeRotationY(0); z += EPS; break // north wall, faces +Z
+    case 'z-': m.makeRotationY(Math.PI); z -= EPS; break // south wall, faces -Z
+    case 'x+': m.makeRotationY(Math.PI / 2); x += EPS; break // left wall, faces +X
+    case 'x-': m.makeRotationY(-Math.PI / 2); x -= EPS; break // right wall, faces -X
+    case 'y-': m.makeRotationX(-Math.PI / 2); y -= EPS; break // ceiling, faces down
+  }
+  m.setPosition(x, y, z)
+  return m
+}
+
+const _bl = new Vector3(), _br = new Vector3(), _tl = new Vector3()
+
+/** Build the offline emissive proxy quads + their world rectangles (for NEE). */
 export function emissiveRig(): EmissiveProxy[] {
   return ALL.map((e) => {
-    const geometry = new PlaneGeometry(e.size[0], e.size[1])
-    orient(geometry, e.face, e.pos)
+    const [w, h] = e.size
+    const M = emitterMatrix(e.face, e.pos)
+    const geometry = new PlaneGeometry(w, h).applyMatrix4(M)
     _c.set(e.color).convertSRGBToLinear()
-    return { name: e.name, geometry, emission: [_c.r * e.intensity, _c.g * e.intensity, _c.b * e.intensity] }
+    const emission: [number, number, number] = [_c.r * e.intensity, _c.g * e.intensity, _c.b * e.intensity]
+    // World rectangle from the 4 local corners: bottom-left + 2 edge vectors.
+    _bl.set(-w / 2, -h / 2, 0).applyMatrix4(M)
+    _br.set(w / 2, -h / 2, 0).applyMatrix4(M)
+    _tl.set(-w / 2, h / 2, 0).applyMatrix4(M)
+    const rect: EmitterRect = {
+      corner: [_bl.x, _bl.y, _bl.z],
+      edge1: [_br.x - _bl.x, _br.y - _bl.y, _br.z - _bl.z],
+      edge2: [_tl.x - _bl.x, _tl.y - _bl.y, _tl.z - _bl.z],
+      facing: FACE_NORMAL[e.face],
+    }
+    return { name: e.name, geometry, emission, rect }
   })
 }
 

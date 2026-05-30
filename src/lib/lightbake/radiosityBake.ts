@@ -3,46 +3,47 @@ import { wgsl, wgslFn, attribute, positionWorld, normalLocal, uv, vec2, vec3, ve
 import { bvhIntersectFirstHit, getVertexAttribute } from 'three-mesh-bvh/webgpu'
 import type { MeshBVH } from 'three-mesh-bvh'
 import { gpuStorages, WGSL_HELPERS } from './bvhGpu.ts'
+import type { EmitterRect } from './emissiveRig.ts'
+
+/** Minimal emitter for NEE: a world rectangle + its linear HDR radiance. EmissiveProxy satisfies it. */
+export type NeeEmitter = { rect: EmitterRect; emission: [number, number, number] }
 
 export interface RadiosityBakeOptions {
   resolution?: number // lightmap side, px (square)
-  samples?: number // hemisphere rays per texel per bounce
+  samples?: number // hemisphere rays per texel per bounce (INDIRECT)
+  neeSamples?: number // shadow-ray samples per emitter (DIRECT / NEE)
   bounces?: number // gather iterations
   sky?: [number, number, number] // cold miss term (moonlight through the vitrine)
-  blur?: number // post-bake denoise passes (3×3 box; the slot gutter prevents inter-slot bleed)
+  blur?: number // post-bake denoise passes (3×3 box)
+  grayscale?: boolean // force emitter emission to luminance (neutral but colour-ready)
 }
 
-const DEFAULTS = { resolution: 1024, samples: 64, bounces: 3, sky: [0.0, 0.0, 0.0] as [number, number, number], blur: 0 }
+const DEFAULTS = { resolution: 1024, samples: 48, neeSamples: 4, bounces: 3, sky: [0, 0, 0] as [number, number, number], blur: 0, grayscale: false }
+const lum = (r: number, g: number, b: number) => 0.2126 * r + 0.7152 * g + 0.0722 * b
 
 /**
- * UV-space iterative radiosity bake (Phase 1 core), proven-pattern WebGPU/TSL.
+ * UV-space radiosity bake with **Next-Event Estimation** (direct light sampling), WebGPU/TSL.
  *
- * Two geometries:
- *  - `renderGeometry` = the LIGHTMAPPED surfaces only, carrying uv1/normal/color/emission.
- *    It is unwrapped into the atlas (vertexNode = (uv1.flipY()-0.5)*2) so the fragment runs
- *    once per lightmap texel.
- *  - `bvhGeometry` = EVERYTHING (lightmapped + occluders + emitters), carrying
- *    position/normal/color/emission/uv1. It feeds the BVH + storages read at ray hits.
+ * - `renderGeometry` = lightmapped surfaces only (unwrapped to the atlas via uv1).
+ * - `bvhGeometry` = surfaces + occluders (the shadow-ray world). Emitters are NOT here — a
+ *   light must not occlude shadow rays — they are sampled directly via `emitters[].rect`.
  *
- *   L₀ = black
- *   L_{k+1}[texel] = emission_self + albedo_self · meanₛ( hit ? emission[hit] + L_k[uv1_hit] : sky )
- *
- * Lightmapped surfaces have emission=0 (so reading emission[hit] adds nothing for them — no
- * double count with L_k), emitters have emission set + uv1 in an empty atlas slot (L_k there
- * is black → only their emission shows), occluders have emission=0 + empty uv1 (→ 0, shadows).
- * Two HDR RTs ping-pong. Returns the final HDR lightmap.
+ * Per texel: DIRECT = Σ emitters of `albedo/π · meanₙ( V · Le · cosP · cosL · area / dist² )`
+ * (V from a BVH shadow ray); INDIRECT = the hemisphere bounce reading ONLY the previous
+ * lightmap's reflected radiance (emitters contribute 0 → no double count). L = emission + direct + indirect.
  */
 export async function radiosityBake(
   renderer: THREE.WebGPURenderer,
   renderGeometry: THREE.BufferGeometry,
   bvhGeometry: THREE.BufferGeometry,
   bvh: MeshBVH,
+  emitters: ReadonlyArray<NeeEmitter>,
   options: RadiosityBakeOptions = {},
 ): Promise<THREE.Texture> {
   const opts = { ...DEFAULTS, ...options }
   const storages = gpuStorages(bvhGeometry, bvh)
 
-  // uv1 of the BVH geometry packed as vec3 (z=0) so getVertexAttribute (vec3f) returns it.
+  // uv1 of the BVH geometry packed as vec3 (z=0) → getVertexAttribute returns it at hits.
   const uv1Attr = bvhGeometry.getAttribute('uv1')
   if (!uv1Attr) throw new Error('radiosityBake: bvhGeometry needs a uv1 attribute')
   const uv1packed = new Float32Array(uv1Attr.count * 3)
@@ -50,45 +51,91 @@ export async function radiosityBake(
   const sUv1 = new THREE.StorageBufferAttribute(uv1packed, 3)
   const uv1Storage = storage(sUv1, 'vec3', sUv1.count).toReadOnly()
 
+  // Emitter rectangles: 5 vec3 per emitter (corner, edge1, edge2, emission, facing).
+  const N = Math.max(1, emitters.length)
+  const emitterData = new Float32Array(N * 15)
+  emitters.forEach((em, i) => {
+    const o = i * 15, r = em.rect
+    const e = opts.grayscale ? (() => { const L = lum(em.emission[0], em.emission[1], em.emission[2]); return [L, L, L] })() : em.emission
+    emitterData[o] = r.corner[0]; emitterData[o + 1] = r.corner[1]; emitterData[o + 2] = r.corner[2]
+    emitterData[o + 3] = r.edge1[0]; emitterData[o + 4] = r.edge1[1]; emitterData[o + 5] = r.edge1[2]
+    emitterData[o + 6] = r.edge2[0]; emitterData[o + 7] = r.edge2[1]; emitterData[o + 8] = r.edge2[2]
+    emitterData[o + 9] = e[0]; emitterData[o + 10] = e[1]; emitterData[o + 11] = e[2]
+    emitterData[o + 12] = r.facing[0]; emitterData[o + 13] = r.facing[1]; emitterData[o + 14] = r.facing[2]
+  })
+  const sEmitters = new THREE.StorageBufferAttribute(emitterData, 3)
+  const emittersStorage = storage(sEmitters, 'vec3', sEmitters.count).toReadOnly()
+
   const helpers = wgsl(WGSL_HELPERS)
   const unwrap = vec4(sub(uv(1).flipY(), vec2(0.5)).mul(2), 0, 1)
 
   const gather = wgslFn(/* wgsl */`
     fn gather(
-      P: vec3f,
-      N: vec3f,
-      selfEmission: vec3f,
-      selfAlbedo: vec3f,
-      seed: vec2f,
-      samples: f32,
-      sky: vec3f,
-      res: f32,
+      P: vec3f, N: vec3f, selfEmission: vec3f, selfAlbedo: vec3f,
+      seed: vec2f, samples: f32, neeSamples: f32, emitterCount: f32, res: f32, sky: vec3f,
       geom_index: ptr<storage, array<vec3u>, read>,
       geom_position: ptr<storage, array<vec3f>, read>,
-      geom_emission: ptr<storage, array<vec3f>, read>,
       geom_uv1: ptr<storage, array<vec3f>, read>,
       bvh: ptr<storage, array<BVHNode>, read>,
+      emitters: ptr<storage, array<vec3f>, read>,
       prevLightmap: texture_2d<f32>,
     ) -> vec3f {
+      let PI = 3.14159265;
+
+      // ---- DIRECT (Next-Event Estimation): sample each emitter rectangle + shadow ray ----
+      var direct = vec3f(0.0);
+      let EC = i32(emitterCount);
+      let NS = i32(neeSamples);
+      for (var e = 0; e < EC; e = e + 1) {
+        let base = u32(e) * 5u;
+        let corner = emitters[base + 0u];
+        let edge1  = emitters[base + 1u];
+        let edge2  = emitters[base + 2u];
+        let Le     = emitters[base + 3u];
+        let facing = emitters[base + 4u]; // unit room-facing normal (one-sided)
+        let area = length(cross(edge1, edge2));
+        if (area <= 0.0) { continue; }
+        var accum = vec3f(0.0);
+        for (var s = 0; s < NS; s = s + 1) {
+          let r = rndHash(seed + vec2f(f32(e) * 0.7361, f32(e) * 0.1987), u32(s));
+          let xL = corner + r.x * edge1 + r.y * edge2;
+          let d = xL - P;
+          let dist2 = dot(d, d);
+          let dist = sqrt(dist2);
+          let wi = d / dist;
+          let cosP = max(0.0, dot(N, wi));
+          let cosL = max(0.0, -dot(facing, wi)); // emitter shines ONE-sided toward P only
+          if (cosP <= 0.0 || cosL <= 0.0) { continue; }
+          var sray = Ray(P + N * 0.003, wi);
+          let sh = bvhIntersectFirstHit(geom_index, geom_position, bvh, sray);
+          let occluded = sh.didHit && sh.dist < (dist - 0.01);
+          if (!occluded) {
+            accum = accum + Le * cosP * cosL * area / dist2;
+          }
+        }
+        direct = direct + accum / f32(NS);
+      }
+      direct = selfAlbedo / PI * direct;
+
+      // ---- INDIRECT (hemisphere bounce): reflected radiance of prev lightmap only ----
       let S = i32(samples);
       var indirect = vec3f(0.0);
       for (var i = 0; i < S; i = i + 1) {
-        let u = rndHash(seed, u32(i));
+        let u = rndHash(seed, u32(i) + 97u);
         let dir = hemiSample(N, u);
         var ray = Ray(P + N * 0.003, dir);
         let hit = bvhIntersectFirstHit(geom_index, geom_position, bvh, ray);
         if (hit.didHit) {
-          let emi = getVertexAttribute(hit.barycoord, hit.indices.xyz, geom_emission);
           let uvh = getVertexAttribute(hit.barycoord, hit.indices.xyz, geom_uv1);
           let px = vec2i(i32(uvh.x * res), i32(uvh.y * res));
-          let lm = textureLoad(prevLightmap, px, 0).rgb;
-          indirect = indirect + emi + lm;
+          indirect = indirect + textureLoad(prevLightmap, px, 0).rgb; // reflected only, NO emission
         } else {
           indirect = indirect + sky;
         }
       }
-      indirect = indirect / f32(S);
-      return selfEmission + selfAlbedo * indirect;
+      indirect = selfAlbedo * (indirect / f32(S));
+
+      return selfEmission + direct + indirect;
     }
   `, [bvhIntersectFirstHit, getVertexAttribute, helpers])
 
@@ -109,11 +156,9 @@ export async function radiosityBake(
   const prevClear = renderer.getClearColor(new THREE.Color())
   const prevClearAlpha = renderer.getClearAlpha()
   renderer.toneMapping = THREE.NoToneMapping
-
-  // L₀ = black
   renderer.setClearColor(0x000000, 1)
   renderer.setRenderTarget(rtPrev)
-  renderer.clear()
+  renderer.clear() // L₀ = black
 
   const prevTex = texture(rtPrev.texture)
   const gatherMat = new THREE.MeshBasicNodeMaterial()
@@ -121,21 +166,20 @@ export async function radiosityBake(
   gatherMat.vertexNode = unwrap
   gatherMat.colorNode = gather({
     P: positionWorld,
-    // RAW geometry normal (renderGeometry is in world space, mesh identity → local == world).
-    // NOT normalWorld: three flips that toward the view for two-sided faces, which inverts
-    // the hemisphere on UV-mirrored surfaces → rays shot outside the room → black walls.
-    N: normalLocal,
+    N: normalLocal, // raw geometry normal (not normalWorld — see the NEE skill)
     selfEmission: attribute('emission'),
     selfAlbedo: attribute('color'),
     seed: uv(1),
     samples: float(opts.samples),
-    sky: vec3(opts.sky[0], opts.sky[1], opts.sky[2]),
+    neeSamples: float(opts.neeSamples),
+    emitterCount: float(N),
     res: float(opts.resolution),
+    sky: vec3(opts.sky[0], opts.sky[1], opts.sky[2]),
     geom_index: storages.index,
     geom_position: storages.position,
-    geom_emission: storages.emission,
     geom_uv1: uv1Storage,
     bvh: storages.bvh,
+    emitters: emittersStorage,
     prevLightmap: prevTex,
   })
   mesh.material = gatherMat
@@ -144,11 +188,9 @@ export async function radiosityBake(
     prevTex.value = rtPrev.texture
     renderer.setRenderTarget(rtCur)
     await renderer.renderAsync(scene, cam)
-    const t = rtPrev; rtPrev = rtCur; rtCur = t // result now in rtPrev
+    const t = rtPrev; rtPrev = rtCur; rtCur = t
   }
 
-  // Denoise: N passes of a 3×3 box blur in atlas space (fullscreen). The per-slot gutter
-  // (pad in applyShellUv1 + empty-slot uv1) keeps the blur from bleeding across surfaces.
   if (opts.blur > 0) {
     const blurFn = wgslFn(/* wgsl */`
       fn boxBlur(fragUv: vec2f, res: f32, src: texture_2d<f32>) -> vec3f {
