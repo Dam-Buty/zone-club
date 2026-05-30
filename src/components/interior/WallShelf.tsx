@@ -1,6 +1,10 @@
 import { useCallback, useMemo, useEffect } from 'react'
 import * as THREE from 'three/webgpu'
+import { positionWorld, normalWorld, clamp, vec3, varying, float } from 'three/tsl'
 import { CASSETTE_DIMENSIONS } from './cassette-constants'
+import { useProbeVolumes } from './ProbeVolumeContext'
+import { shIrradiance } from '../../lib/lightbake/shReconstruct'
+import { GRID_MIN, gridExt, G } from '../../lib/lightbake/probeGrid'
 
 interface WallShelfProps {
   position: [number, number, number]
@@ -31,6 +35,18 @@ const SHARED_DIVIDER_GEOM = new THREE.BoxGeometry(0.02, SHELF_HEIGHT - 0.1, 0.02
 
 const _tempMatrix = new THREE.Matrix4()
 
+// Phase-2 probe irradiance multiplier (same ?pi knob as the K7, calibrated at M2). Module-level
+// so the ?pi URL param is read once. Mirrors CassetteInstances.tsx PROBE_INTENSITY.
+const PROBE_INTENSITY = (() => {
+  if (typeof window === 'undefined') return 1.2
+  const p = parseFloat(new URLSearchParams(window.location.search).get('pi') || '1.2')
+  return Number.isFinite(p) ? p : 1.2
+})()
+// Constant wood albedo (linear) for the baked-GI emissive term — the SH-L1 irradiance is
+// low-frequency, so a constant albedo on this indirect term is visually indistinguishable from
+// the detailed wood texture (which stays in colorNode for the residual ambient).
+const SHELF_ALBEDO_LINEAR = new THREE.Color('#a07850').convertSRGBToLinear()
+
 // wallShelfMaterial imported from IslandShelf.tsx
 
 export function WallShelf({
@@ -40,6 +56,7 @@ export function WallShelf({
   woodTextures,
 }: WallShelfProps) {
   const dividerCount = Math.floor(length / 1) + 1
+  const probes = useProbeVolumes() // Phase-2 SH-L1 volumes (present only in ?baked=1 after the bake)
 
   const shelfMap = useMemo(() => {
     const map = (woodTextures.map as THREE.Texture).clone()
@@ -72,16 +89,34 @@ export function WallShelf({
     return rmap
   }, [woodTextures, length])
 
-  const shelfMaterial = useMemo(() => new THREE.MeshStandardMaterial({
-    map: shelfMap,
-    normalMap: shelfNormalMap,
-    roughnessMap: shelfRoughnessMap,
-    color: '#a07850',
-    roughness: 0.55,
-    metalness: 0.0,
-    envMapIntensity: 0.25,
-    normalScale: new THREE.Vector2(0.9, 0.9),
-  }), [shelfMap, shelfNormalMap, shelfRoughnessMap])
+  const shelfMaterial = useMemo(() => {
+    const mat = new THREE.MeshStandardNodeMaterial({
+      map: shelfMap,
+      normalMap: shelfNormalMap,
+      roughnessMap: shelfRoughnessMap,
+      color: '#a07850',
+      roughness: 0.55,
+      metalness: 0.0,
+      envMapIntensity: 0.25,
+      normalScale: new THREE.Vector2(0.9, 0.9),
+    })
+    // Phase-2 baked GI: sample the SH-L1 probe volume at each surface's WORLD position
+    // (positionWorld applies the instance matrix for the instanced planks/dividers too) and
+    // reconstruct irradiance for the world normal. emissive-ADD — baked mode drops the analytical
+    // rig, so the wood would otherwise read near-black (same rationale as the K7, T8). varying()
+    // forces the SH eval into the vertex stage (per-vertex sampling, then interpolated).
+    if (probes) {
+      const e = gridExt()
+      const gMin = vec3(GRID_MIN[0], GRID_MIN[1], GRID_MIN[2])
+      const gInv = vec3(1 / e[0], 1 / e[1], 1 / e[2])
+      const half = vec3(0.5 / G[0], 0.5 / G[1], 0.5 / G[2])
+      const uvw = clamp(positionWorld.sub(gMin).mul(gInv), half, vec3(1).sub(half))
+      const E = varying(shIrradiance(probes.shR, probes.shG, probes.shB, uvw, normalWorld))
+      const albedo = vec3(SHELF_ALBEDO_LINEAR.r, SHELF_ALBEDO_LINEAR.g, SHELF_ALBEDO_LINEAR.b)
+      mat.emissiveNode = albedo.mul(E).mul(float(PROBE_INTENSITY))
+    }
+    return mat
+  }, [shelfMap, shelfNormalMap, shelfRoughnessMap, probes])
 
   // Back panel — hard edges, no rounded profile
   const backPanelGeometry = useMemo(() =>

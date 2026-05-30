@@ -1,6 +1,10 @@
 import { useMemo, useEffect } from 'react'
 import * as THREE from 'three/webgpu'
+import { positionWorld, normalWorld, clamp, vec3, varying, float } from 'three/tsl'
 import { CASSETTE_DIMENSIONS } from './cassette-constants'
+import { useProbeVolumes } from './ProbeVolumeContext'
+import { shIrradiance } from '../../lib/lightbake/shReconstruct'
+import { GRID_MIN, gridExt, G } from '../../lib/lightbake/probeGrid'
 
 interface IslandShelfProps {
   position: [number, number, number]
@@ -38,6 +42,15 @@ const SHARED_PEDESTAL_GEOM = new THREE.BoxGeometry(BASE_WIDTH, PEDESTAL_HEIGHT, 
 // Medium oak for the shelving family: warmer and browner than beige/sand.
 const SHELF_COLOR = '#a07850'
 const METALNESS = 0      // pur diélectrique
+// Phase-2 probe irradiance multiplier (same ?pi knob as the K7, calibrated at M2). Mirrors
+// CassetteInstances.tsx / WallShelf.tsx PROBE_INTENSITY.
+const PROBE_INTENSITY = (() => {
+  if (typeof window === 'undefined') return 1.2
+  const p = parseFloat(new URLSearchParams(window.location.search).get('pi') || '1.2')
+  return Number.isFinite(p) ? p : 1.2
+})()
+// Constant wood albedo (linear) for the baked-GI emissive term (SH-L1 is low-frequency).
+const SHELF_ALBEDO_LINEAR = new THREE.Color(SHELF_COLOR).convertSRGBToLinear()
 // Géométrie partagée pour les planches et le panneau supérieur — arêtes franches
 const SHARED_ISLAND_PLANK_GEOM = new THREE.BoxGeometry(0.16, 0.018, ISLAND_LENGTH - 0.1)
 const SHARED_TOP_PANEL_GEOM = new THREE.BoxGeometry(TOP_WIDTH + 0.04, 0.03, ISLAND_LENGTH)
@@ -58,6 +71,8 @@ export function IslandShelf({
   rotation = [0, 0, 0],
   woodTextures,
 }: IslandShelfProps) {
+  const probes = useProbeVolumes() // Phase-2 SH-L1 volumes (present only in ?baked=1 after the bake)
+
   const shelfMap = useMemo(() => {
     const map = (woodTextures.map as THREE.Texture).clone()
     map.wrapS = THREE.RepeatWrapping
@@ -69,13 +84,29 @@ export function IslandShelf({
     return map
   }, [woodTextures])
 
-  const shelfMaterial = useMemo(() => new THREE.MeshStandardMaterial({
-    map: shelfMap,
-    color: SHELF_COLOR,
-    roughness: 0.15,
-    metalness: METALNESS,
-    envMapIntensity: 0.50,
-  }), [shelfMap])
+  const shelfMaterial = useMemo(() => {
+    const mat = new THREE.MeshStandardNodeMaterial({
+      map: shelfMap,
+      color: SHELF_COLOR,
+      roughness: 0.15,
+      metalness: METALNESS,
+      envMapIntensity: 0.50,
+    })
+    // Phase-2 baked GI: emissive-ADD SH-L1 irradiance at the surface world position/normal
+    // (same rationale as the K7, T8 — baked mode drops the rig). positionWorld covers the
+    // individual plank meshes; varying() keeps the SH eval in the vertex stage.
+    if (probes) {
+      const e = gridExt()
+      const gMin = vec3(GRID_MIN[0], GRID_MIN[1], GRID_MIN[2])
+      const gInv = vec3(1 / e[0], 1 / e[1], 1 / e[2])
+      const half = vec3(0.5 / G[0], 0.5 / G[1], 0.5 / G[2])
+      const uvw = clamp(positionWorld.sub(gMin).mul(gInv), half, vec3(1).sub(half))
+      const E = varying(shIrradiance(probes.shR, probes.shG, probes.shB, uvw, normalWorld))
+      const albedo = vec3(SHELF_ALBEDO_LINEAR.r, SHELF_ALBEDO_LINEAR.g, SHELF_ALBEDO_LINEAR.b)
+      mat.emissiveNode = albedo.mul(E).mul(float(PROBE_INTENSITY))
+    }
+    return mat
+  }, [shelfMap, probes])
 
   const trapezoidGeometry = useMemo(() => {
     // BoxGeometry subdivisé + déformation vertex → grille fine sur TOUTES les faces
