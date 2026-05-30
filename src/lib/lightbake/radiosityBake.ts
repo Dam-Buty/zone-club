@@ -2,7 +2,7 @@ import * as THREE from 'three/webgpu'
 import { wgsl, wgslFn, attribute, positionWorld, normalWorld, uv, vec2, vec3, vec4, float, sub, storage, texture } from 'three/tsl'
 import { bvhIntersectFirstHit, getVertexAttribute } from 'three-mesh-bvh/webgpu'
 import type { MeshBVH } from 'three-mesh-bvh'
-import { gpuStorages, WGSL_HELPERS } from './bvhGpu'
+import { gpuStorages, WGSL_HELPERS } from './bvhGpu.ts'
 
 export interface RadiosityBakeOptions {
   resolution?: number // lightmap side, px (square)

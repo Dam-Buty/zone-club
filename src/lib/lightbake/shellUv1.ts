@@ -1,16 +1,24 @@
 import { BufferGeometry, BufferAttribute, Box3, Vector3 } from 'three'
 
 // Lightmapped shell meshes, in a STABLE order → atlas slot index. This order is
-// the SINGLE source of truth for slot indices at bake AND runtime. (Instanced
-// shelf planks/dividers are NOT here — they are occluders only.)
+// the SINGLE source of truth for slot indices at bake AND runtime.
+//
+// v1 scope = the 6 big static surfaces (the dominant néon-noir colour-bleed). Wall
+// shelves (10 back panels), island bodies, and all instanced planks/dividers are
+// OCCLUDERS only — they cast shadows into the bake but are not lightmapped (they keep
+// a hemisphere fill, and get the SH-L1 probe volume in Phase 2). Meshes are matched at
+// bake & runtime by name = `bake-<slot>` (R3F preserves JSX `name`, unlike userData).
 export const SHELL_SLOTS = [
   'floor', 'ceiling', 'wall-north', 'wall-south', 'wall-left', 'wall-right',
-  'island-0', 'island-1',
-  'shelfback-0', 'shelfback-1', 'shelfback-2', 'shelfback-3',
-  'shelfback-4', 'shelfback-5', 'shelfback-6', 'shelfback-7',
 ] as const
 
 export type ShellSlot = (typeof SHELL_SLOTS)[number]
+
+// Square atlas holding every slot (3×3 = 9, leaving headroom to add shelf backs later).
+export const ATLAS_SLOT_COUNT = 9
+
+// The mesh name a lightmapped surface must carry to be picked up by collectShell.
+export const bakeName = (slot: ShellSlot): string => `bake-${slot}`
 
 const _box = new Box3()
 const _size = new Vector3()

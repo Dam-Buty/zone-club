@@ -341,7 +341,7 @@ export function Storefront({ position, roomWidth, roomHeight, posterPaths }: Sto
     <group position={position} rotation={[0, Math.PI, 0]}>
       {/* ===== WALL WITH HOLES (ShapeGeometry — real cutouts for vitrine + door) ===== */}
       {/* Geometric depth: the holes let you see through to the recessed backdrop behind */}
-      <mesh position={[0, 0, Z_WALL]} geometry={wallWithHolesGeom} castShadow receiveShadow>
+      <mesh name="bake-wall-south" position={[0, 0, Z_WALL]} geometry={wallWithHolesGeom} castShadow receiveShadow>
         <primitive object={wallMaterial} attach="material" />
       </mesh>
 

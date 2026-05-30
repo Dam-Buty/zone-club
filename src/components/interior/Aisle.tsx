@@ -1,6 +1,5 @@
 import { useMemo, useEffect, useRef, Suspense, memo } from 'react'
 import * as THREE from 'three'
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { useGLTF, useTexture } from '@react-three/drei'
 import { useFrame, useThree } from '@react-three/fiber'
 import { generateKentTileTextures } from '../../utils/KentTileTexture'
@@ -176,10 +175,14 @@ function MergedWalls({ wallTextures, roomWidth, roomDepth, roomHeight }: {
   roomDepth: number
   roomHeight: number
 }) {
-  const geometry = useMemo(() => {
+  // Split (not merged) so each wall carries its own geometry → an independent uv1
+  // atlas slot at bake/runtime. Named `bake-wall-*` so collectShell picks them up.
+  // They still SHARE one material/pipeline, so the merge optimisation is preserved
+  // (3 trivial plane draws of one pipeline; the baked lightMap is one shared atlas).
+  const { wallNorth, wallLeft, wallRight } = useMemo(() => {
     // Mur du fond (nord): face +Z, position [0, H/2, -D/2]
-    const wallBack = new THREE.PlaneGeometry(roomWidth, roomHeight)
-    wallBack.translate(0, roomHeight / 2, -roomDepth / 2)
+    const wallNorth = new THREE.PlaneGeometry(roomWidth, roomHeight)
+    wallNorth.translate(0, roomHeight / 2, -roomDepth / 2)
 
     // Mur gauche (ouest): face +X, position [-W/2, H/2, 0], rotation Y=PI/2
     const wallLeft = new THREE.PlaneGeometry(roomDepth, roomHeight)
@@ -191,21 +194,27 @@ function MergedWalls({ wallTextures, roomWidth, roomDepth, roomHeight }: {
     wallRight.rotateY(-Math.PI / 2)
     wallRight.translate(roomWidth / 2, roomHeight / 2, 0)
 
-    return mergeGeometries([wallBack, wallLeft, wallRight])!
+    return { wallNorth, wallLeft, wallRight }
   }, [roomWidth, roomDepth, roomHeight])
 
   // Shared wall material — single GPU pipeline for all interior walls
   const material = SHARED_WALL_MATERIAL
 
   useEffect(() => {
-    return () => { geometry.dispose() }
-  }, [geometry])
+    return () => { wallNorth.dispose(); wallLeft.dispose(); wallRight.dispose() }
+  }, [wallNorth, wallLeft, wallRight])
 
   useEffect(() => {
     return () => { material.dispose() }
   }, [material])
 
-  return <mesh geometry={geometry} material={material} receiveShadow />
+  return (
+    <>
+      <mesh name="bake-wall-north" geometry={wallNorth} material={material} receiveShadow />
+      <mesh name="bake-wall-left" geometry={wallLeft} material={material} receiveShadow />
+      <mesh name="bake-wall-right" geometry={wallRight} material={material} receiveShadow />
+    </>
+  )
 }
 
 // ===== CASSETTE POSITION PRE-COMPUTATION =====
@@ -850,7 +859,7 @@ export const Aisle = memo(function Aisle({ films, filmsByAisle }: AisleProps) {
         posterPaths={vitrinePosterPaths}
       />
 
-      {/* 3 murs (nord + gauche + droit) fusionnés en 1 mesh — mergeGeometries */}
+      {/* 3 murs (nord + gauche + droit), meshes séparés nommés bake-wall-* (1 matériau partagé) */}
       <MergedWalls
         wallTextures={wallTextures}
         roomWidth={ROOM_WIDTH}
