@@ -73,6 +73,8 @@ declare module 'three/webgpu' {
 
 declare module 'three/tsl' {
     export const texture: any;
+    export const texture3D: any;
+    export const varying: any;
     export const bumpMap: any;
     export const uv: any;
     export const attribute: any;
