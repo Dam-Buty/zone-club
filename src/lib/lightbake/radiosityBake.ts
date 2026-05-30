@@ -7,7 +7,7 @@ import { gpuStorages, WGSL_HELPERS } from './bvhGpu.ts'
 export interface RadiosityBakeOptions {
   resolution?: number // lightmap side, px (square)
   samples?: number // hemisphere rays per texel per bounce
-  bounces?: number // gather iterations (1 = direct emissive bleed; 2+ = multi-bounce GI)
+  bounces?: number // gather iterations
   sky?: [number, number, number] // cold miss term (moonlight through the vitrine)
 }
 
@@ -16,36 +16,40 @@ const DEFAULTS = { resolution: 1024, samples: 64, bounces: 3, sky: [0.0, 0.0, 0.
 /**
  * UV-space iterative radiosity bake (Phase 1 core), proven-pattern WebGPU/TSL.
  *
- * `geometry` is a single merged, indexed geometry carrying position/normal/color
- * (albedo)/emission/uv1. `bvh` is its MeshBVH. Each lightmapped texel is "unwrapped"
- * into the atlas via vertexNode = (uv1.flipY()-0.5)*2 (the ProgressiveLightMapGPU trick).
+ * Two geometries:
+ *  - `renderGeometry` = the LIGHTMAPPED surfaces only, carrying uv1/normal/color/emission.
+ *    It is unwrapped into the atlas (vertexNode = (uv1.flipY()-0.5)*2) so the fragment runs
+ *    once per lightmap texel.
+ *  - `bvhGeometry` = EVERYTHING (lightmapped + occluders + emitters), carrying
+ *    position/normal/color/emission/uv1. It feeds the BVH + storages read at ray hits.
  *
- *   L₀[texel]   = emission
- *   L_{k+1}[t]  = emission_self + albedo_self · meanₛ( hit ? L_k[uv1_hit] : sky )
+ *   L₀ = black
+ *   L_{k+1}[texel] = emission_self + albedo_self · meanₛ( hit ? emission[hit] + L_k[uv1_hit] : sky )
  *
- * Each bounce reads the PREVIOUS lightmap at the hit's interpolated uv1 (via
- * getVertexAttribute on a vec3-packed uv1 storage + textureLoad), ping-ponging two HDR
- * render targets. Returns the final HDR lightmap.
+ * Lightmapped surfaces have emission=0 (so reading emission[hit] adds nothing for them — no
+ * double count with L_k), emitters have emission set + uv1 in an empty atlas slot (L_k there
+ * is black → only their emission shows), occluders have emission=0 + empty uv1 (→ 0, shadows).
+ * Two HDR RTs ping-pong. Returns the final HDR lightmap.
  */
 export async function radiosityBake(
   renderer: THREE.WebGPURenderer,
-  geometry: THREE.BufferGeometry,
+  renderGeometry: THREE.BufferGeometry,
+  bvhGeometry: THREE.BufferGeometry,
   bvh: MeshBVH,
   options: RadiosityBakeOptions = {},
 ): Promise<THREE.Texture> {
   const opts = { ...DEFAULTS, ...options }
-  const storages = gpuStorages(geometry, bvh)
+  const storages = gpuStorages(bvhGeometry, bvh)
 
-  // uv1 packed as vec3 (z=0) so getVertexAttribute (vec3f) returns it at hits.
-  const uv1Attr = geometry.getAttribute('uv1')
-  if (!uv1Attr) throw new Error('radiosityBake: geometry needs a uv1 attribute')
+  // uv1 of the BVH geometry packed as vec3 (z=0) so getVertexAttribute (vec3f) returns it.
+  const uv1Attr = bvhGeometry.getAttribute('uv1')
+  if (!uv1Attr) throw new Error('radiosityBake: bvhGeometry needs a uv1 attribute')
   const uv1packed = new Float32Array(uv1Attr.count * 3)
   for (let i = 0; i < uv1Attr.count; i++) { uv1packed[i * 3] = uv1Attr.getX(i); uv1packed[i * 3 + 1] = uv1Attr.getY(i) }
   const sUv1 = new THREE.StorageBufferAttribute(uv1packed, 3)
   const uv1Storage = storage(sUv1, 'vec3', sUv1.count).toReadOnly()
 
   const helpers = wgsl(WGSL_HELPERS)
-  // Unwrap: place each vertex at its uv1 in clip space (flipY reconciles clip-Y vs texel-Y).
   const unwrap = vec4(sub(uv(1).flipY(), vec2(0.5)).mul(2), 0, 1)
 
   const gather = wgslFn(/* wgsl */`
@@ -60,6 +64,7 @@ export async function radiosityBake(
       res: f32,
       geom_index: ptr<storage, array<vec3u>, read>,
       geom_position: ptr<storage, array<vec3f>, read>,
+      geom_emission: ptr<storage, array<vec3f>, read>,
       geom_uv1: ptr<storage, array<vec3f>, read>,
       bvh: ptr<storage, array<BVHNode>, read>,
       prevLightmap: texture_2d<f32>,
@@ -69,12 +74,14 @@ export async function radiosityBake(
       for (var i = 0; i < S; i = i + 1) {
         let u = rndHash(seed, u32(i));
         let dir = hemiSample(N, u);
-        var ray = Ray(P + N * 0.002, dir);
+        var ray = Ray(P + N * 0.003, dir);
         let hit = bvhIntersectFirstHit(geom_index, geom_position, bvh, ray);
         if (hit.didHit) {
+          let emi = getVertexAttribute(hit.barycoord, hit.indices.xyz, geom_emission);
           let uvh = getVertexAttribute(hit.barycoord, hit.indices.xyz, geom_uv1);
           let px = vec2i(i32(uvh.x * res), i32(uvh.y * res));
-          indirect = indirect + textureLoad(prevLightmap, px, 0).rgb;
+          let lm = textureLoad(prevLightmap, px, 0).rgb;
+          indirect = indirect + emi + lm;
         } else {
           indirect = indirect + sky;
         }
@@ -92,24 +99,21 @@ export async function radiosityBake(
 
   const scene = new THREE.Scene()
   const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1)
-  const mesh = new THREE.Mesh(geometry)
+  const mesh = new THREE.Mesh(renderGeometry)
   mesh.frustumCulled = false
   scene.add(mesh)
 
   const prevTone = renderer.toneMapping
   const prevTarget = renderer.getRenderTarget()
+  const prevClear = renderer.getClearColor(new THREE.Color())
+  const prevClearAlpha = renderer.getClearAlpha()
   renderer.toneMapping = THREE.NoToneMapping
 
-  // L₀ = emission, baked into the atlas.
-  const emiMat = new THREE.MeshBasicNodeMaterial()
-  emiMat.side = THREE.DoubleSide
-  emiMat.vertexNode = unwrap
-  emiMat.colorNode = attribute('emission')
-  mesh.material = emiMat
+  // L₀ = black
+  renderer.setClearColor(0x000000, 1)
   renderer.setRenderTarget(rtPrev)
-  await renderer.renderAsync(scene, cam)
+  renderer.clear()
 
-  // Gather material reads the previous lightmap at hits (prevTex.value swapped per bounce).
   const prevTex = texture(rtPrev.texture)
   const gatherMat = new THREE.MeshBasicNodeMaterial()
   gatherMat.side = THREE.DoubleSide
@@ -125,6 +129,7 @@ export async function radiosityBake(
     res: float(opts.resolution),
     geom_index: storages.index,
     geom_position: storages.position,
+    geom_emission: storages.emission,
     geom_uv1: uv1Storage,
     bvh: storages.bvh,
     prevLightmap: prevTex,
@@ -140,7 +145,7 @@ export async function radiosityBake(
 
   renderer.setRenderTarget(prevTarget)
   renderer.toneMapping = prevTone
-  emiMat.dispose()
+  renderer.setClearColor(prevClear, prevClearAlpha)
   gatherMat.dispose()
   rtCur.dispose()
   return rtPrev.texture

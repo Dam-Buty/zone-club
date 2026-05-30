@@ -14,7 +14,7 @@ import { uv, uniform, wgslFn, wgsl, storage, texture } from 'three/tsl'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { MeshBVH, SAH } from 'three-mesh-bvh'
 import { ndcToCameraRay, bvhIntersectFirstHit, getVertexAttribute } from 'three-mesh-bvh/webgpu'
-import { applyShellUv1 } from '../../src/lib/lightbake/shellUv1'
+import { applyShellUv1, ATLAS_SLOT_COUNT } from '../../src/lib/lightbake/shellUv1'
 import { radiosityBake } from '../../src/lib/lightbake/radiosityBake'
 
 // Add a uniform per-vertex vec3 attribute to a geometry part.
@@ -46,17 +46,30 @@ function buildTestGeometry(): THREE.BufferGeometry {
   return reindex(merged)
 }
 
-// UV-BAKE test geometry: albedo + emission + per-part uv1 atlas slot.
-function buildBakeGeometry(): THREE.BufferGeometry {
-  const prep = (g: THREE.BufferGeometry, albedo: [number, number, number], emission: [number, number, number], slot: number) => {
-    withColor(g, albedo); withEmission(g, emission); applyShellUv1(g, slot, 4); return g
-  }
-  const floor = prep(new THREE.PlaneGeometry(6, 6).rotateX(-Math.PI / 2).toNonIndexed(), [0.82, 0.82, 0.82], [0, 0, 0], 0)
-  const wall = prep(new THREE.PlaneGeometry(6, 3).translate(0, 1.5, -3).toNonIndexed(), [0.90, 0.05, 0.05], [3.0, 0.06, 0.06], 1) // RED EMITTER
-  const box = prep(new THREE.BoxGeometry(1, 1, 1).translate(-1, 0.5, -0.5).toNonIndexed(), [0.82, 0.82, 0.82], [0, 0, 0], 2)
-  const merged = mergeGeometries([floor, wall, box], false)
-  merged.computeVertexNormals()
-  return reindex(merged)
+// Assign a constant uv1 (an EMPTY atlas slot) — for non-lightmapped meshes (emitters,
+// occluders): their L_prev sample lands on black, so only their emission shows.
+function withConstUv1(geo: THREE.BufferGeometry, u: number, v: number): THREE.BufferGeometry {
+  const n = geo.attributes.position.count
+  const arr = new Float32Array(n * 2)
+  for (let i = 0; i < n; i++) { arr[i * 2] = u; arr[i * 2 + 1] = v }
+  geo.setAttribute('uv1', new THREE.BufferAttribute(arr, 2))
+  return geo
+}
+
+// UV-BAKE test scene, mirroring the shell scheme: floor+box are LIGHTMAPPED receivers
+// (emission 0, atlas slots), the wall is an EMITTER (not lightmapped, uv1 → empty slot).
+function buildBakeScene(): { render: THREE.BufferGeometry; bvh: THREE.BufferGeometry } {
+  const floor = new THREE.PlaneGeometry(6, 6).rotateX(-Math.PI / 2).toNonIndexed()
+  withColor(floor, [0.82, 0.82, 0.82]); withEmission(floor, [0, 0, 0]); applyShellUv1(floor, 0, ATLAS_SLOT_COUNT)
+  const box = new THREE.BoxGeometry(1, 1, 1).translate(-1, 0.5, -0.5).toNonIndexed()
+  withColor(box, [0.82, 0.82, 0.82]); withEmission(box, [0, 0, 0]); applyShellUv1(box, 2, ATLAS_SLOT_COUNT)
+  // Emitter wall (NOT lightmapped): red emission, albedo 0, uv1 in the empty slot 8.
+  const wall = new THREE.PlaneGeometry(6, 3).translate(0, 1.5, -3).toNonIndexed()
+  withColor(wall, [0, 0, 0]); withEmission(wall, [3.0, 0.06, 0.06]); withConstUv1(wall, 0.99, 0.99)
+
+  const render = reindex(mergeGeometries([floor.clone(), box.clone()], false))
+  const bvh = reindex(mergeGeometries([floor, box, wall], false))
+  return { render, bvh }
 }
 
 async function runCameraSpike(canvas: HTMLCanvasElement, setS: (s: string) => void, isDisposed: () => boolean) {
@@ -172,12 +185,12 @@ async function runUvBake(canvas: HTMLCanvasElement, setS: (s: string) => void, i
   await renderer.init()
   setS('webgpu OK, building bake geometry…')
 
-  const geometry = buildBakeGeometry()
-  const bvh = new MeshBVH(geometry, { maxLeafSize: 1, strategy: SAH })
+  const { render, bvh: bvhGeo } = buildBakeScene()
+  const bvh = new MeshBVH(bvhGeo, { maxLeafSize: 1, strategy: SAH })
   const bounces = parseInt(new URLSearchParams(window.location.search).get('bounces') || '3', 10)
   setS(`baking uv1 lightmap (${bounces} bounce${bounces > 1 ? 's' : ''})…`)
 
-  const lightmap = await radiosityBake(renderer, geometry, bvh, {
+  const lightmap = await radiosityBake(renderer, render, bvhGeo, bvh, {
     resolution: 1024, samples: 96, bounces, sky: [0.015, 0.025, 0.05],
   })
   if (isDisposed()) return
@@ -203,7 +216,7 @@ async function runUvBake(canvas: HTMLCanvasElement, setS: (s: string) => void, i
   viewMat.side = THREE.DoubleSide
   viewMat.colorNode = texture(lightmap).sample(uv(1))
 
-  const mesh = new THREE.Mesh(geometry, viewMat)
+  const mesh = new THREE.Mesh(render, viewMat)
   mesh.frustumCulled = false
   const scene = new THREE.Scene()
   scene.add(mesh)
