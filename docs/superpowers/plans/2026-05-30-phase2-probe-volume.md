@@ -22,6 +22,19 @@
 
 ---
 
+## ✅ AS-BUILT STATUS (30/05) — T1–T9 DONE, K7 LIT; corrections vs the sketches below
+
+**Executed inline this session: T1→T9 committed (`3f32c45`→`4bb3a9f`), T10–T12 REMAIN.** The ~520 instanced K7 are lit by the baked SH GI (user-confirmed); `/probe-guard` PASS; 20/20 node tests; no regression. Resume: `?baked=1` (tune `&pi=`, default 1.2).
+
+**⚠️ THREE CORRECTIONS the original task sketches below got WRONG — a T10–T12 executor MUST use the as-built code, not the verbatim sketches:**
+1. **Task 4's compute output (the sketch wrote SH via a `wgslFn` `ptr<storage,read_write>` param) is a SILENT NO-OP** in three 0.184 — the buffer stays all-zero, no error. AND a `wgslFn` returning a WGSL-string `struct` is NOT TSL-accessible (`getStructTypeNode` null). **As-built (`probeBake.ts`):** the gather `wgslFn` RETURNS `vec3` = the SH coeff selected by a `coeff: f32` param; the `Fn` calls it **4× per probe** and writes via `shOut.element(i).assign(vec4(c,0))` (the ONLY persisting path). Readback `getArrayBufferAsync(shOut.value)` then works. Output buffer is `vec4` (not vec3) to dodge std430 16-B padding.
+2. **Task 5's dead-probe AABBs:** as-built filters `collectShell` occluders to **non-InstancedMesh, volume 0.2–6 m³** (else `Box3.setFromObject` on the 520-instance K7 mesh spans the whole room → kills the volume). 8 boxes, 12 dead probes flood-filled.
+3. **Task 7/8 publish:** `onProbeVolumes` must fire UNCONDITIONALLY — the sketch's `if(!cancelled)` drops it under React StrictMode's double-mount (cleanup flips `cancelled=true`, 2nd mount returns early on `ranRef`). K7 SH is evaluated **vertex-stage via `varying()`** (instanceIndex is vertex-only); per-instance world pos via `worldPosBuf.element(instanceIndex)` (no vertex-buffer slot, budget was 7/8).
+
+**For T10 (planks):** copy the K7 pattern exactly — `useProbeVolumes()`, per-vertex/instance world pos, `shIrradiance(shR,shG,shB,uvw,normalWorld)` added to a node material's emissive, gated on `probes!=null`, `?pi` intensity. WallShelf/IslandShelf use `MeshStandardMaterial` → convert to `MeshStandardNodeMaterial` (or reuse the K7 helper). **For T12 (M2):** the `coeff`-selector gather is 4× the BVH cost (~0.3 s, fine offline) — fine; if M1 FPS is thin, coarsen the grid (`probeGrid.G → [9,5,9]`).
+
+---
+
 ## File Structure
 
 | File | Responsibility | Create/Modify |

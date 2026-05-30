@@ -2,7 +2,9 @@
 
 > **Statut : design COURANT** (réécrit le 29/05/2026 après le spike WebGPU). Remplace la version précédente du même fichier (bake shell = raycaster WebGL2 vendored, sondes = cubemap-from-lit-shell — **obsolète**, voir l'historique git). Validé par le workflow de dé-risk (13 agents) + le spike `app/radiosity-spike/page.tsx` (color-bleed WebGPU prouvé, auto-vérifié Playwright).
 >
-> **Source de vérité vivante** : `memory/lightbake-workstream.md`. **Plan exécutable (Phase 1)** : `docs/superpowers/plans/2026-05-29-webgpu-radiosity-lightmap.md`.
+> **Source de vérité vivante** : `memory/lightbake-workstream.md`. **Plan exécutable (Phase 1)** : `docs/superpowers/plans/2026-05-29-webgpu-radiosity-lightmap.md` · **Plan exécutable (Phase 2)** : `docs/superpowers/plans/2026-05-30-phase2-probe-volume.md`.
+>
+> **⏩ ÉTAT D'EXÉCUTION (30/05/2026) :** Phase 1 **intégrée** au runtime (`?baked=1`, commit `6fa0826`) ; Phase 2 **T1–T9/12 faites** — les ~520 K7 instanciées sont éclairées par la GI bakée. Reste T10–T12 (planches, manager/TV, gate M2 FPS). **§6 ci-dessous (« plan Phase 2 écrit seulement après le gate M1 ») est SUPERSEDED** : l'utilisateur a choisi de planifier+exécuter la Phase 2 avant la mesure FPS formelle (Phase 1 validée visuellement ; le constat « K7 trop sombres en Phase 1 » a rendu la Phase 2 nécessaire). La mesure FPS M1 est repliée dans le gate M2 (T12).
 
 ## 1. Objectif
 
