@@ -86,3 +86,47 @@ export function reconstructE(acc: ShAcc, n: number[]): number[] {
 
 export const SH_RUNTIME_C0 = A0c0   // shared with the TSL helper so both use identical constants
 export const SH_RUNTIME_C1 = A1c1
+
+// ── Dead-probe handling (probes buried in islands/comptoir gather black → trilinear darkens K7) ──
+
+/** Mark probes whose centre is inside any occluder AABB (from live collectShell occluders). */
+export function classifyDeadProbes(occluderBoxes: { min: number[]; max: number[] }[]): Uint8Array {
+  const valid = new Uint8Array(PROBE_COUNT).fill(1)
+  for (let k = 0; k < G[2]; k++) for (let j = 0; j < G[1]; j++) for (let i = 0; i < G[0]; i++) {
+    const w = probeWorld(i, j, k)
+    const inside = occluderBoxes.some((bx) =>
+      w[0] >= bx.min[0] && w[0] <= bx.max[0] && w[1] >= bx.min[1] && w[1] <= bx.max[1] && w[2] >= bx.min[2] && w[2] <= bx.max[2])
+    if (inside) valid[flatIndex(i, j, k)] = 0
+  }
+  return valid
+}
+
+/** Jacobi flood-fill: each dead probe ← mean of its valid 6-neighbours, iterated until none remain.
+ *  Mutates `channels` (each Float32Array of length PROBE_COUNT*4) and `valid` in place. */
+export function floodFillDeadProbes(channels: Float32Array[], valid: Uint8Array, maxPasses = 8): void {
+  const nb = [[-1, 0, 0], [1, 0, 0], [0, -1, 0], [0, 1, 0], [0, 0, -1], [0, 0, 1]]
+  for (let pass = 0; pass < maxPasses; pass++) {
+    let filled = 0
+    const next = valid.slice()
+    for (let k = 0; k < G[2]; k++) for (let j = 0; j < G[1]; j++) for (let i = 0; i < G[0]; i++) {
+      const idx = flatIndex(i, j, k)
+      if (valid[idx]) continue
+      let n = 0
+      const sum = channels.map(() => [0, 0, 0, 0])
+      for (const [di, dj, dk] of nb) {
+        const ii = i + di, jj = j + dj, kk = k + dk
+        if (ii < 0 || ii >= G[0] || jj < 0 || jj >= G[1] || kk < 0 || kk >= G[2]) continue
+        const nIdx = flatIndex(ii, jj, kk)
+        if (!valid[nIdx]) continue
+        n++
+        channels.forEach((ch, c) => { for (let q = 0; q < 4; q++) sum[c][q] += ch[nIdx * 4 + q] })
+      }
+      if (n > 0) {
+        channels.forEach((ch, c) => { for (let q = 0; q < 4; q++) ch[idx * 4 + q] = sum[c][q] / n })
+        next[idx] = 1; filled++
+      }
+    }
+    next.forEach((v, q) => { valid[q] = v })
+    if (filled === 0) break
+  }
+}
