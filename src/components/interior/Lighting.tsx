@@ -375,6 +375,20 @@ function OptimizedLighting({ isMobile = false }: { isMobile?: boolean }) {
   )
 }
 
-export function Lighting({ isMobile = false }: { isMobile?: boolean }) {
+// Baked mode (`?baked=1`): the shell GI is in the lightmap (BakedShellLighting), so the whole
+// analytical rig is dropped. We keep the emissive neon tubes (bloom) and a LOW hemisphere so the
+// non-lightmapped furniture (shelves, cassettes, manager, TV — Phase-2 probe targets) isn't pitch
+// black. The shell takes a touch of this fill on top of its lightMap — kept low to stay néon-noir.
+function BakedRig() {
+  return (
+    <>
+      <hemisphereLight color="#cfd6e6" groundColor="#26222b" intensity={0.1} />
+      <NeonTubesInstanced />
+    </>
+  )
+}
+
+export function Lighting({ isMobile = false, baked = false }: { isMobile?: boolean; baked?: boolean }) {
+  if (baked) return <BakedRig />
   return <OptimizedLighting isMobile={isMobile} />
 }

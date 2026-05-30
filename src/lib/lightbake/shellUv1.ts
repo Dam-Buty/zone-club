@@ -1,4 +1,4 @@
-import { BufferGeometry, BufferAttribute, Box3, Vector3 } from 'three'
+import { BufferGeometry, BufferAttribute, Box3, Vector3, Matrix4 } from 'three'
 
 // Lightmapped shell meshes, in a STABLE order → atlas slot index. This order is
 // the SINGLE source of truth for slot indices at bake AND runtime.
@@ -23,6 +23,8 @@ export const bakeName = (slot: ShellSlot): string => `bake-${slot}`
 const _box = new Box3()
 const _size = new Vector3()
 const _p = new Vector3()
+const _world: Vector3[] = []
+const _IDENTITY = new Matrix4()
 
 type Axis = 'x' | 'y' | 'z'
 
@@ -37,6 +39,21 @@ type Axis = 'x' | 'y' | 'z'
  * A small per-slot gutter keeps bilinear sampling from bleeding across slots.
  */
 export function applyShellUv1(geo: BufferGeometry, slotIndex: number, slotCount: number): void {
+  applyShellUv1World(geo, _IDENTITY, slotIndex, slotCount)
+}
+
+/**
+ * Same projection as {@link applyShellUv1}, but in the geometry's WORLD frame: each
+ * position is transformed by `matrixWorld` before the planar projection. uv1 is still
+ * written onto `geo` in ITS OWN vertex order (indexing preserved).
+ *
+ * This is THE bake↔runtime consistency primitive. The bake builds each shell surface in
+ * WORLD space (transforms baked into vertices); a runtime mesh is LOCAL geometry + a mesh
+ * transform. Projecting both in world space makes the uv1 identical per world-point — without
+ * it, e.g. the floor (mesh `rotation.x=-π/2` vs a pre-rotated bake geometry) picks a different
+ * thinnest axis and the V coordinate flips → the lightmap lands mirrored.
+ */
+export function applyShellUv1World(geo: BufferGeometry, matrixWorld: Matrix4, slotIndex: number, slotCount: number): void {
   const grid = Math.round(Math.sqrt(slotCount))
   const col = slotIndex % grid
   const row = Math.floor(slotIndex / grid)
@@ -44,8 +61,14 @@ export function applyShellUv1(geo: BufferGeometry, slotIndex: number, slotCount:
   const pad = cell * 0.04 // gutter to avoid bilinear bleed across slots
 
   const pos = geo.getAttribute('position')
-  geo.computeBoundingBox()
-  _box.copy(geo.boundingBox!)
+
+  // World positions + their bounding box (can't use geo.boundingBox — that's the local box).
+  while (_world.length < pos.count) _world.push(new Vector3())
+  _box.makeEmpty()
+  for (let i = 0; i < pos.count; i++) {
+    const w = _world[i].fromBufferAttribute(pos, i).applyMatrix4(matrixWorld)
+    _box.expandByPoint(w)
+  }
   _box.getSize(_size)
 
   // Drop the thinnest axis; project onto the other two.
@@ -60,9 +83,9 @@ export function applyShellUv1(geo: BufferGeometry, slotIndex: number, slotCount:
 
   const out = new Float32Array(pos.count * 2)
   for (let i = 0; i < pos.count; i++) {
-    _p.fromBufferAttribute(pos, i)
-    const fu = (_p[u] - uMin) / uExt // 0..1 within the mesh
-    const fv = (_p[v] - vMin) / vExt
+    const w = _world[i]
+    const fu = (w[u] - uMin) / uExt // 0..1 within the mesh, world frame
+    const fv = (w[v] - vMin) / vExt
     out[i * 2] = col * cell + (pad + fu * (1 - 2 * pad)) * cell
     out[i * 2 + 1] = row * cell + (pad + fv * (1 - 2 * pad)) * cell
   }

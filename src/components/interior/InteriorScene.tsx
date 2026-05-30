@@ -4,6 +4,7 @@ import { Suspense, useEffect, useMemo, useCallback, useRef, useState, memo, Comp
 import { RectAreaLightTexturesLib } from 'three/addons/lights/RectAreaLightTexturesLib.js'
 import { useStore } from '../../store'
 import { Lighting } from './Lighting'
+import { BakedShellLighting } from './BakedShellLighting'
 
 // Poster loading progress (set by CassetteInstances)
 declare global {
@@ -28,6 +29,10 @@ import type { MobileInput } from '../../types/mobile'
 
 // Lazy loading du composant Aisle (contient tous les modèles 3D)
 const Aisle = lazy(() => import('./Aisle').then(module => ({ default: module.Aisle })))
+
+// Baked-lighting A/B switch — `?baked=1` swaps the analytical rig for the GI lightmap (read once
+// at load; reload to toggle). Guarded for the build's prerender pass (window undefined).
+const BAKED_MODE = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('baked') === '1'
 
 // Desktop supersampling factor: render ABOVE native device pixels, then let the
 // browser downsample to the display → true SSAA that anti-aliases texture-content
@@ -124,7 +129,8 @@ const SceneContent = memo(function SceneContent({
         background={false}
         environmentIntensity={0.12}
       />
-      <Lighting isMobile={isMobile} />
+      <Lighting isMobile={isMobile} baked={BAKED_MODE} />
+      {BAKED_MODE && <BakedShellLighting enabled />}
       <Aisle films={films} filmsByAisle={filmsByAisle} />
       <Controls
         onCassetteClick={onCassetteClick}
