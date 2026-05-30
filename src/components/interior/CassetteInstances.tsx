@@ -5,13 +5,23 @@ import {
   texture, uv, attribute,
   Fn, instanceIndex, deltaTime, instancedArray,
   uniform, mix, min, vec3, vec2, positionLocal, float, step,
-  abs, cos, sin,
+  abs, cos, sin, normalWorld, clamp, varying,
 } from 'three/tsl'
 import { CassetteTextureAtlas, type CassetteInstanceData } from '../../utils/CassetteTextureArray'
 import { useStore } from '../../store'
 import { useIsMobile } from '../../hooks/useIsMobile'
 import { RAYCAST_LAYER_CASSETTE } from './Controls'
 import { CASSETTE_DIMENSIONS } from './cassette-constants'
+import { useProbeVolumes } from './ProbeVolumeContext'
+import { shIrradiance } from '../../lib/lightbake/shReconstruct'
+import { GRID_MIN, gridExt, G } from '../../lib/lightbake/probeGrid'
+
+// Phase-2 probe irradiance multiplier on the K7 albedo (tunable/calibrated visually at M2 via ?pi=).
+const PROBE_INTENSITY = (() => {
+  if (typeof window === 'undefined') return 1.2
+  const p = parseFloat(new URLSearchParams(window.location.search).get('pi') || '1.2')
+  return Number.isFinite(p) ? p : 1.2
+})()
 
 const SHARED_CASSETTE_GEOMETRY = new THREE.BoxGeometry(CASSETTE_DIMENSIONS.width, CASSETTE_DIMENSIONS.height, CASSETTE_DIMENSIONS.depth)
 
@@ -78,6 +88,7 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
   const count = instances.length
   const gl = useThree(state => state.gl)
   const isMobile = useIsMobile()
+  const probes = useProbeVolumes() // Phase-2 SH-L1 volumes (present only in ?baked=1 after the bake)
 
   const instancesRef = useRef(instances)
   instancesRef.current = instances
@@ -86,7 +97,7 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
   const {
     atlas, instanceIdToKey, instanceIdToFilmId,
     atlasRectData, urlToSlot,
-    hysteresisStates, hoverTiltBuffer,
+    hysteresisStates, hoverTiltBuffer, worldPosBuffer,
     targetHoverZBuffer, targetEmissiveBuffer,
     currentHoverZBuffer, currentEmissiveBuffer,
     targetRentedOutBuffer, currentRentedOutBuffer,
@@ -150,6 +161,15 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
       hoverTiltArr[i] = currentInstances[i].hoverTiltAngle
     }
 
+    // Per-instance WORLD position (storage buffer, filled once) → Phase-2 probe SH lookup.
+    // Read via .element() (NO vertex-buffer slot — the K7 material is already at 7/8).
+    const worldPosBuf = instancedArray(count, 'vec3')
+    const worldPosArr = worldPosBuf.value.array as Float32Array
+    for (let i = 0; i < count; i++) {
+      const p = currentInstances[i].worldPosition
+      worldPosArr[i * 3] = p.x; worldPosArr[i * 3 + 1] = p.y; worldPosArr[i * 3 + 2] = p.z
+    }
+
     // GPU storage buffers for animation (instancedArray = StorageInstancedBufferAttribute)
     const curHoverZ = instancedArray(count, 'float')
     const tarHoverZ = instancedArray(count, 'float')
@@ -189,6 +209,7 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
       urlToSlot: _urlToSlot,
       hysteresisStates: hStates,
       hoverTiltBuffer: hoverTiltBuf,
+      worldPosBuffer: worldPosBuf,
       targetHoverZBuffer: tarHoverZ,
       targetEmissiveBuffer: tarEmissive,
       currentHoverZBuffer: curHoverZ,
@@ -262,10 +283,28 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
     // Base emissive: self-illumination so tilted poster faces stay readable.
     // Hover highlight applies ONLY on outline border (not full surface).
     const hoverEmissive = currentEmissiveBuffer.toAttribute().mul(outlineMask)
-    mat.emissiveNode = hoverEmissive.add(cappedColor.mul(float(0.20)))
+    const selfIllum = cappedColor.mul(float(0.20)) // readability floor for tilted poster faces
+
+    // Phase-2 baked GI: sample the SH-L1 probe volume at the instance's WORLD position and
+    // reconstruct irradiance for the instance-rotated world normal. emissive-ADD (not a colorNode
+    // multiply) because baked mode drops the analytical rig → a multiply would render the K7 black.
+    if (probes) {
+      const e = gridExt()
+      const gMin = vec3(GRID_MIN[0], GRID_MIN[1], GRID_MIN[2])
+      const gInv = vec3(1 / e[0], 1 / e[1], 1 / e[2])
+      const half = vec3(0.5 / G[0], 0.5 / G[1], 0.5 / G[2])
+      const wp = worldPosBuffer.element(instanceIndex)
+      const uvw = clamp(wp.sub(gMin).mul(gInv), half, vec3(1).sub(half))
+      // varying() forces the SH eval into the VERTEX stage — instanceIndex is vertex-only, and
+      // the design wants per-vertex sampling — then interpolates the irradiance to the fragment.
+      const E = varying(shIrradiance(probes.shR, probes.shG, probes.shB, uvw, normalWorld))
+      mat.emissiveNode = hoverEmissive.add(selfIllum).add(cappedColor.mul(E).mul(float(PROBE_INTENSITY)))
+    } else {
+      mat.emissiveNode = hoverEmissive.add(selfIllum)
+    }
 
     return mat
-  }, [atlas, currentHoverZBuffer, currentEmissiveBuffer, currentRentedOutBuffer])
+  }, [atlas, currentHoverZBuffer, currentEmissiveBuffer, currentRentedOutBuffer, worldPosBuffer, probes])
 
   useEffect(() => {
     const mesh = meshRef.current

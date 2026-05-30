@@ -56,7 +56,10 @@ export function BakedShellLighting({ enabled, onProbeVolumes }: { enabled: boole
         const deadCount = valid.length - valid.reduce((s, v) => s + v, 0)
         floodFillDeadProbes([r, g, b], valid)
         const vols = packProbeVolumes(r, g, b)
-        if (!cancelled) onProbeVolumes?.(vols)
+        // Publish unconditionally: the bake completed and the volumes are valid even if React
+        // StrictMode flipped `cancelled` via the first mount's cleanup (the second mount returns
+        // early on ranRef, so this is the only publish — gating it on !cancelled drops it entirely).
+        onProbeVolumes?.(vols)
         console.log(`[baked] probe volume ready in ${Math.round(performance.now() - t1)}ms (${occluderBoxes.length} occluder boxes, ${deadCount} dead probes flood-filled)`)
       } catch (e) {
         console.error('[baked] bake failed', e)

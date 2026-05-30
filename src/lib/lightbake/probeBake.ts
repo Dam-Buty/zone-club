@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu'
-import { wgsl, wgslFn, Fn, instanceIndex, instancedArray, storage, texture, vec3, vec2, float } from 'three/tsl'
+import { wgsl, wgslFn, Fn, instanceIndex, instancedArray, storage, texture, vec3, vec2, vec4, float } from 'three/tsl'
 import { bvhIntersectFirstHit, getVertexAttribute } from 'three-mesh-bvh/webgpu'
 import type { MeshBVH } from 'three-mesh-bvh'
 import { gpuStorages, WGSL_HELPERS } from './bvhGpu.ts'
@@ -69,16 +69,20 @@ export async function probeBakeRaw(
       let phi = 6.2831853 * u.y; return vec3f(r*cos(phi), r*sin(phi), z);
     }`)
 
-  // The gather writes its 4 SH coeffs straight into shOut[base..base+3] (no ptr<function> out-params).
+  // Robust output path (verified the alternatives fail): a wgslFn returning a STRUCT is not
+  // TSL-accessible (getStructTypeNode null), and writing to a storage buffer through a wgslFn
+  // `ptr<storage,read_write>` param is a SILENT no-op. The ONLY proven primitives are: wgslFn→vec3
+  // (radiosityBake) + TSL `.element().assign()` (persists). So the gather computes all 4 SH coeffs
+  // and RETURNS the one selected by `coeff` (0..3); the Fn calls it 4× and writes each. 4× the
+  // gather cost — fine offline (~0.7 s for 726 probes).
   const gather = wgslFn(/* wgsl */`
     fn probeGather(
-      P: vec3f, base: u32, seed: vec2f, samples: f32, neeSamples: f32, emitterCount: f32,
+      P: vec3f, coeff: f32, seed: vec2f, samples: f32, neeSamples: f32, emitterCount: f32,
       res: f32, sky: vec3f,
       geom_index: ptr<storage, array<vec3u>, read>, geom_position: ptr<storage, array<vec3f>, read>,
       geom_uv1: ptr<storage, array<vec3f>, read>, bvh: ptr<storage, array<BVHNode>, read>,
       emitters: ptr<storage, array<vec3f>, read>, lightmap: texture_2d<f32>,
-      shOut: ptr<storage, array<vec4f>, read_write>,
-    ) -> void {
+    ) -> vec3f {
       let PI = 3.14159265; let Y0 = 0.282095; let Y1 = 0.488603;
       var c0 = vec3f(0.0); var c1 = vec3f(0.0); var c2 = vec3f(0.0); var c3 = vec3f(0.0);
 
@@ -131,27 +135,29 @@ export async function probeBakeRaw(
         }
       }
 
-      shOut[base + 0u] = vec4f(c0, 0.0);
-      shOut[base + 1u] = vec4f(c1, 0.0);
-      shOut[base + 2u] = vec4f(c2, 0.0);
-      shOut[base + 3u] = vec4f(c3, 0.0);
+      if (coeff < 0.5) { return c0; }
+      if (coeff < 1.5) { return c1; }
+      if (coeff < 2.5) { return c2; }
+      return c3;
     }`, [bvhIntersectFirstHit, getVertexAttribute, helpers])
 
   const lm = texture(lightmap)
   const kernel = Fn(() => {
     const idx = instanceIndex
     const P = ppS.element(idx)
-    // Reference shOut via `.element()` in the TSL graph FIRST so three registers it as a compute
-    // storage OUTPUT (with a readable GPU buffer). A storage written only through a wgslFn `ptr`
-    // param is bound for the shader but its buffer isn't exposed to getArrayBufferAsync.
-    shOut.element(idx.mul(4)).assign(shOut.element(idx.mul(4)))
-    gather({
-      P, base: idx.mul(4), seed: vec2(idx.toFloat(), idx.toFloat().mul(0.137)),
-      samples: float(SAMPLES), neeSamples: float(NEE_SAMPLES), emitterCount: float(NE),
+    const seed = vec2(idx.toFloat(), idx.toFloat().mul(0.137))
+    const common = {
+      P, seed, samples: float(SAMPLES), neeSamples: float(NEE_SAMPLES), emitterCount: float(NE),
       res: float(lightmapRes), sky: vec3(sky[0], sky[1], sky[2]),
       geom_index: S.index, geom_position: S.position, geom_uv1: uv1S, bvh: S.bvh,
-      emitters: emS, lightmap: lm, shOut,
-    })
+      emitters: emS, lightmap: lm,
+    }
+    const base = idx.mul(4)
+    // 4 gather calls (one per SH coeff) → write via .element().assign() (the persisting path).
+    shOut.element(base).assign(vec4(gather({ ...common, coeff: float(0) }), 0))
+    shOut.element(base.add(1)).assign(vec4(gather({ ...common, coeff: float(1) }), 0))
+    shOut.element(base.add(2)).assign(vec4(gather({ ...common, coeff: float(2) }), 0))
+    shOut.element(base.add(3)).assign(vec4(gather({ ...common, coeff: float(3) }), 0))
   })().compute(PROBE_COUNT)
 
   await renderer.computeAsync(kernel)
