@@ -9,6 +9,18 @@ import { DeskCassettes } from './DeskCassettes'
 import { MinitelDisplay } from './MinitelDisplay'
 import { setCassetteRegistry } from '../../utils/cassetteRegistry'
 import { useStore } from '../../store'
+import { positionWorld, normalWorld, clamp, vec3, varying, float } from 'three/tsl'
+import { useProbeVolumes } from './ProbeVolumeContext'
+import { shIrradiance } from '../../lib/lightbake/shReconstruct'
+import { GRID_MIN, gridExt, G } from '../../lib/lightbake/probeGrid'
+
+// Phase-3 baked GI: SH-L1 probe receiver for the counter (same pattern/?pi knob as the shelves/K7).
+const PROBE_INTENSITY = (() => {
+  if (typeof window === 'undefined') return 1.2
+  const p = parseFloat(new URLSearchParams(window.location.search).get('pi') || '1.2')
+  return Number.isFinite(p) ? p : 1.2
+})()
+const COMPTOIR_ALBEDO_LINEAR = new THREE.Color('#6b4c33').convertSRGBToLinear()
 
 // Composant pour chargement async des modèles 3D
 function AsyncModel({ url, position, scale = 1, rotation = [0, 0, 0] }: {
@@ -529,6 +541,28 @@ export const Aisle = memo(function Aisle({ films, filmsByAisle }: AisleProps) {
   // on every reload for users who never approach the desk.
   const deskFetchTriggeredRef = useRef(false)
   const deskFetchMountedAtRef = useRef(performance.now())
+
+  // Phase-3 baked GI: light the wooden counter with the SH-L1 probe volume when it arrives
+  // (?baked=1, post-bake) — emissiveNode like the shelves/K7 (baked mode drops the analytical rig).
+  const probes = useProbeVolumes()
+  const comptoirRef = useRef<THREE.Group>(null)
+  useEffect(() => {
+    if (!probes || !comptoirRef.current) return
+    const e = gridExt()
+    const gMin = vec3(GRID_MIN[0], GRID_MIN[1], GRID_MIN[2])
+    const gInv = vec3(1 / e[0], 1 / e[1], 1 / e[2])
+    const half = vec3(0.5 / G[0], 0.5 / G[1], 0.5 / G[2])
+    const uvw = clamp(positionWorld.sub(gMin).mul(gInv), half, vec3(1).sub(half))
+    const E = varying(shIrradiance(probes.shR, probes.shG, probes.shB, uvw, normalWorld))
+    const emissive = vec3(COMPTOIR_ALBEDO_LINEAR.r, COMPTOIR_ALBEDO_LINEAR.g, COMPTOIR_ALBEDO_LINEAR.b).mul(E).mul(float(PROBE_INTENSITY))
+    comptoirRef.current.traverse((child) => {
+      const mesh = child as THREE.Mesh
+      if (!mesh.isMesh) return
+      const nm = mesh.material as unknown as { emissiveNode?: unknown; needsUpdate: boolean }
+      nm.emissiveNode = emissive
+      nm.needsUpdate = true
+    })
+  }, [probes])
   useFrame(() => {
     if (deskFetchTriggeredRef.current) return
     // Ignore frames where Controls hasn't yet set the player camera position
@@ -1145,6 +1179,7 @@ export const Aisle = memo(function Aisle({ films, filmsByAisle }: AisleProps) {
 
       {/* ===== COMPTOIR MANAGER ===== */}
       <group position={[ROOM_WIDTH / 2 - 2.3, 0, ROOM_DEPTH / 2 - 1.28]}>
+        <group ref={comptoirRef}>
         {/* Comptoir simple — longueur 2.7m, largeur 0.49m */}
         <mesh position={[0, 0.5, 0]} castShadow receiveShadow>
           <boxGeometry args={[2.7, 1, 0.49]} />
@@ -1172,6 +1207,7 @@ export const Aisle = memo(function Aisle({ films, filmsByAisle }: AisleProps) {
             normalScale={[0.7, 0.7] as unknown as THREE.Vector2}
           />
         </mesh>
+        </group>
 
         {/* Caisse enregistreuse */}
         <group position={[0.8, 1.055, 0]}>
