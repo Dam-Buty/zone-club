@@ -1,6 +1,6 @@
 ---
 name: webgpu-light-baking-nee
-description: Use when a WebGPU/TSL lightmap or GI bake (three-mesh-bvh hemisphere gather) is noisy/grainy at reasonable sample counts, leaves surfaces far from small bright emitters (neon signs, tubes, strips) dark/black, lacks crisp cast shadows, or shows black UV seams or light leaks.
+description: Use when a WebGPU/TSL lightmap or GI bake (three-mesh-bvh hemisphere gather) is noisy/grainy at reasonable sample counts, leaves surfaces far from small bright emitters (neon signs, tubes, strips) dark/black, lacks crisp cast shadows, shows black UV seams or light leaks, OR when a seemingly-correct bake lights NOTHING at runtime / only some surfaces (WebGPU `material.lightMap` ignored, or a uv-flip atlas mismatch).
 ---
 
 # Next-Event Estimation for WebGPU/TSL Light Baking
@@ -36,7 +36,7 @@ NEE is step 4. Getting the surrounding steps right is what makes it *usable*:
 5. INDIRECT bounce: hemisphere gather, read REFLECTED radiance only (emitters → 0)
 6. Accumulation (more samples / ping-pong)
 7. DILATION: flood valid texels outward past chart borders (kills black seams)
-8. Export (PNG/EXR/DataTexture) → material.lightMap
+8. Export (PNG/EXR/DataTexture) → apply at runtime (WebGPU: via emissiveNode, NOT material.lightMap — see "Applying the bake at runtime")
 ```
 
 **A single UV-space fragment pass** that computes worldPos/normal on the fly (no separate GBuffer, no compute) is a valid simpler form; the GBuffer + compute-pass + `StorageTexture` version is the scalable upgrade, not a prerequisite.
@@ -94,6 +94,41 @@ A black seam or a leak is a *data* bug, not a sampling bug. Triage separately:
 | Light leaks through thin walls | bias too high / use of smooth normal | bake against the **face normal**; thin walls need geometry, not bias |
 | Dark band at curved silhouettes | shadow terminator on low-poly smooth shading | offset along face normal / shadow-terminator fix |
 | Stretched / blurry on big surfaces | uneven texel density (square slot) | aspect-correct slot or area-proportional packing |
+| **Bake looks perfect but surfaces stay BLACK at runtime (WebGPU)** | **`material.lightMap` silently ignored** — attached after the material's first compile, node graph never re-runs `setupLightMap` | apply the atlas via an explicit `emissiveNode`/`colorNode` at uv1, NOT `material.lightMap` — see **"Applying the bake at runtime"** |
+| **Only SOME surfaces lit (e.g. two opposite walls), the rest black** | bake-WRITE uv ≠ runtime-READ uv (a stray `.flipY()`); a full-atlas V-flip shoves some slot-rows into the atlas's UNUSED rows | identical uv1 mapping on write & read (no flip); EVERY reader agrees (shell sample + probe `textureLoad`) |
+| Low-frequency cloudiness / marbling on big flat surfaces | INDIRECT-gather variance (too few hemisphere samples) — NOT fireflies | more `samples` + denoise/blur + a bounce; the radiance **clamp does NOT help here** (it's direct-only) |
+| Cloudy / marbled ONLY around a long thin emitter close to its surface | near-field strip variance under uniform area sampling | **subdivide the strip into short ~square segments** (same energy, stratified) + sane standoff distance |
+
+## Applying the bake at runtime — the WebGPU surprise (cost us a day)
+
+A *mathematically correct* bake can light **nothing** because the runtime never reads it. Two failures, both invisible until you isolate (see "Auditing" below). These are NOT estimator bugs.
+
+**1. `material.lightMap` is silently ignored by the WebGPU `MeshStandardMaterial`** when the lightMap is attached AFTER the material's first compile (the normal case — you bake a second or two after the meshes mount). The node graph's `setupLightMap` runs once, at first build, *without* the lightMap; a later `mat.lightMap = tex; mat.needsUpdate = true` — even with `lightMap.channel = 1` and `flipY = false` — does NOT re-insert the irradiance node. The surface stays lit only by the environment/IBL, which is easy to misread as "the bake is too weak." (May-2026 three forum: *"lightMap not using uv1 in MeshStandardMaterial, works in ShaderMaterial."*)
+
+**Fix — drive the atlas through an explicit TSL node**, the same path that already works for dynamic receivers (SH probes / instanced objects):
+```js
+const lm   = texture(lightmap, uv(1))                  // sample the atlas at the lightmap UV
+const base = mat.map ? texture(mat.map) : vec3(mat.color.r, mat.color.g, mat.color.b)
+mat.emissiveNode = base.mul(lm.rgb).mul(intensityUniform) // emissive-ADD ≈ outgoing radiance
+mat.needsUpdate = true
+```
+The bake stores irradiance×albedo, so adding it as emissive ≈ the diffuse outgoing radiance, and it survives "no analytical lights" baked mode (a `colorNode` multiply would render black there). Modulate by the surface's own albedo (`mat.map`/`mat.color`) so each surface keeps its identity. Make `intensityUniform` a live `uniform()` so you tune intensity without re-baking.
+
+**2. Bake-WRITE uv must EXACTLY match runtime-READ uv — including any V-flip.** The UV-space bake rasterizes each surface by mapping its `uv1` to clip space (`unwrap = (uv1 − 0.5)·2`). If you `.flipY()` there but read the atlas at raw `uv1` at runtime (or vice-versa), the content lands at a different V than where it's read. **Far worse with a partially-used atlas:** a full-atlas V-flip moves the top slot-row's surfaces into the UNUSED bottom row → those surfaces read pure black, while the middle row happens to align → the diagnostic **"only some surfaces (e.g. two opposite walls) are lit."** Use the IDENTITY mapping (surface point U → texel U → read U), no flip, and make EVERY reader agree: the shell `texture(lightmap, uv(1))` AND the probe `textureLoad(lightmap, uv1·res)`.
+
+### Auditing "is the bake even being applied?"
+Isolate, don't guess. Kill every OTHER light contribution and amplify the bake:
+- `environmentIntensity → 0`, object self-illum → 0, probe/SH term → 0, lightmap intensity → high.
+- Surfaces still **black** ⇒ the lightmap isn't contributing → a *plumbing* bug (above), not a bake-value bug.
+- **Plumbing vs values:** make the gather `return vec3f(1.0)` (constant). Shell still black ⇒ application/UV bug (not the estimator). Shell white ⇒ the values are the issue.
+- **Material vs lightMap path:** set `material.emissive` to a solid colour (no map). Surface turns that colour ⇒ the material renders fine, so it's specifically the lightMap path being dropped.
+- **See the atlas:** show `texture(lightmap, uv(0))` on a full-0..1-UV surface to eyeball which slots actually got content.
+
+## Noise: the clamp is DIRECT-only; cloudiness is INDIRECT variance
+
+- A **radiance clamp** (cap per-sample luminance) kills **fireflies** from the DIRECT NEE term (a sample landing very close to an emitter → `area/dist²` spike). It does NOT touch the indirect hemisphere gather. Cranking it *up* does nothing for cloudiness; cranking it to a huge value just disables firefly suppression.
+- Low-frequency **cloudiness / marbling** on big surfaces is **indirect-gather variance** → fix with more `samples` + a denoise/blur pass (+ a bounce), not a tighter clamp.
+- **Near-field strip emitters** (a long ceiling tube ~0.05–0.25 m from the ceiling it lights): uniform area sampling has huge per-texel variance (most samples land far along the strip) → cloudy even with clamp+denoise. **Subdivide the strip into short ~square segments** (same area, radiance, total power) → stratified → low variance. Pair with a sane standoff so `area/dist²` isn't absurd (≈0.04 m blew into fireflies; ≈0.25 m + clamp was clean).
 
 ## Implementation priority order
 
@@ -138,3 +173,5 @@ NEE removes the lottery of randomly hitting small lights: every texel gets every
 - **xatlas-three / jpcy/xatlas** — auto UV-unwrap generator (standard, but non-deterministic; we use procedural `uv1` instead — see UV note). github.com/repalash/xatlas-three
 - **JamesRandall webgpu path tracer (2026)** — modern WebGPU compute architecture. jamesdrandall.com
 - **Three.js docs** — WebGPURenderer / TSL / StorageTexture. threejs.org/docs
+- **three.js forum (Dec 2025)** "Lightmap not using UV1/UV2 in MeshStandardMaterial (but works in ShaderMaterial)" — corroborates the WebGPU `material.lightMap` failure → sample the atlas explicitly. discourse.threejs.org/t/.../88564
+- **This project (May 2026)** — `radiosityBake.ts` (unwrap: identity uv1, no flipY) + `bakeShellRuntime.ts` (apply via `emissiveNode`, `SHELL_LMI` uniform): the two-bug fix that made the shell GI actually render.

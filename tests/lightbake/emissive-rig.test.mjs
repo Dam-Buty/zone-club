@@ -26,10 +26,13 @@ test('vitrine is the cold blue emitter (blue channel dominant)', () => {
   assert.ok(vitrine.emission[2] > vitrine.emission[0], 'blue > red')
 })
 
-test('every emitter rect.facing is a unit normal ⟂ to its plane, pointing INTO the room', () => {
-  // The one-sided NEE guard: a wall/ceiling sign must shine into the room, never backward onto
-  // the surface it is mounted on. A flipped sign = backward light leak (bright bands/rectangles)
-  // OR a dead emitter. This invariant would have caught the ceiling cross(e1,e2) winding flip.
+test('every emitter rect.facing is a unit normal ⟂ to its plane, shining into the space it lights', () => {
+  // The one-sided NEE guard: an emitter must shine into the space it lights, never backward.
+  // Two cases: wall/ceiling SIGNS + down-fluo shine into the ROOM (toward centre); the ceiling
+  // UP-WASH (a tube hung below the ceiling, facing +Y) shines onto the CEILING above it — it
+  // legitimately points away from the room centre. A flipped emitter = backward light leak or a
+  // dead emitter; a flipped up-wash would double-count the down-fluo and leave the ceiling dark.
+  // This invariant would have caught the ceiling cross(e1,e2) winding flip.
   const rig = emissiveRig()
   const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
   const len = (a) => Math.hypot(a[0], a[1], a[2])
@@ -41,7 +44,12 @@ test('every emitter rect.facing is a unit normal ⟂ to its plane, pointing INTO
     assert.ok(Math.abs(dot(facing, edge1)) < 1e-6, `${p.name} facing ⟂ edge1`)
     assert.ok(Math.abs(dot(facing, edge2)) < 1e-6, `${p.name} facing ⟂ edge2`)
     const mid = [corner[0] + 0.5 * (edge1[0] + edge2[0]), corner[1] + 0.5 * (edge1[1] + edge2[1]), corner[2] + 0.5 * (edge1[2] + edge2[2])]
-    const toCenter = [CENTER[0] - mid[0], CENTER[1] - mid[1], CENTER[2] - mid[2]]
-    assert.ok(dot(facing, toCenter) > 0, `${p.name} facing points into the room (dot=${dot(facing, toCenter).toFixed(3)})`)
+    if (facing[1] > 0.9) {
+      // Ceiling up-wash: must point UP (toward the ceiling it lights) and sit in the upper half.
+      assert.ok(mid[1] > CENTER[1], `${p.name} up-wash sits above room centre (y=${mid[1].toFixed(2)})`)
+    } else {
+      const toCenter = [CENTER[0] - mid[0], CENTER[1] - mid[1], CENTER[2] - mid[2]]
+      assert.ok(dot(facing, toCenter) > 0, `${p.name} facing points into the room (dot=${dot(facing, toCenter).toFixed(3)})`)
+    }
   }
 })

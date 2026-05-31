@@ -15,10 +15,11 @@ export interface RadiosityBakeOptions {
   bounces?: number // gather iterations
   sky?: [number, number, number] // cold miss term (moonlight through the vitrine)
   blur?: number // post-bake denoise passes (3×3 box)
+  clampDirect?: number // max luminance per NEE sample (firefly clamp); 0 disables
   grayscale?: boolean // force emitter emission to luminance (neutral but colour-ready)
 }
 
-const DEFAULTS = { resolution: 1024, samples: 48, neeSamples: 4, bounces: 3, sky: [0, 0, 0] as [number, number, number], blur: 0, grayscale: false }
+const DEFAULTS = { resolution: 1024, samples: 48, neeSamples: 4, bounces: 3, sky: [0, 0, 0] as [number, number, number], blur: 0, clampDirect: 100, grayscale: false }
 const lum = (r: number, g: number, b: number) => 0.2126 * r + 0.7152 * g + 0.0722 * b
 
 /**
@@ -67,12 +68,19 @@ export async function radiosityBake(
   const emittersStorage = storage(sEmitters, 'vec3', sEmitters.count).toReadOnly()
 
   const helpers = wgsl(WGSL_HELPERS)
-  const unwrap = vec4(sub(uv(1).flipY(), vec2(0.5)).mul(2), 0, 1)
+  // uv1 → clip, NO flipY. The runtime reads the atlas at the raw uv1 (probe `textureLoad(uv1)` +
+  // the shell emissiveNode `texture(lightmap, uv(1))`), so the bake must WRITE at the raw uv1 too.
+  // A `.flipY()` here mirrors V across the WHOLE atlas — and since the 3×3 atlas has an unused bottom
+  // row (only 6 of 9 slots used), it shoved the top-row surfaces' bake (floor/ceiling/wall-north)
+  // into the empty row → they read black, while the middle row (left/right/south walls) happened to
+  // align → the "only two opposite walls lit" bug. Identity mapping (point U → texel U → read U) is
+  // correct and flip-free.
+  const unwrap = vec4(sub(uv(1), vec2(0.5)).mul(2), 0, 1)
 
   const gather = wgslFn(/* wgsl */`
     fn gather(
       P: vec3f, N: vec3f, selfEmission: vec3f, selfAlbedo: vec3f,
-      seed: vec2f, samples: f32, neeSamples: f32, emitterCount: f32, res: f32, sky: vec3f,
+      seed: vec2f, samples: f32, neeSamples: f32, emitterCount: f32, res: f32, sky: vec3f, clampDirect: f32,
       geom_index: ptr<storage, array<vec3u>, read>,
       geom_position: ptr<storage, array<vec3f>, read>,
       geom_uv1: ptr<storage, array<vec3f>, read>,
@@ -110,7 +118,7 @@ export async function radiosityBake(
           let sh = bvhIntersectFirstHit(geom_index, geom_position, bvh, sray);
           let occluded = sh.didHit && sh.dist < (dist - 0.01);
           if (!occluded) {
-            accum = accum + Le * cosP * cosL * area / dist2;
+            accum = accum + clampRad(Le * cosP * cosL * area / dist2, clampDirect);
           }
         }
         direct = direct + accum / f32(NS);
@@ -175,6 +183,7 @@ export async function radiosityBake(
     emitterCount: float(N),
     res: float(opts.resolution),
     sky: vec3(opts.sky[0], opts.sky[1], opts.sky[2]),
+    clampDirect: float(opts.clampDirect),
     geom_index: storages.index,
     geom_position: storages.position,
     geom_uv1: uv1Storage,

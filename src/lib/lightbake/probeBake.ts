@@ -26,6 +26,7 @@ export async function probeBakeRaw(
   lightmapRes: number,
   emitters: ReadonlyArray<NeeEmitter>,
   sky: [number, number, number] = [0.008, 0.012, 0.025],
+  clampDirect = 100, // max luminance per NEE sample (firefly clamp); shared with the shell bake
 ): Promise<{ r: Float32Array; g: Float32Array; b: Float32Array }> {
   const S = gpuStorages(bvhGeometry, bvh)
 
@@ -78,7 +79,7 @@ export async function probeBakeRaw(
   const gather = wgslFn(/* wgsl */`
     fn probeGather(
       P: vec3f, coeff: f32, seed: vec2f, samples: f32, neeSamples: f32, emitterCount: f32,
-      res: f32, sky: vec3f,
+      res: f32, sky: vec3f, clampDirect: f32,
       geom_index: ptr<storage, array<vec3u>, read>, geom_position: ptr<storage, array<vec3f>, read>,
       geom_uv1: ptr<storage, array<vec3f>, read>, bvh: ptr<storage, array<BVHNode>, read>,
       emitters: ptr<storage, array<vec3f>, read>, lightmap: texture_2d<f32>,
@@ -126,7 +127,7 @@ export async function probeBakeRaw(
           let sh = bvhIntersectFirstHit(geom_index, geom_position, bvh, sray);
           let occluded = sh.didHit && sh.dist < (dist - 0.01);
           if (!occluded) {
-            let irr = Le * cosL * area / dist2 / f32(NS);   // radiance arriving from the sign
+            let irr = clampRad(Le * cosL * area / dist2, clampDirect) / f32(NS);   // radiance arriving from the sign
             c0 = c0 + irr * Y0;
             c1 = c1 + irr * (Y1 * wi.y);
             c2 = c2 + irr * (Y1 * wi.z);
@@ -148,7 +149,7 @@ export async function probeBakeRaw(
     const seed = vec2(idx.toFloat(), idx.toFloat().mul(0.137))
     const common = {
       P, seed, samples: float(SAMPLES), neeSamples: float(NEE_SAMPLES), emitterCount: float(NE),
-      res: float(lightmapRes), sky: vec3(sky[0], sky[1], sky[2]),
+      res: float(lightmapRes), sky: vec3(sky[0], sky[1], sky[2]), clampDirect: float(clampDirect),
       geom_index: S.index, geom_position: S.position, geom_uv1: uv1S, bvh: S.bvh,
       emitters: emS, lightmap: lm,
     }

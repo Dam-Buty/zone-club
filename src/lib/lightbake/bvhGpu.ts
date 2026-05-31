@@ -23,6 +23,16 @@ export const WGSL_HELPERS = /* wgsl */`
     let th = 6.2831853 * u.y;
     return r * cos(th) * b1 + r * sin(th) * b2 + sqrt(max(0.0, 1.0 - u.x)) * n;
   }
+  // Radiance clamp (firefly killer): cap a per-sample NEE contribution at maxLum, SCALING by
+  // luminance so the hue is preserved (a component-wise min would tint the highlight). The
+  // near-field area-light term Le·cos·cos·area/dist² blows up as dist→0 (a sign close to a
+  // surface) → one stray sample becomes a speckle that no box-blur can erase. maxLum<=0 disables.
+  fn clampRad(c: vec3f, maxLum: f32) -> vec3f {
+    if (maxLum <= 0.0) { return c; }
+    let l = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+    if (l > maxLum) { return c * (maxLum / l); }
+    return c;
+  }
 `
 
 export interface BvhBufferCounts {

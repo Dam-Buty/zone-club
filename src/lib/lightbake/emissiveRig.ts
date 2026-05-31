@@ -6,7 +6,7 @@ import { PlaneGeometry, Color, Matrix4, Vector3, type BufferGeometry } from 'thr
 // fluo set the nocturnal ambient, the vivid genre-neon signs are the néon-noir accents
 // (magenta/cyan/green bleed on floor + walls), plus the cold vitrine moonlight.
 
-type Face = 'z+' | 'z-' | 'x+' | 'x-' | 'y-'
+type Face = 'z+' | 'z-' | 'x+' | 'x-' | 'y-' | 'y+'
 
 interface EmitterSpec {
   name: string
@@ -37,26 +37,58 @@ const GENRE_SIGNS: EmitterSpec[] = [
 // Cold ceiling fluo — DIM (nocturnal ambient, lets the neon accents dominate). Big white area
 // emitters: even at low intensity they deliver more lumens to floor/walls than the small neon
 // signs, so they must stay well below the signs or they grey-wash the néon-noir.
-const CEILING_FLUO: EmitterSpec[] = [
+// Down-facing fluo strips — the primary room light (far-field onto the floor 2.7 m below → low
+// variance, no subdivision needed).
+const CEILING_FLUO_DOWN: EmitterSpec[] = [
   { name: 'fluo-0', pos: [-3.3, 2.72, 0], size: [0.45, 6.6], face: 'y-', color: '#eaf0ff', intensity: 0.5 },
   { name: 'fluo-1', pos: [-1.0, 2.72, 0], size: [0.45, 6.6], face: 'y-', color: '#eaf0ff', intensity: 0.35 },
   { name: 'fluo-2', pos: [2.3, 2.72, 0], size: [0.45, 6.6], face: 'y-', color: '#eaf0ff', intensity: 0.35 },
   { name: 'fluo-3', pos: [3.8, 2.72, 0], size: [0.45, 6.6], face: 'y-', color: '#eaf0ff', intensity: 0.5 },
 ]
 
+// Up-facing ceiling wash — a surface tube emits both ways. Hung 0.25 m below the 2.8 m ceiling
+// (not flush): at 0.04 m the near-field area/dist² term exploded into ceiling fireflies. But a
+// single 6.6 m strip THAT close to the ceiling still has huge per-texel variance under uniform
+// area sampling (most samples land far from a given texel) → the bake comes out cloudy/marbled.
+// FIX = stratify: subdivide each tube into UP_SEGMENTS short quads. Same area, same radiance, same
+// total power — but each segment is near-square under the texels it lights, so its uniform samples
+// are ~equidistant → low variance. This is stratified light sampling, the principled cure for a
+// long near-field strip (vs brute-forcing neeSamples on the whole strip).
+const CEILING_UP_TUBES = [
+  { x: -3.3, intensity: 0.4 }, { x: -1.0, intensity: 0.3 }, { x: 2.3, intensity: 0.3 }, { x: 3.8, intensity: 0.4 },
+]
+const UP_SEGMENTS = 8
+const SEG_LEN = 6.6 / UP_SEGMENTS
+const CEILING_FLUO_UP: EmitterSpec[] = CEILING_UP_TUBES.flatMap((t, ti) =>
+  Array.from({ length: UP_SEGMENTS }, (_, i) => ({
+    name: `fluo-${ti}-up-${i}`,
+    pos: [t.x, 2.55, -3.3 + SEG_LEN * (i + 0.5)] as [number, number, number],
+    size: [0.45, SEG_LEN] as [number, number],
+    face: 'y+' as Face,
+    color: '#eaf0ff',
+    intensity: t.intensity,
+  })),
+)
+
+const CEILING_FLUO: EmitterSpec[] = [...CEILING_FLUO_DOWN, ...CEILING_FLUO_UP]
+
 const OTHER: EmitterSpec[] = [
   // 2 island overhead tubes (cool).
   { name: 'island-tube-0', pos: [-2.2, 2.66, -0.2], size: [0.5, 3.8], face: 'y-', color: '#eaf0ff', intensity: 0.45 },
   { name: 'island-tube-1', pos: [0.05, 2.66, -0.2], size: [0.5, 3.8], face: 'y-', color: '#eaf0ff', intensity: 0.45 },
   // Warm counter tube.
-  { name: 'comptoir', pos: [3, 2.66, 3], size: [0.14, 1.4], face: 'y-', color: '#ffe2b0', intensity: 3.0 },
+  { name: 'comptoir', pos: [3, 2.66, 3], size: [0.4, 1.8], face: 'y-', color: '#ffd29a', intensity: 5.0 },
   // Cold vitrine moonlight (south wall, into the room).
-  { name: 'vitrine', pos: [0.5, 1.4, 4.1], size: [5.0, 2.2], face: 'z-', color: '#5577aa', intensity: 1.4 },
+  { name: 'vitrine', pos: [0.5, 1.4, 4.1], size: [6.5, 2.8], face: 'z-', color: '#5577aa', intensity: 4.2 },
   // CRT phosphor glow (warm-white screen, faces into room).
   { name: 'crt', pos: [3.9, 1.8, 4.1], size: [0.5, 0.38], face: 'z-', color: '#bfe0ff', intensity: 2.2 },
 ]
 
-const ALL: EmitterSpec[] = [...GENRE_SIGNS, ...CEILING_FLUO, ...OTHER]
+// Multiplicateurs sur l'intensité BAKÉE — défauts (1.0 = origine de chaque émetteur). Les deux
+// leviers de composition, réglables en live via ?neon= (enseignes de genre colorées, pousse la GI
+// colorée sur sol/étagères/K7) et ?fluo= (néon blanc plafond). Purement baké, zéro lumière dynamique.
+const DEFAULT_NEON_BOOST = 1.5
+const DEFAULT_FLUO_BOOST = 5.0
 
 export interface EmissiveProxy {
   name: string
@@ -89,7 +121,29 @@ const FACE_NORMAL: Record<Face, [number, number, number]> = {
   'x+': [1, 0, 0], // left wall → +X
   'x-': [-1, 0, 0], // right wall → -X
   'y-': [0, -1, 0], // ceiling → down
+  'y+': [0, 1, 0], // up toward the ceiling (tube halo)
 }
+
+// Lever (b) — downward colour pools. Per genre sign, a small y- emitter pulled into the room over
+// the aisle floor and tinted the sign's colour → it casts a FRANC coloured pool on the floor in
+// front of that section. The wall signs shine HORIZONTALLY (y=2.24) and never reach the floor on
+// their own — these are what put colour underfoot. Far-field (2.3 m above the floor) ⇒ low-variance,
+// no subdivision. Scaled by ?neon= alongside the signs so one knob drives all the coloured GI.
+const POOL_Y = 2.1 // lower → tighter, brighter pool
+const POOL_OFFSET = 0.9 // metres into the room from the wall sign
+const POOL_SIZE = 0.7 // smaller source → more concentrated spot (was 0.9)
+const POOL_INTENSITY = 4.0 // brighter so the tighter pool still reads franc (was 2.5)
+const FLOOR_POOLS: EmitterSpec[] = GENRE_SIGNS.map((s) => {
+  const n = FACE_NORMAL[s.face]
+  return {
+    name: `pool-${s.name}`,
+    pos: [s.pos[0] + n[0] * POOL_OFFSET, POOL_Y, s.pos[2] + n[2] * POOL_OFFSET] as [number, number, number],
+    size: [POOL_SIZE, POOL_SIZE] as [number, number],
+    face: 'y-' as Face,
+    color: s.color,
+    intensity: POOL_INTENSITY,
+  }
+})
 
 // One transform per emitter (rotation by face + translation), the single source of truth
 // for both the BVH geometry and the NEE rectangle. world = T · R (rotate then translate).
@@ -102,6 +156,7 @@ function emitterMatrix(face: Face, pos: [number, number, number]): Matrix4 {
     case 'x+': m.makeRotationY(Math.PI / 2); x += EPS; break // left wall, faces +X
     case 'x-': m.makeRotationY(-Math.PI / 2); x -= EPS; break // right wall, faces -X
     case 'y-': m.makeRotationX(-Math.PI / 2); y -= EPS; break // ceiling, faces down
+    case 'y+': m.makeRotationX(Math.PI / 2); y += EPS; break // faces up — ceiling halo
   }
   m.setPosition(x, y, z)
   return m
@@ -109,8 +164,18 @@ function emitterMatrix(face: Face, pos: [number, number, number]): Matrix4 {
 
 const _bl = new Vector3(), _br = new Vector3(), _tl = new Vector3()
 
-/** Build the offline emissive proxy quads + their world rectangles (for NEE). */
-export function emissiveRig(): EmissiveProxy[] {
+/** Build the offline emissive proxy quads + their world rectangles (for NEE). `neon` scales the
+ *  coloured genre signs, `fluo` the white ceiling fluo — the two composition levers (?neon=/?fluo=).
+ *  The island tubes / warm comptoir / cold vitrine / crt (OTHER) stay unscaled. */
+export function emissiveRig(boosts: { neon?: number; fluo?: number } = {}): EmissiveProxy[] {
+  const neon = boosts.neon ?? DEFAULT_NEON_BOOST
+  const fluo = boosts.fluo ?? DEFAULT_FLUO_BOOST
+  const ALL: EmitterSpec[] = [
+    ...GENRE_SIGNS.map((s) => ({ ...s, intensity: s.intensity * neon })),
+    ...FLOOR_POOLS.map((s) => ({ ...s, intensity: s.intensity * neon })),
+    ...CEILING_FLUO.map((s) => ({ ...s, intensity: s.intensity * fluo })),
+    ...OTHER,
+  ]
   return ALL.map((e) => {
     const [w, h] = e.size
     const M = emitterMatrix(e.face, e.pos)
@@ -131,4 +196,4 @@ export function emissiveRig(): EmissiveProxy[] {
   })
 }
 
-export const EMISSIVE_RIG_COUNT = ALL.length
+export const EMISSIVE_RIG_COUNT = GENRE_SIGNS.length + FLOOR_POOLS.length + CEILING_FLUO.length + OTHER.length

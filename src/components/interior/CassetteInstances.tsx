@@ -5,7 +5,7 @@ import {
   texture, uv, attribute,
   Fn, instanceIndex, deltaTime, instancedArray,
   uniform, mix, min, vec3, vec2, positionLocal, float, step,
-  abs, cos, sin, normalWorld, clamp, varying,
+  abs, cos, sin, normalWorld, clamp, varying, pow,
 } from 'three/tsl'
 import { CassetteTextureAtlas, type CassetteInstanceData } from '../../utils/CassetteTextureArray'
 import { useStore } from '../../store'
@@ -13,6 +13,7 @@ import { useIsMobile } from '../../hooks/useIsMobile'
 import { RAYCAST_LAYER_CASSETTE } from './Controls'
 import { CASSETTE_DIMENSIONS } from './cassette-constants'
 import { useProbeVolumes } from './ProbeVolumeContext'
+import { useBakeDebug } from './bakeDebugStore'
 import { shIrradiance } from '../../lib/lightbake/shReconstruct'
 import { GRID_MIN, gridExt, G } from '../../lib/lightbake/probeGrid'
 
@@ -22,6 +23,28 @@ const PROBE_INTENSITY = (() => {
   const p = parseFloat(new URLSearchParams(window.location.search).get('pi') || '1.2')
   return Number.isFinite(p) ? p : 1.2
 })()
+
+// Poster self-illumination floor — keeps tilted faces readable, but at night it greys the K7 and
+// fights the baked neon. Night-mood lever: lower it so the K7 are LIT by the GI, not self-glowing.
+// ?si= overrides (default 0.20). Non-baked.
+const SELF_ILLUM = (() => {
+  if (typeof window === 'undefined') return 0.2
+  const p = parseFloat(new URLSearchParams(window.location.search).get('si') || '0.2')
+  return Number.isFinite(p) ? p : 0.2
+})()
+
+// Live-tunable uniforms (driven by bakeDebugStore via the dev panel) — module-level singletons so
+// they survive material rebuilds; writing .value is a cheap GPU uniform update (no shader recompile).
+const SI_UNIFORM = uniform(SELF_ILLUM)
+const PI_UNIFORM = uniform(PROBE_INTENSITY)
+// K7 emissive tone-curve: gamma (fixed) deepens the muddy darks; the white-point (live ?k7=) rolls
+// off the highlights so bright posters near neon don't blow past the bloom threshold (glow).
+const K7_GAMMA = 1.3
+const K7_TONE_UNIFORM = uniform((() => {
+  if (typeof window === 'undefined') return 0.9
+  const p = parseFloat(new URLSearchParams(window.location.search).get('k7') || '0.9')
+  return Number.isFinite(p) ? p : 0.9
+})())
 
 const SHARED_CASSETTE_GEOMETRY = new THREE.BoxGeometry(CASSETTE_DIMENSIONS.width, CASSETTE_DIMENSIONS.height, CASSETTE_DIMENSIONS.depth)
 
@@ -283,11 +306,12 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
     // Base emissive: self-illumination so tilted poster faces stay readable.
     // Hover highlight applies ONLY on outline border (not full surface).
     const hoverEmissive = currentEmissiveBuffer.toAttribute().mul(outlineMask)
-    const selfIllum = cappedColor.mul(float(0.20)) // readability floor for tilted poster faces
+    const selfIllum = cappedColor.mul(SI_UNIFORM) // readability floor for tilted poster faces (live ?si=)
 
     // Phase-2 baked GI: sample the SH-L1 probe volume at the instance's WORLD position and
     // reconstruct irradiance for the instance-rotated world normal. emissive-ADD (not a colorNode
     // multiply) because baked mode drops the analytical rig → a multiply would render the K7 black.
+    let lit = selfIllum
     if (probes) {
       const e = gridExt()
       const gMin = vec3(GRID_MIN[0], GRID_MIN[1], GRID_MIN[2])
@@ -298,10 +322,14 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
       // varying() forces the SH eval into the VERTEX stage — instanceIndex is vertex-only, and
       // the design wants per-vertex sampling — then interpolates the irradiance to the fragment.
       const E = varying(shIrradiance(probes.shR, probes.shG, probes.shB, uvw, normalWorld))
-      mat.emissiveNode = hoverEmissive.add(selfIllum).add(cappedColor.mul(E).mul(float(PROBE_INTENSITY)))
-    } else {
-      mat.emissiveNode = hoverEmissive.add(selfIllum)
+      lit = selfIllum.add(cappedColor.mul(E).mul(PI_UNIFORM))
     }
+    // Tone-curve the poster "lighting" (NOT the hover glow): gamma deepens the washed-out darks, and
+    // a Reinhard roll-off toward the white-point K7_TONE keeps bright posters under the bloom
+    // threshold so their whites stop glowing. Live ?k7= drives the white-point.
+    const litC = pow(lit, float(K7_GAMMA))
+    const litTone = litC.mul(K7_TONE_UNIFORM).div(litC.add(K7_TONE_UNIFORM))
+    mat.emissiveNode = hoverEmissive.add(litTone)
 
     return mat
   }, [atlas, currentHoverZBuffer, currentEmissiveBuffer, currentRentedOutBuffer, worldPosBuffer, probes])
@@ -601,6 +629,15 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
 }
 
 export function CassetteInstances({ instances }: CassetteInstancesProps) {
+  // Live tuning: write the panel's si/pi into the shared TSL uniforms (cheap GPU update, no recompile).
+  const si = useBakeDebug((s) => s.si)
+  const pi = useBakeDebug((s) => s.pi)
+  const k7 = useBakeDebug((s) => s.k7)
+  useEffect(() => {
+    SI_UNIFORM.value = si
+    PI_UNIFORM.value = pi
+    K7_TONE_UNIFORM.value = k7
+  }, [si, pi, k7])
   return (
     <CassetteInstancesChunk
       instances={instances}

@@ -233,8 +233,11 @@ export function Storefront({ position, roomWidth, roomHeight, posterPaths }: Sto
     return new THREE.MeshStandardMaterial({
       map: exteriorTex,
       roughness: 0.95,
-      emissive: '#111118',
-      emissiveIntensity: 0.3,
+      // Rue de nuit AUTO-ÉMISSIVE : la texture brille par ses propres néons → on la VOIT
+      // à travers la vitrine (avant: emissive '#111118' quasi noir = rue éteinte).
+      emissiveMap: exteriorTex,
+      emissive: '#ffffff',
+      emissiveIntensity: 1.5,
       toneMapped: false,
     })
   }, [exteriorTex])

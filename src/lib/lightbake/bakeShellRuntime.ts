@@ -1,10 +1,15 @@
 import * as THREE from 'three/webgpu'
+import { texture, uv, vec3, uniform } from 'three/tsl'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { MeshBVH, SAH } from 'three-mesh-bvh'
 import { collectShell } from './collectShell.ts'
 import { ATLAS_SLOT_COUNT, applyShellUv1, applyShellUv1World } from './shellUv1.ts'
 import { emissiveRig } from './emissiveRig.ts'
 import { radiosityBake } from './radiosityBake.ts'
+
+// Live shell lightmap intensity (the ?lmi= knob). A uniform so the dev panel updates it without a
+// re-bake. Module-level singleton — shared by the emissiveNode the bake attaches to every shell mat.
+export const SHELL_LMI = uniform(1.4)
 
 function setVec3(geo: THREE.BufferGeometry, name: string, rgb: [number, number, number]) {
   const n = geo.attributes.position.count
@@ -27,6 +32,9 @@ export interface RuntimeBakeOptions {
   neeSamples?: number
   bounces?: number
   blur?: number
+  clampDirect?: number // max luminance per NEE sample (firefly clamp); 0 disables
+  neonBoost?: number // ?neon= — scales the coloured genre signs in the bake
+  fluoBoost?: number // ?fluo= — scales the white ceiling fluo in the bake
   intensity?: number // lightMapIntensity attached to the materials
   sky?: [number, number, number]
 }
@@ -57,8 +65,9 @@ export async function bakeAndAttachShell(
   opts: RuntimeBakeOptions = {},
 ): Promise<ShellBakeResult> {
   const {
-    albedo = 0.7, resolution = 1024, samples = 48, neeSamples = 8, bounces = 2, blur = 2,
-    intensity = 1.4, sky = [0.008, 0.012, 0.025] as [number, number, number],
+    albedo = 0.7, resolution = 1024, samples = 96, neeSamples = 8, bounces = 2, blur = 3,
+    clampDirect = 100, neonBoost = 1.5, fluoBoost = 5.0, intensity = 1.4,
+    sky = [0.008, 0.012, 0.025] as [number, number, number],
   } = opts
   const { lightmapped } = collectShell(root)
   const ALB: [number, number, number] = [albedo, albedo, albedo]
@@ -83,17 +92,24 @@ export async function bakeAndAttachShell(
   const bvh = new MeshBVH(bvhGeo, { maxLeafSize: 1, strategy: SAH })
   worldSurfaces.forEach((g) => g.dispose())
 
-  const lightmap = await radiosityBake(renderer, render, bvhGeo, bvh, emissiveRig(), {
-    resolution, samples, neeSamples, bounces, sky, blur, grayscale: false,
+  const lightmap = await radiosityBake(renderer, render, bvhGeo, bvh, emissiveRig({ neon: neonBoost, fluo: fluoBoost }), {
+    resolution, samples, neeSamples, bounces, sky, blur, clampDirect, grayscale: false,
   })
 
-  // Attach the atlas as a lightMap on the uv1 channel for every shell material. The shared wall
-  // material is hit several times (idempotent — same texture). HDR HalfFloat RT, linear (NoColorSpace).
+  // Apply the baked atlas via an EXPLICIT emissiveNode sampled at uv1 — NOT material.lightMap. In
+  // the WebGPU MeshStandardMaterial, a lightMap attached AFTER the material's first compile is
+  // ignored (setupLightMap ran once without it; needsUpdate + channel=1 don't re-add it — confirmed
+  // empirically + the May-2026 three forum issue). The K7 already prove the emissiveNode path works.
+  // We modulate the atlas by each surface's OWN albedo (map if present, else colour) so the walls/
+  // floor/ceiling keep their identity under the GI, and scale by the live SHELL_LMI uniform.
+  SHELL_LMI.value = intensity
+  const lmSample = texture(lightmap, uv(1))
   for (const mesh of lightmapped) {
-    const mat = mesh.material as THREE.MeshStandardMaterial
-    mat.lightMap = lightmap
+    const mat = mesh.material as THREE.MeshStandardNodeMaterial
+    const base = mat.map ? texture(mat.map) : vec3(mat.color.r, mat.color.g, mat.color.b)
+    mat.emissiveNode = base.mul(lmSample.rgb).mul(SHELL_LMI)
+    mat.lightMap = lightmap // kept for reference; the emissiveNode above is what actually renders
     mat.lightMap.channel = 1
-    mat.lightMapIntensity = intensity
     mat.needsUpdate = true
   }
   return { lightmap, bvhGeo, bvh, lightmapRes: resolution }

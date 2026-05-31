@@ -5,6 +5,8 @@ import { RectAreaLightTexturesLib } from 'three/addons/lights/RectAreaLightTextu
 import { useStore } from '../../store'
 import { Lighting } from './Lighting'
 import { BakedShellLighting } from './BakedShellLighting'
+import { BakeDebugPanel } from './BakeDebugPanel'
+import { useBakeDebug } from './bakeDebugStore'
 import { ProbeVolumeContext, type ProbeVolumes } from './ProbeVolumeContext'
 
 // Poster loading progress (set by CassetteInstances)
@@ -33,7 +35,9 @@ const Aisle = lazy(() => import('./Aisle').then(module => ({ default: module.Ais
 
 // Baked-lighting A/B switch — `?baked=1` swaps the analytical rig for the GI lightmap (read once
 // at load; reload to toggle). Guarded for the build's prerender pass (window undefined).
-const BAKED_MODE = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('baked') === '1'
+const BAKED_MODE = typeof window === 'undefined' ? true : new URLSearchParams(window.location.search).get('baked') !== '0'
+// IBL ambient fill (indoor_night.hdr) is now a LIVE knob — read from bakeDebugStore (?env= seeds it),
+// tunable on the fly via the dev panel. Lower it to deepen the night + let the baked neon GI read.
 
 // Desktop supersampling factor: render ABOVE native device pixels, then let the
 // browser downsample to the display → true SSAA that anti-aliases texture-content
@@ -124,12 +128,13 @@ const SceneContent = memo(function SceneContent({
   benchmarkMode: boolean
 }) {
   const [probeVolumes, setProbeVolumes] = useState<ProbeVolumes | null>(null)
+  const envIntensity = useBakeDebug((s) => s.env) // live ambient (dev panel)
   return (
     <ProbeVolumeContext.Provider value={probeVolumes}>
       <Environment
         files="/textures/env/indoor_night.hdr"
         background={false}
-        environmentIntensity={0.12}
+        environmentIntensity={envIntensity}
       />
       <Lighting isMobile={isMobile} baked={BAKED_MODE} />
       {BAKED_MODE && <BakedShellLighting enabled onProbeVolumes={setProbeVolumes} />}
@@ -1103,6 +1108,9 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
           </Suspense>
         </SceneErrorBoundary>
       </Canvas>
+
+      {/* DEV live-tuning panel for the baked-lighting composition (DOM sibling of the Canvas). */}
+      {BAKED_MODE && process.env.NODE_ENV !== 'production' && <BakeDebugPanel />}
 
       {gpuError && (
         <div

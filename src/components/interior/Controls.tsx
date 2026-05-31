@@ -252,6 +252,14 @@ export function Controls({
   );
   const controlsRef = useRef<PointerLockControlsImpl | null>(null);
 
+  // DEV debug hook: expose the camera so headless tooling can orient it for verification
+  // captures (PointerLock can't be driven headless). Dev-only, harmless — mirrors window.__store.
+  useEffect(() => {
+    if (process.env.NODE_ENV !== "production") {
+      (window as unknown as { __camera?: THREE.Camera }).__camera = camera;
+    }
+  }, [camera]);
+
   // OPTIMISATION: Raycaster avec layers
   const raycasterRef = useRef<THREE.Raycaster>(null!);
   if (!raycasterRef.current) {
