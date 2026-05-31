@@ -12,7 +12,7 @@ const CRT_SCREEN_AR = 4 / 3
 
 const CATEGORIES = ['films', 'series', 'shows', 'anime'] as const
 type Category = (typeof CATEGORIES)[number]
-const BLOCKED_CHANNELS = new Set(['malcolm', 'etchebesme'])
+const BLOCKED_CHANNELS = new Set(['malcolm', 'etchebesme', 'wpt'])
 
 function pickRandom<T>(arr: readonly T[], exclude?: T): T | null {
   if (!arr.length) return null
