@@ -1,9 +1,20 @@
 import { useMemo, useEffect, useRef, memo } from 'react'
 import * as THREE from 'three'
+import { positionWorld, normalWorld, clamp, vec3, varying, float } from 'three/tsl'
 import { useGLTF } from '@react-three/drei'
 import { RAYCAST_LAYER_INTERACTIVE } from './Controls'
 import { useStore } from '../../store'
+import { useProbeVolumes } from './ProbeVolumeContext'
+import { shIrradiance } from '../../lib/lightbake/shReconstruct'
+import { GRID_MIN, gridExt, G } from '../../lib/lightbake/probeGrid'
 import type { ApiBoardNote } from '../../api'
+
+// Phase-3 baked GI: SH-L1 probe receiver (same ?pi knob as the shelves/K7).
+const PROBE_INTENSITY = (() => {
+  if (typeof window === 'undefined') return 1.2
+  const p = parseFloat(new URLSearchParams(window.location.search).get('pi') || '1.2')
+  return Number.isFinite(p) ? p : 1.2
+})()
 
 // Grid layout in board local space (before parent scale)
 const GRID_COLS = 8
@@ -182,6 +193,7 @@ export const BoardMesh = memo(function BoardMesh({ position, scale, rotation }: 
   const { scene } = useGLTF('/models/board.glb', true)
   const groupRef = useRef<THREE.Group>(null!)
   const boardNotes = useStore(s => s.boardNotes)
+  const probes = useProbeVolumes() // Phase-3 SH-L1 volumes (?baked=1, post-bake)
 
   const clonedScene = useMemo(() => {
     const cloned = scene.clone(true)
@@ -200,6 +212,31 @@ export const BoardMesh = memo(function BoardMesh({ position, scale, rotation }: 
   useEffect(() => {
     if (groupRef.current) groupRef.current.userData.isBoardGroup = true
   }, [])
+
+  // Phase-3 baked GI: light the board frame with the SH-L1 probe volume (emissiveNode like the
+  // shelves/K7 — baked mode drops the analytical rig so the cork/wood would read near-black).
+  useEffect(() => {
+    if (!probes) return
+    const e = gridExt()
+    const gMin = vec3(GRID_MIN[0], GRID_MIN[1], GRID_MIN[2])
+    const gInv = vec3(1 / e[0], 1 / e[1], 1 / e[2])
+    const half = vec3(0.5 / G[0], 0.5 / G[1], 0.5 / G[2])
+    const uvw = clamp(positionWorld.sub(gMin).mul(gInv), half, vec3(1).sub(half))
+    const E = varying(shIrradiance(probes.shR, probes.shG, probes.shB, uvw, normalWorld))
+    const apply = (m: THREE.Material) => {
+      const col = (m as THREE.MeshStandardMaterial).color
+      const albedo = col ? vec3(col.r, col.g, col.b) : vec3(0.5, 0.42, 0.3)
+      const nm = m as unknown as { emissiveNode?: unknown; needsUpdate: boolean }
+      nm.emissiveNode = albedo.mul(E).mul(float(PROBE_INTENSITY))
+      nm.needsUpdate = true
+    }
+    clonedScene.traverse((child) => {
+      const mesh = child as THREE.Mesh
+      if (!mesh.isMesh) return
+      if (Array.isArray(mesh.material)) mesh.material.forEach(apply)
+      else apply(mesh.material)
+    })
+  }, [probes, clonedScene])
 
   return (
     <group ref={groupRef} position={position} scale={scale} rotation={rotation}>
