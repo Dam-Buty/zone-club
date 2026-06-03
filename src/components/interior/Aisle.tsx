@@ -9,25 +9,27 @@ import { DeskCassettes } from './DeskCassettes'
 import { MinitelDisplay } from './MinitelDisplay'
 import { setCassetteRegistry } from '../../utils/cassetteRegistry'
 import { useStore } from '../../store'
-import { positionWorld, normalWorld, clamp, vec3, varying, float } from 'three/tsl'
+import { positionWorld, normalWorld, clamp, vec3, varying, texture, cameraPosition } from 'three/tsl'
 import { useProbeVolumes } from './ProbeVolumeContext'
 import { shIrradiance } from '../../lib/lightbake/shReconstruct'
 import { GRID_MIN, gridExt, G } from '../../lib/lightbake/probeGrid'
+import { PROBE_PI, MOON_DESK, OBJ_GI } from './bakeDebugStore'
+import { attachProbeEmissive } from './probeLit'
+import { MOONLIGHT } from '../../lib/lightbake/emissiveRig'
 
-// Phase-3 baked GI: SH-L1 probe receiver for the counter (same pattern/?pi knob as the shelves/K7).
-const PROBE_INTENSITY = (() => {
-  if (typeof window === 'undefined') return 1.2
-  const p = parseFloat(new URLSearchParams(window.location.search).get('pi') || '1.2')
-  return Number.isFinite(p) ? p : 1.2
-})()
-const COMPTOIR_ALBEDO_LINEAR = new THREE.Color('#6b4c33').convertSRGBToLinear()
+// Cold vitrine light: dir TOWARD the window source (−L) + hue, for the baked desk specular highlight.
+const _mlw = new THREE.Vector3(MOONLIGHT.dir[0], MOONLIGHT.dir[1], MOONLIGHT.dir[2]).negate().normalize()
+const MOON_LW: [number, number, number] = [_mlw.x, _mlw.y, _mlw.z]
+const _mcol = new THREE.Color(MOONLIGHT.color)
+const MOON_COL: [number, number, number] = [_mcol.r, _mcol.g, _mcol.b]
 
 // Composant pour chargement async des modèles 3D
-function AsyncModel({ url, position, scale = 1, rotation = [0, 0, 0] }: {
+function AsyncModel({ url, position, scale = 1, rotation = [0, 0, 0], bake = false }: {
   url: string
   position: [number, number, number]
   scale?: number | [number, number, number]
   rotation?: [number, number, number]
+  bake?: boolean
 }) {
   const { scene } = useGLTF(url, true)
   const clonedScene = useMemo(() => {
@@ -40,6 +42,13 @@ function AsyncModel({ url, position, scale = 1, rotation = [0, 0, 0] }: {
     })
     return cloned
   }, [scene])
+
+  // Baked-GI receiver (?baked=1): light this GLB with the SH-L1 probe volume like the other furniture,
+  // else it reads as a flat unlit blob in baked mode (no analytical rig). Opt-in via `bake`.
+  const probes = useProbeVolumes()
+  useEffect(() => {
+    if (bake && probes) attachProbeEmissive(clonedScene, probes, { spec: true, sharp: 12 })
+  }, [bake, probes, clonedScene])
 
   return (
     <primitive
@@ -554,14 +563,39 @@ export const Aisle = memo(function Aisle({ films, filmsByAisle }: AisleProps) {
     const half = vec3(0.5 / G[0], 0.5 / G[1], 0.5 / G[2])
     const uvw = clamp(positionWorld.sub(gMin).mul(gInv), half, vec3(1).sub(half))
     const E = varying(shIrradiance(probes.shR, probes.shG, probes.shB, uvw, normalWorld))
-    const emissive = vec3(COMPTOIR_ALBEDO_LINEAR.r, COMPTOIR_ALBEDO_LINEAR.g, COMPTOIR_ALBEDO_LINEAR.b).mul(E).mul(float(PROBE_INTENSITY))
+    // Baked "lit by light" cold SPECULAR: the varnished top CATCHES the cold vitrine light — reflect the
+    // view ray about the surface normal, peak toward the window source (MOON_LW). View-dependent highlight,
+    // 100% baked → the desk reads as lit by the moonlight, not a flat self-glow. Live via window.__MDESK.
+    const _camDir = positionWorld.sub(cameraPosition).normalize()
+    const _refl = _camDir.sub(normalWorld.mul(_camDir.dot(normalWorld).mul(2)))
+    const deskSpec = _refl.dot(vec3(MOON_LW[0], MOON_LW[1], MOON_LW[2])).max(0).pow(12).mul(MOON_DESK)
+    const coldMoon = vec3(MOON_COL[0], MOON_COL[1], MOON_COL[2])
+    ;(window as unknown as { __MDESK?: unknown }).__MDESK = MOON_DESK
     comptoirRef.current.traverse((child) => {
       const mesh = child as THREE.Mesh
       if (!mesh.isMesh) return
+      const sm = mesh.material as THREE.MeshStandardMaterial
+      // Modulate by the REAL albedo = wood map × the dark-wood tint `color` (#6b4c33 ≈ linear 0.147).
+      // The base PBR diffuse is map×color; the emissive GI must use the SAME albedo. Without `× color`
+      // it sampled the RAW bright wood map (~0.5), ~7× too bright on R and far more on G/B → the counter
+      // desaturated and washed to near-white ("le bureau perd toute sa couleur"). `× color` is a no-op
+      // where color≈white (most GLB), so this is the correct general form, not a counter-only hack.
+      const tint = vec3(sm.color.r, sm.color.g, sm.color.b)
+      const albedo = sm.map ? texture(sm.map).mul(tint) : tint
       const nm = mesh.material as unknown as { emissiveNode?: unknown; needsUpdate: boolean }
-      nm.emissiveNode = emissive
+      nm.emissiveNode = albedo.mul(E).mul(PROBE_PI).mul(OBJ_GI).add(coldMoon.mul(deskSpec))
       nm.needsUpdate = true
     })
+  }, [probes])
+  // Entrance doormat (paillasson) — baked-GI receiver too, else a flat unlit patch in baked mode.
+  const rugRef = useRef<THREE.Mesh>(null)
+  const doorMatRef = useRef<THREE.Mesh>(null) // the green door-threshold mat (separate from the paillasson)
+  useEffect(() => {
+    if (!probes) return
+    // floorMoon: the entrance mats sit in a near-zero probe zone, so add the cold floor moon as a diffuse
+    // fill → they catch the same cold entrance light the floor cookie gives the floor (else flat black).
+    attachProbeEmissive(rugRef.current, probes, { floorMoon: 0.5 })
+    attachProbeEmissive(doorMatRef.current, probes, { floorMoon: 0.5 })
   }, [probes])
   useFrame(() => {
     if (deskFetchTriggeredRef.current) return
@@ -1039,6 +1073,7 @@ export const Aisle = memo(function Aisle({ films, filmsByAisle }: AisleProps) {
             url="/models/fire_extinguisher.glb"
             position={[0, 1.0, 0.15]}
             scale={0.0015}
+            bake
           />
         </Suspense>
       </group>
@@ -1298,7 +1333,7 @@ export const Aisle = memo(function Aisle({ films, filmsByAisle }: AisleProps) {
 
       {/* ===== PORTE D'ENTRÉE (indication) ===== */}
       <group position={[-ROOM_WIDTH / 2 + 1.26, 0, ROOM_DEPTH / 2 - 0.08]}>
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, -0.4]}>
+        <mesh ref={doorMatRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.01, -0.4]}>
           <planeGeometry args={[1.5, 0.8]} />
           <meshStandardMaterial color="#2a4a2a" roughness={0.5} />
         </mesh>
@@ -1329,10 +1364,10 @@ export const Aisle = memo(function Aisle({ films, filmsByAisle }: AisleProps) {
       </Suspense>
 
       {/* ===== DÉTAILS DU SOL — Paillasson d'entrée ===== */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[-ROOM_WIDTH / 2 + 1.33, 0.005, ROOM_DEPTH / 2 - 0.8]}>
+      <mesh ref={rugRef} rotation={[-Math.PI / 2, 0, 0]} position={[-ROOM_WIDTH / 2 + 1.33, 0.005, ROOM_DEPTH / 2 - 0.8]}>
         <planeGeometry args={[2, 1.2]} />
         <meshStandardMaterial
-          color="#3a2215"
+          color="#8a6a45"
           roughness={0.95}
         />
       </mesh>
@@ -1352,6 +1387,7 @@ export const Aisle = memo(function Aisle({ films, filmsByAisle }: AisleProps) {
           position={[-ROOM_WIDTH / 2 + 0.45, 0, 3.33]}
           scale={0.05}
           rotation={[0, Math.PI, 0]}
+          bake
         />
       </Suspense>
 
@@ -1362,6 +1398,7 @@ export const Aisle = memo(function Aisle({ films, filmsByAisle }: AisleProps) {
           position={[-ROOM_WIDTH / 2 + 0.15, 1.575, 3.33]}
           scale={0.3}
           rotation={[0, 0, -Math.PI / 12]}
+          bake
         />
       </Suspense>
 

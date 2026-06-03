@@ -1,24 +1,15 @@
 import { useRef, useEffect, useCallback } from 'react'
 import * as THREE from 'three'
-import { positionWorld, normalWorld, clamp, vec3, varying, float } from 'three/tsl'
+import { positionWorld, normalWorld, clamp, vec3, varying, texture } from 'three/tsl'
 import { useGLTF } from '@react-three/drei'
 import { RAYCAST_LAYER_INTERACTIVE } from './Controls'
 import { useStore } from '../../store'
 import { useProbeVolumes } from './ProbeVolumeContext'
-import { shIrradiance } from '../../lib/lightbake/shReconstruct'
+import { shIrradiance, shSpecular } from '../../lib/lightbake/shReconstruct'
 import { GRID_MIN, gridExt, G } from '../../lib/lightbake/probeGrid'
+import { PROBE_PI, OBJ_SPEC, OBJ_GI } from './bakeDebugStore'
 
 useGLTF.preload('/models/leather_couch.glb', true)
-
-// Phase-3 baked GI: same SH-L1 probe receiver pattern as WallShelf/CassetteInstances (?pi knob).
-const PROBE_INTENSITY = (() => {
-  if (typeof window === 'undefined') return 1.2
-  const p = parseFloat(new URLSearchParams(window.location.search).get('pi') || '1.2')
-  return Number.isFinite(p) ? p : 1.2
-})()
-// Constant linear leather albedo for the low-frequency SH emissive term (the detailed GLB texture
-// stays in colorNode for the residual ambient — same rationale as the shelves' constant wood albedo).
-const COUCH_ALBEDO_LINEAR = new THREE.Color('#5a4636').convertSRGBToLinear()
 
 interface CouchProps {
   position: [number, number, number]
@@ -64,10 +55,18 @@ export function Couch({ position, rotation = [0, 0, 0], onSit }: CouchProps) {
     const half = vec3(0.5 / G[0], 0.5 / G[1], 0.5 / G[2])
     const uvw = clamp(positionWorld.sub(gMin).mul(gInv), half, vec3(1).sub(half))
     const E = varying(shIrradiance(probes.shR, probes.shG, probes.shB, uvw, normalWorld))
-    const emissive = vec3(COUCH_ALBEDO_LINEAR.r, COUCH_ALBEDO_LINEAR.g, COUCH_ALBEDO_LINEAR.b).mul(E).mul(float(PROBE_INTENSITY))
+    // Baked "lit by light" specular: the glossy leather CATCHES the dominant neon as a highlight
+    // (shSpecular reads the light direction from the SH) → reads as lit, not self-glowing. Per-fragment.
+    const spec = shSpecular(probes.shR, probes.shG, probes.shB, uvw, normalWorld, 16)
+    ;(window as unknown as { __OSPEC?: unknown }).__OSPEC = OBJ_SPEC
     const apply = (m: THREE.Material) => {
+      const sm = m as THREE.MeshStandardMaterial
+      // Modulate by the material's REAL albedo (leather texture map) so the couch keeps its grain,
+      // not a flat clay blob. Map if present, else colour.
+      const tint = vec3(sm.color.r, sm.color.g, sm.color.b)
+      const albedo = sm.map ? texture(sm.map).mul(tint) : tint
       const nm = m as unknown as { emissiveNode?: unknown; needsUpdate: boolean }
-      nm.emissiveNode = emissive
+      nm.emissiveNode = albedo.mul(E).mul(PROBE_PI).mul(OBJ_GI).add(spec.mul(OBJ_SPEC))
       nm.needsUpdate = true
     }
     clonedScene.current.traverse((child) => {

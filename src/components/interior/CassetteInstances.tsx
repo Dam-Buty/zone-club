@@ -13,16 +13,9 @@ import { useIsMobile } from '../../hooks/useIsMobile'
 import { RAYCAST_LAYER_CASSETTE } from './Controls'
 import { CASSETTE_DIMENSIONS } from './cassette-constants'
 import { useProbeVolumes } from './ProbeVolumeContext'
-import { useBakeDebug } from './bakeDebugStore'
+import { useBakeDebug, PROBE_PI } from './bakeDebugStore'
 import { shIrradiance } from '../../lib/lightbake/shReconstruct'
 import { GRID_MIN, gridExt, G } from '../../lib/lightbake/probeGrid'
-
-// Phase-2 probe irradiance multiplier on the K7 albedo (tunable/calibrated visually at M2 via ?pi=).
-const PROBE_INTENSITY = (() => {
-  if (typeof window === 'undefined') return 1.2
-  const p = parseFloat(new URLSearchParams(window.location.search).get('pi') || '1.2')
-  return Number.isFinite(p) ? p : 1.2
-})()
 
 // Poster self-illumination floor — keeps tilted faces readable, but at night it greys the K7 and
 // fights the baked neon. Night-mood lever: lower it so the K7 are LIT by the GI, not self-glowing.
@@ -36,7 +29,6 @@ const SELF_ILLUM = (() => {
 // Live-tunable uniforms (driven by bakeDebugStore via the dev panel) — module-level singletons so
 // they survive material rebuilds; writing .value is a cheap GPU uniform update (no shader recompile).
 const SI_UNIFORM = uniform(SELF_ILLUM)
-const PI_UNIFORM = uniform(PROBE_INTENSITY)
 // K7 emissive tone-curve: gamma (fixed) deepens the muddy darks; the white-point (live ?k7=) rolls
 // off the highlights so bright posters near neon don't blow past the bloom threshold (glow).
 const K7_GAMMA = 1.3
@@ -322,7 +314,7 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
       // varying() forces the SH eval into the VERTEX stage — instanceIndex is vertex-only, and
       // the design wants per-vertex sampling — then interpolates the irradiance to the fragment.
       const E = varying(shIrradiance(probes.shR, probes.shG, probes.shB, uvw, normalWorld))
-      lit = selfIllum.add(cappedColor.mul(E).mul(PI_UNIFORM))
+      lit = selfIllum.add(cappedColor.mul(E).mul(PROBE_PI))
     }
     // Tone-curve the poster "lighting" (NOT the hover glow): gamma deepens the washed-out darks, and
     // a Reinhard roll-off toward the white-point K7_TONE keeps bright posters under the bloom
@@ -635,7 +627,7 @@ export function CassetteInstances({ instances }: CassetteInstancesProps) {
   const k7 = useBakeDebug((s) => s.k7)
   useEffect(() => {
     SI_UNIFORM.value = si
-    PI_UNIFORM.value = pi
+    PROBE_PI.value = pi
     K7_TONE_UNIFORM.value = k7
   }, [si, pi, k7])
   return (

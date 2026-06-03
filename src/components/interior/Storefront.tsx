@@ -1,10 +1,15 @@
-import { useMemo, useEffect } from 'react'
+import { useMemo, useEffect, useRef } from 'react'
 import * as THREE from 'three'
 import { useTexture } from '@react-three/drei'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
+import { positionWorld, normalWorld, clamp, vec3, varying, texture } from 'three/tsl'
 import { TextureCache } from '../../utils/TextureCache'
 import { useKTX2Textures } from '../../hooks/useKTX2Textures'
 import { SHARED_WALL_MATERIAL } from './constants'
+import { useProbeVolumes } from './ProbeVolumeContext'
+import { shIrradiance, shSpecular } from '../../lib/lightbake/shReconstruct'
+import { GRID_MIN, gridExt, G } from '../../lib/lightbake/probeGrid'
+import { PROBE_PI, OBJ_SPEC } from './bakeDebugStore'
 
 interface StorefrontProps {
   position: [number, number, number]
@@ -162,17 +167,19 @@ function createPushPlateTexture(): THREE.CanvasTexture {
 }
 
 // ===== VITRINE POSTERS (individual component for texture lifecycle) =====
-function VitrinePoster({ posterPath, position, width, height }: {
+function VitrinePoster({ posterPath, position, width, height, shNode }: {
   posterPath: string | null
   position: [number, number, number]
   width: number
   height: number
+  shNode: ReturnType<typeof varying> | null
 }) {
+  const meshRef = useRef<THREE.Mesh>(null!)
   const posterUrl = posterPath
     ? `/api/poster/w500${posterPath}`
     : null
 
-  const texture = useMemo(() => {
+  const posterTex = useMemo(() => {
     if (!posterUrl) return null
     const tex = TextureCache.acquire(posterUrl)
     if (tex) {
@@ -190,16 +197,37 @@ function VitrinePoster({ posterPath, position, width, height }: {
     }
   }, [posterUrl])
 
+  // Phase-3 baked GI: light the poster's room-facing side with the SAME SH-L1 node as the storefront
+  // frame. Baked mode drops the analytical rig, so the poster reads pure black otherwise — exactly the
+  // "posters tous noirs" flagged. Modulated by the poster texture so it keeps its art.
+  useEffect(() => {
+    const mesh = meshRef.current
+    if (!mesh || !shNode) return
+    const mat = mesh.material as THREE.MeshStandardMaterial
+    const albedo = mat.map ? texture(mat.map) : vec3(mat.color.r, mat.color.g, mat.color.b)
+    const nm = mat as unknown as { emissiveNode?: unknown; needsUpdate: boolean }
+    // SH front-light (dim — the moon comes from BEHIND the poster) + a cold BACKLIGHT glow = the exterior
+    // light transmitting through the semi-transparent poster, so it reads as a softly-lit lightbox showing
+    // its art. The poster is opacity 0.7 (≈30% transparent) so the soft backdrop also reads through it.
+    nm.emissiveNode = albedo.mul(shNode).mul(PROBE_PI).add(albedo.mul(vec3(0.12, 0.18, 0.40)))
+    nm.needsUpdate = true
+  }, [shNode, posterTex])
+
   const fallbackColors = ['#2a1a3a', '#1a2a3a', '#3a2a1a', '#1a3a2a', '#3a1a2a']
   const fallbackColor = fallbackColors[Math.abs(position[0] * 10) % fallbackColors.length | 0]
 
   return (
-    <mesh position={position}>
+    // userData.bakeOccluder: the bake adds these poster planes to its shadow-ray BVH so the exterior
+    // moonbeam is blocked by them → light enters the interior only through the glass gaps (the mask).
+    <mesh ref={meshRef} position={position} userData={{ bakeOccluder: true }}>
       <planeGeometry args={[width, height]} />
       <meshStandardMaterial
-        map={texture}
-        color={texture ? '#ffffff' : fallbackColor}
+        map={posterTex}
+        color={posterTex ? '#ffffff' : fallbackColor}
         roughness={0.6}
+        transparent
+        opacity={0.7}
+        depthWrite={false}
       />
     </mesh>
   )
@@ -225,6 +253,53 @@ export function Storefront({ position, roomWidth, roomHeight, posterPaths }: Sto
   // Shared wall material — single GPU pipeline for all interior walls
   const wallMaterial = SHARED_WALL_MATERIAL
 
+  // Phase-3 baked GI: SH-L1 node shared by the storefront fixtures (posters via prop + the metal/dark
+  // fixture mats below). Null pre-bake. Lights them "comme les murs" — baked mode drops the analytic rig,
+  // so these separate (non-lightmapped, non-shell) meshes read pure black without it.
+  const probes = useProbeVolumes()
+  const shNode = useMemo(() => {
+    if (!probes) return null
+    const e = gridExt()
+    const gMin = vec3(GRID_MIN[0], GRID_MIN[1], GRID_MIN[2])
+    const gInv = vec3(1 / e[0], 1 / e[1], 1 / e[2])
+    const half = vec3(0.5 / G[0], 0.5 / G[1], 0.5 / G[2])
+    const uvw = clamp(positionWorld.sub(gMin).mul(gInv), half, vec3(1).sub(half))
+    return varying(shIrradiance(probes.shR, probes.shG, probes.shB, uvw, normalWorld))
+  }, [probes])
+
+  // Glass env reflection (PER-FRAGMENT, not varying): the door/vitrine glass reflects the interior neon.
+  // In baked mode there's no env IBL → the glass would read pure black (the "porte noire" at the entrance).
+  const glassSpecNode = useMemo(() => {
+    if (!probes) return null
+    const e = gridExt()
+    const gMin = vec3(GRID_MIN[0], GRID_MIN[1], GRID_MIN[2])
+    const gInv = vec3(1 / e[0], 1 / e[1], 1 / e[2])
+    const half = vec3(0.5 / G[0], 0.5 / G[1], 0.5 / G[2])
+    const uvw = clamp(positionWorld.sub(gMin).mul(gInv), half, vec3(1).sub(half))
+    return shSpecular(probes.shR, probes.shG, probes.shB, uvw, normalWorld)
+  }, [probes])
+
+  // Light the dark/metal fixture mats (frame, door frame, kickboard, push bar) with the SH GI. NOT the
+  // glass via diffuse (it's reflective), NOT bake-wall-south (lightmapped), NOT the backdrop (emissive street).
+  useEffect(() => {
+    if (!shNode) return
+    for (const m of [FRAME_MAT, DOOR_FRAME_MAT, KICKBOARD_MAT, PUSH_BAR_MAT]) {
+      const albedo = vec3(m.color.r, m.color.g, m.color.b)
+      const nm = m as unknown as { emissiveNode?: unknown; needsUpdate: boolean }
+      nm.emissiveNode = albedo.mul(shNode).mul(PROBE_PI)
+      nm.needsUpdate = true
+    }
+    // Door + vitrine glass: a FAINT reflection of the interior neon (reflection only, no diffuse glow) so the
+    // glass isn't pure black at night — "la porte légèrement avec le reflet du néon au-dessus".
+    if (glassSpecNode) {
+      for (const m of [GLASS_MAT, DOOR_GLASS_MAT]) {
+        const nm = m as unknown as { emissiveNode?: unknown; needsUpdate: boolean }
+        nm.emissiveNode = glassSpecNode.mul(OBJ_SPEC).mul(0.6)
+        nm.needsUpdate = true
+      }
+    }
+  }, [shNode, glassSpecNode])
+
   // Exterior backdrop (exterior.jpeg — placed at real 3D depth behind wall for geometric parallax)
   const exteriorTex = useTexture('/exterior.webp')
 
@@ -233,11 +308,11 @@ export function Storefront({ position, roomWidth, roomHeight, posterPaths }: Sto
     return new THREE.MeshStandardMaterial({
       map: exteriorTex,
       roughness: 0.95,
-      // Rue de nuit AUTO-ÉMISSIVE : la texture brille par ses propres néons → on la VOIT
-      // à travers la vitrine (avant: emissive '#111118' quasi noir = rue éteinte).
+      // Extérieur nocturne = SIMPLEMENT UNE LUMIÈRE DOUCE (pas un reflet de rue intense). emissiveIntensity
+      // baissé 1.5 → 0.3 : une lueur derrière la vitrine qui rétro-éclaire les posters, sans rue criarde.
       emissiveMap: exteriorTex,
       emissive: '#ffffff',
-      emissiveIntensity: 1.5,
+      emissiveIntensity: 0.3,
       toneMapped: false,
     })
   }, [exteriorTex])
@@ -364,6 +439,7 @@ export function Storefront({ position, roomWidth, roomHeight, posterPaths }: Sto
           position={[topStartX + i * (topPosterW + topGapX), topY, Z_POSTERS]}
           width={topPosterW}
           height={topPosterH}
+          shNode={shNode}
         />
       ))}
       {/* Bottom row: 2 left + 1 right */}
@@ -374,6 +450,7 @@ export function Storefront({ position, roomWidth, roomHeight, posterPaths }: Sto
           position={[bx, botY, Z_POSTERS]}
           width={botPosterW}
           height={botPosterH}
+          shNode={shNode}
         />
       ))}
 

@@ -7,6 +7,11 @@ import { useIsMobile } from '../../hooks/useIsMobile'
 import { createTextTexture } from '../../utils/createTextTexture'
 import { Couch } from './Couch'
 import { RAYCAST_LAYER_INTERACTIVE } from './Controls'
+import { positionWorld, normalWorld, clamp, vec3, varying, texture } from 'three/tsl'
+import { useProbeVolumes } from './ProbeVolumeContext'
+import { shIrradiance } from '../../lib/lightbake/shReconstruct'
+import { GRID_MIN, gridExt, G } from '../../lib/lightbake/probeGrid'
+import { PROBE_PI, OBJ_GI } from './bakeDebugStore'
 
 // Preload Sony logo PNG
 useTexture.preload('/logo-sony.png')
@@ -192,6 +197,16 @@ const tvConcaveMat = new THREE.MeshStandardMaterial({
   color: '#18161c',
   roughness: 0.75,
 })
+
+// Allowlist of the dark-plastic body materials (VCR + Trinitron shell) that must catch the baked GI
+// in ?baked=1 (the analytical rig is dropped → they'd read pure black otherwise). The self-emissive
+// surfaces — CRT screen, menu overlays, LCD clock, LEDs — use inline meshBasic/meshStandard in the
+// JSX and are deliberately NOT in this list, so they keep their own glow untouched.
+const TV_SH_BODY_MATERIALS: THREE.MeshStandardMaterial[] = [
+  tvBodyMat, tvPanelMat, tvButtonMat, tvInnerBezelMat, tvTopEdgeMat, tvCreaseMat, tvConcaveMat,
+  vcrBodyMat, vcrFootMat, vcrButtonMat, vcrSlotMat, vcrDisplayPanelMat, vcrSeparationMat,
+  vcrDoorMat, vcrFenteFrameMat, vcrFenteDoorMat,
+]
 
 // --- Sony Trinitron: Shared geometry ---
 const tvButtonGeo = new THREE.CylinderGeometry(0.012, 0.012, 0.010, 12)
@@ -428,6 +443,7 @@ function createTVFrontTexture(): THREE.CanvasTexture {
 export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: InteractiveTVDisplayProps) {
   const screenRef = useRef<THREE.Mesh>(null)
   const videoRef = useRef<HTMLVideoElement | null>(null)
+  const probes = useProbeVolumes() // Phase-3 SH-L1 volumes (?baked=1, post-bake)
   const [tvMode, setTvMode] = useState<TVMode>('idle')
   const [selectedIndex, setSelectedIndex] = useState(0)
 
@@ -513,6 +529,31 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
       normalScale: new THREE.Vector2(0.7, 0.7),
     })
   }, [woodTextures])
+
+  // Phase-3 baked GI: light the TV/VCR shell + wood stand with the SH-L1 probe volume (emissiveNode,
+  // same pattern as the shelves/couch/manager). Baked mode drops the analytical rig, so the dark
+  // plastic shell reads pure black otherwise — this lets it catch the neon ambiance. The screen,
+  // menu overlays, LCD clock and LEDs keep their own emission (not in TV_SH_BODY_MATERIALS).
+  useEffect(() => {
+    if (!probes) return
+    const e = gridExt()
+    const gMin = vec3(GRID_MIN[0], GRID_MIN[1], GRID_MIN[2])
+    const gInv = vec3(1 / e[0], 1 / e[1], 1 / e[2])
+    const half = vec3(0.5 / G[0], 0.5 / G[1], 0.5 / G[2])
+    const uvw = clamp(positionWorld.sub(gMin).mul(gInv), half, vec3(1).sub(half))
+    const E = varying(shIrradiance(probes.shR, probes.shG, probes.shB, uvw, normalWorld))
+    const apply = (m: THREE.MeshStandardMaterial) => {
+      // Modulate by the REAL albedo (wood map if present, else the plastic colour) so the shell
+      // keeps its material identity instead of becoming a flat self-lit panel.
+      const tint = vec3(m.color.r, m.color.g, m.color.b)
+      const albedo = m.map ? texture(m.map).mul(tint) : tint
+      const nm = m as unknown as { emissiveNode?: unknown; needsUpdate: boolean }
+      nm.emissiveNode = albedo.mul(E).mul(PROBE_PI).mul(OBJ_GI)
+      nm.needsUpdate = true
+    }
+    TV_SH_BODY_MATERIALS.forEach(apply)
+    apply(tvStandWoodMat)
+  }, [probes, tvStandWoodMat])
 
   // Obtenir les films loués avec leurs infos
   const rentedFilms = useMemo(() => {

@@ -1,20 +1,14 @@
 import { useMemo, useEffect, useRef, memo } from 'react'
 import * as THREE from 'three'
-import { positionWorld, normalWorld, clamp, vec3, varying, float } from 'three/tsl'
+import { positionWorld, normalWorld, clamp, vec3, varying, texture } from 'three/tsl'
 import { useGLTF } from '@react-three/drei'
 import { RAYCAST_LAYER_INTERACTIVE } from './Controls'
 import { useStore } from '../../store'
 import { useProbeVolumes } from './ProbeVolumeContext'
 import { shIrradiance } from '../../lib/lightbake/shReconstruct'
 import { GRID_MIN, gridExt, G } from '../../lib/lightbake/probeGrid'
+import { PROBE_PI, OBJ_GI } from './bakeDebugStore'
 import type { ApiBoardNote } from '../../api'
-
-// Phase-3 baked GI: SH-L1 probe receiver (same ?pi knob as the shelves/K7).
-const PROBE_INTENSITY = (() => {
-  if (typeof window === 'undefined') return 1.2
-  const p = parseFloat(new URLSearchParams(window.location.search).get('pi') || '1.2')
-  return Number.isFinite(p) ? p : 1.2
-})()
 
 // Grid layout in board local space (before parent scale)
 const GRID_COLS = 8
@@ -123,18 +117,32 @@ function getNoteRotation(row: number, col: number): number {
   return ((row * 7 + col * 13) % 7 - 3) * 1.2 * (Math.PI / 180)
 }
 
-// Single 3D sticky note
-const BoardNote3D = memo(function BoardNote3D({ note }: { note: ApiBoardNote }) {
+// Single 3D sticky note. `shNode` is the board's shared SH-L1 irradiance node (null pre-bake).
+const BoardNote3D = memo(function BoardNote3D(
+  { note, shNode }: { note: ApiBoardNote; shNode: ReturnType<typeof varying> | null }
+) {
   const meshRef = useRef<THREE.Mesh>(null!)
-  const texture = useMemo(
+  const noteTexture = useMemo(
     () => createNoteTexture(note),
     [note.id, note.content, note.color, note.username]
   )
 
   useEffect(() => {
     meshRef.current.layers.enable(RAYCAST_LAYER_INTERACTIVE)
-    return () => { texture.dispose() }
-  }, [texture])
+    return () => { noteTexture.dispose() }
+  }, [noteTexture])
+
+  // Phase-3 baked GI: light the sticky note with the SAME SH-L1 node as the board frame, otherwise
+  // it reads as a dark square on a lit board (baked mode drops the analytical rig). Modulated by the
+  // note's own colour texture so the paper keeps its hue.
+  useEffect(() => {
+    const mesh = meshRef.current
+    if (!mesh || !shNode) return
+    const mat = mesh.material as THREE.MeshStandardMaterial
+    const nm = mat as unknown as { emissiveNode?: unknown; needsUpdate: boolean }
+    nm.emissiveNode = texture(noteTexture).mul(shNode).mul(PROBE_PI).mul(OBJ_GI)
+    nm.needsUpdate = true
+  }, [shNode, noteTexture])
 
   const pos = getNotePosition(note.grid_row, note.grid_col)
   const rot = getNoteRotation(note.grid_row, note.grid_col)
@@ -147,7 +155,7 @@ const BoardNote3D = memo(function BoardNote3D({ note }: { note: ApiBoardNote }) 
       userData={{ isBoardNote: true, noteId: note.id }}
     >
       <planeGeometry args={[NOTE_W, NOTE_H]} />
-      <meshStandardMaterial map={texture} roughness={0.85} metalness={0} />
+      <meshStandardMaterial map={noteTexture} roughness={0.85} metalness={0} />
     </mesh>
   )
 })
@@ -195,6 +203,17 @@ export const BoardMesh = memo(function BoardMesh({ position, scale, rotation }: 
   const boardNotes = useStore(s => s.boardNotes)
   const probes = useProbeVolumes() // Phase-3 SH-L1 volumes (?baked=1, post-bake)
 
+  // Phase-3 SH-L1 irradiance node, shared by the board frame AND the sticky notes. Null pre-bake.
+  const shNode = useMemo(() => {
+    if (!probes) return null
+    const e = gridExt()
+    const gMin = vec3(GRID_MIN[0], GRID_MIN[1], GRID_MIN[2])
+    const gInv = vec3(1 / e[0], 1 / e[1], 1 / e[2])
+    const half = vec3(0.5 / G[0], 0.5 / G[1], 0.5 / G[2])
+    const uvw = clamp(positionWorld.sub(gMin).mul(gInv), half, vec3(1).sub(half))
+    return varying(shIrradiance(probes.shR, probes.shG, probes.shB, uvw, normalWorld))
+  }, [probes])
+
   const clonedScene = useMemo(() => {
     const cloned = scene.clone(true)
     cloned.traverse((child) => {
@@ -216,18 +235,14 @@ export const BoardMesh = memo(function BoardMesh({ position, scale, rotation }: 
   // Phase-3 baked GI: light the board frame with the SH-L1 probe volume (emissiveNode like the
   // shelves/K7 — baked mode drops the analytical rig so the cork/wood would read near-black).
   useEffect(() => {
-    if (!probes) return
-    const e = gridExt()
-    const gMin = vec3(GRID_MIN[0], GRID_MIN[1], GRID_MIN[2])
-    const gInv = vec3(1 / e[0], 1 / e[1], 1 / e[2])
-    const half = vec3(0.5 / G[0], 0.5 / G[1], 0.5 / G[2])
-    const uvw = clamp(positionWorld.sub(gMin).mul(gInv), half, vec3(1).sub(half))
-    const E = varying(shIrradiance(probes.shR, probes.shG, probes.shB, uvw, normalWorld))
+    if (!shNode) return
     const apply = (m: THREE.Material) => {
-      const col = (m as THREE.MeshStandardMaterial).color
-      const albedo = col ? vec3(col.r, col.g, col.b) : vec3(0.5, 0.42, 0.3)
+      const sm = m as THREE.MeshStandardMaterial
+      // Modulate by the REAL albedo (texture map) so the cork/wood keeps its detail, not a flat panel.
+      const tint = vec3(sm.color.r, sm.color.g, sm.color.b)
+      const albedo = sm.map ? texture(sm.map).mul(tint) : tint
       const nm = m as unknown as { emissiveNode?: unknown; needsUpdate: boolean }
-      nm.emissiveNode = albedo.mul(E).mul(float(PROBE_INTENSITY))
+      nm.emissiveNode = albedo.mul(shNode).mul(PROBE_PI).mul(OBJ_GI)
       nm.needsUpdate = true
     }
     clonedScene.traverse((child) => {
@@ -236,13 +251,13 @@ export const BoardMesh = memo(function BoardMesh({ position, scale, rotation }: 
       if (Array.isArray(mesh.material)) mesh.material.forEach(apply)
       else apply(mesh.material)
     })
-  }, [probes, clonedScene])
+  }, [shNode, clonedScene])
 
   return (
     <group ref={groupRef} position={position} scale={scale} rotation={rotation}>
       <primitive object={clonedScene} />
       {boardNotes.map(note => (
-        <BoardNote3D key={note.id} note={note} />
+        <BoardNote3D key={note.id} note={note} shNode={shNode} />
       ))}
       {/* Label above board */}
       <mesh position={[0, 1.55, 0.03]}>

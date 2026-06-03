@@ -5,7 +5,7 @@ import type { MeshBVH } from 'three-mesh-bvh'
 import { gpuStorages, WGSL_HELPERS } from './bvhGpu.ts'
 import { G, PROBE_COUNT, probeWorld, flatIndex } from './probeGrid.ts'
 import { makeProbeVolume } from './shReconstruct.ts'
-import type { NeeEmitter } from './radiosityBake.ts'
+import type { NeeEmitter, MoonGobo } from './radiosityBake.ts'
 
 const SAMPLES = 256   // full-sphere rays per probe (indirect bounce off the lit shell)
 const NEE_SAMPLES = 8 // shadow rays per emitter (direct neon, also projected to SH)
@@ -27,8 +27,17 @@ export async function probeBakeRaw(
   emitters: ReadonlyArray<NeeEmitter>,
   sky: [number, number, number] = [0.008, 0.012, 0.025],
   clampDirect = 100, // max luminance per NEE sample (firefly clamp); shared with the shell bake
+  moon: MoonGobo | null = null, // exterior directional through the vitrine/door, projected to SH (cold rim on counter/objects)
 ): Promise<{ r: Float32Array; g: Float32Array; b: Float32Array }> {
   const S = gpuStorages(bvhGeometry, bvh)
+  // The probe COMPUTE stage is capped at 8 storage buffers (the default WebGPU limit, and the M1 target):
+  // the gather already binds 7 (ppS · shOut · geom_index · geom_position · uv1 · bvh · emitters). Adding the
+  // interior-occluder BVH (×3) → 10 = GPUValidationError. The FLOOR furniture shadow is already baked into
+  // the lightmap rake (radiosityBake moonPass, its own fragment-stage BVH — no limit issue there); the probe
+  // only needs the moon DIRECT (aperture+mask) to give the counter top / Rick / objects their cold rim, so we
+  // skip the probe-side shadow ray. Flip PROBE_MOON_SHADOW only on a device that guarantees ≥11 buffers.
+  const PROBE_MOON_SHADOW = false
+  const Socc = PROBE_MOON_SHADOW && moon && moon.occluderGeo && moon.occluderBvh ? gpuStorages(moon.occluderGeo, moon.occluderBvh) : null
 
   // uv1 packed vec3 (z=0) — IDENTICAL to radiosityBake.ts:47-52.
   const uv1Attr = bvhGeometry.getAttribute('uv1')
@@ -70,6 +79,67 @@ export async function probeBakeRaw(
       let phi = 6.2831853 * u.y; return vec3f(r*cos(phi), r*sin(phi), z);
     }`)
 
+  // MOON → SH: splice the same exterior-directional cookie the shell rake uses into the probe gather,
+  // projected onto SH-L1 as a delta light from wi=-moonDir (radiance E=moonRad·glass). SAME convention
+  // as the neon NEE above (E·Y0, E·Y1·wi.{y,z,x}) so the scale matches. Gated by aperture+mask (vitrine/
+  // door) and the interior-occluder shadow ray → the counter TOP + Rick + objects catch a cold rim while
+  // the floor behind stays shadowed. Constants are interpolated as WGSL literals (no fragile arg binding).
+  const F = (x: number) => { const s = String(x); return /[.e]/.test(s) ? s : s + '.0' }
+  const hasMoon = moon ? 1 : 0
+  const mImgW = moon?.maskTex?.image ? (moon.maskTex.image as { width: number }).width : 1
+  const mImgH = moon?.maskTex?.image ? (moon.maskTex.image as { height: number }).height : 1
+  const dRect = moon?.doorRect ?? [0, 0, 1, 1]
+  const dSub = moon?.doorMaskSub ?? [0, 0, 1, 1]
+  const hasDoor = moon?.doorRect && moon?.doorMaskSub ? 1 : 0
+  const pScale = moon?.probeScale ?? 1 // probe rim needs more radiance than the floor rake (see MOONLIGHT.probeScale)
+  const maskNode = moon ? texture(moon.maskTex) : null
+  const moonSig = moon ? `, maskTex: texture_2d<f32>${Socc ? ', occIndex: ptr<storage, array<vec3u>, read>, occPos: ptr<storage, array<vec3f>, read>, occBvh: ptr<storage, array<BVHNode>, read>' : ''}` : ''
+  const shadowSub = Socc ? `
+            var sray = Ray(P, -moonDir);
+            let shx = bvhIntersectFirstHit(occIndex, occPos, occBvh, sray);
+            if (shx.didHit && shx.dist < (t - 0.05)) { gm = 0.0; }` : ''
+  const moonBody = hasMoon ? `
+      // ---- MOON (exterior directional via vitrine/door, gated by mask + interior shadow, → SH) ----
+      {
+        let moonDir = vec3f(${F(moon!.dir[0])}, ${F(moon!.dir[1])}, ${F(moon!.dir[2])});
+        let moonRad = vec3f(${F(moon!.rad[0] * pScale)}, ${F(moon!.rad[1] * pScale)}, ${F(moon!.rad[2] * pScale)});
+        let zWall = ${F(moon!.zWall)};
+        let vwx=${F(moon!.winRect[0])}; let vwy=${F(moon!.winRect[1])}; let vww=${F(moon!.winRect[2])}; let vwh=${F(moon!.winRect[3])};
+        let vsx=${F(moon!.maskSub[0])}; let vsy=${F(moon!.maskSub[1])}; let vssx=${F(moon!.maskSub[2])}; let vssy=${F(moon!.maskSub[3])};
+        let dwx=${F(dRect[0])}; let dwy=${F(dRect[1])}; let dww=${F(dRect[2])}; let dwh=${F(dRect[3])};
+        let dsx=${F(dSub[0])}; let dsy=${F(dSub[1])}; let dssx=${F(dSub[2])}; let dssy=${F(dSub[3])};
+        let mw=${F(mImgW)}; let mh=${F(mImgH)}; let hasDoor=${F(hasDoor)};
+        let denom = -moonDir.z;
+        if (denom > 0.001) {
+          let t = (zWall - P.z) / denom;
+          if (t > 0.0) {
+            let Pw = P - moonDir * t;
+            var gm = 0.0;
+            let un=(Pw.x-vwx)/vww; let vn=(Pw.y-vwy)/vwh;
+            if (un>=0.0 && un<=1.0 && vn>=0.0 && vn<=1.0) {
+              let um=vsx+(1.0-un)*vssx; let vm=vsy+(1.0-vn)*vssy;
+              gm = textureLoad(maskTex, vec2i(i32(um*mw), i32(vm*mh)), 0).g;
+            } else if (hasDoor > 0.5) {
+              let dun=(Pw.x-dwx)/dww; let dvn=(Pw.y-dwy)/dwh;
+              if (dun>=0.0 && dun<=1.0 && dvn>=0.0 && dvn<=1.0) {
+                let dum=dsx+(1.0-dun)*dssx; let dvm=dsy+(1.0-dvn)*dssy;
+                gm = textureLoad(maskTex, vec2i(i32(dum*mw), i32(dvm*mh)), 0).g;
+              }
+            }
+            if (gm > 0.0) {${shadowSub}
+              if (gm > 0.0) {
+                let wi = -moonDir;
+                let E = moonRad * gm;
+                c0 = c0 + E * Y0;
+                c1 = c1 + E * (Y1 * wi.y);
+                c2 = c2 + E * (Y1 * wi.z);
+                c3 = c3 + E * (Y1 * wi.x);
+              }
+            }
+          }
+        }
+      }` : ''
+
   // Robust output path (verified the alternatives fail): a wgslFn returning a STRUCT is not
   // TSL-accessible (getStructTypeNode null), and writing to a storage buffer through a wgslFn
   // `ptr<storage,read_write>` param is a SILENT no-op. The ONLY proven primitives are: wgslFn→vec3
@@ -82,7 +152,7 @@ export async function probeBakeRaw(
       res: f32, sky: vec3f, clampDirect: f32,
       geom_index: ptr<storage, array<vec3u>, read>, geom_position: ptr<storage, array<vec3f>, read>,
       geom_uv1: ptr<storage, array<vec3f>, read>, bvh: ptr<storage, array<BVHNode>, read>,
-      emitters: ptr<storage, array<vec3f>, read>, lightmap: texture_2d<f32>,
+      emitters: ptr<storage, array<vec3f>, read>, lightmap: texture_2d<f32>${moonSig},
     ) -> vec3f {
       let PI = 3.14159265; let Y0 = 0.282095; let Y1 = 0.488603;
       var c0 = vec3f(0.0); var c1 = vec3f(0.0); var c2 = vec3f(0.0); var c3 = vec3f(0.0);
@@ -136,6 +206,7 @@ export async function probeBakeRaw(
         }
       }
 
+${moonBody}
       if (coeff < 0.5) { return c0; }
       if (coeff < 1.5) { return c1; }
       if (coeff < 2.5) { return c2; }
@@ -152,6 +223,8 @@ export async function probeBakeRaw(
       res: float(lightmapRes), sky: vec3(sky[0], sky[1], sky[2]), clampDirect: float(clampDirect),
       geom_index: S.index, geom_position: S.position, geom_uv1: uv1S, bvh: S.bvh,
       emitters: emS, lightmap: lm,
+      ...(maskNode ? { maskTex: maskNode } : {}),
+      ...(Socc ? { occIndex: Socc.index, occPos: Socc.position, occBvh: Socc.bvh } : {}),
     }
     const base = idx.mul(4)
     // 4 gather calls (one per SH coeff) → write via .element().assign() (the persisting path).

@@ -1,9 +1,10 @@
 import { useCallback, useMemo, useEffect } from 'react'
 import * as THREE from 'three/webgpu'
-import { positionWorld, normalWorld, clamp, vec3, varying, float } from 'three/tsl'
+import { positionWorld, normalWorld, clamp, vec3, varying, float, texture } from 'three/tsl'
 import { CASSETTE_DIMENSIONS } from './cassette-constants'
 import { useProbeVolumes } from './ProbeVolumeContext'
-import { shIrradiance } from '../../lib/lightbake/shReconstruct'
+import { shIrradiance, shSpecular } from '../../lib/lightbake/shReconstruct'
+import { OBJ_SPEC, OBJ_GI } from './bakeDebugStore'
 import { GRID_MIN, gridExt, G } from '../../lib/lightbake/probeGrid'
 
 interface WallShelfProps {
@@ -112,8 +113,12 @@ export function WallShelf({
       const half = vec3(0.5 / G[0], 0.5 / G[1], 0.5 / G[2])
       const uvw = clamp(positionWorld.sub(gMin).mul(gInv), half, vec3(1).sub(half))
       const E = varying(shIrradiance(probes.shR, probes.shG, probes.shB, uvw, normalWorld))
-      const albedo = vec3(SHELF_ALBEDO_LINEAR.r, SHELF_ALBEDO_LINEAR.g, SHELF_ALBEDO_LINEAR.b)
-      mat.emissiveNode = albedo.mul(E).mul(float(PROBE_INTENSITY))
+      // Sample the wood MAP × the linear tint = the true base albedo, so the baked-GI emissive carries
+      // the wood GRAIN. Baked mode has no analytical light → the emissive is the ONLY thing on screen,
+      // so a flat colour here = a grainless plank ("les meubles K7 ont perdu leurs textures").
+      const albedo = texture(shelfMap).mul(vec3(SHELF_ALBEDO_LINEAR.r, SHELF_ALBEDO_LINEAR.g, SHELF_ALBEDO_LINEAR.b))
+      // + baked "catch the neon" specular (semi-varnished wood → broad lobe) so the planks read as lit
+      mat.emissiveNode = albedo.mul(E).mul(float(PROBE_INTENSITY)).mul(OBJ_GI).add(shSpecular(probes.shR, probes.shG, probes.shB, uvw, normalWorld, 7).mul(OBJ_SPEC))
     }
     return mat
   }, [shelfMap, shelfNormalMap, shelfRoughnessMap, probes])

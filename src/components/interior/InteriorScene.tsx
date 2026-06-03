@@ -23,7 +23,7 @@ if (typeof window !== 'undefined') {
 }
 import { Controls } from './Controls'
 import { PostProcessingEffects } from './PostProcessingEffects'
-import { Environment } from '@react-three/drei'
+import { FlatEnvironment } from './FlatEnvironment'
 import { useIsMobile } from '../../hooks/useIsMobile'
 import { useBackGuard } from '../../hooks/useBackGuard'
 import { preloadCastSdk } from '../../hooks/useGoogleCast'
@@ -36,6 +36,9 @@ const Aisle = lazy(() => import('./Aisle').then(module => ({ default: module.Ais
 // Baked-lighting A/B switch — `?baked=1` swaps the analytical rig for the GI lightmap (read once
 // at load; reload to toggle). Guarded for the build's prerender pass (window undefined).
 const BAKED_MODE = typeof window === 'undefined' ? true : new URLSearchParams(window.location.search).get('baked') !== '0'
+// Dev tuning panel: shown in `npm run dev`. `?tuning=1` ALSO reveals it on a PRODUCTION build / the
+// deployed site (so the look can be dialed there too), without shipping it to normal visitors.
+const TUNING_PANEL = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('tuning') === '1'
 // IBL ambient fill (indoor_night.hdr) is now a LIVE knob — read from bakeDebugStore (?env= seeds it),
 // tunable on the fly via the dev panel. Lower it to deepen the night + let the baked neon GI read.
 
@@ -131,11 +134,7 @@ const SceneContent = memo(function SceneContent({
   const envIntensity = useBakeDebug((s) => s.env) // live ambient (dev panel)
   return (
     <ProbeVolumeContext.Provider value={probeVolumes}>
-      <Environment
-        files="/textures/env/indoor_night.hdr"
-        background={false}
-        environmentIntensity={envIntensity}
-      />
+      <FlatEnvironment intensity={envIntensity} />
       <Lighting isMobile={isMobile} baked={BAKED_MODE} />
       {BAKED_MODE && <BakedShellLighting enabled onProbeVolumes={setProbeVolumes} />}
       <Aisle films={films} filmsByAisle={filmsByAisle} />
@@ -1110,7 +1109,7 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
       </Canvas>
 
       {/* DEV live-tuning panel for the baked-lighting composition (DOM sibling of the Canvas). */}
-      {BAKED_MODE && process.env.NODE_ENV !== 'production' && <BakeDebugPanel />}
+      {BAKED_MODE && (process.env.NODE_ENV !== 'production' || TUNING_PANEL) && <BakeDebugPanel />}
 
       {gpuError && (
         <div

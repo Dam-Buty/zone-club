@@ -22,6 +22,63 @@ export interface RadiosityBakeOptions {
 const DEFAULTS = { resolution: 1024, samples: 48, neeSamples: 4, bounces: 3, sky: [0, 0, 0] as [number, number, number], blur: 0, clampDirect: 100, grayscale: false }
 const lum = (r: number, g: number, b: number) => 0.2126 * r + 0.7152 * g + 0.0722 * b
 
+// Persistent ping-pong bake targets — REUSED across bakes. Allocating fresh RenderTargets every bake
+// and disposing them at the end made the NEXT bake ("Re-bake" button) render BLACK: the re-bake's
+// render reused a pipeline/bind-group that still referenced the freed targets → the shell GI lightmap
+// came out empty and walls/floor/ceiling went dark. Stable module-level targets keep every binding
+// valid across re-bakes; only a resolution change reallocates them.
+let _bakeRtA: THREE.RenderTarget | null = null
+let _bakeRtB: THREE.RenderTarget | null = null
+let _bakeRtMoon: THREE.RenderTarget | null = null // separate ADDITIVE moon-rake target (NOT albedo-modulated)
+let _bakeRtRes = 0
+const _mkRt = (res: number) => new THREE.RenderTarget(res, res, { type: THREE.HalfFloatType, colorSpace: THREE.NoColorSpace, depthBuffer: false })
+function bakeTargets(res: number): [THREE.RenderTarget, THREE.RenderTarget] {
+  if (!_bakeRtA || !_bakeRtB || _bakeRtRes !== res) {
+    _bakeRtA?.dispose(); _bakeRtB?.dispose()
+    _bakeRtA = _mkRt(res); _bakeRtB = _mkRt(res); _bakeRtRes = res
+  }
+  return [_bakeRtA, _bakeRtB]
+}
+// The moon rake lives in its OWN persistent target so the runtime can ADD it to the shell emissive
+// (NOT multiply it by the dark hex-tile albedo, which crushes the cold light to black). Reused across bakes.
+// NEAREST filtering (vs the GI targets' default linear): the runtime samples this at the floor's uv1, and
+// bilinear blur would smear the window-vs-poster cut into a soft wash — Nearest keeps the découpe crisp.
+function moonTarget(res: number): THREE.RenderTarget {
+  if (!_bakeRtMoon || _bakeRtMoon.width !== res) {
+    _bakeRtMoon?.dispose()
+    _bakeRtMoon = new THREE.RenderTarget(res, res, { type: THREE.HalfFloatType, colorSpace: THREE.NoColorSpace, depthBuffer: false, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter })
+  }
+  return _bakeRtMoon
+}
+
+/** Baked DIRECTIONAL cookie/gobo for the exterior "moonlight": a distant parallel light (dir = travel
+ *  direction) whose per-texel contribution is gated by `maskTex` (glass channel) projected orthographically
+ *  along the light onto the window plane (z = zWall). winRect = world [xmin,ymin,width,height] of the window;
+ *  maskSub = [offX,offY,scaleX,scaleY] sub-rect inside the mask PNG. rad = linear HDR radiance. */
+export interface MoonGobo {
+  maskTex: THREE.Texture
+  dir: [number, number, number]
+  rad: [number, number, number]
+  zWall: number
+  winRect: [number, number, number, number]
+  maskSub: [number, number, number, number]
+  doorRect?: [number, number, number, number] // optional 2nd aperture (entrance door)
+  doorMaskSub?: [number, number, number, number]
+  neonDamp?: number // warm-GI attenuation factor where the rake lands (1 = no damp)
+  probeScale?: number // probe-side radiance multiplier (the cold rim on SH receivers needs more than the floor)
+  shadow?: boolean // interior cast shadows in the rake (counter/couch). false → the rake reaches the open floor
+  // Mask "openness" for the floor wash: g = mix(maskG, 1, maskFloor) INSIDE an aperture. 0 = strict posters
+  // (only glass gaps pass → open floor projects to the dense top-posters → stays dark). 1 = ignore poster
+  // detail (broad cold wash over the whole vitrine band). The open/visible floor needs this lifted to read.
+  maskFloor?: number
+  // Optional INTERIOR-occluder BVH (counter, islands, couch…) for cast shadows in the rake. Built by
+  // bakeShellRuntime and attached here. SEPARATE from the gather's shell+poster BVH so adding it never
+  // perturbs the validated GI bake — the moon shadow ray tests ONLY these interior solids.
+  occluderGeo?: THREE.BufferGeometry
+  occluderBvh?: MeshBVH
+  debug?: number
+}
+
 /**
  * UV-space radiosity bake with **Next-Event Estimation** (direct light sampling), WebGPU/TSL.
  *
@@ -40,7 +97,8 @@ export async function radiosityBake(
   bvh: MeshBVH,
   emitters: ReadonlyArray<NeeEmitter>,
   options: RadiosityBakeOptions = {},
-): Promise<THREE.Texture> {
+  moon: MoonGobo | null = null,
+): Promise<{ lightmap: THREE.Texture; moonmap: THREE.Texture | null }> {
   const opts = { ...DEFAULTS, ...options }
   const storages = gpuStorages(bvhGeometry, bvh)
 
@@ -147,11 +205,7 @@ export async function radiosityBake(
     }
   `, [bvhIntersectFirstHit, getVertexAttribute, helpers])
 
-  const mkRT = () => new THREE.RenderTarget(opts.resolution, opts.resolution, {
-    type: THREE.HalfFloatType, colorSpace: THREE.NoColorSpace, depthBuffer: false,
-  })
-  let rtPrev = mkRT()
-  let rtCur = mkRT()
+  let [rtPrev, rtCur] = bakeTargets(opts.resolution)
 
   const scene = new THREE.Scene()
   const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1)
@@ -232,10 +286,125 @@ export async function radiosityBake(
     blurMat.dispose()
   }
 
+  // ── MOONLIGHT rake (final pass → SEPARATE ADDITIVE target) ── Project the storefront glass mask
+  // orthographically along L onto each texel; mask.g gates where light passes (glass) vs posters; an
+  // optional interior shadow ray blocks it behind the counter. The cold term is written to its OWN target
+  // (moonRt), NOT the albedo-modulated GI lightmap: the runtime ADDS it to the shell emissive, so the dark
+  // hex-tile floor (texture albedo ≈ black) still shows the rake instead of crushing it to 0 (`base·lm`
+  // killed it — measured: the GI lightmap held the moon over ~24% of the floor slot, but ×black-tile = 0).
+  // ?moonDebug=1 dumps the projected cookie vec3(hit,g) for world→mask-UV calibration.
+  let moonmapTex: THREE.Texture | null = null
+  if (moon && moon.maskTex && moon.maskTex.image) {
+    const mImgW = (moon.maskTex.image as { width: number }).width
+    const mImgH = (moon.maskTex.image as { height: number }).height
+    const dbg = moon.debug ?? 0
+    const F = (x: number) => { const s = String(x); return /[.e]/.test(s) ? s : s + '.0' } // WGSL f32 literal
+    const hasDoor = moon.doorRect && moon.doorMaskSub ? 1 : 0
+    const dRect = moon.doorRect ?? [0, 0, 1, 1]
+    const dSub = moon.doorMaskSub ?? [0, 0, 1, 1]
+    const maskFloorV = moon.maskFloor ?? 0 // lift g toward 1 inside an aperture (open floor → poster-dense top → needs this)
+    // INTERIOR-occluder BVH (counter/islands/couch…) for cast shadows in the rake — SEPARATE from the
+    // gather BVH so it never perturbs the validated GI. Wired only when bakeShellRuntime supplied it.
+    const occ = moon.occluderGeo && moon.occluderBvh ? gpuStorages(moon.occluderGeo, moon.occluderBvh) : null
+    const shadowSig = occ ? `,
+        occIndex: ptr<storage, array<vec3u>, read>, occPos: ptr<storage, array<vec3f>, read>, occBvh: ptr<storage, array<BVHNode>, read>` : ''
+    const shadowBody = occ ? `
+            if (g > 0.0) {                          // cast a shadow ray P→window; an interior solid blocks the rake
+              var sray = Ray(P + N * 0.02, -moonDir);
+              let sh = bvhIntersectFirstHit(occIndex, occPos, occBvh, sray);
+              if (sh.didHit && sh.dist < (t - 0.05)) { g = 0.0; }
+            }` : ''
+    // Constants interpolated as WGSL literals (no fragile arg binding). Output = the ADDITIVE cold radiance
+    // (moonRad·cosP·glass), NOT multiplied by albedo — the runtime scales + adds it (MOON_RAKE uniform).
+    const moonFn = wgslFn(/* wgsl */`
+      fn moonPass(P: vec3f, N: vec3f, maskTex: texture_2d<f32>${shadowSig}) -> vec3f {
+        let moonDir = vec3f(${F(moon.dir[0])}, ${F(moon.dir[1])}, ${F(moon.dir[2])});
+        let moonRad = vec3f(${F(moon.rad[0])}, ${F(moon.rad[1])}, ${F(moon.rad[2])});
+        let zWall = ${F(moon.zWall)}; let clampDirect = ${F(opts.clampDirect)}; let debug = ${F(dbg)};
+        let hasDoor = ${F(hasDoor)};
+        let vwx = ${F(moon.winRect[0])}; let vwy = ${F(moon.winRect[1])}; let vww = ${F(moon.winRect[2])}; let vwh = ${F(moon.winRect[3])};
+        let vsx = ${F(moon.maskSub[0])}; let vsy = ${F(moon.maskSub[1])}; let vssx = ${F(moon.maskSub[2])}; let vssy = ${F(moon.maskSub[3])};
+        let dwx = ${F(dRect[0])}; let dwy = ${F(dRect[1])}; let dww = ${F(dRect[2])}; let dwh = ${F(dRect[3])};
+        let dsx = ${F(dSub[0])}; let dsy = ${F(dSub[1])}; let dssx = ${F(dSub[2])}; let dssy = ${F(dSub[3])};
+        let mw = ${F(mImgW)}; let mh = ${F(mImgH)};
+        if (debug > 2.5) { return vec3f(1.0); }
+        if (debug > 1.5) { return vec3f(P.y * 5.0, 0.0, 0.0); }
+        var g = 0.0;
+        var hit = 0.0;
+        let denom = -moonDir.z;                  // march back along -L toward the +z aperture
+        if (denom > 0.001) {
+          let t = (zWall - P.z) / denom;
+          if (t > 0.0) {
+            let Pw = P - moonDir * t;            // hit on the window plane
+            // VITRINE first (U mirror: interior is PI-rotated vs the photo; V invert: PNG row0=top)
+            let un = (Pw.x - vwx) / vww;
+            let vn = (Pw.y - vwy) / vwh;
+            if (un >= 0.0 && un <= 1.0 && vn >= 0.0 && vn <= 1.0) {
+              hit = 1.0;
+              let um = vsx + (1.0 - un) * vssx;
+              let vm = vsy + (1.0 - vn) * vssy;
+              g = textureLoad(maskTex, vec2i(i32(um * mw), i32(vm * mh)), 0).g;
+            } else if (hasDoor > 0.5) {          // else the DOOR (apertures are disjoint → at most one hit)
+              let dun = (Pw.x - dwx) / dww;
+              let dvn = (Pw.y - dwy) / dwh;
+              if (dun >= 0.0 && dun <= 1.0 && dvn >= 0.0 && dvn <= 1.0) {
+                hit = 1.0;
+                let dum = dsx + (1.0 - dun) * dssx;
+                let dvm = dsy + (1.0 - dvn) * dssy;
+                g = textureLoad(maskTex, vec2i(i32(dum * mw), i32(dvm * mh)), 0).g;
+              }
+            }
+            if (hit > 0.5) { g = mix(g, 1.0, ${F(maskFloorV)}); }  // "open" the mask → broad floor wash (vs strict poster gaps)
+            ${shadowBody}
+          }
+        }
+        if (debug > 0.5) { return vec3f(hit, g, 0.0); }  // =1: RED=projection lands, GREEN=glass passes
+        let cosP = max(0.0, dot(N, -moonDir));   // surface receives the moon FROM -L
+        return clampRad(moonRad * cosP * g, clampDirect);   // ADDITIVE cold rake (runtime scales + adds, no albedo ×)
+      }
+    `, occ ? [bvhIntersectFirstHit, helpers] : [helpers])
+    const moonMaskNode = texture(moon.maskTex)
+    const moonMat = new THREE.MeshBasicNodeMaterial()
+    moonMat.side = THREE.DoubleSide
+    moonMat.vertexNode = unwrap // P=positionWorld matches the gather (baked world geo, identity mesh matrix)
+    moonMat.colorNode = moonFn({
+      P: positionWorld, N: normalLocal, maskTex: moonMaskNode,
+      ...(occ ? { occIndex: occ.index, occPos: occ.position, occBvh: occ.bvh } : {}),
+    })
+    mesh.material = moonMat
+    const moonRt = moonTarget(opts.resolution)
+    renderer.setRenderTarget(moonRt)
+    renderer.clear() // moonRt starts black → 0 where the rake doesn't reach
+    await renderer.renderAsync(scene, cam)
+    moonMat.dispose()
+    moonmapTex = moonRt.texture
+
+    // ANALYTICAL readback: ALWAYS stash moonRt pixels on globalThis for a DOM-side decode — at debug=0 this
+    // is the actual ADDITIVE cold radiance written to the floor/wall slots (verify it's non-zero before
+    // blaming the runtime add); at debug>=1 it's the (hit,g) cookie. The count log runs only at debug>=1.
+    {
+      const r = opts.resolution
+      const data = await renderer.readRenderTargetPixelsAsync(moonRt, 0, 0, r, r)
+      ;(globalThis as unknown as { __moonAtlas?: unknown }).__moonAtlas = { data, res: r, debug: dbg }
+      if (dbg >= 1) {
+        let hitCount = 0, gCount = 0, minX = 1, minY = 1, maxX = 0, maxY = 0
+        for (let y = 0; y < r; y++) {
+          for (let x = 0; x < r; x++) {
+            const i = (y * r + x) * 4
+            if (data[i] !== 0) { hitCount++; const u = x / r, v = y / r; if (u < minX) minX = u; if (u > maxX) maxX = u; if (v < minY) minY = v; if (v > maxY) maxY = v }
+            if (data[i + 1] !== 0) gCount++
+          }
+        }
+        console.log(`[moon-readback] res=${r} hit(R!=0)=${hitCount} glass(G!=0)=${gCount} hitUVbbox=[${minX.toFixed(3)},${minY.toFixed(3)} → ${maxX.toFixed(3)},${maxY.toFixed(3)}]`)
+      }
+    }
+  }
+
   renderer.setRenderTarget(prevTarget)
   renderer.toneMapping = prevTone
   renderer.setClearColor(prevClear, prevClearAlpha)
   gatherMat.dispose()
-  rtCur.dispose()
-  return rtPrev.texture
+  // rtPrev/moonRt are persistent module-level targets (see bakeTargets/moonTarget) — do NOT dispose them,
+  // so the returned textures stay stable, valid bindings that the next "Re-bake" re-renders into.
+  return { lightmap: rtPrev.texture, moonmap: moonmapTex }
 }

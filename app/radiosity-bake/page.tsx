@@ -98,7 +98,7 @@ async function runBake(canvas: HTMLCanvasElement, setS: (s: string) => void, isD
   // NEE does the direct lighting (low variance) → far fewer indirect hemisphere samples needed.
   // Center mode → zero sky so the ONLY light is the central source + its bounces (pure GI read).
   const sky: [number, number, number] = centerMode ? [0, 0, 0] : grayscale ? [0.02, 0.02, 0.02] : [0.008, 0.012, 0.025]
-  const lightmap = await radiosityBake(renderer, render, bvhGeo, bvh, rig, {
+  const { lightmap } = await radiosityBake(renderer, render, bvhGeo, bvh, rig, {
     resolution: 1024, samples: 48, neeSamples: 8, bounces, sky, blur: 2, grayscale,
   })
   if (isDisposed()) return

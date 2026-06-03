@@ -145,6 +145,46 @@ const FLOOR_POOLS: EmitterSpec[] = GENRE_SIGNS.map((s) => {
   }
 })
 
+// Exterior "moonlight" = a baked DIRECTIONAL COOKIE/GOBO (Unity/Bakery idiom). A distant parallel light
+// (direction L) whose per-lightmap-texel contribution is gated by the storefront GLASS mask projected
+// orthographically along L onto the receiver (see radiosityBake `moonPass`). It is NOT an area emitter
+// behind the glass (those get occluded by the posters and wash out) — the mask itself carves the window
+// pattern, decoupled from geometry, with NO 1/dist² so it reads as a crisp rake against the pink neon GI.
+// 100% baked: one constant vector + one static texture read at bake time. Tuned/calibrated via ?moon=,
+// ?moonDebug=1 (dumps the projected mask), ?msub= (mask sub-rect). Consumed by radiosityBake + probeBake.
+const _mdir = new Vector3(0.25, -0.55, -0.8).normalize()
+export const MOONLIGHT = {
+  dir: [_mdir.x, _mdir.y, _mdir.z] as [number, number, number], // travel dir: into room (z-), down (y-)
+  color: '#6f88c4', // cold moonlight (sRGB)
+  intensity: 14.0, // probe/furniture (desk, Rick) cold-rim intensity (×probeScale). Floor uses the HUE only.
+  zWall: 4.25, // world Z of the south (storefront) wall plane (Storefront at [0,0,ROOM_DEPTH/2], depth 8.5)
+  // World vitrine rect [xmin, ymin, width, height]: VITRINE_CENTER_X -0.8 local → +0.8 world after the
+  // [0,π,0] storefront rotation; WIDTH 5.2, BOTTOM 0.5, HEIGHT 2.28 → X∈[-1.8,3.4], Y∈[0.5,2.78].
+  winRect: [-1.8, 0.5, 5.2, 2.28] as [number, number, number, number],
+  // Mask sub-rect [offX, offY, scaleX, scaleY] isolating the vitrine inside storefront-mask.png — the
+  // window occupies only part of the facade photo. MEASURED by scanning the green (glass) channel of the
+  // 2816×1536 mask: the right-hand vitrine box spans U[0.420,0.965] V[0.301,0.954]. The moonPass mirrors
+  // U (interior is π-rotated vs the facade photo) and inverts V (PNG row0=top). Override live via ?msub=.
+  maskSub: [0.42, 0.301, 0.545, 0.653] as [number, number, number, number],
+  // SECOND aperture — the entrance DOOR. DOOR_CENTER_X 3.0 local → -3.0 world after the π rotation;
+  // DOOR_WIDTH 1.0, full-height glass to DOOR_HEIGHT 2.3 → X∈[-3.5,-2.5], Y∈[0,2.3]. Same z=zWall plane.
+  // Its green box in the mask (measured) is U[0.121,0.320] V[0.326,0.996].
+  doorRect: [-3.5, 0.0, 1.0, 2.3] as [number, number, number, number],
+  doorMaskSub: [0.121, 0.326, 0.199, 0.67] as [number, number, number, number],
+  // Warm-GI attenuation WHERE the rake lands (contrast lever): cur *= mix(1, neonDamp, coverage). The
+  // neon floor pools near the vitrine are dimmed only under the cold rake so the moonlight reads. ?mdamp=.
+  neonDamp: 0.45,
+  // Probe-side intensity multiplier (?mprobe=). The SH-L1 probe receivers (counter top, Rick, furniture)
+  // read shIrradiance·albedo·PROBE_PI(0.7), which loses directional energy vs the floor lightmap's lmi(1.8),
+  // so the cold RIM needs ~2.5× the floor rake's radiance to read against the warm neon GI. Decoupled: the
+  // floor rake stays at `intensity` (28, mostly hidden behind the counter), the visible rim gets intensity×this.
+  probeScale: 2.5,
+  // Mask "openness" for the floor wash (?mfloor=). The open/visible floor projects onto the poster-DENSE
+  // top of the vitrine → strict mask (0) leaves it dark. 0.5 lets ~half the light through the poster zones
+  // too → a broad cold wash over the whole floor band (the posters still dim it, but don't zero it).
+  maskFloor: 0.3,
+}
+
 // One transform per emitter (rotation by face + translation), the single source of truth
 // for both the BVH geometry and the NEE rectangle. world = T · R (rotate then translate).
 function emitterMatrix(face: Face, pos: [number, number, number]): Matrix4 {

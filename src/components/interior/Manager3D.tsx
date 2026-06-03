@@ -2,22 +2,16 @@ import { useRef, useMemo, useCallback, useEffect } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
-import { positionWorld, normalWorld, clamp, vec3, varying, float } from 'three/tsl'
+import { positionWorld, normalWorld, clamp, vec3, varying, texture } from 'three/tsl'
 import { useStore } from '../../store'
 import { RAYCAST_LAYER_INTERACTIVE } from './Controls'
 import { useProbeVolumes } from './ProbeVolumeContext'
 import { shIrradiance } from '../../lib/lightbake/shReconstruct'
 import { GRID_MIN, gridExt, G } from '../../lib/lightbake/probeGrid'
+import { PROBE_PI, MANAGER_GI } from './bakeDebugStore'
 
 // Preload the Rick model (Draco compressed)
 useGLTF.preload('/models/rick.glb', true)
-
-// Phase-3 baked GI: SH-L1 probe receiver (same ?pi knob as the shelves/K7).
-const PROBE_INTENSITY = (() => {
-  if (typeof window === 'undefined') return 1.2
-  const p = parseFloat(new URLSearchParams(window.location.search).get('pi') || '1.2')
-  return Number.isFinite(p) ? p : 1.2
-})()
 
 // Nodes to remove from the original Sketchfab export
 const REMOVE_NODES = new Set(['GROUND', 'myOctaneSettings', 'OctaneDayLight', 'Object_6'])
@@ -53,11 +47,16 @@ export function Manager3D({ position, rotation = [0, 0, 0], onInteract }: Manage
     const half = vec3(0.5 / G[0], 0.5 / G[1], 0.5 / G[2])
     const uvw = clamp(positionWorld.sub(gMin).mul(gInv), half, vec3(1).sub(half))
     const E = varying(shIrradiance(probes.shR, probes.shG, probes.shB, uvw, normalWorld))
+    ;(window as unknown as { __RICK?: unknown }).__RICK = MANAGER_GI // live dial Rick GI (no re-bake)
     const apply = (m: THREE.Material) => {
-      const col = (m as THREE.MeshStandardMaterial).color
-      const albedo = col ? vec3(col.r, col.g, col.b) : vec3(0.5, 0.45, 0.4)
+      const sm = m as THREE.MeshStandardMaterial
+      // GI by the REAL albedo = map × colour (colour≈white on the GLB, so ×tint is a no-op there but
+      // stays correct for any tinted sub-material). MANAGER_GI dims Rick ALONE — his white lab coat
+      // otherwise blows to pure white under the SH irradiance + the cold moon rim through the vitrine.
+      const tint = vec3(sm.color.r, sm.color.g, sm.color.b)
+      const albedo = sm.map ? texture(sm.map).mul(tint) : tint
       const nm = m as unknown as { emissiveNode?: unknown; needsUpdate: boolean }
-      nm.emissiveNode = albedo.mul(E).mul(float(PROBE_INTENSITY))
+      nm.emissiveNode = albedo.mul(E).mul(PROBE_PI).mul(MANAGER_GI)
       nm.needsUpdate = true
     }
     glbScene.traverse((child) => {

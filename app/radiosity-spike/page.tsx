@@ -182,7 +182,7 @@ async function runUvBake(canvas: HTMLCanvasElement, setS: (s: string) => void, i
   const bounces = parseInt(new URLSearchParams(window.location.search).get('bounces') || '3', 10)
   setS(`baking uv1 lightmap — NEE (${bounces} bounce${bounces > 1 ? 's' : ''})…`)
 
-  const lightmap = await radiosityBake(renderer, render, bvhGeo, bvh, [emitter], {
+  const { lightmap } = await radiosityBake(renderer, render, bvhGeo, bvh, [emitter], {
     resolution: 1024, samples: 24, neeSamples: 8, bounces, sky: [0.015, 0.025, 0.05],
   })
   if (isDisposed()) return
