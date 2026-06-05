@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
 import { uniform } from 'three/tsl'
 
 // Live tuning store for the baked-lighting composition knobs (dev panel — BakeDebugPanel).
@@ -15,6 +16,23 @@ const q = (k: string, d: number): number => {
   return Number.isFinite(v) ? v : d
 }
 
+// Knobs that can be set via the URL recipe (?env=&si=…). Used by the persist `merge` so an explicit
+// URL param WINS over the persisted localStorage value — without this, persistence silently clobbered
+// any recipe URL on reload (the panel's recipe link became inert after the first save).
+const URL_KEYS = ['env', 'si', 'lmi', 'pi', 'k7', 'sign', 'ospec', 'mspec', 'mdesk', 'ogi', 'neon', 'fluo', 'clamp', 'bounces', 'samples'] as const
+const urlOverrides = (): Partial<Record<(typeof URL_KEYS)[number], number>> => {
+  if (typeof window === 'undefined') return {}
+  const sp = new URLSearchParams(window.location.search)
+  const o: Partial<Record<string, number>> = {}
+  for (const k of URL_KEYS) {
+    const raw = sp.get(k)
+    if (raw === null) continue
+    const v = parseFloat(raw)
+    if (Number.isFinite(v)) o[k] = v
+  }
+  return o
+}
+
 export interface BakeDebugState {
   // LIVE
   env: number // environmentIntensity (ambient IBL fill)
@@ -22,6 +40,9 @@ export interface BakeDebugState {
   lmi: number // lightMapIntensity on the shell
   pi: number // probe intensity on the K7
   k7: number // K7 emissive tone white-point — rolls off poster highlights (anti-glow)
+  sign: number // REALTIME neon SIGN emissive multiplier (GenreSectionPanel) — tames the blown-white
+               // signs while keeping their hue. LIVE (set per-frame by GenrePanelAnimator, no recompile).
+               // Separate from `neon` (which is the BAKE rig → re-bake), so dialing signs is instant.
   ospec: number // object env-reflection ("catch the neon" on couch/shelves/props) → OBJ_SPEC
   mspec: number // floor specular (vitrine reflection pool on the floor) → MOON_SPEC
   mdesk: number // desk specular (vitrine reflection on the counter top) → MOON_DESK
@@ -40,7 +61,7 @@ export interface BakeDebugState {
   setBaking: (b: boolean) => void
 }
 
-export const useBakeDebug = create<BakeDebugState>((set) => ({
+export const useBakeDebug = create<BakeDebugState>()(persist((set) => ({
   // Defaults aligned on the validated night recipe (the look projected in the verification captures):
   // env=0.07 si=0.1 lmi=1.8 pi=0.7 neon=2.8 fluo=2.2 — a fresh load (no URL) now reproduces it.
   env: q('env', 0.07),
@@ -48,6 +69,8 @@ export const useBakeDebug = create<BakeDebugState>((set) => ({
   lmi: q('lmi', 1.8),
   pi: q('pi', 0.7),
   k7: q('k7', 0.9),
+  sign: q('sign', 0.4), // 0.4 puts the dominant neon hues just UNDER the bloom threshold (lum 0.27 < 0.32)
+                        // → coloured readable signs, no white-blob halo. 1.0 = the blown-out look. Live.
   ospec: q('ospec', 1.0),
   mspec: q('mspec', 1.1),
   mdesk: q('mdesk', 3),
@@ -62,6 +85,20 @@ export const useBakeDebug = create<BakeDebugState>((set) => ({
   set: (p) => set(p),
   requestRebake: () => set((s) => ({ rebakeNonce: s.rebakeNonce + 1 })),
   setBaking: (b) => set({ baking: b }),
+}), {
+  name: 'zone-bake-tuning',
+  version: 1,
+  // Persist ONLY the tuning knobs → the panel's réglages survive reloads AND dev hot-reloads (they no
+  // longer reset to defaults on every code edit, which was wiping the manual settings). Transient state
+  // (rebakeNonce/baking/functions) is excluded.
+  partialize: (s) => ({
+    env: s.env, si: s.si, lmi: s.lmi, pi: s.pi, k7: s.k7, sign: s.sign,
+    ospec: s.ospec, mspec: s.mspec, mdesk: s.mdesk, ogi: s.ogi,
+    neon: s.neon, fluo: s.fluo, clamp: s.clamp, bounces: s.bounces, samples: s.samples,
+  }),
+  // Precedence: defaults ← persisted localStorage ← explicit URL params (URL wins). Lets a recipe link
+  // override saved tuning on load, while a plain reload (no params) keeps the user's persisted look.
+  merge: (persisted, current) => ({ ...current, ...(persisted as object), ...urlOverrides() }),
 }))
 
 // Shared live "probe intensity" uniform. EVERY SH-L1 receiver — K7/shelves (CassetteInstances),

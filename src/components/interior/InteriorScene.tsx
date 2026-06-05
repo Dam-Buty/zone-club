@@ -5,6 +5,7 @@ import { RectAreaLightTexturesLib } from 'three/addons/lights/RectAreaLightTextu
 import { useStore } from '../../store'
 import { Lighting } from './Lighting'
 import { BakedShellLighting } from './BakedShellLighting'
+import { BakeStrayProps } from './BakeStrayProps'
 import { BakeDebugPanel } from './BakeDebugPanel'
 import { useBakeDebug } from './bakeDebugStore'
 import { ProbeVolumeContext, type ProbeVolumes } from './ProbeVolumeContext'
@@ -137,6 +138,7 @@ const SceneContent = memo(function SceneContent({
       <FlatEnvironment intensity={envIntensity} />
       <Lighting isMobile={isMobile} baked={BAKED_MODE} />
       {BAKED_MODE && <BakedShellLighting enabled onProbeVolumes={setProbeVolumes} />}
+      {BAKED_MODE && <BakeStrayProps />}
       <Aisle films={films} filmsByAisle={filmsByAisle} />
       <Controls
         onCassetteClick={onCassetteClick}

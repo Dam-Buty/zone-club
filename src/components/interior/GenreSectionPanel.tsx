@@ -4,6 +4,7 @@ import * as THREE from 'three'
 import { Text3D, Center } from '@react-three/drei'
 import { TTFLoader } from 'three/examples/jsm/loaders/TTFLoader.js'
 import type { FontData } from '@react-three/drei'
+import { useBakeDebug } from './bakeDebugStore'
 
 // OPTIMISATION: Consolidated animation registry — 7 useFrame → 1 useFrame
 // Each GenreSectionPanel registers its refs here; GenrePanelAnimator iterates once per frame.
@@ -18,17 +19,21 @@ const panelRegistry = new Map<string, PanelAnimEntry>()
 
 export function GenrePanelAnimator() {
   useFrame((_, delta) => {
+    // Live "sign" multiplier — tames the blown-white neon signs while keeping their hue. Read ONCE
+    // per frame (not per panel). The signs are toneMapped={false} (bypass ACES) so their raw emissive
+    // clips to white + over-blooms; this scalar pulls the source down so the core keeps its colour.
+    const sign = useBakeDebug.getState().sign
     panelRegistry.forEach((entry) => {
       entry.timeRef.current += delta
 
       // No flicker — static emissive avoids SSGI temporal noise
       if (entry.neonRef.current) {
         const mat = entry.neonRef.current.material as THREE.MeshStandardMaterial
-        mat.emissiveIntensity = entry.neonIntensity
+        mat.emissiveIntensity = entry.neonIntensity * sign
       }
 
       if (entry.borderMatRef.current) {
-        entry.borderMatRef.current.emissiveIntensity = entry.neonIntensity * BORDER_EMISSIVE_SCALE
+        entry.borderMatRef.current.emissiveIntensity = entry.neonIntensity * BORDER_EMISSIVE_SCALE * sign
       }
     })
   })
@@ -64,6 +69,15 @@ const SHARED_FRAME_MAT = new THREE.MeshStandardMaterial({ color: '#1a1a1e', roug
 // Bezel: slightly lighter metal edge — gives panel a real enclosure look
 const SHARED_BEZEL_MAT = new THREE.MeshStandardMaterial({ color: '#2e2e32', roughness: 0.40, metalness: 0.55, envMapIntensity: 0.12 })
 const BORDER_EMISSIVE_SCALE = 0.56
+
+// These dark enclosures are EMITTER housings — they must read as dark metal so the neon tube + text
+// pop. Tag them so the baked-GI catch-all (BakeStrayProps) SKIPS them: near the ceiling the SH
+// irradiance is high and white-ish (fluo-dominated), so lighting these neutral-grey bodies washed them
+// to a pale "white panel" with only the letters staying coloured. Skipped, they keep the night ambient
+// only → dark housing with glowing neon. The coloured border tubes/text already self-skip (non-black emissive).
+;[SHARED_CHAIN_MAT, SHARED_BAR_MAT, SHARED_CORNER_MAT, SHARED_FRAME_MAT, SHARED_BEZEL_MAT].forEach((m) => {
+  m.userData.neonEnclosure = true
+})
 
 function NeonTextMesh({
   text,

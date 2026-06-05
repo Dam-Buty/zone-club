@@ -24,12 +24,13 @@ const _mcol = new THREE.Color(MOONLIGHT.color)
 const MOON_COL: [number, number, number] = [_mcol.r, _mcol.g, _mcol.b]
 
 // Composant pour chargement async des modèles 3D
-function AsyncModel({ url, position, scale = 1, rotation = [0, 0, 0], bake = false }: {
+function AsyncModel({ url, position, scale = 1, rotation = [0, 0, 0], bake = false, bakeScale = 1 }: {
   url: string
   position: [number, number, number]
   scale?: number | [number, number, number]
   rotation?: [number, number, number]
   bake?: boolean
+  bakeScale?: number
 }) {
   const { scene } = useGLTF(url, true)
   const clonedScene = useMemo(() => {
@@ -47,7 +48,7 @@ function AsyncModel({ url, position, scale = 1, rotation = [0, 0, 0], bake = fal
   // else it reads as a flat unlit blob in baked mode (no analytical rig). Opt-in via `bake`.
   const probes = useProbeVolumes()
   useEffect(() => {
-    if (bake && probes) attachProbeEmissive(clonedScene, probes, { spec: true, sharp: 12 })
+    if (bake && probes) attachProbeEmissive(clonedScene, probes, { spec: true, sharp: 12, scale: bakeScale })
   }, [bake, probes, clonedScene])
 
   return (
@@ -1074,6 +1075,7 @@ export const Aisle = memo(function Aisle({ films, filmsByAisle }: AisleProps) {
             position={[0, 1.0, 0.15]}
             scale={0.0015}
             bake
+            bakeScale={0.35}
           />
         </Suspense>
       </group>
@@ -1222,7 +1224,7 @@ export const Aisle = memo(function Aisle({ films, filmsByAisle }: AisleProps) {
             map={woodTextures.map}
             normalMap={woodTextures.normalMap}
             roughnessMap={woodTextures.roughnessMap}
-            color="#6b4c33"
+            color="#3a2a1a"
             roughness={0.25}
             clearcoat={0.45}
             clearcoatRoughness={0.12}

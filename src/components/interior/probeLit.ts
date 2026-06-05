@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { positionWorld, normalWorld, clamp, vec3, varying, texture } from 'three/tsl'
+import { positionWorld, normalWorld, clamp, vec3, varying, texture, attribute, float } from 'three/tsl'
 import { shIrradiance, shSpecular } from '../../lib/lightbake/shReconstruct'
 import { GRID_MIN, gridExt, G } from '../../lib/lightbake/probeGrid'
 import { PROBE_PI, OBJ_SPEC, OBJ_GI } from './bakeDebugStore'
@@ -14,6 +14,9 @@ type ProbeOpts = {
   scale?: number      // diffuse GI multiplier
   spec?: boolean      // add the baked "catch the neon" specular highlight (GLOSSY receivers only)
   sharp?: number      // specular lobe exponent (lower = broader/softer; semi-gloss ≈ 8, gloss ≈ 16)
+  tone?: number       // Reinhard white-point roll-off on the DIFFUSE GI (0 = off). Caps bright albedo·E
+                      // so a prop sitting in a hot neon zone reads as LIT, not a self-lit "lightbox"
+                      // ("glow from inside" fix on the wall posters). Same curve as the K7 (?k7=).
   floorMoon?: number  // add the cold floor moon as a DIFFUSE fill (floor-level props sitting in a dim
                       // probe zone — e.g. the entrance mats — so they catch the same cold entrance light
                       // the floor cookie gives the floor, which the sparse probe volume misses there)
@@ -31,7 +34,7 @@ type ProbeOpts = {
 // One E/spec node is shared across the tree (each material's shader evals positionWorld/normalWorld per-mesh).
 export function attachProbeEmissive(root: THREE.Object3D | null, probes: ProbeVolumes, opts: ProbeOpts = {}): void {
   if (!root) return
-  const { scale = 1, spec = false, sharp = 10, floorMoon = 0 } = opts
+  const { scale = 1, spec = false, sharp = 10, tone = 0, floorMoon = 0 } = opts
   const e = gridExt()
   const gMin = vec3(GRID_MIN[0], GRID_MIN[1], GRID_MIN[2])
   const gInv = vec3(1 / e[0], 1 / e[1], 1 / e[2])
@@ -43,8 +46,15 @@ export function attachProbeEmissive(root: THREE.Object3D | null, probes: ProbeVo
     const sm = m as THREE.MeshStandardMaterial
     if (!sm.color) return // skip materials without a diffuse colour (e.g. MeshBasicMaterial decals)
     const tint = vec3(sm.color.r, sm.color.g, sm.color.b)
-    const albedo = sm.map ? texture(sm.map).mul(tint) : tint
-    let node = (scale === 1 ? albedo.mul(E).mul(PROBE_PI) : albedo.mul(E).mul(PROBE_PI).mul(scale)).mul(OBJ_GI)
+    let albedo = sm.map ? texture(sm.map).mul(tint) : tint
+    // Vertex-coloured GLBs (e.g. the Pulp Fiction standee colours its art via the COLOR_0 attribute, NOT a
+    // texture map) — without this the baked emissive used the flat baseColorFactor and lost the art (grey).
+    if (sm.vertexColors) albedo = albedo.mul(attribute('color', 'vec4').xyz)
+    let diff = (scale === 1 ? albedo.mul(E).mul(PROBE_PI) : albedo.mul(E).mul(PROBE_PI).mul(scale)).mul(OBJ_GI)
+    // Reinhard white-point roll-off (x·W/(x+W) → asymptotes to W): caps the diffuse GI so a prop in a
+    // hot neon zone can't blow past the bloom into a self-lit lightbox. Same mechanism as the K7 tone.
+    if (tone > 0) diff = diff.mul(float(tone)).div(diff.add(float(tone)))
+    let node = diff
     if (specNode) node = node.add(specNode.mul(OBJ_SPEC))
     if (floorMoon > 0) node = node.add(vec3(MOON_COL[0], MOON_COL[1], MOON_COL[2]).mul(MOON_RAKE).mul(floorMoon)) // direct cold add (NOT ×albedo → dark mats catch it, like the floor cookie's cold)
     const nm = m as unknown as { emissiveNode?: unknown; needsUpdate: boolean }

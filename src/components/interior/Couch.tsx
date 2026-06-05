@@ -66,7 +66,7 @@ export function Couch({ position, rotation = [0, 0, 0], onSit }: CouchProps) {
       const tint = vec3(sm.color.r, sm.color.g, sm.color.b)
       const albedo = sm.map ? texture(sm.map).mul(tint) : tint
       const nm = m as unknown as { emissiveNode?: unknown; needsUpdate: boolean }
-      nm.emissiveNode = albedo.mul(E).mul(PROBE_PI).mul(OBJ_GI).add(spec.mul(OBJ_SPEC))
+      nm.emissiveNode = albedo.mul(E).mul(PROBE_PI).mul(OBJ_GI).mul(0.8).add(spec.mul(OBJ_SPEC)) // couch reads slightly hotter than the other meubles → −20% on its diffuse
       nm.needsUpdate = true
     }
     clonedScene.current.traverse((child) => {
