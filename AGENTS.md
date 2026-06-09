@@ -147,7 +147,7 @@ Notes d'infra qui ont coûté cher :
 | `GET` | `/api/me/notifications` | session | Notifications retour |
 | `GET / POST` | `/api/me/weekly-bonus` | session | Statut + claim bonus hebdo |
 | `GET` | `/api/films` | publique | Liste films |
-| `GET` | `/api/films/[tmdbId]` | mixte | Détail + statut de location |
+| `GET` | `/api/films/[tmdbId]` | mixte | Détail + statut de location + `has_vf`/`has_vo` |
 | `GET` | `/api/films/aisle/[aisle]` | publique | Films par rayon |
 | `GET` | `/api/films/genre/[slug]` | publique | Films par genre |
 | `GET` | `/api/films/desk-display` | publique | 3 derniers retours (comptoir) |
@@ -382,6 +382,10 @@ permanent dans les coins.
 `slices/tutorial.ts`). Persist `videoclub-storage` avec `partialize` restreint (`localUser`,
 `rentalHistory`, flags d'onboarding, scène courante) — **pas l'auth**, gérée par cookie.
 
+`rentalHistory` est **alimenté par le serveur** (`fetchMe` → `/api/me`) et contient **toutes** les
+locations, actives comprises : ne pas l'additionner à `rentals.length` pour obtenir un total. La copie
+persistée n'est qu'un cache d'affichage en attendant la réponse de `fetchMe` ; `logout()` la vide.
+
 `InteractionMode` : `'none' | 'sitting' | 'minitel' | 'tvStanding' | 'lazoneStanding' |
 'lazoneWatching' | 'film'`. Remplace 6 setters mutex codés à la main qui avaient dérivé ; les
 booléens `isXxx` subsistent comme vues dérivées pour les ~50 sites de lecture existants.
@@ -614,6 +618,26 @@ Vulkan/NVIDIA et sur Metal iOS. L'atlas 2D de `CassetteTextureArray.ts` existe p
 
 **Boutons `disabled` = échec silencieux sur mobile** — `<button disabled>` avale le tap sans aucun
 retour. Laisser le bouton actif, laisser le `onClick` décider et afficher une popup explicative.
+
+**Dispo VF/VO = le fichier TRANSCODÉ, et ça ne se teste pas en dev** — la version réellement jouable
+est `file_path_v{f,o}_transcoded` (c'est ce dont `streaming_urls` et les symlinks se servent), jamais
+`file_path_v*` ni `radarr_v*_id` (colonnes mortes). La DB de dev n'a aucun transcode et
+`FORCED_RENTAL_VIDEO_URL` force les deux versions : la validation VF/VO se fait **en prod** ou sur une
+réponse d'API mockée.
+
+**Historique de location : serveur, pas local** — `getUserRentalHistory` renvoyait déjà tout, mais
+`store.fetchMe` ne câblait pas `rentalHistory` ; les writers locaux (`addToHistory`, `removeRental`)
+n'avaient aucun caller. Résultat : liste vide en permanence, sans erreur nulle part. Un helper de store
+sans caller n'est pas du code mort inoffensif, c'est une fonctionnalité silencieusement absente.
+
+**Changer le type de retour d'une fonction `lib/` → grep les callers d'abord** — `getUserRentalHistory`
+semblait n'en avoir qu'un (`/api/me`) ; `lib/chat.ts` était le second. D'où le retour en **superset**
+(`SELECT r.*` + colonnes jointes) plutôt qu'une projection.
+
+**Le `persist` zustand écrase les paramètres d'URL au rechargement** — `videoclub-storage` réhydrate
+avant que le code ne lise la query string, donc un A/B piloté par URL compare deux fois la même valeur.
+Vider la clé localStorage puis recharger, ou lire la valeur live, avant de conclure qu'un réglage
+« ne fait rien ».
 
 **Cache de build Next.js** — un `.next` corrompu provoque des `PageNotFoundError` fantômes sur des
 routes API valides. Toujours `rm -rf .next` avant un build de vérification (c'est ce que fait
