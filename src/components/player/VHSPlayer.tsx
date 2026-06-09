@@ -146,6 +146,16 @@ export function VHSPlayer() {
   const hasVO = !!streamingUrls?.vo;
   const hasSubtitles = !!streamingUrls?.subtitles;
 
+  // Snap the selected audio track to a version that ACTUALLY exists for this rental. A film can be VF-only
+  // (e.g. The Big Short) or VO-only; without this the player keeps the default 'vf' and getVideoUrl
+  // silently serves the other version → UI says one thing, audio is another. Here we make the selection
+  // honest so the controls + the served stream agree.
+  useEffect(() => {
+    if (!streamingUrls) return;
+    if (audioTrack === 'vf' && !hasVF && hasVO) setAudioTrack('vo');
+    else if (audioTrack === 'vo' && !hasVO && hasVF) setAudioTrack('vf');
+  }, [streamingUrls, hasVF, hasVO, audioTrack]);
+
   // Get current video URL based on selected track
   const getVideoUrl = useCallback(() => {
     if (!streamingUrls) return rental?.videoUrl || '';

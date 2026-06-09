@@ -101,7 +101,7 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
   const user = isAuthenticated && authUser
     ? {
         credits,
-        totalRentals: rentals.length + rentalHistory.length,
+        totalRentals: rentalHistory.length || rentals.length, // history now = ALL rentals (active+past); avoid double-count
         level: localUser.level, // Le niveau est calculé localement
         badges: localUser.badges,
         username: authUser.username
@@ -565,11 +565,11 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
               {rentalHistory.length === 0 ? (
                 <div className={styles.emptyMessage}>Aucun historique disponible</div>
               ) : (
-                rentalHistory.slice().reverse().map((entry, idx) => (
+                rentalHistory.map((entry, idx) => (
                   <div key={idx} className={styles.rentalItem}>
-                    <div className={styles.rentalTitle}>{getFilmTitle(entry.filmId)}</div>
+                    <div className={styles.rentalTitle}>{entry.title || getFilmTitle(entry.filmId)}</div>
                     <div className={styles.rentalMeta}>
-                      Loué le {formatDate(entry.rentedAt)} - Rendu le {formatDate(entry.returnedAt)}
+                      Loué le {formatDate(entry.rentedAt)} · {entry.isActive ? 'en cours' : 'terminé'}
                     </div>
                   </div>
                 ))

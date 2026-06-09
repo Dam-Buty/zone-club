@@ -239,22 +239,32 @@ export function VHSControls({
           <div className={styles.trackControls}>
             {(hasVF || hasVO) && (
               <div className={styles.trackSelector}>
+                {/* Unavailable version: greyed + a clear "indisponible" label instead of a dead disabled
+                    button (a disabled button swallows the tap with no feedback on mobile). onClick is
+                    guarded so an unavailable version can't be selected. */}
                 <button
-                  onClick={() => onAudioTrackChange('vf')}
+                  onClick={() => hasVF && onAudioTrackChange('vf')}
                   className={`${styles.trackBtn} ${audioTrack === 'vf' ? styles.trackActive : ''}`}
-                  disabled={!hasVF}
-                  title="Version Française [V]"
+                  style={!hasVF ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
+                  aria-disabled={!hasVF}
+                  title={hasVF ? 'Version Française [V]' : 'VF indisponible pour ce film'}
                 >
                   VF
                 </button>
                 <button
-                  onClick={() => onAudioTrackChange('vo')}
+                  onClick={() => hasVO && onAudioTrackChange('vo')}
                   className={`${styles.trackBtn} ${audioTrack === 'vo' ? styles.trackActive : ''}`}
-                  disabled={!hasVO}
-                  title="Version Originale [V]"
+                  style={!hasVO ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
+                  aria-disabled={!hasVO}
+                  title={hasVO ? 'Version Originale [V]' : 'VO indisponible pour ce film'}
                 >
                   VO
                 </button>
+                {hasVF !== hasVO && (
+                  <span style={{ fontSize: '0.62rem', opacity: 0.7, alignSelf: 'center', marginLeft: 6, letterSpacing: '0.3px', whiteSpace: 'nowrap' }}>
+                    {hasVF ? 'VO' : 'VF'} indisponible
+                  </span>
+                )}
               </div>
             )}
             {hasSubtitles && (

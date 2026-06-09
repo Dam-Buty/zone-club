@@ -149,7 +149,10 @@ export interface VideoClubState {
   clearPointerLockRequest: () => void;
 
   // Rental history
-  rentalHistory: { filmId: number; rentedAt: number; returnedAt: number }[];
+  // Server-sourced (fetchMe) = ALL of the user's rentals (active + past), so it survives across devices /
+  // localStorage clears. title/posterUrl/isActive are optional so the legacy optimistic-append helpers
+  // still typecheck. returnedAt carries expires_at (rental window end) for display.
+  rentalHistory: { filmId: number; rentedAt: number; returnedAt: number; title?: string | null; posterUrl?: string | null; isActive?: boolean }[];
   addToHistory: (filmId: number, rentedAt: number) => void;
 
   // User reviews
@@ -386,16 +389,28 @@ export const useStore = create<VideoClubState>()(
       fetchMe: async () => {
         try {
           const data = await api.me.get();
+          // SQLite stores naive-UTC datetimes ("YYYY-MM-DD HH:MM:SS"); normalise to ISO-UTC before parsing.
+          const toMs = (s: string | null | undefined) => (s ? Date.parse(s.replace(' ', 'T') + 'Z') : NaN);
           set({
             isAuthenticated: true,
             authUser: data.user,
             rentals: data.activeRentals.map(apiRentalToRental),
+            // Source of truth for the rental history (was previously never populated → terminal showed
+            // "empty" even with rentals on record). Server returns ALL of the user's rentals.
+            rentalHistory: (data.rentalHistory || []).map((h) => ({
+              filmId: h.film_id,
+              title: h.film_title,
+              posterUrl: h.film_poster_url,
+              rentedAt: toMs(h.rented_at) || Date.now(),
+              returnedAt: toMs(h.expires_at) || 0,
+              isActive: h.is_active,
+            })),
             userReviews: data.reviews || [],
             weeklyBonusStatus: data.weeklyBonus ?? null,
           });
         } catch {
           // Non connecté, pas d'erreur
-          set({ isAuthenticated: false, authUser: null, userReviews: [], weeklyBonusStatus: null });
+          set({ isAuthenticated: false, authUser: null, rentalHistory: [], userReviews: [], weeklyBonusStatus: null });
         }
       },
 

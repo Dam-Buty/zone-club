@@ -25,8 +25,13 @@ export async function GET(
     const user = getUserFromSession(cookieStore.get('session')?.value);
     const rentalStatus = getFilmRentalStatus(film.id, user?.id || null);
 
+    // Audio versions actually playable = the TRANSCODED file exists (same source of truth as the rental
+    // streaming_urls in lib/rentals.ts). Surfaced as booleans so the fiche/player can show VF/VO clearly
+    // without leaking raw file paths.
     return NextResponse.json({
         ...film,
+        has_vf: !!film.file_path_vf_transcoded,
+        has_vo: !!film.file_path_vo_transcoded,
         rental_status: rentalStatus
     });
 }

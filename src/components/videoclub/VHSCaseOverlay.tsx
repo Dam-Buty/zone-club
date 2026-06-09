@@ -381,6 +381,8 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
   const [requestingReturn, setRequestingReturn] = useState(false);
   const [returnRequested, setReturnRequested] = useState(false);
   const [filmRentalStatus, setFilmRentalStatus] = useState<FilmWithRentalStatus['rental_status'] | null>(null);
+  // Playable audio versions (VF/VO) for this film, from the detail API — surfaced as pills on the fiche.
+  const [filmVersions, setFilmVersions] = useState<{ vf: boolean; vo: boolean } | null>(null);
   const [showReturnConfirm, setShowReturnConfirm] = useState(false);
   const [earlyReturnBonus, setEarlyReturnBonus] = useState(false);
   const [extending, setExtending] = useState(false);
@@ -556,10 +558,12 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
   useEffect(() => {
     if (!isOpen || !film?.tmdb_id) {
       setFilmRentalStatus(null);
+      setFilmVersions(null);
       return;
     }
     api.films.getById(film.tmdb_id).then(data => {
       setFilmRentalStatus(data.rental_status);
+      setFilmVersions({ vf: !!data.has_vf, vo: !!data.has_vo });
     }).catch(() => {});
   }, [isOpen, film?.tmdb_id]);
 
@@ -1080,6 +1084,33 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
     );
   }
 
+  // VF/VO availability pills — shown on the fiche so the user knows BEFORE renting which audio versions
+  // exist (the missing one is dimmed + ✕). Source: detail API has_vf/has_vo (transcoded file present).
+  function renderVersionBadges() {
+    if (!filmVersions || (!filmVersions.vf && !filmVersions.vo)) return null;
+    const pill = (label: string, on: boolean) => (
+      <span
+        style={{
+          fontSize: '0.66rem', fontFamily: 'Orbitron, sans-serif', letterSpacing: '0.5px',
+          padding: '2px 8px', borderRadius: 4,
+          border: `1px solid ${on ? '#00fff7' : '#555'}`,
+          color: on ? '#00fff7' : '#777',
+          background: on ? 'rgba(0,255,247,0.12)' : 'transparent',
+          opacity: on ? 1 : 0.6,
+        }}
+        title={on ? `${label} disponible` : `${label} indisponible`}
+      >
+        {label}{on ? '' : ' ✕'}
+      </span>
+    );
+    return (
+      <div style={{ display: 'flex', gap: 6, justifyContent: 'center', marginTop: 4 }}>
+        {pill('VF', filmVersions.vf)}
+        {pill('VO', filmVersions.vo)}
+      </div>
+    );
+  }
+
   // Desktop rental buttons
   function renderDesktopRentalSection() {
     // ---- STATE 3: User has rented this film ----
@@ -1209,6 +1240,7 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
         <div style={{ fontSize: "1.08rem", color: "#00ff88", fontFamily: "Orbitron, sans-serif", textAlign: "center", letterSpacing: "0.5px" }}>
           K7 DISPONIBLE
         </div>
+        {renderVersionBadges()}
         <button
           onClick={handleRent}
           disabled={isAuthenticated && isRenting}
@@ -1324,7 +1356,9 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
 
     // ---- STATE 1: Available ----
     return (
-      <button
+      <>
+        {renderVersionBadges()}
+        <button
         onClick={handleRent}
         disabled={isAuthenticated && isRenting}
         style={mobilePillStyle(rentBorderColor, rentTextColor, {
@@ -1339,7 +1373,8 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
         ) : (
           <>PAS ASSEZ — Solde: <span style={{ color: "#ffd700", fontWeight: 700 }}>{credits}</span></>
         )}
-      </button>
+        </button>
+      </>
     );
   }
 
