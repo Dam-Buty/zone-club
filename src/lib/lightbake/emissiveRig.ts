@@ -77,7 +77,7 @@ const OTHER: EmitterSpec[] = [
   { name: 'island-tube-0', pos: [-2.2, 2.66, -0.2], size: [0.5, 3.8], face: 'y-', color: '#eaf0ff', intensity: 0.45 },
   { name: 'island-tube-1', pos: [0.05, 2.66, -0.2], size: [0.5, 3.8], face: 'y-', color: '#eaf0ff', intensity: 0.45 },
   // Warm counter tube.
-  { name: 'comptoir', pos: [3, 2.66, 3], size: [0.4, 1.8], face: 'y-', color: '#ffd29a', intensity: 5.0 },
+  { name: 'comptoir', pos: [3, 2.66, 3], size: [0.4, 1.8], face: 'y-', color: '#ffd29a', intensity: 3.2 }, // 5.0 saturait le coin en orange monochrome + cramait les props blancs (A/B 10/06)
   // Cold vitrine moonlight (south wall, into the room).
   { name: 'vitrine', pos: [0.5, 1.4, 4.1], size: [6.5, 2.8], face: 'z-', color: '#5577aa', intensity: 4.2 },
   // CRT phosphor glow (warm-white screen, faces into room).
@@ -132,7 +132,7 @@ const FACE_NORMAL: Record<Face, [number, number, number]> = {
 const POOL_Y = 2.1 // lower → tighter, brighter pool
 const POOL_OFFSET = 0.9 // metres into the room from the wall sign
 const POOL_SIZE = 0.7 // smaller source → more concentrated spot (was 0.9)
-const POOL_INTENSITY = 4.0 // brighter so the tighter pool still reads franc (was 2.5)
+const POOL_INTENSITY = 1.2 // subtle colour halo underfoot. 4.0 (pre shell-fix) flooded the floor magenta — it compensated for the never-rendering lightmap; 0 kills all colour underfoot (signs shine horizontally). 1.2 = réaliste (A/B 10/06)
 const FLOOR_POOLS: EmitterSpec[] = GENRE_SIGNS.map((s) => {
   const n = FACE_NORMAL[s.face]
   return {

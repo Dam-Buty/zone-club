@@ -69,7 +69,7 @@ export function BakedShellLighting({ enabled, onProbeVolumes }: { enabled: boole
     const urlNum = (k: string, dflt: number) => { const v = parseFloat(new URLSearchParams(window.location.search).get(k) || ''); return Number.isFinite(v) ? v : dflt }
     const maskTex = await loadMoonMask()
     const moonInt = urlNum('moon', MOONLIGHT.intensity)
-    MOON_RAKE.value = urlNum('mrake', 1.1) // floor DIFFUSE cold intensity (live). ×albedo+falloff → lit hex pool. Halved 2.2→1.1 (feedback: still slightly too strong)
+    MOON_RAKE.value = urlNum('mrake', 0.45) // floor DIFFUSE cold intensity (live). ×albedo+falloff → lit hex pool. 1.1 noyait l'avant de la salle en blanc laiteux sur le sol re-tuné (plus sombre) — 0.45 garde le rai en accent (A/B 10/06)
     MOON_DAMP.value = urlNum('mdamp', 0.45) // warm-GI keep under the rake (higher = gentler/integrated) (live)
     MOON_SPEC.value = useBakeDebug.getState().mspec // floor SPECULAR (vitrine reflection); panel slider 'mspec' (store) — read here so a re-bake preserves the slider value, live-synced below
     ;(window as unknown as { __MR?: unknown; __MD?: unknown; __MSPEC?: unknown }).__MR = MOON_RAKE // live tuning (no re-bake)

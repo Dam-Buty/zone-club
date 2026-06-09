@@ -62,21 +62,24 @@ export interface BakeDebugState {
 }
 
 export const useBakeDebug = create<BakeDebugState>()(persist((set) => ({
-  // Defaults aligned on the validated night recipe (the look projected in the verification captures):
-  // env=0.07 si=0.1 lmi=1.8 pi=0.7 neon=2.8 fluo=2.2 — a fresh load (no URL) now reproduces it.
-  env: q('env', 0.07),
+  // Defaults aligned on the validated night recipe (re-tuned 10/06 on the FIXED shell lightmap —
+  // the 2.8/2.2/1.8 recipe dated from the never-rendering-lightmap era and flooded the room magenta):
+  // env=0.035 lmi=0.9 neon=2.0 fluo=5.0 mdesk=1.5 ogi=0.9 (+ pools 1.2 & comptoir 3.2 in emissiveRig).
+  // A fresh load (no URL) reproduces the réaliste néon-noir: dark hex floor, neutral white pools under
+  // the lit tubes, localized colour halos under the signs, cold moon rake at the storefront.
+  env: q('env', 0.035),
   si: q('si', 0.1),
-  lmi: q('lmi', 1.8),
+  lmi: q('lmi', 0.9),
   pi: q('pi', 0.7),
   k7: q('k7', 0.9),
   sign: q('sign', 0.4), // 0.4 puts the dominant neon hues just UNDER the bloom threshold (lum 0.27 < 0.32)
                         // → coloured readable signs, no white-blob halo. 1.0 = the blown-out look. Live.
   ospec: q('ospec', 1.0),
   mspec: q('mspec', 1.1),
-  mdesk: q('mdesk', 3),
-  ogi: q('ogi', 1.0),
-  neon: q('neon', 2.8),
-  fluo: q('fluo', 2.2),
+  mdesk: q('mdesk', 1.5),
+  ogi: q('ogi', 0.9),
+  neon: q('neon', 2.0),
+  fluo: q('fluo', 5.0),
   clamp: q('clamp', 100),
   bounces: q('bounces', 2),
   samples: q('samples', 96),
