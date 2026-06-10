@@ -83,7 +83,7 @@ export const useBakeDebug = create<BakeDebugState>()(persist((set) => ({
   fluo: q('fluo', 5.0),
   clamp: q('clamp', 100),
   bounces: q('bounces', 2),
-  samples: q('samples', 256), // 96 laissait des taches de variance indirecte sur le plafond (up-tubes near-field) — 256 lisse (A/B 10/06)
+  samples: q('samples', 512), // 256 laissait un moutonnement basse fréquence sur les grands murs nus ; 512 l'écrase (A/B 10/06 ; 96 → taches plafond)
   rebakeNonce: 0,
   baking: false,
   set: (p) => set(p),

@@ -20,7 +20,7 @@ const LIVE: { k: keyof BakeDebugState; label: string; min: number; max: number; 
 const REBAKE: { k: keyof BakeDebugState; label: string; min: number; max: number; step: number }[] = [
   { k: 'neon', label: 'neon · enseignes + flaques', min: 0.5, max: 6, step: 0.1 },
   { k: 'fluo', label: 'fluo · néon blanc', min: 0, max: 6, step: 0.1 },
-  { k: 'samples', label: 'samples · qualité (anti-nébulosité)', min: 32, max: 256, step: 16 },
+  { k: 'samples', label: 'samples · qualité (anti-nébulosité)', min: 32, max: 512, step: 32 },
   { k: 'bounces', label: 'bounces · rebonds GI', min: 1, max: 4, step: 1 },
   { k: 'clamp', label: 'clamp · firefly extrême (bas=fort)', min: 20, max: 160, step: 10 },
 ]

@@ -78,8 +78,11 @@ const OTHER: EmitterSpec[] = [
   { name: 'island-tube-1', pos: [0.05, 2.66, -0.2], size: [0.5, 3.8], face: 'y-', color: '#eaf0ff', intensity: 0.45 },
   // Warm counter tube.
   { name: 'comptoir', pos: [3, 2.66, 3], size: [0.4, 1.8], face: 'y-', color: '#ffd29a', intensity: 3.2 }, // 5.0 saturait le coin en orange monochrome + cramait les props blancs (A/B 10/06)
-  // Cold vitrine moonlight (south wall, into the room).
-  { name: 'vitrine', pos: [0.5, 1.4, 4.1], size: [6.5, 2.8], face: 'z-', color: '#5577aa', intensity: 4.2 },
+  // Cold vitrine street-glow (south wall, into the room). ⚠️ NE PAS remonter jusqu'au plafond :
+  // l'ancien quad plein-hauteur (size 2.8, top à y=2.8) touchait le plafond → near-field → moutonnement
+  // bleu figé sur les dalles devant la vitrine. Physiquement la lumière de rue/lune entre par le HAUT
+  // vers le BAS — le plafond au-dessus de la fenêtre reste sombre. Top à 1.8 m (A/B 10/06).
+  { name: 'vitrine', pos: [0.5, 1.15, 4.1], size: [6.5, 1.3], face: 'z-', color: '#5577aa', intensity: 5.0 },
   // CRT phosphor glow (warm-white screen, faces into room).
   { name: 'crt', pos: [3.9, 1.8, 4.1], size: [0.5, 0.38], face: 'z-', color: '#bfe0ff', intensity: 2.2 },
 ]
