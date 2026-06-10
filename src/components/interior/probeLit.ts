@@ -7,6 +7,15 @@ import { MOON_RAKE } from '../../lib/lightbake/bakeShellRuntime'
 import { MOONLIGHT } from '../../lib/lightbake/emissiveRig'
 import type { ProbeVolumes } from './ProbeVolumeContext'
 
+// Plafond de luminance pour les émissifs GLB embarqués (lum(emissive) × emissiveIntensity).
+// Réglable via ?ecap= ; 0 = désactivé. Cf. BakeStrayProps (même cap, passes boot/late) — ici c'est la
+// version SANS course : appliquée quand chaque receiver est câblé.
+export const EMISSIVE_CAP = (() => {
+  if (typeof window === 'undefined') return 1.3
+  const v = parseFloat(new URLSearchParams(window.location.search).get('ecap') || '')
+  return Number.isFinite(v) ? v : 1.3
+})()
+
 const _mcol = new THREE.Color(MOONLIGHT.color)
 const MOON_COL: [number, number, number] = [_mcol.r, _mcol.g, _mcol.b] // linear cold moon hue
 
@@ -45,6 +54,14 @@ export function attachProbeEmissive(root: THREE.Object3D | null, probes: ProbeVo
   const apply = (m: THREE.Material) => {
     const sm = m as THREE.MeshStandardMaterial
     if (!sm.color) return // skip materials without a diffuse colour (e.g. MeshBasicMaterial decals)
+    // Normalisation des émissifs GLB embarqués (audit 11/06 : l'ampoule du spot pCube6_Luz1_0 arrive
+    // avec #f6ecec × intensity 10 ≈ lum 8.6 — « objet surexposé non lié aux réglages »). Cap à ECAP
+    // au moment où le receiver est câblé → aucun problème de timing de chargement lazy.
+    if (sm.emissive && (sm.emissiveIntensity ?? 1) > 0) {
+      const ei = sm.emissiveIntensity ?? 1
+      const lum = (0.2126 * sm.emissive.r + 0.7152 * sm.emissive.g + 0.0722 * sm.emissive.b) * ei
+      if (lum > EMISSIVE_CAP) sm.emissiveIntensity = ei * (EMISSIVE_CAP / lum)
+    }
     const tint = vec3(sm.color.r, sm.color.g, sm.color.b)
     let albedo = sm.map ? texture(sm.map).mul(tint) : tint
     // Vertex-coloured GLBs (e.g. the Pulp Fiction standee colours its art via the COLOR_0 attribute, NOT a

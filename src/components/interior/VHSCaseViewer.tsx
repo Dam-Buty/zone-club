@@ -8,6 +8,7 @@ import { useProbeVolumes } from './ProbeVolumeContext'
 import { shIrradiance } from '../../lib/lightbake/shReconstruct'
 import { GRID_MIN, gridExt, G } from '../../lib/lightbake/probeGrid'
 import { PROBE_PI } from './bakeDebugStore'
+import { K7_TONE_UNIFORM } from './CassetteInstances'
 import { fetchVHSCoverData, fetchVHSCoverDataFast, generateVHSCoverTexture, regenerateVHSCoverTexture, hasVHSCoverData } from '../../utils/VHSCoverGenerator'
 import { useIsMobile } from '../../hooks/useIsMobile'
 import type { Film } from '../../types'
@@ -155,7 +156,11 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
       const isCover = meshesWithMap.includes(mesh) && coverNodeRef.current
       const albedo = isCover ? coverNodeRef.current : vec3(mat.color.r, mat.color.g, mat.color.b)
       const nm = mat as unknown as { emissiveNode?: unknown; needsUpdate: boolean }
-      nm.emissiveNode = albedo.mul(E).mul(PROBE_PI)
+      // Rolloff Reinhard vers le white-point k7 (MÊME courbe que les K7 d'étagère) : sans lui, les
+      // zones blanches de la jaquette × E × pi dépassent le seuil de bloom → K7 en main illisible
+      // sous le halo (feedback 11/06). lit×k7/(lit+k7) plafonne sous le seuil en gardant le contraste.
+      const lit = albedo.mul(E).mul(PROBE_PI)
+      nm.emissiveNode = lit.mul(K7_TONE_UNIFORM).div(lit.add(K7_TONE_UNIFORM))
       nm.needsUpdate = true
     })
   }, [clonedScene, meshesWithMap])

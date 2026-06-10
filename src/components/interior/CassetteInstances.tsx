@@ -32,7 +32,7 @@ const SI_UNIFORM = uniform(SELF_ILLUM)
 // K7 emissive tone-curve: gamma (fixed) deepens the muddy darks; the white-point (live ?k7=) rolls
 // off the highlights so bright posters near neon don't blow past the bloom threshold (glow).
 const K7_GAMMA = 1.3
-const K7_TONE_UNIFORM = uniform((() => {
+export const K7_TONE_UNIFORM = uniform((() => {
   if (typeof window === 'undefined') return 0.9
   const p = parseFloat(new URLSearchParams(window.location.search).get('k7') || '0.9')
   return Number.isFinite(p) ? p : 0.9
