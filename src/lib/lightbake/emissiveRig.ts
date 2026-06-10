@@ -57,7 +57,7 @@ const CEILING_FLUO_DOWN: EmitterSpec[] = [
 const CEILING_UP_TUBES = [
   { x: -3.3, intensity: 0.4 }, { x: -1.0, intensity: 0.3 }, { x: 2.3, intensity: 0.3 }, { x: 3.8, intensity: 0.4 },
 ]
-const UP_SEGMENTS = 8
+const UP_SEGMENTS = 16 // 8 laissait encore des taches de variance near-field sur le plafond à 256 spp (10/06)
 const SEG_LEN = 6.6 / UP_SEGMENTS
 const CEILING_FLUO_UP: EmitterSpec[] = CEILING_UP_TUBES.flatMap((t, ti) =>
   Array.from({ length: UP_SEGMENTS }, (_, i) => ({

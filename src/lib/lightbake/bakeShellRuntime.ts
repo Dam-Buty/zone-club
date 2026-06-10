@@ -88,10 +88,15 @@ export async function bakeAndAttachShell(
   moon: MoonGobo | null = null,
 ): Promise<ShellBakeResult> {
   const {
-    albedo = 0.7, resolution = 2048, samples = 224, neeSamples = 8, bounces = 2, blur = 3,
+    albedo = 0.7, resolution = 2048, samples = 224, neeSamples = 16, bounces = 2,
     clampDirect = 100, neonBoost = 1.5, fluoBoost = 5.0, intensity = 1.4,
     sky = [0.008, 0.012, 0.025] as [number, number, number],
   } = opts
+  // ⚠️ blur DOIT rester 3 : passer à 6 a rendu le shell entièrement NOIR (bissecté 10/06, cause
+  // exacte non élucidée — la boucle ping-pong paraît parity-safe à la lecture, mais l'empirique est
+  // reproductible). Le bruit se traite À LA SOURCE : neeSamples 16 + UP_SEGMENTS 16 (stratification
+  // des tubes near-field) suffisent à éliminer les points du plafond à 2048/256 spp.
+  const blur = opts.blur ?? 3
   const { lightmapped, occluders } = collectShell(root)
   const ALB: [number, number, number] = [albedo, albedo, albedo]
 
