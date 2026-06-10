@@ -61,8 +61,10 @@ export interface RuntimeBakeOptions {
   bounces?: number
   blur?: number
   clampDirect?: number // max luminance per NEE sample (firefly clamp); 0 disables
-  neonBoost?: number // ?neon= — scales the coloured genre signs in the bake
+  neonBoost?: number // ?neon= — puissance GI des enseignes de genre SEULES
   fluoBoost?: number // ?fluo= — scales the white ceiling fluo in the bake
+  poolsBoost?: number // ?pools= — flaques colorées au sol (séparées de neon, 10/06)
+  signFocus?: number // ?sfocus= — exposant du lobe directionnel des enseignes (1 = diffus)
   intensity?: number // lightMapIntensity attached to the materials
   sky?: [number, number, number]
 }
@@ -95,7 +97,7 @@ export async function bakeAndAttachShell(
 ): Promise<ShellBakeResult> {
   const {
     albedo = 0.7, resolution = 2048, samples = 224, neeSamples = 48, bounces = 2,
-    clampDirect = 100, neonBoost = 1.5, fluoBoost = 5.0, intensity = 1.4,
+    clampDirect = 100, neonBoost = 1.5, fluoBoost = 5.0, poolsBoost = 1.0, signFocus = 2.5, intensity = 1.4,
     sky = [0.008, 0.012, 0.025] as [number, number, number],
   } = opts
   // ⚠️ blur DOIT rester 3 : passer à 6 a rendu le shell entièrement NOIR (bissecté 10/06, cause
@@ -156,7 +158,7 @@ export async function bakeAndAttachShell(
   // GI bake ONLY — the moon is NO LONGER baked into the shared atlas (that washed all surfaces at low res).
   // moon=null skips radiosityBake's atlas moon pass. The exterior rake is now a SHARP per-fragment COOKIE on
   // the FLOOR ONLY (below); furniture gets the SH probe rim (probeBakeRaw, moon passed there).
-  const { lightmap } = await radiosityBake(renderer, render, bvhGeo, bvh, emissiveRig({ neon: neonBoost, fluo: fluoBoost }), {
+  const { lightmap } = await radiosityBake(renderer, render, bvhGeo, bvh, emissiveRig({ neon: neonBoost, fluo: fluoBoost, pools: poolsBoost, sfocus: signFocus }), {
     resolution, samples, neeSamples, bounces, sky, blur, clampDirect, grayscale: false,
   }, null)
 

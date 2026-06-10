@@ -161,7 +161,9 @@ export async function radiosityBake(
         let edge1  = emitters[base + 1u];
         let edge2  = emitters[base + 2u];
         let Le     = emitters[base + 3u];
-        let facing = emitters[base + 4u]; // unit room-facing normal (one-sided)
+        let facingRaw = emitters[base + 4u]; // longueur = exposant de focus (cos^f), direction = normale one-sided
+        let fexp = max(1.0, length(facingRaw));
+        let facing = facingRaw / max(length(facingRaw), 1e-5);
         let area = length(cross(edge1, edge2));
         if (area <= 0.0) { continue; }
         var accum = vec3f(0.0);
@@ -173,7 +175,7 @@ export async function radiosityBake(
           let dist = sqrt(dist2);
           let wi = d / dist;
           let cosP = max(0.0, dot(N, wi));
-          let cosL = max(0.0, -dot(facing, wi)); // emitter shines ONE-sided toward P only
+          let cosL = pow(max(0.0, -dot(facing, wi)), fexp); // one-sided, lobe directionnel cos^f (focus enseignes)
           if (cosP <= 0.0 || cosL <= 0.0) { continue; }
           var sray = Ray(P + N * 0.003, wi);
           let sh = bvhIntersectFirstHit(geom_index, geom_position, bvh, sray);

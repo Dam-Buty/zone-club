@@ -19,7 +19,7 @@ const q = (k: string, d: number): number => {
 // Knobs that can be set via the URL recipe (?env=&si=…). Used by the persist `merge` so an explicit
 // URL param WINS over the persisted localStorage value — without this, persistence silently clobbered
 // any recipe URL on reload (the panel's recipe link became inert after the first save).
-const URL_KEYS = ['env', 'si', 'lmi', 'pi', 'k7', 'sign', 'ospec', 'mspec', 'mdesk', 'ogi', 'neon', 'fluo', 'clamp', 'bounces', 'samples'] as const
+const URL_KEYS = ['env', 'si', 'lmi', 'pi', 'k7', 'sign', 'ospec', 'mspec', 'mdesk', 'ogi', 'neon', 'fluo', 'pools', 'sfocus', 'clamp', 'bounces', 'samples'] as const
 const urlOverrides = (): Partial<Record<(typeof URL_KEYS)[number], number>> => {
   if (typeof window === 'undefined') return {}
   const sp = new URLSearchParams(window.location.search)
@@ -48,8 +48,10 @@ export interface BakeDebugState {
   mdesk: number // desk specular (vitrine reflection on the counter top) → MOON_DESK
   ogi: number // furniture/props DIFFUSE baked-light intensity (independent of K7) → OBJ_GI
   // REBAKE
-  neon: number // coloured genre signs + floor pools boost
+  neon: number // puissance GI des enseignes de genre SEULES (démêlé des flaques 10/06)
   fluo: number // white ceiling fluo boost
+  pools: number // flaques colorées au sol (FLOOR_POOLS) — séparées de neon
+  sfocus: number // focalisation directionnelle des enseignes (exposant cos^f ; 1 = diffus)
   clamp: number // firefly clamp (luminance/sample) — caps EXTREME direct fireflies; lower = stronger
   bounces: number // GI bounces
   samples: number // indirect hemisphere rays/texel — the real anti-noise (cloudiness) lever
@@ -81,6 +83,8 @@ export const useBakeDebug = create<BakeDebugState>()(persist((set) => ({
   ogi: q('ogi', 0.5), // 0.9 surexposait les meubles à albédo blanc (îlots, canapé, backboards) — calibration photoréaliste (A/B 10/06)
   neon: q('neon', 2.0),
   fluo: q('fluo', 5.0),
+  pools: q('pools', 1.0),
+  sfocus: q('sfocus', 2.5),
   clamp: q('clamp', 100),
   bounces: q('bounces', 2),
   samples: q('samples', 512), // 256 laissait un moutonnement basse fréquence sur les grands murs nus ; 512 l'écrase (A/B 10/06 ; 96 → taches plafond)
@@ -98,7 +102,7 @@ export const useBakeDebug = create<BakeDebugState>()(persist((set) => ({
   partialize: (s) => ({
     env: s.env, si: s.si, lmi: s.lmi, pi: s.pi, k7: s.k7, sign: s.sign,
     ospec: s.ospec, mspec: s.mspec, mdesk: s.mdesk, ogi: s.ogi,
-    neon: s.neon, fluo: s.fluo, clamp: s.clamp, bounces: s.bounces, samples: s.samples,
+    neon: s.neon, fluo: s.fluo, pools: s.pools, sfocus: s.sfocus, clamp: s.clamp, bounces: s.bounces, samples: s.samples,
   }),
   // Precedence: defaults ← persisted localStorage ← explicit URL params (URL wins). Lets a recipe link
   // override saved tuning on load, while a plain reload (no params) keeps the user's persisted look.

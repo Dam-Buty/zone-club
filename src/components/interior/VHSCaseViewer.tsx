@@ -1,9 +1,13 @@
-import { useRef, useEffect, useMemo } from 'react'
+import { useRef, useEffect, useMemo, useCallback } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import { useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
-import { bumpMap, texture, positionLocal, mix, float, clamp as tslClamp, uniform, vec3 } from 'three/tsl'
+import { bumpMap, texture, positionLocal, mix, float, clamp as tslClamp, uniform, vec3, positionWorld, normalWorld, varying } from 'three/tsl'
 import { useStore } from '../../store'
+import { useProbeVolumes } from './ProbeVolumeContext'
+import { shIrradiance } from '../../lib/lightbake/shReconstruct'
+import { GRID_MIN, gridExt, G } from '../../lib/lightbake/probeGrid'
+import { PROBE_PI } from './bakeDebugStore'
 import { fetchVHSCoverData, fetchVHSCoverDataFast, generateVHSCoverTexture, regenerateVHSCoverTexture, hasVHSCoverData } from '../../utils/VHSCoverGenerator'
 import { useIsMobile } from '../../hooks/useIsMobile'
 import type { Film } from '../../types'
@@ -127,6 +131,36 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
     return { clonedScene: cloned, meshesWithMap: meshes }
   }, [glbScene])
 
+  // ── Baked GI sur la K7 en main ── même pattern emissive-add que Couch/BakeStrayProps : en
+  // ?baked=1 le rig analytique est éteint → sans ce terme la K7 sélectionnée restait NOIRE
+  // (feedback 10/06). Albédo (couverture TSL ou couleur du plastique) × irradiance SH locale × pi.
+  const probes = useProbeVolumes()
+  const probesRef = useRef(probes)
+  probesRef.current = probes
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const coverNodeRef = useRef<any>(null) // le node fadedColor des faces de couverture (posé par applyTexture)
+  const applyProbeEmissive = useCallback(() => {
+    const p = probesRef.current
+    if (!p) return
+    const e = gridExt()
+    const gMin = vec3(GRID_MIN[0], GRID_MIN[1], GRID_MIN[2])
+    const gInv = vec3(1 / e[0], 1 / e[1], 1 / e[2])
+    const half = vec3(0.5 / G[0], 0.5 / G[1], 0.5 / G[2])
+    const uvw = tslClamp(positionWorld.sub(gMin).mul(gInv), half, vec3(1).sub(half))
+    const E = varying(shIrradiance(p.shR, p.shG, p.shB, uvw, normalWorld))
+    clonedScene.traverse((child) => {
+      const mesh = child as THREE.Mesh
+      if (!mesh.isMesh) return
+      const mat = mesh.material as THREE.MeshStandardMaterial
+      const isCover = meshesWithMap.includes(mesh) && coverNodeRef.current
+      const albedo = isCover ? coverNodeRef.current : vec3(mat.color.r, mat.color.g, mat.color.b)
+      const nm = mat as unknown as { emissiveNode?: unknown; needsUpdate: boolean }
+      nm.emissiveNode = albedo.mul(E).mul(PROBE_PI)
+      nm.needsUpdate = true
+    })
+  }, [clonedScene, meshesWithMap])
+  useEffect(() => { applyProbeEmissive() }, [probes, applyProbeEmissive])
+
   // Signal VHS case is open + save camera pitch + dim scene overhead lights
   useEffect(() => {
     setVHSCaseOpen(true)
@@ -223,6 +257,9 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
 
       coverTextureRef.current = tex
       textureReadyRef.current = true
+      // Re-câble l'émissif probes avec l'albédo de couverture maintenant disponible (baked mode).
+      coverNodeRef.current = fadedColor
+      applyProbeEmissive()
     }
 
     // Pass 1: fast (poster + Film metadata)

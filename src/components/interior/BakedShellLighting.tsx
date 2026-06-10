@@ -63,6 +63,8 @@ export function BakedShellLighting({ enabled, onProbeVolumes }: { enabled: boole
       clampDirect: d.clamp,
       neonBoost: d.neon,
       fluoBoost: d.fluo,
+      poolsBoost: d.pools,
+      signFocus: d.sfocus,
     }
     // Build the exterior moonlight gobo (baked directional cookie through the storefront glass mask).
     // Intensity ?moon=, debug dump ?moonDebug=1, mask sub-rect ?msub=offX,offY,scaleX,scaleY (calibration).
@@ -103,7 +105,7 @@ export function BakedShellLighting({ enabled, onProbeVolumes }: { enabled: boole
       const t1 = performance.now()
       // moon (with its interior-occluder BVH, attached during bakeAndAttachShell) → injected into the SH
       // probes so the counter top / Rick / furniture catch the cold exterior rim ("ce qui est sur son passage").
-      const { r, g, b } = await probeBakeRaw(renderer, bvhGeo, bvh, lightmap, lightmapRes, emissiveRig({ neon: d.neon, fluo: d.fluo }), undefined, d.clamp, moon)
+      const { r, g, b } = await probeBakeRaw(renderer, bvhGeo, bvh, lightmap, lightmapRes, emissiveRig({ neon: d.neon, fluo: d.fluo, pools: d.pools, sfocus: d.sfocus }), undefined, d.clamp, moon)
       // Dead-probe AABBs from the LIVE solid occluders (islands + comptoir). Skip InstancedMesh
       // (cassettes/planks — their setFromObject bbox spans every instance ≈ the whole room) and
       // tiny/room-spanning boxes; keep the mid-size solids that actually trap interior probes.

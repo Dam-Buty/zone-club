@@ -184,14 +184,16 @@ export async function probeBakeRaw(
       for (var e = 0; e < EC; e = e + 1) {
         let b = u32(e) * 5u;
         let corner = emitters[b]; let e1 = emitters[b + 1u]; let e2 = emitters[b + 2u];
-        let Le = emitters[b + 3u]; let facing = emitters[b + 4u];
+        let Le = emitters[b + 3u]; let facingRaw = emitters[b + 4u];
+        let fexp = max(1.0, length(facingRaw));
+        let facing = facingRaw / max(length(facingRaw), 1e-5);
         let area = length(cross(e1, e2));
         if (area <= 0.0) { continue; }
         for (var s = 0; s < NS; s = s + 1) {
           let r = rndHash(seed + vec2f(f32(e) * 0.7361, f32(e) * 0.1987), u32(s) + 91u);
           let xL = corner + r.x * e1 + r.y * e2;
           let d = xL - P; let dist2 = dot(d, d); let dist = sqrt(dist2); let wi = d / dist;
-          let cosL = max(0.0, -dot(facing, wi));
+          let cosL = pow(max(0.0, -dot(facing, wi)), fexp); // lobe directionnel cos^f (focus enseignes)
           if (cosL <= 0.0) { continue; }
           var sray = Ray(P, wi);
           let sh = bvhIntersectFirstHit(geom_index, geom_position, bvh, sray);

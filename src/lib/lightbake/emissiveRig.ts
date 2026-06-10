@@ -207,18 +207,33 @@ function emitterMatrix(face: Face, pos: [number, number, number]): Matrix4 {
 
 const _bl = new Vector3(), _br = new Vector3(), _tl = new Vector3()
 
-/** Build the offline emissive proxy quads + their world rectangles (for NEE). `neon` scales the
- *  coloured genre signs, `fluo` the white ceiling fluo — the two composition levers (?neon=/?fluo=).
+/** Build the offline emissive proxy quads + their world rectangles (for NEE).
+ *  Leviers de composition DÉMÊLÉS (10/06, feedback user — `neon` mélangeait enseignes ET flaques) :
+ *  - `neon`   (?neon=)   : puissance GI des enseignes de genre SEULES.
+ *  - `pools`  (?pools=)  : flaques colorées au sol (FLOOR_POOLS), séparées de neon.
+ *  - `fluo`   (?fluo=)   : néon blanc plafond.
+ *  - `sfocus` (?sfocus=) : focalisation directionnelle des enseignes — exposant du lobe cos^f
+ *    (1 = diffus lambertien historique ; ~2.5 = la lumière se concentre devant/sous l'enseigne,
+ *    vers le rayon qu'elle éclaire, au lieu d'arroser plafond + coin opposé).
+ *  - `stilt`  (?stilt=)  : inclinaison du lobe des enseignes vers le BAS, en degrés (défaut 30°).
+ *  L'exposant est encodé dans la LONGUEUR du vecteur `facing` (stride storage inchangé : 5 vec3) ;
+ *  les kernels NEE décodent `f = length(facing)` et font cosL^f.
  *  The island tubes / warm comptoir / cold vitrine / crt (OTHER) stay unscaled. */
-export function emissiveRig(boosts: { neon?: number; fluo?: number } = {}): EmissiveProxy[] {
+export function emissiveRig(boosts: { neon?: number; fluo?: number; pools?: number; sfocus?: number; stilt?: number } = {}): EmissiveProxy[] {
   const neon = boosts.neon ?? DEFAULT_NEON_BOOST
   const fluo = boosts.fluo ?? DEFAULT_FLUO_BOOST
-  const ALL: EmitterSpec[] = [
-    ...GENRE_SIGNS.map((s) => ({ ...s, intensity: s.intensity * neon })),
-    ...FLOOR_POOLS.map((s) => ({ ...s, intensity: s.intensity * neon })),
+  const pools = boosts.pools ?? 1.0
+  const sfocus = Math.max(1, boosts.sfocus ?? 2.5)
+  const stilt = boosts.stilt ?? 30
+  type RigSpec = EmitterSpec & { focus?: number; tiltDown?: boolean }
+  const ALL: RigSpec[] = [
+    ...GENRE_SIGNS.map((s) => ({ ...s, intensity: s.intensity * neon, focus: sfocus, tiltDown: true })),
+    ...FLOOR_POOLS.map((s) => ({ ...s, intensity: s.intensity * pools })),
     ...CEILING_FLUO.map((s) => ({ ...s, intensity: s.intensity * fluo })),
     ...OTHER,
   ]
+  const tiltT = Math.tan((stilt * Math.PI) / 180)
+  const _f = new Vector3()
   return ALL.map((e) => {
     const [w, h] = e.size
     const M = emitterMatrix(e.face, e.pos)
@@ -229,11 +244,17 @@ export function emissiveRig(boosts: { neon?: number; fluo?: number } = {}): Emis
     _bl.set(-w / 2, -h / 2, 0).applyMatrix4(M)
     _br.set(w / 2, -h / 2, 0).applyMatrix4(M)
     _tl.set(-w / 2, h / 2, 0).applyMatrix4(M)
+    // Facing : normale unitaire, inclinée vers le bas pour les enseignes (tiltDown), puis
+    // multipliée par l'exposant de focus (la longueur PORTE l'exposant — décodée par les kernels).
+    const n = FACE_NORMAL[e.face]
+    if (e.tiltDown && tiltT > 0) _f.set(n[0], -tiltT, n[2]).normalize()
+    else _f.set(n[0], n[1], n[2])
+    const fexp = Math.max(1, e.focus ?? 1)
     const rect: EmitterRect = {
       corner: [_bl.x, _bl.y, _bl.z],
       edge1: [_br.x - _bl.x, _br.y - _bl.y, _br.z - _bl.z],
       edge2: [_tl.x - _bl.x, _tl.y - _bl.y, _tl.z - _bl.z],
-      facing: FACE_NORMAL[e.face],
+      facing: [_f.x * fexp, _f.y * fexp, _f.z * fexp],
     }
     return { name: e.name, geometry, emission, rect }
   })

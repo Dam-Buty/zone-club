@@ -11,14 +11,16 @@ const LIVE: { k: keyof BakeDebugState; label: string; min: number; max: number; 
   { k: 'lmi', label: 'lmi · lightmap', min: 0, max: 5, step: 0.1 },
   { k: 'pi', label: 'pi · GI sur K7', min: 0, max: 3, step: 0.05 },
   { k: 'k7', label: 'k7 · tone posters (bas=mat)', min: 0.2, max: 2, step: 0.05 },
-  { k: 'sign', label: 'sign · brillance enseignes néon', min: 0, max: 1.5, step: 0.05 },
+  { k: 'sign', label: 'sign · brillance VISIBLE enseignes (live)', min: 0, max: 1.5, step: 0.05 },
   { k: 'ospec', label: 'reflets · objets (néon)', min: 0, max: 4, step: 0.1 },
   { k: 'mspec', label: 'reflets · sol (vitrine)', min: 0, max: 4, step: 0.1 },
   { k: 'mdesk', label: 'reflets · bureau (vitrine)', min: 0, max: 6, step: 0.1 },
   { k: 'ogi', label: 'lumière · meubles (diffus)', min: 0, max: 4, step: 0.1 },
 ]
 const REBAKE: { k: keyof BakeDebugState; label: string; min: number; max: number; step: number }[] = [
-  { k: 'neon', label: 'neon · enseignes + flaques', min: 0.5, max: 6, step: 0.1 },
+  { k: 'neon', label: 'neon · puissance GI enseignes', min: 0, max: 6, step: 0.1 },
+  { k: 'pools', label: 'pools · flaques colorées sol', min: 0, max: 4, step: 0.1 },
+  { k: 'sfocus', label: 'sfocus · focalisation enseignes (1=diffus)', min: 1, max: 6, step: 0.5 },
   { k: 'fluo', label: 'fluo · néon blanc', min: 0, max: 6, step: 0.1 },
   { k: 'samples', label: 'samples · qualité (anti-nébulosité)', min: 32, max: 512, step: 32 },
   { k: 'bounces', label: 'bounces · rebonds GI', min: 1, max: 4, step: 1 },
@@ -52,7 +54,7 @@ export function BakeDebugPanel() {
   const baking = useBakeDebug((s) => s.baking)
   const requestRebake = useBakeDebug((s) => s.requestRebake)
   const s = useBakeDebug()
-  const recipe = `?baked=1&env=${s.env}&si=${s.si}&neon=${s.neon}&fluo=${s.fluo}&lmi=${s.lmi}&pi=${s.pi}&k7=${s.k7}&sign=${s.sign}&ospec=${s.ospec}&mspec=${s.mspec}&mdesk=${s.mdesk}&ogi=${s.ogi}&clamp=${s.clamp}&bounces=${s.bounces}&samples=${s.samples}`
+  const recipe = `?baked=1&env=${s.env}&si=${s.si}&neon=${s.neon}&fluo=${s.fluo}&pools=${s.pools}&sfocus=${s.sfocus}&lmi=${s.lmi}&pi=${s.pi}&k7=${s.k7}&sign=${s.sign}&ospec=${s.ospec}&mspec=${s.mspec}&mdesk=${s.mdesk}&ogi=${s.ogi}&clamp=${s.clamp}&bounces=${s.bounces}&samples=${s.samples}`
 
   return (
     <div
