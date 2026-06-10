@@ -71,16 +71,16 @@ export const useBakeDebug = create<BakeDebugState>()(persist((set) => ({
   // A fresh load (no URL) reproduces the réaliste néon-noir: dark hex floor, neutral white pools under
   // the lit tubes, localized colour halos under the signs, cold moon rake at the storefront.
   env: q('env', 0.035),
-  si: q('si', 0.1),
+  si: q('si', 0.4),
   lmi: q('lmi', 0.9),
-  pi: q('pi', 0.7),
-  k7: q('k7', 0.9),
-  sign: q('sign', 0.4), // 0.4 puts the dominant neon hues just UNDER the bloom threshold (lum 0.27 < 0.32)
+  pi: q('pi', 1.3),
+  k7: q('k7', 1.05),
+  sign: q('sign', 1.05), // réglage user 11/06 (le 0.4 historique évitait le bloom blanc — l'utilisateur préfère des enseignes plus vives)
                         // → coloured readable signs, no white-blob halo. 1.0 = the blown-out look. Live.
-  ospec: q('ospec', 0.5), // 1.0 cramait un liseré blanc spéculaire sur le dossier du canapé (A/B 10/06)
-  mspec: q('mspec', 1.1),
-  mdesk: q('mdesk', 1.5),
-  ogi: q('ogi', 0.5), // 0.9 surexposait les meubles à albédo blanc (îlots, canapé, backboards) — calibration photoréaliste (A/B 10/06)
+  ospec: q('ospec', 0.1), // réglage user 11/06 (1.0 cramait un liseré spéculaire sur le canapé)
+  mspec: q('mspec', 0.2), // réglage user 11/06
+  mdesk: q('mdesk', 2.1), // réglage user 11/06
+  ogi: q('ogi', 1.0), // réglage user 11/06
   neon: q('neon', 2.0),
   fluo: q('fluo', 5.0),
   pools: q('pools', 1.0),
@@ -115,7 +115,7 @@ export const useBakeDebug = create<BakeDebugState>()(persist((set) => ({
 // it; the furniture read ?pi once at module load and stayed frozen). Synced from the store's `pi` in
 // CassetteInstances. Module-level singleton: survives material rebuilds and a `.value =` write is a
 // cheap GPU uniform update (no shader recompile).
-export const PROBE_PI = uniform(q('pi', 0.7))
+export const PROBE_PI = uniform(q('pi', 1.3))
 
 // Manager (Rick) GI scale — DECOUPLED from PROBE_PI. Rick is a white/light GLB (lab coat), so the SH
 // irradiance (incl. the cold moon injected through the vitrine he stands behind) blows him to pure
@@ -126,11 +126,11 @@ export const MANAGER_GI = uniform(q('rick', 0.35))
 // Desk (counter) cold SPECULAR — the varnished top CATCHES the cold vitrine light as a baked, view-
 // dependent highlight, so the desk reads as "lit by the moonlight" instead of a flat self-glow (the
 // "objets éclairés par la lumière, pas auto-illuminés" feedback). Live via window.__MDESK / ?mdesk=.
-export const MOON_DESK = uniform(q('mdesk', 3))
+export const MOON_DESK = uniform(q('mdesk', 2.1))
 
 // Object SPECULAR scale — the baked "catch the neon" highlight (shSpecular) on GLOSSY probe receivers
 // (couch leather, …) so they read as lit BY the neon, not self-glowing. Shared, live via window.__OSPEC.
-export const OBJ_SPEC = uniform(q('ospec', 1.0))
+export const OBJ_SPEC = uniform(q('ospec', 0.1))
 
 // Furniture/props DIFFUSE GI multiplier — scales how lit the MEUBLES & props are by the baked light,
 // INDEPENDENTLY of the K7 (which keep PROBE_PI). Applied on top of each receiver's diffuse term; default
