@@ -29,15 +29,18 @@ const lum = (r: number, g: number, b: number) => 0.2126 * r + 0.7152 * g + 0.072
 // valid across re-bakes; only a resolution change reallocates them.
 let _bakeRtA: THREE.RenderTarget | null = null
 let _bakeRtB: THREE.RenderTarget | null = null
+let _bakeRtDirect: THREE.RenderTarget | null = null // DIRECT-only snapshot (pass 0) — kept crisp
+let _bakeRtFinal: THREE.RenderTarget | null = null // combined output — DEDICATED stable target: the
+// runtime/probe bindings always reference THIS texture, whatever the intermediate pass count/parity
 let _bakeRtMoon: THREE.RenderTarget | null = null // separate ADDITIVE moon-rake target (NOT albedo-modulated)
 let _bakeRtRes = 0
 const _mkRt = (res: number) => new THREE.RenderTarget(res, res, { type: THREE.HalfFloatType, colorSpace: THREE.NoColorSpace, depthBuffer: false })
-function bakeTargets(res: number): [THREE.RenderTarget, THREE.RenderTarget] {
-  if (!_bakeRtA || !_bakeRtB || _bakeRtRes !== res) {
-    _bakeRtA?.dispose(); _bakeRtB?.dispose()
-    _bakeRtA = _mkRt(res); _bakeRtB = _mkRt(res); _bakeRtRes = res
+function bakeTargets(res: number): [THREE.RenderTarget, THREE.RenderTarget, THREE.RenderTarget, THREE.RenderTarget] {
+  if (!_bakeRtA || !_bakeRtB || !_bakeRtDirect || !_bakeRtFinal || _bakeRtRes !== res) {
+    _bakeRtA?.dispose(); _bakeRtB?.dispose(); _bakeRtDirect?.dispose(); _bakeRtFinal?.dispose()
+    _bakeRtA = _mkRt(res); _bakeRtB = _mkRt(res); _bakeRtDirect = _mkRt(res); _bakeRtFinal = _mkRt(res); _bakeRtRes = res
   }
-  return [_bakeRtA, _bakeRtB]
+  return [_bakeRtA, _bakeRtB, _bakeRtDirect, _bakeRtFinal]
 }
 // The moon rake lives in its OWN persistent target so the runtime can ADD it to the shell emissive
 // (NOT multiply it by the dark hex-tile albedo, which crushes the cold light to black). Reused across bakes.
@@ -205,7 +208,9 @@ export async function radiosityBake(
     }
   `, [bvhIntersectFirstHit, getVertexAttribute, helpers])
 
-  let [rtPrev, rtCur] = bakeTargets(opts.resolution)
+  const targets = bakeTargets(opts.resolution)
+  let rtPrev = targets[0], rtCur = targets[1]
+  const rtDirect = targets[2], rtFinal = targets[3]
 
   const scene = new THREE.Scene()
   const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1)
@@ -247,43 +252,89 @@ export async function radiosityBake(
   })
   mesh.material = gatherMat
 
+  // ── SPLIT DIRECT / INDIRECT ── La passe 0 lit un lightmap noir → sa sortie = DIRECT (NEE) seul
+  // (+ le sky de miss, lisse). On la snapshotte dans rtDirect : le direct (halos d'enseignes, ombres
+  // NEE) reste NET ; l'INDIRECT (final − direct) est par nature basse fréquence mais c'est lui qui
+  // porte tout le bruit de variance en taches 30-60 cm (« masque sale » sur les murs nus, feedback
+  // 10/06) → on le floute LARGE sans toucher au direct. C'est le pipeline standard des bakers offline.
+  // Fullscreen-triangle partagé par toutes les passes post (copy/diff/blur/combine).
+  const quad = new THREE.BufferGeometry()
+  quad.setAttribute('position', new THREE.BufferAttribute(new Float32Array([-1, -1, 0, 3, -1, 0, -1, 3, 0]), 3))
+  quad.setAttribute('uv', new THREE.BufferAttribute(new Float32Array([0, 0, 2, 0, 0, 2]), 2))
+  const quadMesh = new THREE.Mesh(quad)
+  quadMesh.frustumCulled = false
+  const postScene = new THREE.Scene()
+  postScene.add(quadMesh)
+  const post = async (mat: THREE.Material, target: THREE.RenderTarget) => {
+    quadMesh.material = mat
+    renderer.setRenderTarget(target)
+    await renderer.renderAsync(postScene, cam)
+  }
+  // Box blur à rayon paramétrable (WGSL accepte des bornes de boucle dynamiques).
+  const blurFn = wgslFn(/* wgsl */`
+    fn boxBlur(fragUv: vec2f, res: f32, r: f32, src: texture_2d<f32>) -> vec3f {
+      let px = vec2i(i32(fragUv.x * res), i32(fragUv.y * res));
+      let ri = i32(r);
+      var sum = vec3f(0.0);
+      for (var dy = -ri; dy <= ri; dy = dy + 1) {
+        for (var dx = -ri; dx <= ri; dx = dx + 1) {
+          sum = sum + textureLoad(src, px + vec2i(dx, dy), 0).rgb;
+        }
+      }
+      let w = f32(2 * ri + 1);
+      return sum / (w * w);
+    }
+  `)
+  // Bounces — et SNAPSHOT de la passe 0 : elle lit un lightmap noir, sa sortie EST le direct (NEE)
+  // seul (+ sky de miss, lisse). Les seeds étant fixes par texel, le terme direct de chaque passe
+  // est identique → (final − pass0) = indirect pur des rebonds.
+  // ⚠️ Le snapshot utilise copyTextureToTexture (blit GPU pur) : intercaler une PASSE DE RENDU entre
+  // deux passes gather rend la passe gather suivante NOIRE (même classe de bug que « blur=6 → shell
+  // noir », vécu 2× le 10/06 — l'invalidation des bind groups au .value-swap n'est pas fiable).
   for (let k = 0; k < opts.bounces; k++) {
     prevTex.value = rtPrev.texture
     renderer.setRenderTarget(rtCur)
     await renderer.renderAsync(scene, cam)
     const t = rtPrev; rtPrev = rtCur; rtCur = t
+    if (k === 0) renderer.copyTextureToTexture(rtPrev.texture, rtDirect.texture)
   }
 
-  if (opts.blur > 0) {
-    const blurFn = wgslFn(/* wgsl */`
-      fn boxBlur(fragUv: vec2f, res: f32, src: texture_2d<f32>) -> vec3f {
-        let px = vec2i(i32(fragUv.x * res), i32(fragUv.y * res));
-        var sum = vec3f(0.0);
-        for (var dy = -1; dy <= 1; dy = dy + 1) {
-          for (var dx = -1; dx <= 1; dx = dx + 1) {
-            sum = sum + textureLoad(src, px + vec2i(dx, dy), 0).rgb;
-          }
-        }
-        return sum / 9.0;
-      }
-    `)
-    const blurTex = texture(rtPrev.texture)
-    const blurMat = new THREE.MeshBasicNodeMaterial()
-    blurMat.colorNode = blurFn({ fragUv: uv(), res: float(opts.resolution), src: blurTex })
-    const quad = new THREE.BufferGeometry()
-    quad.setAttribute('position', new THREE.BufferAttribute(new Float32Array([-1, -1, 0, 3, -1, 0, -1, 3, 0]), 3))
-    quad.setAttribute('uv', new THREE.BufferAttribute(new Float32Array([0, 0, 2, 0, 0, 2]), 2))
-    const quadMesh = new THREE.Mesh(quad, blurMat)
-    quadMesh.frustumCulled = false
-    const blurScene = new THREE.Scene()
-    blurScene.add(quadMesh)
-    for (let b = 0; b < opts.blur; b++) {
-      blurTex.value = rtPrev.texture
-      renderer.setRenderTarget(rtCur)
-      await renderer.renderAsync(blurScene, cam)
-      const t = rtPrev; rtPrev = rtCur; rtCur = t
+  // ── SPLIT DIRECT / INDIRECT ── le direct (halos d'enseignes, ombres NEE) reste NET ; l'indirect
+  // (final − direct) est par nature basse fréquence mais porte tout le bruit de variance en taches
+  // 30-60 cm (« masque sale » sur les murs nus, feedback 10/06) → flou LARGE sur lui seul.
+  // C'est le pipeline standard des bakers offline.
+  {
+    // 1. INDIRECT pur = final − direct brut (clampé ≥ 0) → rtCur.
+    const finTex = texture(rtPrev.texture)
+    const dTex = texture(rtDirect.texture)
+    const diffMat = new THREE.MeshBasicNodeMaterial()
+    diffMat.colorNode = finTex.sub(dTex).max(vec3(0, 0, 0))
+    await post(diffMat, rtCur)
+
+    // 2. Flou LARGE de l'indirect : 9×9 (r=4) × 6 passes ≈ σ 9 texels ≈ 12 cm à 2048 — écrase les
+    //    taches de variance sans rien casser (l'indirect physique est plus basse fréquence que ça).
+    //    Un matériau FRAIS par passe, texture source FIXE — aucune mutation .value (cf. piège ci-dessus).
+    let wSrc = rtCur, wDst = rtPrev
+    const wideMats: THREE.Material[] = []
+    for (let b = 0; b < 6; b++) {
+      const m = new THREE.MeshBasicNodeMaterial()
+      m.colorNode = blurFn({ fragUv: uv(), res: float(opts.resolution), r: float(4), src: texture(wSrc.texture) })
+      wideMats.push(m)
+      await post(m, wDst)
+      const t = wSrc; wSrc = wDst; wDst = t
     }
-    blurMat.dispose()
+
+    // 3. COMBINE → rtFinal (target DÉDIÉE, stable à travers les re-bakes : les bindings runtime/probe
+    //    référencent toujours cette texture, peu importe la parité des passes intermédiaires).
+    //    Le direct est adouci d'1 texel à la volée (anti-aliasing du NEE), il reste net.
+    const cDir = blurFn({ fragUv: uv(), res: float(opts.resolution), r: float(1), src: texture(rtDirect.texture) })
+    const cInd = texture(wSrc.texture)
+    const combineMat = new THREE.MeshBasicNodeMaterial()
+    combineMat.colorNode = cDir.add(cInd)
+    await post(combineMat, rtFinal)
+
+    diffMat.dispose(); wideMats.forEach((m) => m.dispose()); combineMat.dispose()
+    quad.dispose()
   }
 
   // ── MOONLIGHT rake (final pass → SEPARATE ADDITIVE target) ── Project the storefront glass mask
@@ -404,7 +455,8 @@ export async function radiosityBake(
   renderer.toneMapping = prevTone
   renderer.setClearColor(prevClear, prevClearAlpha)
   gatherMat.dispose()
-  // rtPrev/moonRt are persistent module-level targets (see bakeTargets/moonTarget) — do NOT dispose them,
-  // so the returned textures stay stable, valid bindings that the next "Re-bake" re-renders into.
-  return { lightmap: rtPrev.texture, moonmap: moonmapTex }
+  // rtFinal/moonRt are persistent module-level targets (see bakeTargets/moonTarget) — do NOT dispose
+  // them, so the returned textures stay stable, valid bindings that the next "Re-bake" re-renders into.
+  // rtFinal est la sortie DÉDIÉE du combine direct+indirect — indépendante de la parité des passes.
+  return { lightmap: rtFinal.texture, moonmap: moonmapTex }
 }
