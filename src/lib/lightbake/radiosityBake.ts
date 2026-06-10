@@ -324,17 +324,26 @@ export async function radiosityBake(
       const t = wSrc; wSrc = wDst; wDst = t
     }
 
-    // 3. COMBINE → rtFinal (target DÉDIÉE, stable à travers les re-bakes : les bindings runtime/probe
+    // 3. Adoucissement du direct : TROIS 5×5 en cascade (σ≈2.8 texels ≈ 3.7 cm à 2048) — mesuré
+    //    nécessaire (un seul 5×5 laissait ~12 % de bruit HF sur les murs unis ; le direct des
+    //    enseignes LOINTAINES a une forte variance relative — feedback 10/06). Les pénombres des
+    //    enseignes restent lisibles à cette échelle.
+    const preDirMat = new THREE.MeshBasicNodeMaterial()
+    preDirMat.colorNode = blurFn({ fragUv: uv(), res: float(opts.resolution), r: float(2), src: texture(rtDirect.texture) })
+    await post(preDirMat, wDst) // wDst est libre après le ping-pong du flou large
+    const preDirMat2 = new THREE.MeshBasicNodeMaterial()
+    preDirMat2.colorNode = blurFn({ fragUv: uv(), res: float(opts.resolution), r: float(2), src: texture(wDst.texture) })
+    await post(preDirMat2, rtDirect) // retour dans rtDirect (matériaux frais, pas de .value — cf. piège)
+
+    // 4. COMBINE → rtFinal (target DÉDIÉE, stable à travers les re-bakes : les bindings runtime/probe
     //    référencent toujours cette texture, peu importe la parité des passes intermédiaires).
-    //    Le direct est adouci en 5×5 (≈2 cm à 2048) à la volée — tue le moucheté per-texel du NEE
-    //    (visible sur les murs unis, feedback 10/06) en gardant les pénombres nettes.
     const cDir = blurFn({ fragUv: uv(), res: float(opts.resolution), r: float(2), src: texture(rtDirect.texture) })
     const cInd = texture(wSrc.texture)
     const combineMat = new THREE.MeshBasicNodeMaterial()
     combineMat.colorNode = cDir.add(cInd)
     await post(combineMat, rtFinal)
 
-    diffMat.dispose(); wideMats.forEach((m) => m.dispose()); combineMat.dispose()
+    diffMat.dispose(); wideMats.forEach((m) => m.dispose()); preDirMat.dispose(); preDirMat2.dispose(); combineMat.dispose()
     quad.dispose()
   }
 

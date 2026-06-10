@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef } from 'react'
 import { useThree } from '@react-three/fiber'
 import * as THREE from 'three/webgpu'
 import { collectShell } from '../../lib/lightbake/collectShell'
-import { bakeAndAttachShell, SHELL_LMI, MOON_RAKE, MOON_DAMP, MOON_SPEC } from '../../lib/lightbake/bakeShellRuntime'
+import { bakeAndAttachShell, SHELL_LMI, MOON_RAKE, MOON_DAMP, MOON_SPEC, WALL_SPEC } from '../../lib/lightbake/bakeShellRuntime'
 import { probeBakeRaw, packProbeVolumes } from '../../lib/lightbake/probeBake'
 import { classifyDeadProbes, floodFillDeadProbes } from '../../lib/lightbake/probeGrid'
 import { emissiveRig, MOONLIGHT } from '../../lib/lightbake/emissiveRig'
@@ -72,9 +72,11 @@ export function BakedShellLighting({ enabled, onProbeVolumes }: { enabled: boole
     MOON_RAKE.value = urlNum('mrake', 0.45) // floor DIFFUSE cold intensity (live). ×albedo+falloff → lit hex pool. 1.1 noyait l'avant de la salle en blanc laiteux sur le sol re-tuné (plus sombre) — 0.45 garde le rai en accent (A/B 10/06)
     MOON_DAMP.value = urlNum('mdamp', 0.45) // warm-GI keep under the rake (higher = gentler/integrated) (live)
     MOON_SPEC.value = useBakeDebug.getState().mspec // floor SPECULAR (vitrine reflection); panel slider 'mspec' (store) — read here so a re-bake preserves the slider value, live-synced below
+    WALL_SPEC.value = urlNum('wspec', 0.45) // sheen satiné des murs (live) — voir bakeShellRuntime
     ;(window as unknown as { __MR?: unknown; __MD?: unknown; __MSPEC?: unknown }).__MR = MOON_RAKE // live tuning (no re-bake)
     ;(window as unknown as { __MD?: unknown }).__MD = MOON_DAMP
     ;(window as unknown as { __MSPEC?: unknown }).__MSPEC = MOON_SPEC
+    ;(window as unknown as { __WSPEC?: unknown }).__WSPEC = WALL_SPEC
     const msubRaw = (new URLSearchParams(window.location.search).get('msub') || '').split(',').map(Number)
     const mc = new THREE.Color(MOONLIGHT.color) // THREE.Color stores LINEAR rgb (ColorManagement on)
     const moon: MoonGobo | null = maskTex ? {

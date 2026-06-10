@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu'
-import { texture, uv, vec3, uniform, float, mix, wgslFn, positionWorld, cameraPosition } from 'three/tsl'
+import { texture, uv, vec3, uniform, float, mix, wgslFn, positionWorld, cameraPosition, normalWorld } from 'three/tsl'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { MeshBVH, SAH } from 'three-mesh-bvh'
 import { collectShell } from './collectShell.ts'
@@ -10,6 +10,12 @@ import { radiosityBake, type MoonGobo } from './radiosityBake.ts'
 // Live shell lightmap intensity (the ?lmi= knob). A uniform so the dev panel updates it without a
 // re-bake. Module-level singleton — shared by the emissiveNode the bake attaches to every shell mat.
 export const SHELL_LMI = uniform(1.4)
+
+// Sheen satiné des MURS (view-dependent) — en mode baked le rig analytique est éteint, donc sans ce
+// terme la peinture satinée n'a AUCUNE réponse spéculaire (« on devrait voir la lumière se refléter
+// légèrement », feedback 10/06). Reflet du regard vers le plafond lumineux (tubes), teinté par la GI
+// locale, boosté en incidence rasante (Fresnel). Live via ?wspec= / window.__WSPEC.
+export const WALL_SPEC = uniform(0.45)
 
 // Live intensity of the exterior moon rake — the cold light projected on the FLOOR by the per-fragment
 // cookie. ADDED to the floor emissive (NOT ×albedo, so the near-black hex floor shows it). ?mrake= drives
@@ -88,7 +94,7 @@ export async function bakeAndAttachShell(
   moon: MoonGobo | null = null,
 ): Promise<ShellBakeResult> {
   const {
-    albedo = 0.7, resolution = 2048, samples = 224, neeSamples = 32, bounces = 2,
+    albedo = 0.7, resolution = 2048, samples = 224, neeSamples = 48, bounces = 2,
     clampDirect = 100, neonBoost = 1.5, fluoBoost = 5.0, intensity = 1.4,
     sky = [0.008, 0.012, 0.025] as [number, number, number],
   } = opts
@@ -244,8 +250,18 @@ export async function bakeAndAttachShell(
       const refl = Vd.sub(up.mul(Vd.dot(up).mul(2)))
       const coldSpec = coldHue.mul(refl.dot(vec3(moonLw[0], moonLw[1], moonLw[2])).max(0).pow(10)).mul(g).mul(MOON_SPEC)
       mat.emissiveNode = gi.mul(mix(float(1), MOON_DAMP, patch)).add(coldDiffuse).add(coldSpec)
+    } else if (mesh.name === bakeName('ceiling')) {
+      mat.emissiveNode = gi // plafond : GI seule
     } else {
-      mat.emissiveNode = gi // walls/ceiling: GI only — NO moon (the rake never touches the walls now)
+      // MURS : GI + sheen satiné view-dependent. R = reflet du regard sur le mur ; la composante
+      // R.y>0 vise le plafond lumineux (tubes) → large lobe satiné qui glisse quand on se déplace.
+      // Teinté par la GI locale (zone magenta → sheen magenta) et boosté en rasant (Fresnel ^2).
+      const Vd = positionWorld.sub(cameraPosition).normalize()
+      const n = normalWorld
+      const refl = Vd.sub(n.mul(Vd.dot(n).mul(2)))
+      const fres = float(1).sub(Vd.negate().dot(n).max(0)).pow(2)
+      const sheen = lmSample.rgb.mul(refl.y.max(0).pow(3)).mul(fres).mul(WALL_SPEC).mul(SHELL_LMI)
+      mat.emissiveNode = gi.add(sheen)
     }
     mat.lightMap = lightmap // kept for reference; the emissiveNode above is what actually renders
     mat.lightMap.channel = 1

@@ -28,6 +28,7 @@ const IDLE_INTERVAL = 1 / IDLE_FPS
 // RCAS (Robust Contrast-Adaptive Sharpening) strength: 0 = max sharpening, 2 = none.
 // Final desktop pass — counters the trilinear-mip + FXAA softness on distant K7
 // posters without adding source resolution / VRAM. Tunable.
+// (Testé 0.8 le 10/06 contre le grain des murs : RCAS innocenté — mesures identiques à 0.4.)
 const SHARPEN_AMOUNT = 0.4
 
 export function PostProcessingEffects({ isMobile = false }: PostProcessingEffectsProps) {
