@@ -6,11 +6,13 @@ export const ROOM_WIDTH = 9    // x axis
 export const ROOM_DEPTH = 8.5  // z axis
 export const ROOM_HEIGHT = 2.8
 
-// Shared wall material — identical painted smooth plaster for all interior walls
+// Shared wall material — peinture SATINÉE lisse, identique pour tous les murs intérieurs
 // (Aisle merged walls + Storefront wall). Single allocation = 1 GPU pipeline.
+// #d4b080 (tan orangé saturé) lisait « sale » sous la GI chaude bakée — teinte désaturée vers un
+// greige chaud + roughness satinée (feedback user 10/06 : « mur lisse, peinture satinée »).
 export const SHARED_WALL_MATERIAL = new THREE.MeshStandardMaterial({
-  color: '#d4b080',
-  roughness: 0.38,
+  color: '#cfc2a8',
+  roughness: 0.42,
   metalness: 0.0,
   envMapIntensity: 0.70,
 })

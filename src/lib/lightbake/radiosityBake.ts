@@ -326,8 +326,9 @@ export async function radiosityBake(
 
     // 3. COMBINE → rtFinal (target DÉDIÉE, stable à travers les re-bakes : les bindings runtime/probe
     //    référencent toujours cette texture, peu importe la parité des passes intermédiaires).
-    //    Le direct est adouci d'1 texel à la volée (anti-aliasing du NEE), il reste net.
-    const cDir = blurFn({ fragUv: uv(), res: float(opts.resolution), r: float(1), src: texture(rtDirect.texture) })
+    //    Le direct est adouci en 5×5 (≈2 cm à 2048) à la volée — tue le moucheté per-texel du NEE
+    //    (visible sur les murs unis, feedback 10/06) en gardant les pénombres nettes.
+    const cDir = blurFn({ fragUv: uv(), res: float(opts.resolution), r: float(2), src: texture(rtDirect.texture) })
     const cInd = texture(wSrc.texture)
     const combineMat = new THREE.MeshBasicNodeMaterial()
     combineMat.colorNode = cDir.add(cInd)
