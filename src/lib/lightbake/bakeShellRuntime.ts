@@ -88,7 +88,7 @@ export async function bakeAndAttachShell(
   moon: MoonGobo | null = null,
 ): Promise<ShellBakeResult> {
   const {
-    albedo = 0.7, resolution = 1024, samples = 96, neeSamples = 8, bounces = 2, blur = 3,
+    albedo = 0.7, resolution = 2048, samples = 224, neeSamples = 8, bounces = 2, blur = 3,
     clampDirect = 100, neonBoost = 1.5, fluoBoost = 5.0, intensity = 1.4,
     sky = [0.008, 0.012, 0.025] as [number, number, number],
   } = opts

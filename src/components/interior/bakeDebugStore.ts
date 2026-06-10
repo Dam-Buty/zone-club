@@ -64,7 +64,8 @@ export interface BakeDebugState {
 export const useBakeDebug = create<BakeDebugState>()(persist((set) => ({
   // Defaults aligned on the validated night recipe (re-tuned 10/06 on the FIXED shell lightmap —
   // the 2.8/2.2/1.8 recipe dated from the never-rendering-lightmap era and flooded the room magenta):
-  // env=0.035 lmi=0.9 neon=2.0 fluo=5.0 mdesk=1.5 ogi=0.9 (+ pools 1.2 & comptoir 3.2 in emissiveRig).
+  // env=0.035 lmi=0.9 neon=2.0 fluo=5.0 mdesk=1.5 ogi=0.5 ospec=0.5 samples=256 (+ pools 1.2 &
+  // comptoir 3.2 in emissiveRig, lightmap 2048² in bakeShellRuntime).
   // A fresh load (no URL) reproduces the réaliste néon-noir: dark hex floor, neutral white pools under
   // the lit tubes, localized colour halos under the signs, cold moon rake at the storefront.
   env: q('env', 0.035),
@@ -74,15 +75,15 @@ export const useBakeDebug = create<BakeDebugState>()(persist((set) => ({
   k7: q('k7', 0.9),
   sign: q('sign', 0.4), // 0.4 puts the dominant neon hues just UNDER the bloom threshold (lum 0.27 < 0.32)
                         // → coloured readable signs, no white-blob halo. 1.0 = the blown-out look. Live.
-  ospec: q('ospec', 1.0),
+  ospec: q('ospec', 0.5), // 1.0 cramait un liseré blanc spéculaire sur le dossier du canapé (A/B 10/06)
   mspec: q('mspec', 1.1),
   mdesk: q('mdesk', 1.5),
-  ogi: q('ogi', 0.9),
+  ogi: q('ogi', 0.5), // 0.9 surexposait les meubles à albédo blanc (îlots, canapé, backboards) — calibration photoréaliste (A/B 10/06)
   neon: q('neon', 2.0),
   fluo: q('fluo', 5.0),
   clamp: q('clamp', 100),
   bounces: q('bounces', 2),
-  samples: q('samples', 96),
+  samples: q('samples', 256), // 96 laissait des taches de variance indirecte sur le plafond (up-tubes near-field) — 256 lisse (A/B 10/06)
   rebakeNonce: 0,
   baking: false,
   set: (p) => set(p),
