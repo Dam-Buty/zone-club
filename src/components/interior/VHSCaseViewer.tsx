@@ -5,10 +5,21 @@ import * as THREE from 'three'
 import { bumpMap, texture, positionLocal, mix, float, clamp as tslClamp, uniform, vec3, positionWorld, normalWorld, varying } from 'three/tsl'
 import { useStore } from '../../store'
 import { useProbeVolumes } from './ProbeVolumeContext'
-import { shIrradiance } from '../../lib/lightbake/shReconstruct'
+import { shIrradiance, shSpecular } from '../../lib/lightbake/shReconstruct'
 import { GRID_MIN, gridExt, G } from '../../lib/lightbake/probeGrid'
 import { PROBE_PI } from './bakeDebugStore'
 import { K7_TONE_UNIFORM } from './CassetteInstances'
+
+// Reflet spéculaire de la K7 en main (plastique de jaquette VHS) — view-dependent, glisse quand la
+// K7 (ou la caméra) bouge. Léger par design (feedback 11/06 : « un reflet de lumière léger ») et
+// ajouté APRÈS le rolloff k7 : un reflet a le droit de dépasser un peu, c'est ce qui le fait lire
+// comme un reflet et pas comme une surexposition. Live : ?kspec= / window.__KSPEC.
+const K7_CASE_SPEC = uniform((() => {
+  if (typeof window === 'undefined') return 0.35
+  const v = parseFloat(new URLSearchParams(window.location.search).get('kspec') || '')
+  return Number.isFinite(v) ? v : 0.35
+})())
+if (typeof window !== 'undefined') (window as unknown as { __KSPEC?: unknown }).__KSPEC = K7_CASE_SPEC
 import { fetchVHSCoverData, fetchVHSCoverDataFast, generateVHSCoverTexture, regenerateVHSCoverTexture, hasVHSCoverData } from '../../utils/VHSCoverGenerator'
 import { useIsMobile } from '../../hooks/useIsMobile'
 import type { Film } from '../../types'
@@ -149,6 +160,8 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
     const half = vec3(0.5 / G[0], 0.5 / G[1], 0.5 / G[2])
     const uvw = tslClamp(positionWorld.sub(gMin).mul(gInv), half, vec3(1).sub(half))
     const E = varying(shIrradiance(p.shR, p.shG, p.shB, uvw, normalWorld))
+    // Lobe assez serré (exposant 24) : un glint de plastique de jaquette, pas un vernis miroir.
+    const spec = shSpecular(p.shR, p.shG, p.shB, uvw, normalWorld, 24)
     clonedScene.traverse((child) => {
       const mesh = child as THREE.Mesh
       if (!mesh.isMesh) return
@@ -160,7 +173,7 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
       // zones blanches de la jaquette × E × pi dépassent le seuil de bloom → K7 en main illisible
       // sous le halo (feedback 11/06). lit×k7/(lit+k7) plafonne sous le seuil en gardant le contraste.
       const lit = albedo.mul(E).mul(PROBE_PI)
-      nm.emissiveNode = lit.mul(K7_TONE_UNIFORM).div(lit.add(K7_TONE_UNIFORM))
+      nm.emissiveNode = lit.mul(K7_TONE_UNIFORM).div(lit.add(K7_TONE_UNIFORM)).add(spec.mul(K7_CASE_SPEC))
       nm.needsUpdate = true
     })
   }, [clonedScene, meshesWithMap])
