@@ -98,6 +98,11 @@ A black seam or a leak is a *data* bug, not a sampling bug. Triage separately:
 | **Only SOME surfaces lit (e.g. two opposite walls), the rest black** | bake-WRITE uv ≠ runtime-READ uv (a stray `.flipY()`); a full-atlas V-flip shoves some slot-rows into the atlas's UNUSED rows | identical uv1 mapping on write & read (no flip); EVERY reader agrees (shell sample + probe `textureLoad`) |
 | Low-frequency cloudiness / marbling on big flat surfaces | INDIRECT-gather variance (too few hemisphere samples) — NOT fireflies | more `samples` + denoise/blur + a bounce; the radiance **clamp does NOT help here** (it's direct-only) |
 | Cloudy / marbled ONLY around a long thin emitter close to its surface | near-field strip variance under uniform area sampling | **subdivide the strip into short ~square segments** (same energy, stratified) + sane standoff distance |
+| Low-freq "dirty paint / smudge" (10–60 cm blotches) on bare flat walls | direct+indirect mixed in one map → no single blur wins | **direct/indirect split** then wide-blur the indirect only — see dedicated section |
+| Sparkles / moutonnement on a surface near a big emitter quad | emitter quad **touches** that surface (near-field `area/dist²` blowup) | pull the emitter off the surface (a full-height "window" quad touching the ceiling sparkled it) |
+| Held/picked-up object or any surface reads FLAT in baked mode | analytical rig dropped → zero specular response | add explicit view-dependent specular/sheen — see "Baked mode kills ALL specular" |
+| A pass in your post/denoise chain goes BLACK (esp. at even pass counts) | `.value`-swap mid render-chain re-binds unreliably in WebGPU | snapshot via `copyTextureToTexture`; fresh material per blur pass — see "Multi-pass orchestration" |
+| Object over-exposed, immune to every tuning knob | embedded GLB `emissiveIntensity` (often ×10) | runtime emissive audit + luminance cap at wiring — see "Two over-exposure sources" |
 
 ## Applying the bake at runtime — the WebGPU surprise (cost us a day)
 
@@ -129,6 +134,37 @@ Isolate, don't guess. Kill every OTHER light contribution and amplify the bake:
 - A **radiance clamp** (cap per-sample luminance) kills **fireflies** from the DIRECT NEE term (a sample landing very close to an emitter → `area/dist²` spike). It does NOT touch the indirect hemisphere gather. Cranking it *up* does nothing for cloudiness; cranking it to a huge value just disables firefly suppression.
 - Low-frequency **cloudiness / marbling** on big surfaces is **indirect-gather variance** → fix with more `samples` + a denoise/blur pass (+ a bounce), not a tighter clamp.
 - **Near-field strip emitters** (a long ceiling tube ~0.05–0.25 m from the ceiling it lights): uniform area sampling has huge per-texel variance (most samples land far along the strip) → cloudy even with clamp+denoise. **Subdivide the strip into short ~square segments** (same area, radiance, total power) → stratified → low variance. Pair with a sane standoff so `area/dist²` isn't absurd (≈0.04 m blew into fireflies; ≈0.25 m + clamp was clean).
+
+## Multi-pass orchestration in WebGPU/TSL (post / denoise / split passes) — cost a full session
+
+Once the gather works, you chain fullscreen passes (blur, direct/indirect split, combine). The WebGPU/TSL renderer has **non-obvious binding semantics** that silently corrupt these chains — symptom is always "a pass goes BLACK" or "stale data", never an error:
+
+- **Interleaving a render pass between two gather passes makes the next gather BLACK.** Swapping a render target's source via `someTextureNode.value = rt.texture` between draws does NOT reliably re-bind in WebGPU. Proven case: snapshotting the bounce-0 output (the pure-direct term) by re-pointing a texture node mid-loop → the following gather sampled a dead binding. **Fix: snapshot with `renderer.copyTextureToTexture(src, dst)` (a pure GPU blit), never a `.value`-swap mid-chain.** (This was the root cause of the infamous "`blur=6` renders the whole shell black" — an even pass count re-entered a mutated binding.)
+- **Blur / iterated passes: build a FRESH `NodeMaterial` per pass with its source texture fixed at construction. NEVER mutate `someTex.value` across iterations.** A ping-pong loop that reuses one material and rewrites `.value` each step is the same trap. Cost is negligible (materials are cheap); correctness is not.
+- **Use a DEDICATED output target, not "whichever ping-pong buffer the loop ended on".** Parity of the pass count then can't leave the runtime/probe bindings pointing at a scratch buffer. Return that fixed target's texture.
+- **`renderer.readRenderTargetPixelsAsync` on a HalfFloat target gives run-to-run-inconsistent values** — do NOT use it to *diagnose* (e.g. "is this pass black?"); it produced contradictory readings the same frame. Trust the on-screen result + the isolate-and-amplify audit instead.
+
+## Direct/indirect split = the real denoiser (kills "dirty smudge" on flat walls)
+
+A baked lightmap mixes the SHARP direct term (sign halos, crisp NEE shadows) and the SMOOTH indirect bounce. A single global blur can't win: blur enough to kill indirect variance and you smear the shadows; keep shadows crisp and the low-frequency **Monte-Carlo blotches (10–60 cm "dirty paint/smudge" on bare walls)** survive. Split them:
+1. Snapshot bounce-0 output = **direct only** (the lightmap it read was black) — via `copyTextureToTexture`.
+2. `indirect = final − direct` (clamp ≥0), blur it **WIDE** (e.g. 9×9 × 6 passes, σ≈12 cm). The true indirect field is lower-frequency than the noise, so you lose nothing.
+3. `combine = direct(softened ~1 texel) + indirect(wide-blurred)` → the dedicated output target.
+
+The leftover grain after this is **per-texel DIRECT noise**: raise `neeSamples` + a small (5×5) cascade on the direct term. Measure with a high-frequency-residual metric on a PNG crop (Gaussian-blur the crop, take stddev of `crop − blurred`); below ~sub-texel scale it's screen dither / 8-bit quantization, NOT the lightmap — stop chasing it.
+
+## Resolution is px-per-METRE, not pixels
+
+Diagnose "blurry/blobby projection" (e.g. a sign halo reads as an 8 cm blob) as **texel density**: a 1024² atlas over the shell ≈ 38 px/m; 2048² ≈ 76 px/m. Going UP in resolution while keeping a fixed texel-radius blur (3×3) makes residual noise *worse* (the kernel covers half the world-radius) → re-scale the denoise when you re-scale resolution.
+
+## "Baked mode" kills ALL specular — add it back explicitly
+
+When you drop the analytical rig for the baked look, every surface loses its specular/IBL response and reads FLAT-matte: walls, leather, the held VHS case. Diffuse GI alone is not enough for realism. **Add an explicit view-dependent specular term** from the SH probes (`shSpecular(...)`, tight lobe exponent) or a cheap reflect-toward-bright-zone sheen — for ANY surface meant to look glossy/satin. The reflection must MOVE with the camera/object (that motion is what reads as "lit", vs a flat painted highlight). Add it AFTER any tone rolloff (a highlight is allowed to exceed the white-point — that's what distinguishes it from over-exposure).
+
+## Two over-exposure sources unrelated to your tuning knobs
+
+- **Embedded GLB emissive is often absurd.** Imported assets ship `emissive` × `emissiveIntensity` that dwarf your scene (a spot-lamp GLB here: `#f6ecec × 10` ≈ luminance 8.6, ~7× everything else, tied to no knob). Audit at runtime (traverse, list `lum(emissive)·intensity` sorted) and **cap luminance** when you wire each receiver — at wiring time, not in a one-shot sweep, or lazy-loaded GLBs slip through.
+- **Lambertian emitter proxies waste half their light** on surfaces they don't face (a genre sign blasts the ceiling + opposite corner as much as the aisle it labels). Make oriented emitters **directional**: a `cos^f` lobe (+ downward tilt for signage). Trick to keep the storage stride: encode the lobe exponent `f` in the **length** of the `facing` vec3 (the NEE kernels read `f = length(facing)`, direction `= normalize(facing)`), so no new per-emitter field.
 
 ## Implementation priority order
 
