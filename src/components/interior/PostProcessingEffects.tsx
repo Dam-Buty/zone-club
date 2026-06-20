@@ -153,6 +153,7 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
   const lastRenderTimeRef = useRef(0) // timestamp of the previous EFFECTIVE render (0 = none/reset)
   const lastSaturationRef = useRef(0) // last time the EMA exceeded DROP_MS
   const drsSettleUntilRef = useRef(0) // ignore intervals until this time (post-resize spike)
+  const drsEnabledRef = useRef(true)  // dev toggle (A/B the scaler) — always true in normal use
   const isTerminalOpen = useStore(state => state.isTerminalOpen)
   const isPlayerOpen = useStore(state => state.isPlayerOpen)
 
@@ -168,7 +169,8 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
     w.__drs = () => ({ scale: dprScaleRef.current, emaMs: +frameMsEmaRef.current.toFixed(1), maxPR: dprMaxRef.current, curPR: renderer.getPixelRatio() })
     // Force a high ceiling to test the scaler on a fast GPU (simulate Retina saturation).
     w.__drsSetMax = (pr: number) => { dprMaxRef.current = pr; dprScaleRef.current = 1; lastDrsAdjustRef.current = 0; frameMsEmaRef.current = DRS_EMA_SEED; lastRenderTimeRef.current = 0; setDpr(pr) }
-    return () => { delete w.__drs; delete w.__drsSetMax }
+    w.__drsEnable = (b: boolean) => { drsEnabledRef.current = !!b }
+    return () => { delete w.__drs; delete w.__drsSetMax; delete w.__drsEnable }
   }, [renderer, setDpr])
 
   useFrame((_, delta) => {
@@ -221,7 +223,9 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
       drsSettleUntilRef.current = nowDrs + DRS_SETTLE_MS // skip the RT-realloc spike
       lastRenderTimeRef.current = 0                       // don't measure across the resize
     }
-    if (!active) {
+    if (!drsEnabledRef.current) {
+      // Scaler disabled (dev A/B) — leave the resolution under manual control.
+    } else if (!active) {
       // At rest → full (supersampled) resolution for max sharpness when reading.
       if (dprScaleRef.current < 1 && nowDrs - lastDrsAdjustRef.current > DRS_DROP_COOLDOWN) applyScale(1)
       lastRenderTimeRef.current = 0 // idle gap must not pollute the active EMA
