@@ -931,10 +931,14 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
       ctx.font = `bold 34px ${CRT_FONT}`
       const startY = 170 + subOY
       const lineH = 90
-      const reversed = [...rentalHistory].reverse().slice(0, 8)
+      // Server order is already recent-first (ORDER BY rented_at DESC) — do NOT reverse,
+      // that would show the 8 OLDEST. Same list/labels as the TVTerminal history tab.
+      const recent = rentalHistory.slice(0, 8)
 
-      reversed.forEach((entry, i) => {
-        const title = getFilmTitle(entry.filmId).substring(0, 22)
+      recent.forEach((entry, i) => {
+        // Prefer the server-joined title: the 3D catalogue only holds the loaded aisles, so an
+        // older rental would otherwise fall back to "Film #id".
+        const title = (entry.title || getFilmTitle(entry.filmId)).substring(0, 22)
         ctx.shadowColor = SETTINGS_COLORS.green
         ctx.shadowBlur = 1
         ctx.fillStyle = SETTINGS_COLORS.green
@@ -943,7 +947,9 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
         ctx.font = `26px ${CRT_FONT}`
         ctx.fillStyle = SETTINGS_COLORS.dimText
         ctx.shadowBlur = 0
-        ctx.fillText(`   Loué ${formatDate(entry.rentedAt)} - Rendu ${formatDate(entry.returnedAt)}`, subOX + 60, startY + i * lineH + 35)
+        // `returnedAt` carries expires_at (end of the rental window), NOT an actual return date —
+        // printing "Rendu <date>" showed a FUTURE date for a rental still in progress.
+        ctx.fillText(`   Loué ${formatDate(entry.rentedAt)} · ${entry.isActive ? 'en cours' : 'terminé'}`, subOX + 60, startY + i * lineH + 35)
         ctx.font = `bold 34px ${CRT_FONT}`
       })
     }
@@ -1041,7 +1047,9 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
       rows.push(['Utilisateur', authUser.username, SETTINGS_COLORS.gold])
     }
     rows.push(['Niveau', localUser.level.toUpperCase(), SETTINGS_COLORS.gold])
-    rows.push(['Total locations', `${rentals.length + rentalHistory.length}`, SETTINGS_COLORS.green])
+    // History now = ALL rentals (active + past) from the server, so adding the active ones would
+    // double-count them. Fall back to rentals.length when the history hasn't loaded (guest / offline).
+    rows.push(['Total locations', `${rentalHistory.length || rentals.length}`, SETTINGS_COLORS.green])
     rows.push(['Crédits', `${credits}`, SETTINGS_COLORS.green])
     rows.push(['Locations actives', `${rentals.length}`, SETTINGS_COLORS.green])
     rows.push(['Critiques publiées', `${userReviews.length}`, SETTINGS_COLORS.green])
