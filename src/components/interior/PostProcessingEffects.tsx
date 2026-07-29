@@ -45,7 +45,13 @@ const SHARPEN_AMOUNT = 0.4
 // Raise is PROBED (after a saturation-free spell), not threshold-based: when vsync caps us we can't
 // see headroom, so we can't tell "holds 60 with margin" from "holds 60 exactly" — probe up slowly,
 // and if it re-saturates the reactive drop catches it.
-const DRS_MIN_SCALE = 0.5      // floor vs the Canvas max dpr — keeps a legible minimum in motion
+// Floor vs the Canvas max dpr — keeps a legible minimum in motion. Split desktop/mobile: the mobile
+// ceiling is already capped at 1.7, so a 0.5 floor would render at 0.85 dpr = HALF the linear resolution.
+// That is below the K7-legibility threshold we hit (and rejected) with TAAU 0.75× — see
+// memory/taau-mobile-rejected.md. 0.7 keeps the posters readable while still buying ~50 % of the pixels
+// back on a struggling phone. Desktop has real headroom above its floor, so it keeps 0.5.
+const DRS_MIN_SCALE_DESKTOP = 0.5
+const DRS_MIN_SCALE_MOBILE = 0.7
 const DRS_STEP = 0.1          // per-adjustment increment (discrete levels, fewer resizes)
 const DRS_DROP_MS = 22         // render-to-render EMA above → not holding 60 fps → drop (reactive)
 const DRS_PROBE_MS = 4000     // no saturation for this long → probe one step up (recover sharpness)
@@ -146,6 +152,7 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
 
   const renderAccumRef = useRef(0)
   // Adaptive resolution state
+  const drsMinScale = isMobile ? DRS_MIN_SCALE_MOBILE : DRS_MIN_SCALE_DESKTOP
   const dprMaxRef = useRef(0)         // Canvas max dpr (captured at first frame), the ceiling
   const dprScaleRef = useRef(1)       // current fraction of the ceiling (1 = full)
   const frameMsEmaRef = useRef(DRS_EMA_SEED) // EMA of the render-to-render interval (ms)
@@ -235,8 +242,8 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
       if (ema > DRS_DROP_MS) {
         // Not holding 60 fps → drop a step, reactively.
         lastSaturationRef.current = nowDrs
-        if (s > DRS_MIN_SCALE && nowDrs - lastDrsAdjustRef.current > DRS_DROP_COOLDOWN) {
-          applyScale(Math.max(DRS_MIN_SCALE, +(s - DRS_STEP).toFixed(2)))
+        if (s > drsMinScale && nowDrs - lastDrsAdjustRef.current > DRS_DROP_COOLDOWN) {
+          applyScale(Math.max(drsMinScale, +(s - DRS_STEP).toFixed(2)))
         }
       } else if (s < 1 && nowDrs - lastSaturationRef.current > DRS_PROBE_MS && nowDrs - lastDrsAdjustRef.current > DRS_RAISE_COOLDOWN) {
         // Saturation-free for a while → probe one step up to recover sharpness.
