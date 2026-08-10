@@ -43,7 +43,7 @@ export async function processFilm(filmId: number): Promise<void> {
             setStatus(filmId, 'done', 100)
             updateFilmMedia(filmId, { media_dir: mediaDir, file_path_vo_transcoded: `${mediaDir}/vo.mp4` })
             return
-        } catch {}
+        } catch { /* vo.mp4 absent → on continue le traitement */ }
 
         setStatus(filmId, 'probing', 0)
         const { streams } = await probeStreams(mkv)
