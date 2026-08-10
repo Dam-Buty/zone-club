@@ -19,10 +19,9 @@ export async function register() {
 
         const { startCleanupScheduler } = await import('./lib/cleanup');
         startCleanupScheduler();
-        const { startRadarrPoller } = await import('./lib/radarr-poller');
+        const { startRadarrPoller, recoverMediaPipeline } = await import('./lib/radarr-poller');
         startRadarrPoller();
-        const { recoverPendingTranscodes } = await import('./lib/transcoder');
-        recoverPendingTranscodes();
+        recoverMediaPipeline();
         const { startCastSessionChecker } = await import('./lib/cast-session-checker');
         startCastSessionChecker();
     }
