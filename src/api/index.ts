@@ -55,6 +55,7 @@ export interface ApiRentalWithFilm extends ApiRental {
     vf: string | null;
     vo: string | null;
     subtitles: string | null;
+    subtitles_en: string | null;
   };
   time_remaining: number; // minutes
   // Gamification fields

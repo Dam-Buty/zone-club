@@ -29,6 +29,7 @@ export interface RentalWithFilm extends Rental {
         vf: string | null;
         vo: string | null;
         subtitles: string | null;
+        subtitles_en: string | null;
     };
     time_remaining: number; // minutes
 }
@@ -103,8 +104,9 @@ export function getUserActiveRentals(userId: number): RentalWithFilm[] {
                f.radarr_vo_id as f_radarr_vo_id, f.radarr_vf_id as f_radarr_vf_id,
                f.aisle as f_aisle, f.is_nouveaute as f_is_nouveaute, f.is_available as f_is_available,
                f.transcode_status as f_transcode_status, f.transcode_progress as f_transcode_progress,
-               f.transcode_error as f_transcode_error, f.file_path_vo_transcoded as f_file_path_vo_transcoded,
-               f.file_path_vf_transcoded as f_file_path_vf_transcoded, f.created_at as f_created_at
+               f.transcode_error as f_transcode_error,                f.file_path_vo_transcoded as f_file_path_vo_transcoded,
+               f.file_path_vf_transcoded as f_file_path_vf_transcoded, f.created_at as f_created_at,
+               f.subtitle_fr_vtt as f_subtitle_fr_vtt, f.subtitle_en_vtt as f_subtitle_en_vtt
         FROM rentals r
         JOIN films f ON r.film_id = f.id
         WHERE r.user_id = ? AND r.is_active = 1 AND r.expires_at > datetime('now')
@@ -122,8 +124,9 @@ export function getUserActiveRentals(userId: number): RentalWithFilm[] {
             radarr_vo_id: row.f_radarr_vo_id, radarr_vf_id: row.f_radarr_vf_id,
             aisle: row.f_aisle, is_nouveaute: row.f_is_nouveaute, is_available: row.f_is_available,
             transcode_status: row.f_transcode_status, transcode_progress: row.f_transcode_progress,
-            transcode_error: row.f_transcode_error, file_path_vo_transcoded: row.f_file_path_vo_transcoded,
+            transcode_error: row.f_transcode_error,             file_path_vo_transcoded: row.f_file_path_vo_transcoded,
             file_path_vf_transcoded: row.f_file_path_vf_transcoded, created_at: row.f_created_at,
+            subtitle_fr_vtt: row.f_subtitle_fr_vtt, subtitle_en_vtt: row.f_subtitle_en_vtt,
         });
 
         const expiresAt = new Date(row.expires_at + 'Z');
@@ -131,11 +134,12 @@ export function getUserActiveRentals(userId: number): RentalWithFilm[] {
         const timeRemaining = Math.max(0, Math.floor((expiresAt.getTime() - now.getTime()) / 60000));
 
         const streamingUrls = FORCED_RENTAL_VIDEO_URL
-            ? { vf: FORCED_RENTAL_VIDEO_URL, vo: FORCED_RENTAL_VIDEO_URL, subtitles: null }
+            ? { vf: FORCED_RENTAL_VIDEO_URL, vo: FORCED_RENTAL_VIDEO_URL, subtitles: null, subtitles_en: null }
             : {
                 vf: film.file_path_vf_transcoded ? getStreamingUrl(row.symlink_uuid, 'film_vf.mp4') : null,
                 vo: film.file_path_vo_transcoded ? getStreamingUrl(row.symlink_uuid, 'film_vo.mp4') : null,
-                subtitles: film.subtitle_path ? getStreamingUrl(row.symlink_uuid, 'subs_fr.vtt') : null
+                subtitles: film.subtitle_fr_vtt ? getStreamingUrl(row.symlink_uuid, 'subs_fr.vtt') : null,
+                subtitles_en: film.subtitle_en_vtt ? getStreamingUrl(row.symlink_uuid, 'subs_en.vtt') : null
             };
 
         return { ...row, film, streaming_urls: streamingUrls, time_remaining: timeRemaining } as RentalWithFilm;
@@ -195,12 +199,14 @@ function enrichRental(rental: Rental): RentalWithFilm | null {
         ? {
             vf: FORCED_RENTAL_VIDEO_URL,
             vo: FORCED_RENTAL_VIDEO_URL,
-            subtitles: null
+            subtitles: null,
+            subtitles_en: null
         }
         : {
             vf: film.file_path_vf_transcoded ? getStreamingUrl(rental.symlink_uuid, 'film_vf.mp4') : null,
             vo: film.file_path_vo_transcoded ? getStreamingUrl(rental.symlink_uuid, 'film_vo.mp4') : null,
-            subtitles: film.subtitle_path ? getStreamingUrl(rental.symlink_uuid, 'subs_fr.vtt') : null
+            subtitles: film.subtitle_fr_vtt ? getStreamingUrl(rental.symlink_uuid, 'subs_fr.vtt') : null,
+            subtitles_en: film.subtitle_en_vtt ? getStreamingUrl(rental.symlink_uuid, 'subs_en.vtt') : null
         };
 
     return {
@@ -251,7 +257,10 @@ export async function rentFilm(userId: number, filmId: number): Promise<RentalWi
         : await createRentalSymlinks(film.tmdb_id, {
             vf: film.file_path_vf_transcoded,
             vo: film.file_path_vo_transcoded,
-            subtitles: film.subtitle_path
+            subtitles: {
+                fr: film.subtitle_fr_vtt,
+                en: film.subtitle_en_vtt
+            }
         });
 
     const durationMs = RENTAL_DURATIONS[tier];
