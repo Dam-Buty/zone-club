@@ -3,7 +3,7 @@ import ffmpeg from "fluent-ffmpeg";
 import { join } from "node:path";
 import {
   DATABASE_PATH,
-  FILMS_VF_ROOT,
+  FILMS_ROOT,
   startEpochSec,
 } from "./config.ts";
 
@@ -11,7 +11,6 @@ interface FilmRow {
   id: number;
   title: string;
   release_year: number | null;
-  file_path_vf: string | null;
   file_path_vf_transcoded: string | null;
   duration_sec: number | null;
 }
@@ -57,9 +56,9 @@ export async function loadPlaylist(): Promise<PlaylistState> {
 
   const rows = db
     .prepare(
-      `SELECT id, title, release_year, file_path_vf, file_path_vf_transcoded, duration_sec
+      `SELECT id, title, release_year, file_path_vf_transcoded, duration_sec
        FROM films
-       WHERE file_path_vf IS NOT NULL
+       WHERE file_path_vf_transcoded IS NOT NULL
        ORDER BY id`,
     )
     .all() as FilmRow[];
@@ -71,8 +70,7 @@ export async function loadPlaylist(): Promise<PlaylistState> {
   const films: PlaylistFilm[] = [];
   let probedCount = 0;
   for (const row of rows) {
-    const relative = row.file_path_vf_transcoded ?? row.file_path_vf!;
-    const absolutePath = join(FILMS_VF_ROOT, relative);
+    const absolutePath = join(FILMS_ROOT, row.file_path_vf_transcoded!);
 
     let durationSec = row.duration_sec;
     if (durationSec == null) {
