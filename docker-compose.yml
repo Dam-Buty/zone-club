@@ -8,18 +8,23 @@ services:
     volumes:
       - .:/app
       - ./zone.db:/data/zone.db
-      - /data/big-boi/zone-club/films-vo:/media/films-vo
-      - /data/big-boi/zone-club/films-vf:/media/films-vf
+      - /data/big-boi/zone-club/library:/media/library:rw
+      - /data/big-boi/zone-club/films:/media/films:rw
+      - /mnt/backup:/media/backup:rw,rshared
       - media_public:/media/public:rw
     environment:
       - DATABASE_PATH=/data/zone.db
       - DOMAIN=${DOMAIN}
       - SUBDOMAIN=${SUBDOMAIN}
       - STORAGE_SUBDOMAIN=${STORAGE_SUBDOMAIN}
-      - RADARR_VO_URL=http://radarr-vo:7878
-      - RADARR_VF_URL=http://radarr-vf:7878
-      - RADARR_VO_API_KEY=${RADARR_VO_API_KEY}
-      - RADARR_VF_API_KEY=${RADARR_VF_API_KEY}
+      - RADARR_URL=http://radarr:7878
+      - RADARR_API_KEY=${RADARR_API_KEY}
+      - RADARR_QUALITY_PROFILE_ID=${RADARR_QUALITY_PROFILE_ID}
+      - TRANSCODE_API_URL=https://transcode.agi-so.fr
+      - TRANSCODE_API_AUTH=${TRANSCODE_API_AUTH}
+      - MEDIA_FILMS_PATH=/media/films
+      - MEDIA_LIBRARY_PATH=/media/library
+      - MEDIA_BACKUP_PATH=/media/backup/zone-club
       - TMDB_API_KEY=${TMDB_API_KEY}
       - HMAC_SECRET=${HMAC_SECRET}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
@@ -38,16 +43,14 @@ services:
       - "traefik.http.routers.zone-app.tls.certresolver=letsencrypt"
       - "traefik.http.services.zone-app.loadbalancer.server.port=3000"
     depends_on:
-      - radarr-vo
-      - radarr-vf
+      - radarr
 
 
   storage:
     image: sebp/lighttpd
     container_name: zone-storage
     volumes:
-      - /data/big-boi/zone-club/films-vo:/media/films-vo:ro
-      - /data/big-boi/zone-club/films-vf:/media/films-vf:ro
+      - /data/big-boi/zone-club/films:/media/films:ro
       - media_public:/media/public:ro
       - ./lighttpd.conf:/etc/lighttpd/lighttpd.conf:ro
     labels:
@@ -58,46 +61,25 @@ services:
       - "traefik.http.services.zone-storage.loadbalancer.server.port=80"
 
 
-  radarr-vo:
+  radarr:
     image: linuxserver/radarr:latest
-    container_name: zone-radarr-vo
+    container_name: zone-radarr
     environment:
       - PUID=1000
       - PGID=1000
       - TZ=Europe/Paris
     volumes:
       - ./radarr-vo-config:/config
-      - /data/big-boi/zone-club/films-vo:/movies
+      - /data/big-boi/zone-club/library:/movies
       - ${SABNZBD_DOWNLOADS}:/downloads
     extra_hosts:
       - "host.docker.internal:host-gateway"
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.radarr-vo.rule=Host(`radarr-vo.${DOMAIN}`)"
-      - "traefik.http.routers.radarr-vo.entrypoints=websecure"
-      - "traefik.http.routers.radarr-vo.tls.certresolver=letsencrypt"
-      - "traefik.http.services.radarr-vo.loadbalancer.server.port=7878"
-
-
-  radarr-vf:
-    image: linuxserver/radarr:latest
-    container_name: zone-radarr-vf
-    environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ=Europe/Paris
-    volumes:
-      - ./radarr-vf-config:/config
-      - /data/big-boi/zone-club/films-vf:/movies
-      - ${SABNZBD_DOWNLOADS}:/downloads
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.radarr-vf.rule=Host(`radarr-vf.${DOMAIN}`)"
-      - "traefik.http.routers.radarr-vf.entrypoints=websecure"
-      - "traefik.http.routers.radarr-vf.tls.certresolver=letsencrypt"
-      - "traefik.http.services.radarr-vf.loadbalancer.server.port=7878"
+      - "traefik.http.routers.radarr.rule=Host(`radarr.${DOMAIN}`)"
+      - "traefik.http.routers.radarr.entrypoints=websecure"
+      - "traefik.http.routers.radarr.tls.certresolver=letsencrypt"
+      - "traefik.http.services.radarr.loadbalancer.server.port=7878"
 
 
   bazarr:
@@ -124,11 +106,11 @@ services:
     container_name: zone-cinema-stream
     volumes:
       - ./zone.db:/data/zone.db
-      - /data/big-boi/zone-club/films-vf:/media/films-vf:ro
+      - /data/big-boi/zone-club/films:/media/films:ro
       - media_public:/media/public:rw
     environment:
       - DATABASE_PATH=/data/zone.db
-      - FILMS_VF_ROOT=/media/films-vf
+      - FILMS_ROOT=/media/films
       - HLS_OUT_DIR=/media/public/symlinks/cinema-live
       - PLAYLIST_START=${PLAYLIST_START}
       - TZ=Europe/Paris
@@ -140,10 +122,10 @@ services:
     network_mode: host
     volumes:
       - ./zone.db:/data/zone.db:ro
-      - /data/big-boi/zone-club/films-vf:/media/films-vf:ro
+      - /data/big-boi/zone-club/films:/media/films:ro
     environment:
       - DATABASE_PATH=/data/zone.db
-      - FILMS_VF_ROOT=/media/films-vf
+      - FILMS_ROOT=/media/films
       - PLAYLIST_START=${PLAYLIST_START}
       - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
       - DISCORD_GUILD_ID=${DISCORD_GUILD_ID}
