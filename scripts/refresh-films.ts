@@ -2,13 +2,14 @@
  * Refresh films — relance la chaîne download → transcode pour un film ou tous les films sans media
  *
  * Usage:
- *   npx tsx scripts/refresh-films.ts --film <idOrTmdb>   # refresh un film (id interne OU tmdb_id)
- *   npx tsx scripts/refresh-films.ts --all-empty          # refresh tous les films sans file_path_vo_transcoded
+ *   npx tsx scripts/refresh-films.ts --film <id>       # refresh par id INTERNE (films.id)
+ *   npx tsx scripts/refresh-films.ts --tmdb <id>       # refresh par tmdb_id
+ *   npx tsx scripts/refresh-films.ts --all-empty       # refresh tous les films sans file_path_vo_transcoded
  *
  * ⚠️  --all-empty appelle Radarr (rate-limited 500ms/film) — ne pas lancer sans prévoir le trafic.
  */
 
-import { emptyFilmIds, refreshFilm, refreshFilmByRef } from '../lib/media/refresh'
+import { emptyFilmIds, refreshFilm, refreshFilmByTmdb } from '../lib/media/refresh'
 
 const RATE_LIMIT_MS = 500
 
@@ -22,29 +23,44 @@ function errMsg(err: unknown): string {
 
 function usage(): void {
     console.log(`Usage:
-  npx tsx scripts/refresh-films.ts --film <idOrTmdb>
+  npx tsx scripts/refresh-films.ts --film <id>
+  npx tsx scripts/refresh-films.ts --tmdb <id>
   npx tsx scripts/refresh-films.ts --all-empty`)
 }
 
 async function main(): Promise<void> {
     const filmIdx = args.indexOf('--film')
+    const tmdbIdx = args.indexOf('--tmdb')
     const filmRef = filmIdx !== -1 ? args[filmIdx + 1] : undefined
+    const tmdbRef = tmdbIdx !== -1 ? args[tmdbIdx + 1] : undefined
     const hasAllEmpty = args.includes('--all-empty')
 
-    if (filmIdx !== -1 && hasAllEmpty) {
-        console.error('Erreur : --film et --all-empty sont mutuellement exclusifs')
+    const flagCount = (filmIdx !== -1 ? 1 : 0) + (tmdbIdx !== -1 ? 1 : 0) + (hasAllEmpty ? 1 : 0)
+    if (flagCount > 1) {
+        console.error('Erreur : --film, --tmdb et --all-empty sont mutuellement exclusifs')
         usage()
         process.exit(1)
     }
 
     if (filmIdx !== -1) {
         if (!filmRef) {
-            console.error('Erreur : --film nécessite un argument <idOrTmdb>')
+            console.error('Erreur : --film nécessite un argument <id> (id interne films.id)')
             usage()
             process.exit(1)
         }
-        const result = await refreshFilmByRef(filmRef)
-        console.log(`[refresh] film ${filmRef} → ${result}`)
+        const result = await refreshFilm(Number(filmRef))
+        console.log(`[refresh] film #${filmRef} → ${result}`)
+        return
+    }
+
+    if (tmdbIdx !== -1) {
+        if (!tmdbRef) {
+            console.error('Erreur : --tmdb nécessite un argument <id>')
+            usage()
+            process.exit(1)
+        }
+        const result = await refreshFilmByTmdb(Number(tmdbRef))
+        console.log(`[refresh] tmdb ${tmdbRef} → ${result}`)
         return
     }
 

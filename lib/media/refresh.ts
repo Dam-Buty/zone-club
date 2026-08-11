@@ -31,9 +31,8 @@ export function emptyFilmIds(): number[] {
     return rows.map(r => r.id)
 }
 
-export function refreshFilmByRef(ref: string | number): Promise<RefreshResult> {
-    const num = typeof ref === 'number' ? ref : Number(ref)
-    const film = getFilmById(num) ?? getFilmByTmdbId(num)
-    if (!film) throw new Error(`film introuvable (id/tmdb: ${ref})`)
+export function refreshFilmByTmdb(tmdbId: number): Promise<RefreshResult> {
+    const film = getFilmByTmdbId(tmdbId)
+    if (!film) throw new Error(`film introuvable (tmdb: ${tmdbId})`)
     return refreshFilm(film.id)
 }
