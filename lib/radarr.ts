@@ -60,7 +60,7 @@ class RadarrClient {
         return movies[0] || null;
     }
 
-    async addMovie(tmdbId: number, title: string): Promise<RadarrMovie> {
+    async addMovie(tmdbId: number, title: string, qualityProfileId?: number): Promise<RadarrMovie> {
         // Check if movie already exists in Radarr
         const existing = await this.getMovieByTmdbId(tmdbId);
         if (existing) {
@@ -87,7 +87,7 @@ class RadarrClient {
         const payload = {
             ...movieData,
             rootFolderPath: rootFolder.path,
-            qualityProfileId: parseInt(process.env.RADARR_QUALITY_PROFILE_ID || '6', 10),
+            qualityProfileId: qualityProfileId ?? parseInt(process.env.RADARR_QUALITY_PROFILE_ID || '7', 10),
             monitored: true,
             addOptions: {
                 searchForMovie: true
@@ -138,8 +138,8 @@ export const radarr = new RadarrClient(
     requireEnv('RADARR_API_KEY')
 );
 
-export async function addMovie(tmdbId: number, title: string): Promise<{ id: number }> {
-    const movie = await radarr.addMovie(tmdbId, title);
+export async function addMovie(tmdbId: number, title: string, qualityProfileId?: number): Promise<{ id: number }> {
+    const movie = await radarr.addMovie(tmdbId, title, qualityProfileId);
     return { id: movie.id };
 }
 

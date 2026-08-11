@@ -166,7 +166,12 @@ export async function triggerDownload(filmId: number): Promise<Film> {
         throw new Error('Film introuvable');
     }
 
-    const { id } = await addToRadarr(film.tmdb_id, film.title);
+    // Films FR → profil TrueFrench, sinon → profil MultiAudio (release combinée VF+VO)
+    const isFrench = film.original_language === 'fr';
+    const profileId = isFrench
+        ? parseInt(process.env.RADARR_QUALITY_PROFILE_ID_FR || '', 10) || parseInt(process.env.RADARR_QUALITY_PROFILE_ID || '7', 10)
+        : parseInt(process.env.RADARR_QUALITY_PROFILE_ID || '7', 10);
+    const { id } = await addToRadarr(film.tmdb_id, film.title, profileId);
     db.prepare('UPDATE films SET radarr_id = ? WHERE id = ?').run(id, filmId);
 
     return getFilmById(filmId)!;
