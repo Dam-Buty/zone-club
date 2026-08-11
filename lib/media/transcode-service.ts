@@ -87,7 +87,6 @@ export async function createJob(filePath: string, params: TranscodeParams): Prom
   const { size } = await stat(filePath)
   const boundary = newBoundary()
   const preamble = partHeader(boundary, 'file', 'input.mkv', 'application/octet-stream')
-
   const fields: [string, string][] = [
     ['target_codec', params.targetCodec ?? 'h264_nvenc'],
     ['target_height', String(params.targetHeight ?? 1080)],
@@ -110,9 +109,11 @@ export async function createJob(filePath: string, params: TranscodeParams): Prom
   const uploadStart = Date.now()
   let uploaded = 0
   let lastUploadLog = uploadStart
+  let lastProgressAt = uploadStart
   const body = multipartBody(fileStream, preamble, tail, (n) => {
     uploaded += n
     const now = Date.now()
+    lastProgressAt = now
     if (now - lastUploadLog >= 5000) {
       const secs = (now - uploadStart) / 1000
       const mbps = uploaded / 1e6 / secs
@@ -123,24 +124,43 @@ export async function createJob(filePath: string, params: TranscodeParams): Prom
   })
   const contentLength = preamble.byteLength + size + tail.byteLength
 
+  // Garde-fous: sans ça, un upload/une réponse bloquée laisserait processFilm suspendu pour toujours.
+  const timeoutMs = Number(process.env.TRANSCODE_UPLOAD_TIMEOUT_MS || 45 * 60 * 1000) // 45 min (upload + création job côté service)
+  const stallMs = Number(process.env.TRANSCODE_UPLOAD_STALL_MS || 90 * 1000)          // 90s sans un seul octet envoyé
+  const controller = new AbortController()
+  const timeoutTimer = setTimeout(() => {
+    controller.abort(new Error(`transcode createJob: timeout après ${timeoutMs / 60000} min`))
+  }, timeoutMs)
+  const stallTimer = setInterval(() => {
+    if (Date.now() - lastProgressAt > stallMs) {
+      controller.abort(new Error(`transcode createJob: upload bloqué (${stallMs / 1000}s sans progrès) — possible limite de taille côté service`))
+    }
+  }, 15_000)
+
   // TODO(media): valider l'upload streamé contre le vrai service quand TRANSCODE_API_AUTH
   // sera disponible (Task 17 du plan) — le multipart est construit correctement ici.
-  const res = await fetch(`${BASE}/jobs`, {
-    method: 'POST',
-    headers: {
-      Authorization: authHeader(),
-      'Content-Type': `multipart/form-data; boundary=${boundary}`,
-      'Content-Length': String(contentLength),
-    },
-    body,
-    // @ts-expect-error — undici fetch (runtime Node 22) exige `duplex: 'half'` pour un body
-    // ReadableStream ; la propriété est absente du type DOM RequestInit.
-    duplex: 'half',
-  })
-  if (!res.ok) throw new Error(`transcode createJob ${res.status}: ${await res.text()}`)
-  const uploadSecs = (Date.now() - uploadStart) / 1000
-  console.log(`[transcode] upload terminé: ${(size / 1e9).toFixed(2)} Go en ${uploadSecs.toFixed(0)}s (${(size / 1e6 / uploadSecs).toFixed(1)} Mo/s)`)
-  return res.json() as Promise<TranscodeJob>
+  try {
+    const res = await fetch(`${BASE}/jobs`, {
+      method: 'POST',
+      headers: {
+        Authorization: authHeader(),
+        'Content-Type': `multipart/form-data; boundary=${boundary}`,
+        'Content-Length': String(contentLength),
+      },
+      body,
+      signal: controller.signal,
+      // @ts-expect-error — undici fetch (runtime Node 22) exige `duplex: 'half'` pour un body
+      // ReadableStream ; la propriété est absente du type DOM RequestInit.
+      duplex: 'half',
+    })
+    if (!res.ok) throw new Error(`transcode createJob ${res.status}: ${await res.text()}`)
+    const uploadSecs = (Date.now() - uploadStart) / 1000
+    console.log(`[transcode] upload terminé: ${(size / 1e9).toFixed(2)} Go en ${uploadSecs.toFixed(0)}s (${(size / 1e6 / uploadSecs).toFixed(1)} Mo/s)`)
+    return res.json() as Promise<TranscodeJob>
+  } finally {
+    clearTimeout(timeoutTimer)
+    clearInterval(stallTimer)
+  }
 }
 
 export async function getJob(id: string): Promise<TranscodeJob> {
@@ -158,7 +178,10 @@ export async function downloadOutput(id: string, destPath: string): Promise<void
 }
 
 export async function waitForJob(id: string, onProgress?: (percent: number) => void, intervalMs = 3000): Promise<void> {
+  const timeoutMs = Number(process.env.TRANSCODE_JOB_TIMEOUT_MS || 3 * 3600 * 1000) // 3h max de transcode GPU
+  const deadline = Date.now() + timeoutMs
   for (;;) {
+    if (Date.now() > deadline) throw new Error(`transcode job timeout (${timeoutMs / 60000} min)`)
     const job = await getJob(id)
     if (job.progress?.percent != null) onProgress?.(job.progress.percent)
     if (job.status === 'done') return
