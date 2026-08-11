@@ -54,7 +54,7 @@ function concatBytes(chunks: Uint8Array[]): Uint8Array {
   return out
 }
 
-function multipartBody(fileStream: Readable, preamble: Uint8Array, tail: Uint8Array): ReadableStream<Uint8Array> {
+function multipartBody(fileStream: Readable, preamble: Uint8Array, tail: Uint8Array, onBytes: (n: number) => void): ReadableStream<Uint8Array> {
   const iterator = fileStream[Symbol.asyncIterator]()
   let stage: 'preamble' | 'file' | 'tail' = 'preamble'
   return new ReadableStream<Uint8Array>({
@@ -70,6 +70,7 @@ function multipartBody(fileStream: Readable, preamble: Uint8Array, tail: Uint8Ar
           stage = 'tail'
           return
         }
+        onBytes(value.byteLength)
         controller.enqueue(value)
         return
       }
@@ -106,7 +107,20 @@ export async function createJob(filePath: string, params: TranscodeParams): Prom
   const tail = concatBytes(tailParts)
 
   const fileStream = createReadStream(filePath)
-  const body = multipartBody(fileStream, preamble, tail)
+  const uploadStart = Date.now()
+  let uploaded = 0
+  let lastUploadLog = uploadStart
+  const body = multipartBody(fileStream, preamble, tail, (n) => {
+    uploaded += n
+    const now = Date.now()
+    if (now - lastUploadLog >= 5000) {
+      const secs = (now - uploadStart) / 1000
+      const mbps = uploaded / 1e6 / secs
+      const pct = ((uploaded / size) * 100).toFixed(0)
+      console.log(`[transcode] upload ${(uploaded / 1e9).toFixed(1)}/${(size / 1e9).toFixed(1)} Go (${pct}%) à ${mbps.toFixed(0)} Mo/s`)
+      lastUploadLog = now
+    }
+  })
   const contentLength = preamble.byteLength + size + tail.byteLength
 
   // TODO(media): valider l'upload streamé contre le vrai service quand TRANSCODE_API_AUTH
@@ -124,6 +138,8 @@ export async function createJob(filePath: string, params: TranscodeParams): Prom
     duplex: 'half',
   })
   if (!res.ok) throw new Error(`transcode createJob ${res.status}: ${await res.text()}`)
+  const uploadSecs = (Date.now() - uploadStart) / 1000
+  console.log(`[transcode] upload terminé: ${(size / 1e9).toFixed(2)} Go en ${uploadSecs.toFixed(0)}s (${(size / 1e6 / uploadSecs).toFixed(1)} Mo/s)`)
   return res.json() as Promise<TranscodeJob>
 }
 
@@ -149,4 +165,9 @@ export async function waitForJob(id: string, onProgress?: (percent: number) => v
     if (job.status === 'failed') throw new Error(`transcode job failed: ${job.error || 'unknown'}`)
     await new Promise(resolve => setTimeout(resolve, intervalMs))
   }
+}
+
+export async function deleteJob(id: string): Promise<void> {
+  const res = await fetch(`${BASE}/jobs/${id}`, { method: 'DELETE', headers: { Authorization: authHeader() } })
+  if (!res.ok && res.status !== 404) throw new Error(`transcode deleteJob ${res.status}`)
 }
