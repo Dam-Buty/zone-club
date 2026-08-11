@@ -3,6 +3,7 @@ services:
     build: .
     image: zone-app
     container_name: zone-app
+    restart: unless-stopped
     working_dir: /app
     command: /app/scripts/docker-entrypoint.sh
     volumes:
