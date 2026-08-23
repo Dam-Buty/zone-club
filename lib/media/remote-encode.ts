@@ -164,12 +164,26 @@ export async function encodeVideoRemote(
             child.on('close', code => resolve(code ?? -1))
         })
 
-    // Si le ssh s'arrête (échec côté Spark), le démux doit mourir tout de suite.
-    // Node continue sinon de vider son stdout dans le vide : ffmpeg ne reçoit
-    // jamais d'EPIPE et parcourt tout le fichier avant de rendre la main, si bien
-    // que l'erreur distante n'est rapportée que plusieurs minutes plus tard.
-    // Observé sur une source AV1 10 bits : ssh mort en 2 s, erreur signalée jamais.
-    ssh.on('close', () => { if (demux.exitCode === null) demux.kill() })
+    // Si le ssh s'arrête (échec côté Spark), le démux doit mourir tout de suite,
+    // sinon l'erreur distante reste invisible : Node cesse de lire son stdout dès
+    // que la destination disparaît, le tube se remplit, et ffmpeg se bloque pour
+    // toujours dans son write(). `Promise.all` ci-dessous ne se résout alors
+    // jamais. Observé deux fois : ssh mort en 2 s, erreur rapportée 10 min plus
+    // tard seulement après intervention manuelle.
+    //
+    // L'ordre compte, et SIGTERM seul NE SUFFIT PAS : ffmpeg bloqué en écriture
+    // ne traite pas le signal (son gestionnaire lève un drapeau que la boucle
+    // principale, coincée dans l'appel système, ne relit jamais). Vérifié : le
+    // processus survit à SIGTERM et ne cède qu'à SIGKILL.
+    //   1. détruire le tube  → ffmpeg reçoit EPIPE et sort proprement
+    //   2. SIGTERM           → s'il est ailleurs que dans un write bloquant
+    //   3. SIGKILL après 5 s → dernier recours
+    ssh.on('close', () => {
+        if (demux.exitCode !== null) return
+        try { demux.stdout.destroy() } catch { /* déjà fermé */ }
+        demux.kill('SIGTERM')
+        setTimeout(() => { if (demux.exitCode === null) demux.kill('SIGKILL') }, 5000).unref()
+    })
 
     try {
         const [demuxCode, sshCode] = await Promise.all([wait(demux, 'ffmpeg local'), wait(ssh, 'ssh')])
@@ -212,8 +226,9 @@ export async function encodeVideoRemote(
     } catch (err) {
         // Un spawn qui échoue laisse l'autre processus tourner (un encodage GPU
         // orphelin peut durer des minutes) : on coupe les deux avant de remonter.
-        demux.kill()
-        ssh.kill()
+        try { demux.stdout.destroy() } catch { /* déjà fermé */ }
+        demux.kill('SIGKILL')
+        ssh.kill('SIGKILL')
         await rm(tmp, { force: true }).catch(() => {})
         throw err
     }
