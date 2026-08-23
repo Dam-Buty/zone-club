@@ -14,7 +14,6 @@
     "seed": "npx tsx scripts/seed-films.ts",
     "migrate": "npx tsx --env-file=.env scripts/migrate-media-reset.ts",
     "refresh": "npx tsx --env-file=.env scripts/refresh-films.ts",
-    "bench:upload": "npx tsx --env-file=.env scripts/upload-bench.ts",
     "report": "npx tsx scripts/collection-report.ts",
     "test:player-flow": "node scripts/test-player-flow.mjs",
     "test:phase": "node --test \"tests/**/*.test.mjs\"",

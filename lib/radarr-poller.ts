@@ -16,7 +16,7 @@ function getPendingFilms(): PendingFilm[] {
         SELECT id, radarr_id FROM films
         WHERE radarr_id IS NOT NULL
           AND file_path_vo_transcoded IS NULL
-          AND (transcode_status IS NULL OR transcode_status NOT IN ('done'))
+          AND (transcode_status IS NULL OR transcode_status NOT IN ('done', 'qc_failed'))
     `).all() as PendingFilm[]
 }
 

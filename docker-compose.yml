@@ -9,9 +9,10 @@ services:
     volumes:
       - .:/app
       - ./zone.db:/data/zone.db
-      - /data/big-boi/zone-club/library:/media/library:rw
+      - /data/phat-two/zone-club-radarr:/media/library:rw
       - /data/big-boi/zone-club/films:/media/films:rw
       - /mnt/backup:/media/backup:rw,rshared
+      - /home/damso/.ssh:/ssh-host:ro
       - media_public:/media/public:rw
     environment:
       - DATABASE_PATH=/data/zone.db
@@ -22,8 +23,15 @@ services:
       - RADARR_API_KEY=${RADARR_API_KEY}
       - RADARR_QUALITY_PROFILE_ID=${RADARR_QUALITY_PROFILE_ID}
       - RADARR_QUALITY_PROFILE_ID_FR=${RADARR_QUALITY_PROFILE_ID_FR}
-      - TRANSCODE_API_URL=https://transcode.agi-so.fr
-      - TRANSCODE_API_AUTH=${TRANSCODE_API_AUTH}
+      - RADARR_ROOT_FOLDER=/movies
+      - DELETE_MKV_AFTER_BACKUP=false
+      - SPARK_SSH_HOST=spark
+      - SPARK_SSH_HOSTNAME=${SPARK_SSH_HOSTNAME}
+      - SPARK_SSH_PORT=${SPARK_SSH_PORT}
+      - SPARK_SSH_USER=${SPARK_SSH_USER}
+      - GPU_ENCODE_PRESET=p5
+      - GPU_ENCODE_CQ=23
+      - GPU_MAX_HEIGHT=1080
       - MEDIA_FILMS_PATH=/media/films
       - MEDIA_LIBRARY_PATH=/media/library
       - MEDIA_BACKUP_PATH=/media/backup/zone-club
@@ -72,8 +80,8 @@ services:
       - TZ=Europe/Paris
     volumes:
       - ./radarr-vo-config:/config
-      - /data/big-boi/zone-club/library:/movies
-      - ${SABNZBD_DOWNLOADS}:/downloads
+      - /data/phat-two/zone-club-radarr:/movies
+      - /data/phat-two/sabnzbd-downloads:/movies/_downloads
     extra_hosts:
       - "host.docker.internal:host-gateway"
     labels:

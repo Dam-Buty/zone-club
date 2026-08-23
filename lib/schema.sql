@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS films (
     subtitle_fr_srt TEXT,
     subtitle_en_vtt TEXT,
     subtitle_en_srt TEXT,
+    qc_attempts INTEGER DEFAULT 0,
     sub_genre TEXT DEFAULT NULL,
     stock INTEGER DEFAULT 2,
     duration_sec REAL DEFAULT NULL,

@@ -74,6 +74,7 @@ const mediaCols: [string, string][] = [
   ["subtitle_fr_srt", "TEXT"],
   ["subtitle_en_vtt", "TEXT"],
   ["subtitle_en_srt", "TEXT"],
+  ["qc_attempts", "INTEGER DEFAULT 0"],
 ];
 
 for (const [col, type] of mediaCols) {

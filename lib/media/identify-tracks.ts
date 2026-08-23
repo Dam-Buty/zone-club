@@ -4,10 +4,15 @@ export interface ProbeStream {
   index: number;
   codec_type?: string;
   codec_name?: string;
+  width?: number;
+  height?: number;
+  pix_fmt?: string;
+  profile?: string;
+  bit_rate?: string | number;
   tags?: { language?: string; title?: string };
 }
 
-export interface SubTrack { lang: 'fr' | 'en'; streamIndex: number; codec: string; }
+export interface SubTrack { lang: 'fr' | 'en'; streamIndex: number; codec: string; title?: string }
 
 export interface TrackIdentification {
   voAudioIndex: number | null;
@@ -41,13 +46,21 @@ export function identifyTracks(streams: ProbeStream[], originalLanguage: string 
     const lang = s.tags?.language;
     if (IMAGE_SUB_CODECS.has(codec)) { imageSubsFlagged = true; continue; }
     if (!TEXT_SUB_CODECS.has(codec)) continue;
-    if (isFrench(lang)) textSubs.push({ lang: 'fr', streamIndex: s.index, codec });
-    else if (isEnglish(lang)) textSubs.push({ lang: 'en', streamIndex: s.index, codec });
+    const title = s.tags?.title;
+    if (isFrench(lang)) textSubs.push({ lang: 'fr', streamIndex: s.index, codec, title });
+    else if (isEnglish(lang)) textSubs.push({ lang: 'en', streamIndex: s.index, codec, title });
   }
-  // Dédup par langue (garde la première), ordre fr puis en
-  const seen = new Set<string>();
-  const dedup = textSubs.filter(s => (seen.has(s.lang) ? false : (seen.add(s.lang), true)));
-  dedup.sort((a, b) => (a.lang === b.lang ? 0 : a.lang === 'fr' ? -1 : 1));
+  // TOUTES les pistes candidates sont retournées, pas une par langue.
+  //
+  // Une release porte couramment deux pistes par langue — les sous-titres forcés
+  // (panneaux, dialogues en langue étrangère : ~90 lignes) et les dialogues
+  // complets (~1500 lignes) — et AUCUNE métadonnée ne permet de les distinguer de
+  // façon fiable : sur un WEB-DL Netflix testé, `DISPOSITION:forced` vaut 0 sur les
+  // deux, et côté titre la piste forcée porte une chaîne vide quand la complète n'a
+  // pas de tag du tout. Garder la première revenait à servir les panneaux comme
+  // sous-titres. Le tri se fait à l'extraction, au nombre de cues.
+  const order = { fr: 0, en: 1 };
+  const dedup = [...textSubs].sort((a, b) => order[a.lang] - order[b.lang] || a.streamIndex - b.streamIndex);
 
   return {
     voAudioIndex: vo ? vo.index : null,

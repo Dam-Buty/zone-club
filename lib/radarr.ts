@@ -114,6 +114,37 @@ class RadarrClient {
         });
     }
 
+    async getMovieFiles(radarrId: number): Promise<{ id: number; relativePath?: string }[]> {
+        return this.fetch<{ id: number; relativePath?: string }[]>(`/moviefile?movieId=${radarrId}`);
+    }
+
+    // DELETE ne renvoie pas de JSON → on court-circuite this.fetch (qui parse).
+    async deleteMovieFile(movieFileId: number): Promise<void> {
+        const res = await fetch(`${this.url}/api/v3/moviefile/${movieFileId}`, {
+            method: 'DELETE',
+            headers: { 'X-Api-Key': this.apiKey },
+            signal: AbortSignal.timeout(15000)
+        });
+        if (!res.ok && res.status !== 404) {
+            throw new Error(`Radarr deleteMovieFile ${res.status}: ${await res.text()}`);
+        }
+    }
+
+    async getMovieHistory(radarrId: number): Promise<{ id: number; eventType: string; sourceTitle?: string }[]> {
+        return this.fetch<{ id: number; eventType: string; sourceTitle?: string }[]>(`/history/movie?movieId=${radarrId}`);
+    }
+
+    // Marque le grab comme échoué : Radarr blackliste la release (elle ne sera plus
+    // reproposée) et relance une recherche si le film est monitored.
+    async markHistoryFailed(historyId: number): Promise<void> {
+        const res = await fetch(`${this.url}/api/v3/history/failed/${historyId}`, {
+            method: 'POST',
+            headers: { 'X-Api-Key': this.apiKey },
+            signal: AbortSignal.timeout(15000)
+        });
+        if (!res.ok) throw new Error(`Radarr markHistoryFailed ${res.status}: ${await res.text()}`);
+    }
+
     async setMonitored(radarrId: number, monitored: boolean): Promise<void> {
         const movie = await this.fetch<any>(`/movie/${radarrId}`);
         await this.fetch(`/movie/${radarrId}`, {
@@ -153,4 +184,26 @@ export async function searchMovie(radarrId: number): Promise<void> {
 
 export async function setMonitored(radarrId: number, monitored: boolean): Promise<void> {
     return radarr.setMonitored(radarrId, monitored);
+}
+
+// Rejette la release actuellement importée pour ce film : supprime le fichier,
+// blackliste le grab correspondant, et relance une recherche.
+// Retourne le titre de la release rejetée (pour les logs), ou null si rien à rejeter.
+export async function rejectCurrentRelease(radarrId: number): Promise<string | null> {
+    const files = await radarr.getMovieFiles(radarrId);
+    for (const f of files) {
+        await radarr.deleteMovieFile(f.id);
+    }
+
+    const history = await radarr.getMovieHistory(radarrId);
+    // Le plus récent `grabbed` correspond à la release qu'on vient de juger.
+    const grab = history.find(h => h.eventType === 'grabbed');
+    if (grab) await radarr.markHistoryFailed(grab.id);
+
+    // markHistoryFailed relance déjà une recherche quand le film est monitored ;
+    // on s'assure qu'il l'est, et on redéclenche explicitement (idempotent).
+    await radarr.setMonitored(radarrId, true);
+    await radarr.searchMovie(radarrId);
+
+    return grab?.sourceTitle ?? null;
 }
