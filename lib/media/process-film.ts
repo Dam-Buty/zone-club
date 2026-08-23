@@ -9,8 +9,9 @@ import { isFrench } from './iso639'
 import { mediaDirFromMoviePath } from './media-dir'
 import { encodeVideoRemote } from './remote-encode'
 import { encodeAudioTracks, remuxOutputs, extractSubs, type AudioTarget, type RemuxTarget } from './ffmpeg-ops'
-import { planVideo } from './video-plan'
+import { planVideo, estimateVideoBitrate } from './video-plan'
 import { checkRelease, maxQcAttempts } from './quality-control'
+import { startRun, patchRun, finishRun } from './run-stats'
 
 const LIBRARY = process.env.MEDIA_LIBRARY_PATH || '/media/library'   // MKV bruts (mount raw Radarr)
 const FILMS = process.env.MEDIA_FILMS_PATH || '/media/films'          // sorties transcodées
@@ -37,11 +38,12 @@ async function exists(p: string): Promise<boolean> {
 // (il empêche seulement la suppression du MKV, voir releaseSource).
 const backupsInFlight = new Set<string>()
 
-async function backupSource(mkv: string, mediaDir: string, title: string): Promise<boolean> {
+async function backupSource(mkv: string, mediaDir: string, title: string): Promise<{ ok: boolean; seconds: number }> {
     const log = (msg: string) => console.log(`[backup] "${title}": ${msg}`)
+    const startedAt = Date.now()
     if (backupsInFlight.has(mediaDir)) {
         log('backup déjà en cours pour ce dossier — nouvelle copie ignorée')
-        return false
+        return { ok: false, seconds: 0 }
     }
     backupsInFlight.add(mediaDir)
     try {
@@ -57,18 +59,18 @@ async function backupSource(mkv: string, mediaDir: string, title: string): Promi
         ])
         if (srcStat && destStat && srcStat.size === destStat.size) {
             log(`backup déjà présent et de même taille (${(destStat.size / 1e9).toFixed(1)} Go) — copie sautée`)
-            return true
+            return { ok: true, seconds: 0 }
         }
         log('début backup SSHFS (en parallèle de l\'encodage)…')
-        const started = Date.now()
         await mkdir(backupDir, { recursive: true })
         await copyFile(mkv, dest)
-        log(`backup OK en ${((Date.now() - started) / 1000).toFixed(0)}s`)
-        return true
+        const seconds = (Date.now() - startedAt) / 1000
+        log(`backup OK en ${seconds.toFixed(0)}s`)
+        return { ok: true, seconds }
     } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
         console.warn(`[backup] Erreur "${title}": ${msg} — MKV conservé dans library`)
-        return false
+        return { ok: false, seconds: (Date.now() - startedAt) / 1000 }
     } finally {
         backupsInFlight.delete(mediaDir)
     }
@@ -158,6 +160,9 @@ export async function processFilm(filmId: number): Promise<void> {
     const voAac = join(outDir, 'audio.vo.m4a')   // intermédiaires: audio encodé pendant que le GPU travaille
     const vfAac = join(outDir, 'audio.vf.m4a')
 
+    const runStartedAt = Date.now()
+    const runId = startRun(filmId)
+
     try {
         // 2. Probe + identification (rapide, ré-exécuté à chaque reprise — pas de persistance nécessaire)
         setStatus(filmId, 'probing', 0)
@@ -186,6 +191,14 @@ export async function processFilm(filmId: number): Promise<void> {
         //       filtre à l'entrée, pas un juge rétroactif. Sans cette porte, un simple
         //       retraitement (correctif de subs, reprise) ferait blacklister et
         //       supprimer une release qui sert déjà dans le vidéoclub.
+        patchRun(runId, {
+            source_bytes: sourceSize,
+            source_seconds: sourceDuration,
+            source_video_codec: videoStream?.codec_name ?? null,
+            source_video_height: sourceHeight,
+            source_video_bitrate: estimateVideoBitrate(streams, sourceSize, sourceDuration),
+        })
+
         const alreadyPublished = film.transcode_status === 'done' && (await exists(voMp4))
         if (alreadyPublished) {
             log('film déjà publié depuis cette release — contrôle qualité non rejoué')
@@ -193,6 +206,7 @@ export async function processFilm(filmId: number): Promise<void> {
             const verdict = checkRelease(tracks, film.original_language)
             if (!verdict.ok) {
                 await rejectRelease(filmId, film, verdict.missing, log)
+                finishRun(runId, 'rejected', runStartedAt, verdict.missing.join(', '))
                 return
             }
         }
@@ -207,7 +221,11 @@ export async function processFilm(filmId: number): Promise<void> {
         //        puis remux final en copie pure.
         //        Skippés si les sorties finales sont déjà là (reprise après crash).
         const subCols: Record<string, string> = {}
+        // Distingue un vrai traitement d'un passage à vide (reprise, refresh sur un
+        // film déjà publié) : sans ça, les runs à 0,2 s pollueraient les moyennes.
+        let didWork = false
         if (!(await exists(voMp4)) || (wantVf && !(await exists(vfMp4)))) {
+            didWork = true
             const plan = planVideo(streams, sourceSize, sourceDuration)
             let encodedDuration: number | null = null
 
@@ -218,12 +236,14 @@ export async function processFilm(filmId: number): Promise<void> {
             const audioTargets: AudioTarget[] = [{ out: voAac, audioOrdinal: tracks.voAudioOrdinal }]
             if (wantVf) audioTargets.push({ out: vfAac, audioOrdinal: tracks.vfAudioOrdinal! })
             const audioJob = (async () => {
+                const t = Date.now()
                 const todo = await Promise.all(audioTargets.map(async t => (await exists(t.out)) ? null : t))
                 const missing = todo.filter((t): t is AudioTarget => t !== null)
                 if (missing.length) {
                     log(`encodage audio ${missing.length} piste(s) → AAC stéréo (en parallèle de la vidéo)…`)
                     await encodeAudioTracks(mkv, missing)
                     log('audio encodé')
+                    patchRun(runId, { audio_seconds: (Date.now() - t) / 1000 })
                 } else {
                     log('audio déjà encodé — étape sautée')
                 }
@@ -231,12 +251,18 @@ export async function processFilm(filmId: number): Promise<void> {
 
             const subsJob = (async () => {
                 if (!tracks.textSubs.length) return
+                const t = Date.now()
                 log(`extraction de ${tracks.textSubs.length} piste(s) sub candidate(s) en une passe…`)
-                for (const s of await extractSubs(mkv, tracks.textSubs, outDir)) {
+                const kept = await extractSubs(mkv, tracks.textSubs, outDir)
+                for (const s of kept) {
                     log(`sub ${s.lang}: ${s.cues} cues retenues`)
                     subCols[`subtitle_${s.lang}_srt`] = `${mediaDir}/sub.${s.lang}.srt`
                     subCols[`subtitle_${s.lang}_vtt`] = `${mediaDir}/sub.${s.lang}.vtt`
                 }
+                patchRun(runId, {
+                    subs_seconds: (Date.now() - t) / 1000,
+                    sub_langs: kept.map(s => s.lang).join('+') || null,
+                })
             })()
 
             // Audio et sous-titres côte à côte, pas l'un après l'autre : ils ne
@@ -254,6 +280,8 @@ export async function processFilm(filmId: number): Promise<void> {
             // rejet non géré pendant qu'on attend la vidéo.
             let sideError: unknown = null
             sideWork.catch(err => { sideError = err })
+
+            patchRun(runId, { video_action: plan.action, video_reason: plan.reason })
 
             if (plan.action === 'copy') {
                 log(`vidéo copiée sans réencodage — ${plan.reason}`)
@@ -279,7 +307,9 @@ export async function processFilm(filmId: number): Promise<void> {
                         }
                     },
                 })
-                log(`encodage terminé en ${((Date.now() - t0) / 1000).toFixed(0)}s`)
+                const encodeSeconds = (Date.now() - t0) / 1000
+                log(`encodage terminé en ${encodeSeconds.toFixed(0)}s`)
+                patchRun(runId, { encode_seconds: encodeSeconds })
             }
 
             // Le contrôle anti-troncature vit dans encodeVideoRemote (il rejette et
@@ -299,7 +329,9 @@ export async function processFilm(filmId: number): Promise<void> {
             log(`remux ${targets.length} sortie(s) en copie pure…`)
             const t1 = Date.now()
             await remuxOutputs(videoSrc, targets)
-            log(`vo.mp4${wantVf ? ' + vf.mp4' : ''} écrits en ${((Date.now() - t1) / 1000).toFixed(0)}s`)
+            const remuxSeconds = (Date.now() - t1) / 1000
+            log(`vo.mp4${wantVf ? ' + vf.mp4' : ''} écrits en ${remuxSeconds.toFixed(0)}s`)
+            patchRun(runId, { remux_seconds: remuxSeconds })
             await Promise.all([
                 rm(videoMkv, { force: true }),
                 rm(voAac, { force: true }),
@@ -334,15 +366,29 @@ export async function processFilm(filmId: number): Promise<void> {
         setStatus(filmId, 'done', 100)
         log('OK → dispo dans le videoclub')
 
+        const [voStat, vfStat] = await Promise.all([
+            stat(voMp4).catch(() => null),
+            wantVf ? stat(vfMp4).catch(() => null) : Promise.resolve(null),
+        ])
+        patchRun(runId, { vo_bytes: voStat?.size ?? null, vf_bytes: vfStat?.size ?? null })
+        finishRun(runId, didWork ? 'done' : 'skipped', runStartedAt)
+
         // 7. Libération de la source, une fois le backup terminé. Non-bloquant :
         //    ne retient pas la queue d'encodage. Si le backup a échoué, le MKV
         //    reste en place et le film reste monitored → retraitable.
         const radarrId = film.radarr_id
-        backupDone.then(ok => (ok ? releaseSource(mediaDir, film.title, radarrId) : undefined))
+        backupDone.then(r => {
+            patchRun(runId, { backup_seconds: r.seconds })
+            // r.ok et non r : depuis que backupSource renvoie un objet, tester la
+            // valeur elle-même serait toujours vrai — et supprimerait le MKV même
+            // après un backup échoué.
+            return r.ok ? releaseSource(mediaDir, film.title, radarrId) : undefined
+        })
     } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
         console.error(`[processFilm] Erreur "${film.title}":`, msg)
         setStatus(filmId, 'error', 0, msg)
+        finishRun(runId, 'error', runStartedAt, msg)
         // NB: on ne supprime PAS le MKV, on ne unmonitor PAS → retriable
         throw err
     }

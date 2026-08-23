@@ -183,3 +183,38 @@ CREATE INDEX IF NOT EXISTS idx_films_available ON films(is_available);
 CREATE INDEX IF NOT EXISTS idx_films_tmdb ON films(tmdb_id);
 CREATE INDEX IF NOT EXISTS idx_film_requests_status ON film_requests(status);
 CREATE INDEX IF NOT EXISTS idx_film_requests_tmdb ON film_requests(tmdb_id);
+
+-- Mesures de traitement média : une ligne par passage de processFilm.
+-- Les logs Docker (driver journald, plafond 4 Gio, rotation permanente) ne
+-- permettent pas d'établir des moyennes après plusieurs jours de transcode.
+CREATE TABLE IF NOT EXISTS film_processing_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    film_id INTEGER NOT NULL,
+    started_at TEXT NOT NULL,
+    finished_at TEXT,
+    outcome TEXT,                    -- done | rejected | error
+    -- source
+    source_bytes INTEGER,
+    source_seconds REAL,
+    source_video_codec TEXT,
+    source_video_height INTEGER,
+    source_video_bitrate INTEGER,
+    -- décision de video-plan
+    video_action TEXT,               -- copy | encode
+    video_reason TEXT,
+    -- durées par étape, en secondes
+    encode_seconds REAL,
+    audio_seconds REAL,
+    subs_seconds REAL,
+    remux_seconds REAL,
+    backup_seconds REAL,
+    total_seconds REAL,
+    -- sorties
+    vo_bytes INTEGER,
+    vf_bytes INTEGER,
+    sub_langs TEXT,
+    error TEXT,
+    FOREIGN KEY (film_id) REFERENCES films(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_runs_film ON film_processing_runs(film_id);
+CREATE INDEX IF NOT EXISTS idx_runs_outcome ON film_processing_runs(outcome);
