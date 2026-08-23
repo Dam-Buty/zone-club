@@ -6,7 +6,6 @@ function required(name: string): string {
 
 export const DATABASE_PATH = process.env.DATABASE_PATH ?? "/data/zone.db";
 export const FILMS_ROOT = process.env.FILMS_ROOT ?? "/media/films";
-export const FILMS_VF_ROOT = process.env.FILMS_VF_ROOT ?? "/media/films-vf";
 export const PLAYLIST_START = required("PLAYLIST_START");
 export const DISCORD_BOT_TOKEN = required("DISCORD_BOT_TOKEN");
 export const DISCORD_GUILD_ID = required("DISCORD_GUILD_ID");

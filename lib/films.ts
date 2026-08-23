@@ -16,9 +16,10 @@ export interface Film {
     directors: { tmdb_id: number; name: string }[];
     actors: { tmdb_id: number; name: string; character: string }[];
     runtime: number | null;
-    file_path_vf: string | null;
-    file_path_vo: string | null;
-    subtitle_path: string | null;
+    // file_path_vf / file_path_vo / subtitle_path : colonnes de l'ère 2×Radarr.
+    // Vidées par la migration, plus aucun writer depuis la suppression de
+    // updateFilmPaths — retirées de l'interface, conservées en base le temps que
+    // la fenêtre de rollback se ferme (comme radarr_vo_id / radarr_vf_id).
     radarr_vo_id: number | null;
     radarr_vf_id: number | null;
     radarr_id: number | null;
@@ -277,33 +278,6 @@ export function deleteFilm(filmId: number): void {
     db.prepare('DELETE FROM films WHERE id = ?').run(filmId);
 }
 
-export function updateFilmPaths(filmId: number, paths: {
-    file_path_vf?: string;
-    file_path_vo?: string;
-    subtitle_path?: string;
-}): void {
-    const updates: string[] = [];
-    const values: any[] = [];
-
-    if (paths.file_path_vf !== undefined) {
-        updates.push('file_path_vf = ?');
-        values.push(paths.file_path_vf);
-    }
-    if (paths.file_path_vo !== undefined) {
-        updates.push('file_path_vo = ?');
-        values.push(paths.file_path_vo);
-    }
-    if (paths.subtitle_path !== undefined) {
-        updates.push('subtitle_path = ?');
-        values.push(paths.subtitle_path);
-    }
-
-    if (updates.length > 0) {
-        values.push(filmId);
-        db.prepare(`UPDATE films SET ${updates.join(', ')} WHERE id = ?`).run(...values);
-    }
-}
-
 export function updateFilmMedia(filmId: number, media: {
     media_dir?: string;
     file_path_vo_transcoded?: string | null;
@@ -326,8 +300,6 @@ export interface TranscodeStatusInfo {
   transcode_progress: number;
   transcode_error: string | null;
   radarr_id: number | null;
-  file_path_vo: string | null;
-  file_path_vf: string | null;
   file_path_vo_transcoded: string | null;
   file_path_vf_transcoded: string | null;
   is_available: boolean;
@@ -336,8 +308,7 @@ export interface TranscodeStatusInfo {
 export function getTranscodeStatuses(): TranscodeStatusInfo[] {
   return db.prepare(`
     SELECT id, title, transcode_status, transcode_progress, transcode_error,
-           radarr_id, file_path_vo, file_path_vf,
-           file_path_vo_transcoded, file_path_vf_transcoded, is_available
+           radarr_id, file_path_vo_transcoded, file_path_vf_transcoded, is_available
     FROM films
     WHERE radarr_id IS NOT NULL
     ORDER BY created_at DESC

@@ -503,8 +503,6 @@ export interface TranscodeStatus {
   radarr_vo_id: number | null;
   radarr_vf_id: number | null;
   radarr_id: number | null;
-  file_path_vo: string | null;
-  file_path_vf: string | null;
   file_path_vo_transcoded: string | null;
   file_path_vf_transcoded: string | null;
   is_available: boolean;

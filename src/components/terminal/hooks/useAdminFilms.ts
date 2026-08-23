@@ -68,10 +68,13 @@ export function useAdminFilms(adminFilms: ApiFilm[], transcodeStatuses: Map<numb
           result = result.filter(f => !f.is_available);
           break;
         case 'downloading': {
+          // Le test portait sur file_path_vo/vf, colonnes de l'ère 2×Radarr que la
+          // migration a vidées : il était devenu toujours vrai, donc tout film
+          // ayant un radarr_id restait affiché « downloading » à vie.
           result = result.filter(f => {
             const hasRadarr = f.radarr_id || f.radarr_vo_id || f.radarr_vf_id;
             const ts = transcodeStatuses.get(f.id);
-            return hasRadarr && !ts?.file_path_vo && !ts?.file_path_vf;
+            return hasRadarr && !ts?.file_path_vo_transcoded && ts?.transcode_status !== 'done';
           });
           break;
         }

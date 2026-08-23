@@ -101,8 +101,7 @@ services:
       - TZ=Europe/Paris
     volumes:
       - ./bazarr-config:/config
-      - /data/big-boi/zone-club/films-vo:/movies-vo
-      - /data/big-boi/zone-club/films-vf:/movies-vf
+      - /data/big-boi/zone-club/films:/movies
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.bazarr.rule=Host(`bazarr.${DOMAIN}`)"

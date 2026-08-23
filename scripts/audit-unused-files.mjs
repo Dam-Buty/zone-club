@@ -19,7 +19,6 @@ const PUBLIC_DYNAMIC_PREFIXES = ['/studio-logos/', '/basis/']
 const SCRIPT_MANUAL_KEEP = new Set([
   'scripts/generateMask.mjs',
   'scripts/generateMaskFromManual.mjs',
-  'scripts/init-radarr.sh',
 ])
 
 async function listFiles(dir) {

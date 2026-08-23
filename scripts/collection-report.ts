@@ -28,16 +28,15 @@ interface Film {
   aisle: string | null;
   is_nouveaute: number;
   is_available: number;
-  file_path_vo: string | null;
-  file_path_vf: string | null;
-  radarr_vo_id: number | null;
-  radarr_vf_id: number | null;
+  file_path_vo_transcoded: string | null;
+  file_path_vf_transcoded: string | null;
+  radarr_id: number | null;
 }
 
 const allFilms = db.prepare(`
   SELECT id, tmdb_id, title, title_original, release_year, aisle,
-         is_nouveaute, is_available, file_path_vo, file_path_vf,
-         radarr_vo_id, radarr_vf_id
+         is_nouveaute, is_available, file_path_vo_transcoded, file_path_vf_transcoded,
+         radarr_id
   FROM films
   ORDER BY title
 `).all() as Film[];
@@ -48,8 +47,8 @@ const vfOnly: Film[] = [];
 const complete: Film[] = [];
 
 for (const film of allFilms) {
-  const hasVO = !!film.file_path_vo;
-  const hasVF = !!film.file_path_vf;
+  const hasVO = !!film.file_path_vo_transcoded;
+  const hasVF = !!film.file_path_vf_transcoded;
 
   if (!hasVO && !hasVF) {
     notDownloaded.push(film);
@@ -79,10 +78,7 @@ function filmLine(f: Film): string {
   const flags: string[] = [];
   if (f.is_nouveaute) flags.push('NEW');
   if (f.is_available) flags.push('DISPO');
-  const radarr: string[] = [];
-  if (f.radarr_vo_id) radarr.push('VO');
-  if (f.radarr_vf_id) radarr.push('VF');
-  const radarrStr = radarr.length ? `  radarr:${radarr.join('+')}` : '';
+  const radarrStr = f.radarr_id ? `  radarr:${f.radarr_id}` : '';
 
   return `  ${DIM}#${f.tmdb_id}${RESET} ${f.title}${year}${aisle}${flags.length ? `  ${MAGENTA}${flags.join(' ')}${RESET}` : ''}${radarrStr}`;
 }
@@ -124,8 +120,8 @@ for (const f of allFilms) {
   const key = f.aisle || '(sans allée)';
   const entry = aisles.get(key) || { total: 0, complete: 0, partial: 0, none: 0 };
   entry.total++;
-  const hasVO = !!f.file_path_vo;
-  const hasVF = !!f.file_path_vf;
+  const hasVO = !!f.file_path_vo_transcoded;
+  const hasVF = !!f.file_path_vf_transcoded;
   if (hasVO && hasVF) entry.complete++;
   else if (hasVO || hasVF) entry.partial++;
   else entry.none++;

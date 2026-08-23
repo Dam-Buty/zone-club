@@ -5,7 +5,3 @@ import { dirname, basename } from 'path';
 export function mediaDirFromMoviePath(moviePath: string): string {
     return basename(dirname(moviePath));
 }
-
-export function sanitizeDirName(name: string): string {
-    return name.replace(/[/\\:*?"<>|]/g, '_');
-}

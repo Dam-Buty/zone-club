@@ -322,8 +322,10 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
   const handleDownloadFilm = useCallback(async (filmId: number) => {
     try {
       const { film } = await api.admin.downloadFilm(filmId);
+      // Le modèle Radarr unique renseigne radarr_id ; recopier les anciens champs
+      // laissait l'état local sans identifiant, donc le bouton DL réapparaissait.
       setAdminFilms(prev => prev.map(f =>
-        f.id === filmId ? { ...f, radarr_vo_id: film.radarr_vo_id, radarr_vf_id: film.radarr_vf_id } : f
+        f.id === filmId ? { ...f, radarr_id: film.radarr_id } : f
       ));
     } catch (err) {
       console.error('Error triggering download:', err);
@@ -1107,7 +1109,10 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
                       </button>
                       {(() => {
                         const ts = transcodeStatuses.get(film.id);
-                        const hasRadarr = film.radarr_vo_id || film.radarr_vf_id;
+                        // radarr_id manquait ici : un film téléchargé sous le modèle
+                        // Radarr unique n'a pas de radarr_vo_id/vf_id, donc le bouton
+                        // DL restait proposé alors que le téléchargement était lancé.
+                        const hasRadarr = film.radarr_id || film.radarr_vo_id || film.radarr_vf_id;
                         const status = ts?.transcode_status;
 
                         if (!hasRadarr) {
@@ -1118,7 +1123,9 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
                           );
                         }
 
-                        if (status === 'transcoding' || status === 'remuxing') {
+                        // Statuts de la machine actuelle : 'transcoding'/'remuxing'
+                        // étaient ceux de l'ancien lib/transcoder.ts, jamais émis.
+                        if (status === 'transcoding_remote' || status === 'muxing' || status === 'subtitles') {
                           return (
                             <span className={styles.adminTranscoding}>
                               {Math.round(ts!.transcode_progress)}%
@@ -1134,11 +1141,19 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
                           );
                         }
 
+                        if (status === 'qc_failed' || status === 'rejected_release') {
+                          return (
+                            <span className={styles.adminError} title={ts?.transcode_error || 'Release refusée'}>
+                              {status === 'qc_failed' ? 'QC✗' : 'QC…'}
+                            </span>
+                          );
+                        }
+
                         if (status === 'pending' || status === 'probing') {
                           return <span className={styles.adminPending}>...</span>;
                         }
 
-                        if (!ts?.file_path_vo && !ts?.file_path_vf && !status) {
+                        if (!ts?.file_path_vo_transcoded && !status) {
                           return <span className={styles.adminDownloading}>DL...</span>;
                         }
 

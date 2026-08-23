@@ -6,7 +6,6 @@ function required(name: string): string {
 
 export const DATABASE_PATH = process.env.DATABASE_PATH ?? "/data/zone.db";
 export const FILMS_ROOT = process.env.FILMS_ROOT ?? "/media/films";
-export const FILMS_VF_ROOT = process.env.FILMS_VF_ROOT ?? "/media/films-vf";
 export const HLS_OUT_DIR =
   process.env.HLS_OUT_DIR ?? "/media/public/symlinks/cinema-live";
 export const PLAYLIST_START = required("PLAYLIST_START");
