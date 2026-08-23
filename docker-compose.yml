@@ -23,7 +23,7 @@ services:
       - RADARR_API_KEY=${RADARR_API_KEY}
       - RADARR_QUALITY_PROFILE_ID=${RADARR_QUALITY_PROFILE_ID}
       - RADARR_QUALITY_PROFILE_ID_FR=${RADARR_QUALITY_PROFILE_ID_FR}
-      - RADARR_ROOT_FOLDER=/movies
+      - RADARR_ROOT_FOLDER=/data/phat-two/zone-club-radarr
       - DELETE_MKV_AFTER_BACKUP=false
       - SPARK_SSH_HOST=spark
       - SPARK_SSH_HOSTNAME=${SPARK_SSH_HOSTNAME}
@@ -80,8 +80,12 @@ services:
       - TZ=Europe/Paris
     volumes:
       - ./radarr-vo-config:/config
-      - /data/phat-two/zone-club-radarr:/movies
-      - /data/phat-two/sabnzbd-downloads:/movies/_downloads
+      # Un SEUL bind, aux chemins identiques à ceux de l'hôte : la library et les
+      # téléchargements partagent alors le même point de montage, condition
+      # nécessaire aux liens durs — le noyau refuse link() entre deux mounts,
+      # même sur le même disque (do_linkat: old_path.mnt != new_path.mnt → EXDEV).
+      # Des chemins identiques rendent aussi les remote path mappings inutiles.
+      - /data/phat-two:/data/phat-two
     extra_hosts:
       - "host.docker.internal:host-gateway"
     labels:
