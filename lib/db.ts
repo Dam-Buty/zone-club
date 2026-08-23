@@ -63,6 +63,26 @@ for (const sql of transcodeMigrations) {
   } catch { /* idempotent: column/index already exists */ }
 }
 
+// --- Media pipeline redesign (2026-08) ---
+// Single Radarr instance (radarr_id) + subtitle/audio metadata columns.
+// radarr_vo_id/radarr_vf_id stay for historical/rollback.
+const mediaCols: [string, string][] = [
+  ["radarr_id", "INTEGER"],
+  ["original_language", "TEXT"],
+  ["media_dir", "TEXT"],
+  ["subtitle_fr_vtt", "TEXT"],
+  ["subtitle_fr_srt", "TEXT"],
+  ["subtitle_en_vtt", "TEXT"],
+  ["subtitle_en_srt", "TEXT"],
+  ["qc_attempts", "INTEGER DEFAULT 0"],
+];
+
+for (const [col, type] of mediaCols) {
+  try {
+    db.exec(`ALTER TABLE films ADD COLUMN ${col} ${type} DEFAULT NULL`);
+  } catch { /* idempotent: column/index already exists */ }
+}
+
 // Migrate: gamification system (watch tracking, extension, rewind, weekly bonus)
 const gamificationMigrations = [
   "ALTER TABLE rentals ADD COLUMN watch_progress INTEGER DEFAULT 0",

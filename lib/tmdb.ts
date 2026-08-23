@@ -6,6 +6,7 @@ export interface TmdbMovie {
     id: number;
     title: string;
     original_title: string;
+    original_language: string;
     overview: string;
     release_date: string;
     poster_path: string | null;
@@ -129,6 +130,7 @@ export async function fetchFullMovieData(tmdbId: number) {
         tmdb_id: movie.id,
         title: movie.title,
         title_original: movie.original_title,
+        original_language: movie.original_language,
         synopsis: movie.overview,
         release_year: movie.release_date ? parseInt(movie.release_date.split('-')[0]) : null,
         poster_url: getPosterUrl(posterPath),

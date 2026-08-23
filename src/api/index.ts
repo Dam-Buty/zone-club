@@ -30,6 +30,7 @@ export interface ApiFilm {
   runtime: number | null;
   radarr_vo_id: number | null;
   radarr_vf_id: number | null;
+  radarr_id: number | null;
   aisle: string | null;
   is_nouveaute: boolean;
   is_available: boolean;
@@ -54,6 +55,7 @@ export interface ApiRentalWithFilm extends ApiRental {
     vf: string | null;
     vo: string | null;
     subtitles: string | null;
+    subtitles_en: string | null;
   };
   time_remaining: number; // minutes
   // Gamification fields
@@ -500,6 +502,7 @@ export interface TranscodeStatus {
   transcode_error: string | null;
   radarr_vo_id: number | null;
   radarr_vf_id: number | null;
+  radarr_id: number | null;
   file_path_vo: string | null;
   file_path_vf: string | null;
   file_path_vo_transcoded: string | null;

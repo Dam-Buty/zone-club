@@ -34,6 +34,7 @@ export interface StreamingUrls {
   vf: string | null;
   vo: string | null;
   subtitles: string | null;
+  subtitles_en: string | null;
 }
 
 // Rental types

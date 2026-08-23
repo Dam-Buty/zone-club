@@ -69,7 +69,7 @@ export function useAdminFilms(adminFilms: ApiFilm[], transcodeStatuses: Map<numb
           break;
         case 'downloading': {
           result = result.filter(f => {
-            const hasRadarr = f.radarr_vo_id || f.radarr_vf_id;
+            const hasRadarr = f.radarr_id || f.radarr_vo_id || f.radarr_vf_id;
             const ts = transcodeStatuses.get(f.id);
             return hasRadarr && !ts?.file_path_vo && !ts?.file_path_vf;
           });

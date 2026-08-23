@@ -21,6 +21,14 @@ export interface Film {
     subtitle_path: string | null;
     radarr_vo_id: number | null;
     radarr_vf_id: number | null;
+    radarr_id: number | null;
+    original_language: string | null;
+    media_dir: string | null;
+    subtitle_fr_vtt: string | null;
+    subtitle_fr_srt: string | null;
+    subtitle_en_vtt: string | null;
+    subtitle_en_srt: string | null;
+    qc_attempts: number;
     aisle: string | null;
     is_nouveaute: boolean;
     is_available: boolean;
@@ -120,16 +128,17 @@ export async function addFilmFromTmdb(tmdbId: number): Promise<Film> {
 
     const stmt = db.prepare(`
         INSERT INTO films (
-            tmdb_id, title, title_original, synopsis, release_year,
+            tmdb_id, title, title_original, original_language, synopsis, release_year,
             poster_url, backdrop_url, genres, directors, actors, runtime,
             aisle, is_nouveaute
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const result = stmt.run(
         tmdbData.tmdb_id,
         tmdbData.title,
         tmdbData.title_original,
+        tmdbData.original_language,
         tmdbData.synopsis,
         tmdbData.release_year,
         tmdbData.poster_url,
@@ -158,8 +167,13 @@ export async function triggerDownload(filmId: number): Promise<Film> {
         throw new Error('Film introuvable');
     }
 
-    const { vo, vf } = await addToRadarr(film.tmdb_id, film.title);
-    db.prepare('UPDATE films SET radarr_vo_id = ?, radarr_vf_id = ? WHERE id = ?').run(vo.id, vf.id, filmId);
+    // Films FR → profil TrueFrench, sinon → profil MultiAudio (release combinée VF+VO)
+    const isFrench = film.original_language === 'fr';
+    const profileId = isFrench
+        ? parseInt(process.env.RADARR_QUALITY_PROFILE_ID_FR || '', 10) || parseInt(process.env.RADARR_QUALITY_PROFILE_ID || '7', 10)
+        : parseInt(process.env.RADARR_QUALITY_PROFILE_ID || '7', 10);
+    const { id } = await addToRadarr(film.tmdb_id, film.title, profileId);
+    db.prepare('UPDATE films SET radarr_id = ? WHERE id = ?').run(id, filmId);
 
     return getFilmById(filmId)!;
 }
@@ -290,14 +304,28 @@ export function updateFilmPaths(filmId: number, paths: {
     }
 }
 
+export function updateFilmMedia(filmId: number, media: {
+    media_dir?: string;
+    file_path_vo_transcoded?: string | null;
+    file_path_vf_transcoded?: string | null;
+    subtitle_fr_vtt?: string | null;
+    subtitle_fr_srt?: string | null;
+    subtitle_en_vtt?: string | null;
+    subtitle_en_srt?: string | null;
+}): void {
+    const cols = Object.keys(media);
+    if (cols.length === 0) return;
+    const sets = cols.map(c => `${c} = ?`).join(', ');
+    db.prepare(`UPDATE films SET ${sets} WHERE id = ?`).run(...cols.map(c => (media as any)[c]), filmId);
+}
+
 export interface TranscodeStatusInfo {
   id: number;
   title: string;
   transcode_status: string | null;
   transcode_progress: number;
   transcode_error: string | null;
-  radarr_vo_id: number | null;
-  radarr_vf_id: number | null;
+  radarr_id: number | null;
   file_path_vo: string | null;
   file_path_vf: string | null;
   file_path_vo_transcoded: string | null;
@@ -308,10 +336,10 @@ export interface TranscodeStatusInfo {
 export function getTranscodeStatuses(): TranscodeStatusInfo[] {
   return db.prepare(`
     SELECT id, title, transcode_status, transcode_progress, transcode_error,
-           radarr_vo_id, radarr_vf_id, file_path_vo, file_path_vf,
+           radarr_id, file_path_vo, file_path_vf,
            file_path_vo_transcoded, file_path_vf_transcoded, is_available
     FROM films
-    WHERE radarr_vo_id IS NOT NULL OR radarr_vf_id IS NOT NULL
+    WHERE radarr_id IS NOT NULL
     ORDER BY created_at DESC
   `).all().map(row => ({
     ...(row as any),

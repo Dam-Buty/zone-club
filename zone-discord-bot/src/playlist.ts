@@ -2,7 +2,7 @@ import Database from "better-sqlite3";
 import { join } from "node:path";
 import {
   DATABASE_PATH,
-  FILMS_VF_ROOT,
+  FILMS_ROOT,
   startEpochSec,
 } from "./config.ts";
 
@@ -10,7 +10,6 @@ interface FilmRow {
   id: number;
   title: string;
   release_year: number | null;
-  file_path_vf: string | null;
   file_path_vf_transcoded: string | null;
   duration_sec: number | null;
 }
@@ -38,9 +37,9 @@ export function loadPlaylist(): PlaylistState {
   const db = new Database(DATABASE_PATH, { readonly: true });
   const rows = db
     .prepare(
-      `SELECT id, title, release_year, file_path_vf, file_path_vf_transcoded, duration_sec
+      `SELECT id, title, release_year, file_path_vf_transcoded, duration_sec
        FROM films
-       WHERE file_path_vf IS NOT NULL AND duration_sec IS NOT NULL
+       WHERE file_path_vf_transcoded IS NOT NULL AND duration_sec IS NOT NULL
        ORDER BY id`,
     )
     .all() as FilmRow[];
@@ -48,7 +47,7 @@ export function loadPlaylist(): PlaylistState {
   const missingCount = (
     db
       .prepare(
-        "SELECT COUNT(*) as n FROM films WHERE file_path_vf IS NOT NULL AND duration_sec IS NULL",
+        "SELECT COUNT(*) as n FROM films WHERE file_path_vf_transcoded IS NOT NULL AND duration_sec IS NULL",
       )
       .get() as { n: number }
   ).n;
@@ -58,10 +57,7 @@ export function loadPlaylist(): PlaylistState {
     id: row.id,
     title: row.title,
     year: row.release_year,
-    absolutePath: join(
-      FILMS_VF_ROOT,
-      row.file_path_vf_transcoded ?? row.file_path_vf!,
-    ),
+    absolutePath: join(FILMS_ROOT, row.file_path_vf_transcoded!),
     durationSec: row.duration_sec!,
   }));
 
