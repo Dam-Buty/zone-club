@@ -24,6 +24,7 @@ export interface RadarrQueueItem {
     trackedDownloadState?: string;
     trackedDownloadStatus?: string;
     statusMessages?: { title?: string; messages?: string[] }[];
+    outputPath?: string;
     errorMessage?: string;
 }
 

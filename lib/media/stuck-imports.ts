@@ -1,6 +1,9 @@
+import { stat, readdir } from 'fs/promises'
+import { join } from 'path'
 import { db } from '../db'
 import { getQueue, removeQueueItem, type RadarrQueueItem } from '../radarr'
 import { maxQcAttempts } from './quality-control'
+import { probeStreams } from './probe'
 
 // Surveillance des téléchargements que Radarr refuse d'importer.
 //
@@ -18,9 +21,41 @@ import { maxQcAttempts } from './quality-control'
 // On applique donc à ces blocages le même traitement qu'à un rejet QC : blacklist
 // + nouvelle recherche, dans la limite du même compteur de tentatives.
 
-// Un avertissement transitoire est normal pendant que Radarr scanne ou que
-// SABnzbd finit son post-traitement : on n'agit qu'après persistance.
-const STUCK_MINUTES = Number(process.env.IMPORT_STUCK_MINUTES || 15)
+// Délai de repli, quand on ne peut PAS trancher en sondant le fichier (chemin
+// invisible, dossier vide, media introuvable). Court, parce que Radarr ne publie
+// cet avertissement qu'après avoir réellement tenté l'import : pendant le
+// post-traitement de SABnzbd la file est en `downloading`, pas en `importPending`.
+const STUCK_MINUTES = Number(process.env.IMPORT_STUCK_MINUTES || 5)
+
+const MEDIA_EXT = /\.(mkv|mp4|avi|m4v|ts|mov)$/i
+
+// Sonde le fichier téléchargé pour savoir si l'import est définitivement perdu.
+// null = on ne peut pas se prononcer (on retombera sur le délai).
+async function sourceIsUnreadable(outputPath: string | undefined): Promise<boolean | null> {
+    if (!outputPath) return null
+    try {
+        const st = await stat(outputPath)
+        let file = outputPath
+        if (st.isDirectory()) {
+            const entries = await readdir(outputPath, { withFileTypes: true })
+            const medias = entries.filter(e => e.isFile() && MEDIA_EXT.test(e.name))
+            if (medias.length === 0) return null
+            // Le plus gros fichier média est le film ; les autres sont des extraits.
+            const sized = await Promise.all(medias.map(async e => {
+                const p = join(outputPath, e.name)
+                return { p, size: (await stat(p)).size }
+            }))
+            file = sized.sort((a, b) => b.size - a.size)[0].p
+        }
+        await probeStreams(file)
+        return false           // lisible : le blocage vient d'ailleurs
+    } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        // ENOENT/EACCES = on ne voit pas le fichier, pas de verdict possible.
+        if (/ENOENT|EACCES|EPERM/.test(msg)) return null
+        return true            // ffprobe a refusé le fichier : il est mort
+    }
+}
 
 // downloadId → date de première observation en état bloqué.
 const firstSeen = new Map<string, number>()
@@ -58,14 +93,22 @@ export async function checkStuckImports(): Promise<void> {
         live.add(key)
         if (!isStuck(item)) { firstSeen.delete(key); continue }
 
-        const since = firstSeen.get(key)
-        if (since === undefined) {
-            firstSeen.set(key, now)
-            console.log(`[stuck-imports] "${item.title}" en attente d'import (${describe(item)}) — observé, action dans ${STUCK_MINUTES} min si ça persiste`)
-            continue
+        // On sonde le fichier plutôt que d'attendre : Radarr ne reviendra jamais
+        // sur son refus si le fichier est illisible, et ffprobe le dit tout de suite.
+        const unreadable = await sourceIsUnreadable(item.outputPath)
+        let minutes = 0
+        if (unreadable === true) {
+            console.log(`[stuck-imports] "${item.title}" : fichier illisible par ffprobe — inutile d'attendre`)
+        } else {
+            const since = firstSeen.get(key)
+            if (since === undefined) {
+                firstSeen.set(key, now)
+                console.log(`[stuck-imports] "${item.title}" en attente d'import (${describe(item)}) — ${unreadable === false ? 'fichier pourtant lisible' : 'fichier non sondable'}, action dans ${STUCK_MINUTES} min si ça persiste`)
+                continue
+            }
+            minutes = (now - since) / 60000
+            if (minutes < STUCK_MINUTES) continue
         }
-        const minutes = (now - since) / 60000
-        if (minutes < STUCK_MINUTES) continue
 
         // Le film doit être l'un des nôtres, sinon on ne touche à rien.
         const film = db.prepare('SELECT id, title, qc_attempts FROM films WHERE radarr_id = ?')
@@ -88,7 +131,7 @@ export async function checkStuckImports(): Promise<void> {
             continue
         }
 
-        console.log(`[stuck-imports] "${film.title}": bloqué depuis ${minutes.toFixed(0)} min (${why}) — tentative ${attempts}/${max}, blacklist + nouvelle recherche`)
+        console.log(`[stuck-imports] "${film.title}": ${minutes > 0 ? `bloqué depuis ${minutes.toFixed(0)} min` : 'fichier illisible'} (${why}) — tentative ${attempts}/${max}, blacklist + nouvelle recherche`)
         try {
             // blocklist=true : la release est mauvaise, on ne veut pas la revoir.
             // Radarr relance sa propre recherche (autoRedownloadFailed).

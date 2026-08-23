@@ -13,6 +13,10 @@ services:
       - /data/big-boi/zone-club/films:/media/films:rw
       - /mnt/backup:/media/backup:rw,rshared
       - /home/damso/.ssh:/ssh-host:ro
+      # Téléchargements SABnzbd, en lecture seule et AU MÊME CHEMIN que Radarr :
+      # permet de sonder soi-même un fichier que Radarr refuse d'importer, au lieu
+      # d'attendre un délai en espérant qu'il change d'avis (il ne change jamais).
+      - /data/phat-two/sabnzbd-downloads:/data/phat-two/sabnzbd-downloads:ro
       - media_public:/media/public:rw
     environment:
       - DATABASE_PATH=/data/zone.db
