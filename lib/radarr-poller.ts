@@ -1,6 +1,7 @@
 import { db } from './db'
 import { getMovieStatus } from './radarr'
 import { enqueueProcessFilm } from './media/process-film'
+import { checkStuckImports } from './media/stuck-imports'
 
 const POLL_INTERVAL = 2 * 60 * 1000 // 2 minutes
 
@@ -21,6 +22,10 @@ function getPendingFilms(): PendingFilm[] {
 }
 
 async function pollRadarrStatus(): Promise<void> {
+    // Indépendant des films en attente : un import bloqué n'apparaît nulle part
+    // ailleurs, surtout pas dans getPendingFilms (hasFile reste faux).
+    await checkStuckImports()
+
     const pending = getPendingFilms()
     if (pending.length === 0) return
 

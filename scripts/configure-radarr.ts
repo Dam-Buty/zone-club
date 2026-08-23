@@ -102,13 +102,23 @@ const PROFILES: ProfileSpec[] = [
 
 // 80 Mo/min plafonnait un film de 2h45 à ~12,9 Go — or un BluRay 1080p MULTi avec
 // pistes DTS pèse 15 à 19 Go, donc TOUS étaient rejetés pour dépassement de taille.
+//
+// Puis 150 s'est révélé encore trop juste : sur Interstellar (169 min), la
+// meilleure release — seule 1080p MULTi h264, score maximum 205 — pesait très
+// exactement le plafond et se faisait refuser sur l'ex æquo, laissant la place à
+// une AV1 moins bien notée. 180 laisse une marge (≈29,7 Go pour 169 min).
+//
+// Contrepartie assumée : des sources plus grosses, donc des backups Hetzner plus
+// longs (~10 min pour 26 Go). Le backup tournant en parallèle de l'encodage, ça ne
+// rallonge le traitement que s'il dépasse la durée du transcode.
+//
 // Remux-1080p reste volontairement à 80 : un remux (~300 Mo/min) dépasse toujours,
 // ce qui l'exclut de fait sans avoir à le retirer du profil.
 const QUALITY_SIZES: Record<string, { preferredSize: number; maxSize: number }> = {
-    'HDTV-1080p': { preferredSize: 110, maxSize: 150 },
-    'WEBDL-1080p': { preferredSize: 110, maxSize: 150 },
-    'WEBRip-1080p': { preferredSize: 110, maxSize: 150 },
-    'Bluray-1080p': { preferredSize: 110, maxSize: 150 },
+    'HDTV-1080p': { preferredSize: 130, maxSize: 180 },
+    'WEBDL-1080p': { preferredSize: 130, maxSize: 180 },
+    'WEBRip-1080p': { preferredSize: 130, maxSize: 180 },
+    'Bluray-1080p': { preferredSize: 130, maxSize: 180 },
 }
 
 // ─── Application ─────────────────────────────────────────────────────────────

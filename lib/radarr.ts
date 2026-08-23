@@ -15,6 +15,18 @@ export interface RadarrRootFolder {
     path: string;
 }
 
+export interface RadarrQueueItem {
+    id: number;
+    movieId: number;
+    title: string;
+    downloadId?: string;
+    status: string;
+    trackedDownloadState?: string;
+    trackedDownloadStatus?: string;
+    statusMessages?: { title?: string; messages?: string[] }[];
+    errorMessage?: string;
+}
+
 export interface RadarrQualityProfile {
     id: number;
     name: string;
@@ -130,6 +142,21 @@ class RadarrClient {
         }
     }
 
+    async getQueue(): Promise<RadarrQueueItem[]> {
+        const page = await this.fetch<{ records: RadarrQueueItem[] }>('/queue?pageSize=200');
+        return page.records || [];
+    }
+
+    async removeQueueItem(queueId: number, blocklist: boolean): Promise<void> {
+        const res = await fetch(
+            `${this.url}/api/v3/queue/${queueId}?removeFromClient=true&blocklist=${blocklist}`,
+            { method: 'DELETE', headers: { 'X-Api-Key': this.apiKey }, signal: AbortSignal.timeout(30000) }
+        );
+        if (!res.ok && res.status !== 404) {
+            throw new Error(`Radarr removeQueueItem ${res.status}: ${await res.text()}`);
+        }
+    }
+
     async getMovieHistory(radarrId: number): Promise<{ id: number; eventType: string; sourceTitle?: string }[]> {
         return this.fetch<{ id: number; eventType: string; sourceTitle?: string }[]>(`/history/movie?movieId=${radarrId}`);
     }
@@ -200,10 +227,20 @@ export async function rejectCurrentRelease(radarrId: number): Promise<string | n
     const grab = history.find(h => h.eventType === 'grabbed');
     if (grab) await radarr.markHistoryFailed(grab.id);
 
-    // markHistoryFailed relance déjà une recherche quand le film est monitored ;
-    // on s'assure qu'il l'est, et on redéclenche explicitement (idempotent).
+    // On s'assure seulement que le film est monitored. PAS de searchMovie ici :
+    // `autoRedownloadFailed` est actif côté Radarr, qui relance donc sa propre
+    // recherche après markHistoryFailed. Un appel explicite en plus faisait courir
+    // les deux en parallèle — observé le 23/08 sur Interstellar, où deux
+    // téléchargements de 24 Go de la même release ont démarré à 5 s d'intervalle.
     await radarr.setMonitored(radarrId, true);
-    await radarr.searchMovie(radarrId);
 
     return grab?.sourceTitle ?? null;
+}
+
+export async function getQueue(): Promise<RadarrQueueItem[]> {
+    return radarr.getQueue();
+}
+
+export async function removeQueueItem(queueId: number, blocklist: boolean): Promise<void> {
+    return radarr.removeQueueItem(queueId, blocklist);
 }
