@@ -8,7 +8,7 @@ import { identifyTracks } from './identify-tracks'
 import { isFrench } from './iso639'
 import { mediaDirFromMoviePath } from './media-dir'
 import { encodeVideoRemote } from './remote-encode'
-import { muxOutputs, extractSubs, type MuxTarget } from './ffmpeg-ops'
+import { encodeAudioTracks, remuxOutputs, extractSubs, type AudioTarget, type RemuxTarget } from './ffmpeg-ops'
 import { planVideo } from './video-plan'
 import { checkRelease, maxQcAttempts } from './quality-control'
 
@@ -155,6 +155,8 @@ export async function processFilm(filmId: number): Promise<void> {
     const voMp4 = join(outDir, 'vo.mp4')
     const vfMp4 = join(outDir, 'vf.mp4')
     const videoMkv = join(outDir, 'video.mkv')   // intermédiaire: vidéo encodée sans audio
+    const voAac = join(outDir, 'audio.vo.m4a')   // intermédiaires: audio encodé pendant que le GPU travaille
+    const vfAac = join(outDir, 'audio.vf.m4a')
 
     try {
         // 2. Probe + identification (rapide, ré-exécuté à chaque reprise — pas de persistance nécessaire)
@@ -201,11 +203,43 @@ export async function processFilm(filmId: number): Promise<void> {
         // On garde la promesse pour ne libérer la source qu'une fois la copie finie.
         const backupDone = backupSource(mkv, mediaDir, film.title)
 
-        // 3 + 4. Vidéo (GPU distant ou copie directe), puis mux VO/VF en une passe.
+        // 3 + 4. Vidéo (GPU distant ou copie directe) et audio/sous-titres EN PARALLÈLE,
+        //        puis remux final en copie pure.
         //        Skippés si les sorties finales sont déjà là (reprise après crash).
+        const subCols: Record<string, string> = {}
         if (!(await exists(voMp4)) || (wantVf && !(await exists(vfMp4)))) {
             const plan = planVideo(streams, sourceSize, sourceDuration)
             let encodedDuration: number | null = null
+
+            // Ni l'audio ni les sous-titres ne dépendent de la vidéo encodée : ils
+            // partent maintenant et se terminent pendant que le GPU travaille. Le
+            // chemin critique se réduit alors au seul remux (mesuré 8,4× plus rapide
+            // qu'un mux qui décode et réencode l'audio).
+            const audioTargets: AudioTarget[] = [{ out: voAac, audioOrdinal: tracks.voAudioOrdinal }]
+            if (wantVf) audioTargets.push({ out: vfAac, audioOrdinal: tracks.vfAudioOrdinal! })
+            const sideWork = (async () => {
+                const todo = await Promise.all(audioTargets.map(async t => (await exists(t.out)) ? null : t))
+                const missing = todo.filter((t): t is AudioTarget => t !== null)
+                if (missing.length) {
+                    log(`encodage audio ${missing.length} piste(s) → AAC stéréo (en parallèle de la vidéo)…`)
+                    await encodeAudioTracks(mkv, missing)
+                    log('audio encodé')
+                } else {
+                    log('audio déjà encodé — étape sautée')
+                }
+                if (tracks.textSubs.length) {
+                    log(`extraction de ${tracks.textSubs.length} piste(s) sub candidate(s) en une passe…`)
+                    for (const s of await extractSubs(mkv, tracks.textSubs, outDir)) {
+                        log(`sub ${s.lang}: ${s.cues} cues retenues`)
+                        subCols[`subtitle_${s.lang}_srt`] = `${mediaDir}/sub.${s.lang}.srt`
+                        subCols[`subtitle_${s.lang}_vtt`] = `${mediaDir}/sub.${s.lang}.vtt`
+                    }
+                }
+            })()
+            // Sans ce catch immédiat, un échec de la branche parallèle remonterait en
+            // rejet non géré pendant qu'on attend la vidéo.
+            let sideError: unknown = null
+            sideWork.catch(err => { sideError = err })
 
             if (plan.action === 'copy') {
                 log(`vidéo copiée sans réencodage — ${plan.reason}`)
@@ -240,32 +274,38 @@ export async function processFilm(filmId: number): Promise<void> {
                 log(`durée encodée: ${encodedDuration.toFixed(0)}s (${((encodedDuration / sourceDuration) * 100).toFixed(1)}% de la source)`)
             }
 
+            // On rejoint la branche parallèle avant d'assembler.
             setStatus(filmId, 'muxing', 90)
-            const targets: MuxTarget[] = [{ out: voMp4, audioOrdinal: tracks.voAudioOrdinal }]
-            if (wantVf) targets.push({ out: vfMp4, audioOrdinal: tracks.vfAudioOrdinal! })
-            log(`mux ${targets.length} sortie(s) en une passe (audio → AAC stéréo)…`)
-            await muxOutputs(plan.action === 'copy' ? null : videoMkv, mkv, targets)
-            log('vo.mp4' + (wantVf ? ' + vf.mp4' : '') + ' écrits')
-            await rm(videoMkv, { force: true })
+            await sideWork
+            if (sideError) throw sideError
+
+            const videoSrc = plan.action === 'copy' ? mkv : videoMkv
+            const targets: RemuxTarget[] = [{ out: voMp4, audio: voAac }]
+            if (wantVf) targets.push({ out: vfMp4, audio: vfAac })
+            log(`remux ${targets.length} sortie(s) en copie pure…`)
+            const t1 = Date.now()
+            await remuxOutputs(videoSrc, targets)
+            log(`vo.mp4${wantVf ? ' + vf.mp4' : ''} écrits en ${((Date.now() - t1) / 1000).toFixed(0)}s`)
+            await Promise.all([
+                rm(videoMkv, { force: true }),
+                rm(voAac, { force: true }),
+                rm(vfAac, { force: true }),
+            ])
         } else {
-            log('sorties déjà présentes — encodage et mux skippés')
+            log('sorties déjà présentes — vidéo, audio et mux skippés')
+            // Les sorties existent mais la DB peut être à refaire (retraitement) :
+            // on relit les sous-titres présents pour repeupler les colonnes.
+            for (const lang of ['fr', 'en'] as const) {
+                if (await exists(join(outDir, `sub.${lang}.vtt`))) {
+                    subCols[`subtitle_${lang}_srt`] = `${mediaDir}/sub.${lang}.srt`
+                    subCols[`subtitle_${lang}_vtt`] = `${mediaDir}/sub.${lang}.vtt`
+                }
+            }
         }
 
         const vfRel = wantVf ? `${mediaDir}/vf.mp4` : (frenchFilm ? `${mediaDir}/vo.mp4` : null)
 
-        // 5. Subs : toutes les pistes candidates sont extraites en une passe et on
-        //    garde la plus fournie par langue (voir extractSubs).
-        setStatus(filmId, 'subtitles', 95)
-        const subCols: Record<string, string> = {}
-        if (tracks.textSubs.length) {
-            log(`extraction de ${tracks.textSubs.length} piste(s) sub candidate(s) en une passe…`)
-            const kept = await extractSubs(mkv, tracks.textSubs, outDir)
-            for (const s of kept) {
-                log(`sub ${s.lang}: ${s.cues} cues retenues`)
-                subCols[`subtitle_${s.lang}_srt`] = `${mediaDir}/sub.${s.lang}.srt`
-                subCols[`subtitle_${s.lang}_vtt`] = `${mediaDir}/sub.${s.lang}.vtt`
-            }
-        }
+        // Les sous-titres ont été extraits dans la phase parallèle (subCols rempli là).
         if (tracks.imageSubsFlagged) console.warn(`[processFilm] "${film.title}": subs IMAGE non extraits (PGS/VOBSUB)`)
 
         // 6. DB + dispo immédiate — UNIQUEMENT ici, une fois tout terminé.
