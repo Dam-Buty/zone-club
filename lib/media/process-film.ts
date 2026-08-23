@@ -217,7 +217,7 @@ export async function processFilm(filmId: number): Promise<void> {
             // qu'un mux qui décode et réencode l'audio).
             const audioTargets: AudioTarget[] = [{ out: voAac, audioOrdinal: tracks.voAudioOrdinal }]
             if (wantVf) audioTargets.push({ out: vfAac, audioOrdinal: tracks.vfAudioOrdinal! })
-            const sideWork = (async () => {
+            const audioJob = (async () => {
                 const todo = await Promise.all(audioTargets.map(async t => (await exists(t.out)) ? null : t))
                 const missing = todo.filter((t): t is AudioTarget => t !== null)
                 if (missing.length) {
@@ -227,14 +227,28 @@ export async function processFilm(filmId: number): Promise<void> {
                 } else {
                     log('audio déjà encodé — étape sautée')
                 }
-                if (tracks.textSubs.length) {
-                    log(`extraction de ${tracks.textSubs.length} piste(s) sub candidate(s) en une passe…`)
-                    for (const s of await extractSubs(mkv, tracks.textSubs, outDir)) {
-                        log(`sub ${s.lang}: ${s.cues} cues retenues`)
-                        subCols[`subtitle_${s.lang}_srt`] = `${mediaDir}/sub.${s.lang}.srt`
-                        subCols[`subtitle_${s.lang}_vtt`] = `${mediaDir}/sub.${s.lang}.vtt`
-                    }
+            })()
+
+            const subsJob = (async () => {
+                if (!tracks.textSubs.length) return
+                log(`extraction de ${tracks.textSubs.length} piste(s) sub candidate(s) en une passe…`)
+                for (const s of await extractSubs(mkv, tracks.textSubs, outDir)) {
+                    log(`sub ${s.lang}: ${s.cues} cues retenues`)
+                    subCols[`subtitle_${s.lang}_srt`] = `${mediaDir}/sub.${s.lang}.srt`
+                    subCols[`subtitle_${s.lang}_vtt`] = `${mediaDir}/sub.${s.lang}.vtt`
                 }
+            })()
+
+            // Audio et sous-titres côte à côte, pas l'un après l'autre : ils ne
+            // dépendent que du MKV source. Enchaînés, l'extraction ne démarrait
+            // qu'à la fin de l'audio et débordait de la fenêtre d'encodage — 109 s
+            // ajoutées au chemin critique sur Interstellar.
+            // allSettled plutôt que all : si l'un échoue, l'autre garde un
+            // gestionnaire et ne remonte pas en rejet non géré.
+            const sideWork = (async () => {
+                const results = await Promise.allSettled([audioJob, subsJob])
+                const failed = results.find(r => r.status === 'rejected')
+                if (failed) throw (failed as PromiseRejectedResult).reason
             })()
             // Sans ce catch immédiat, un échec de la branche parallèle remonterait en
             // rejet non géré pendant qu'on attend la vidéo.
