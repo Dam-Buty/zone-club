@@ -52,3 +52,6 @@ tsconfig.tsbuildinfo
 .idea
 .DS_Store
 *.sw?
+
+# sauvegardes ponctuelles de la base (le motif *.db ne les couvre pas)
+*.db.bak-*

@@ -14,6 +14,10 @@
  *
  * Usage:
  *   npx tsx scripts/migrate-media-reset.ts
+ *   npx tsx scripts/migrate-media-reset.ts --keep 74,126   # épargne ces films.id
+ *
+ * `--keep` sert à rejouer la migration sans défaire les films déjà traités
+ * correctement par la nouvelle chaîne.
  */
 
 import { db } from '../lib/db'
@@ -38,8 +42,26 @@ function errMsg(err: unknown): string {
     return err instanceof Error ? err.message : String(err)
 }
 
+function parseKeep(argv: string[]): number[] {
+    const i = argv.indexOf('--keep')
+    if (i === -1) return []
+    return (argv[i + 1] ?? '')
+        .split(',')
+        .map(s => Number(s.trim()))
+        .filter(n => Number.isInteger(n) && n > 0)
+}
+
 async function main(): Promise<void> {
     const startedAt = Date.now()
+    const keep = parseKeep(process.argv.slice(2))
+    if (keep.length) {
+        const rows = db.prepare(`SELECT id, title FROM films WHERE id IN (${keep.map(() => '?').join(',')})`).all(...keep) as { id: number; title: string }[]
+        console.log(`Films épargnés : ${rows.map(r => `#${r.id} ${r.title}`).join(', ') || '(aucun id ne correspond !)'}`)
+        if (rows.length !== keep.length) {
+            console.error('⚠️  Certains ids de --keep n\'existent pas en base — abandon par sécurité.')
+            process.exit(1)
+        }
+    }
 
     const total = (db.prepare('SELECT COUNT(*) AS n FROM films').get() as { n: number }).n
     const rows = db.prepare(
@@ -71,6 +93,7 @@ async function main(): Promise<void> {
         await sleep(TMDB_RATE_LIMIT_MS)
     }
 
+    const keepClause = keep.length ? ` WHERE id NOT IN (${keep.map(() => '?').join(',')})` : ''
     const resetResult = db.prepare(`
         UPDATE films SET
             file_path_vf = NULL,
@@ -87,8 +110,10 @@ async function main(): Promise<void> {
             transcode_status = NULL,
             transcode_progress = 0,
             transcode_error = NULL,
+            qc_attempts = 0,
             is_available = 0
-    `).run()
+        ${keepClause}
+    `).run(...keep)
 
     console.log('\n--- Récap ---')
     console.log(`Timestamp         : ${new Date().toISOString()}`)
@@ -99,6 +124,7 @@ async function main(): Promise<void> {
     if (failed > 0) {
         console.warn(`⚠️  ${failed} backfill(s) ont échoué — relancer le script les retentera (idempotent).`)
     }
+    if (keep.length) console.log(`Films épargnés    : ${keep.length} (${keep.join(', ')})`)
     console.log('NB : radarr_vo_id / radarr_vf_id conservés (historique / rollback).')
 }
 
