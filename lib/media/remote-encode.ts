@@ -58,12 +58,20 @@ export interface RemoteEncodeOptions {
 // dimensions paires, exigées par yuv420p.
 export function remoteFfmpegCommand(sourceHeight?: number | null, sourceWidth?: number | null): string {
     const downscale = (!!sourceHeight && sourceHeight > MAX_HEIGHT) || (!!sourceWidth && sourceWidth > MAX_WIDTH)
-    const scaleFilter = `scale_cuda=w=${MAX_WIDTH}:h=${MAX_HEIGHT}:force_original_aspect_ratio=decrease:force_divisible_by=2`
+    // `format=yuv420p` est OBLIGATOIRE, redimensionnement ou pas : h264_nvenc
+    // n'encode qu'en 8 bits. Une source 10 bits (HEVC Main10, AV1 10 bits — très
+    // répandues) fait sortir du décodeur des trames CUDA en p010 que l'encodeur
+    // refuse avec « Error registering an input resource: invalid param (8) », et
+    // le ssh meurt sans que rien d'explicite ne remonte. La conversion se fait sur
+    // le GPU, donc sans retour par le CPU.
+    const scaleFilter = downscale
+        ? `scale_cuda=w=${MAX_WIDTH}:h=${MAX_HEIGHT}:force_original_aspect_ratio=decrease:force_divisible_by=2:format=yuv420p`
+        : 'scale_cuda=format=yuv420p'
     return [
         'ffmpeg', '-hide_banner', '-nostdin', '-nostats', '-loglevel', 'error',
         '-progress', 'pipe:2',
         '-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda', '-i', 'pipe:0',
-        ...(downscale ? ['-vf', scaleFilter] : []),
+        '-vf', scaleFilter,
         '-c:v', 'h264_nvenc', '-preset', PRESET, '-cq', String(CQ),
         '-f', 'matroska', 'pipe:1',
     ].join(' ')
@@ -151,6 +159,13 @@ export async function encodeVideoRemote(
             child.on('error', err => reject(new Error(`${name}: ${err.message}`)))
             child.on('close', code => resolve(code ?? -1))
         })
+
+    // Si le ssh s'arrête (échec côté Spark), le démux doit mourir tout de suite.
+    // Node continue sinon de vider son stdout dans le vide : ffmpeg ne reçoit
+    // jamais d'EPIPE et parcourt tout le fichier avant de rendre la main, si bien
+    // que l'erreur distante n'est rapportée que plusieurs minutes plus tard.
+    // Observé sur une source AV1 10 bits : ssh mort en 2 s, erreur signalée jamais.
+    ssh.on('close', () => { if (demux.exitCode === null) demux.kill() })
 
     try {
         const [demuxCode, sshCode] = await Promise.all([wait(demux, 'ffmpeg local'), wait(ssh, 'ssh')])
