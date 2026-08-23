@@ -35,13 +35,17 @@ export interface EncodeProgress {
 export interface RemoteEncodeOptions {
     sourceHeight?: number | null
     sourceWidth?: number | null
-    // Durée de la source (s). Un MKV tronqué fait sortir le démux ffmpeg en code 0
-    // après un simple "File ended prematurely" : l'encodage distant est alors
-    // parfaitement valide mais incomplet, et rien ne le signale. Comparer la durée
-    // encodée à celle attendue est la seule détection fiable — elle vit ici plutôt
-    // que chez l'appelant pour qu'on ne puisse pas l'oublier.
+    // Durée de la source (s), telle que rapportée par le conteneur. Sert de
+    // garde-fou LARGE contre une source tronquée — voir minRatio.
     expectedDuration?: number | null
-    minRatio?: number   // défaut 0.95
+    // Seuil délibérément bas (0.80), parce que `expectedDuration` vient du
+    // conteneur, c'est-à-dire du flux le PLUS LONG, qui n'est pas toujours la
+    // vidéo : sur Ford v Ferrari les sous-titres courent 6 min après la dernière
+    // image, ce qui donnait un ratio de 96 % pour un film parfaitement complet —
+    // à un point du rejet. Mesurer la vraie durée du flux vidéo coûterait de 1 à
+    // 5 minutes de lecture par film, donc on garde le conteneur et on desserre.
+    // La détection fine est assurée par la sortie d'erreur du démux.
+    minRatio?: number   // défaut 0.80
     onProgress?: (p: EncodeProgress) => void
 }
 
@@ -182,14 +186,25 @@ export async function encodeVideoRemote(
         // (ffprobe rend "N/A"), donc c'est la seule mesure disponible ici.
         const encoded = remote.encodedSeconds()
         const expected = opts.expectedDuration ?? 0
-        const minRatio = opts.minRatio ?? 0.95
-        // Pas de `encoded > 0` dans la condition : un encodage vide (ratio 0) doit
-        // être rejeté comme n'importe quelle autre troncature, pas ignoré.
-        if (expected > 0 && encoded / expected < minRatio) {
+        const minRatio = opts.minRatio ?? 0.80
+        const demuxOutput = demuxErrors.join('')
+
+        // Signal principal : ffmpeg DIT que la source est incomplète. Il sort en
+        // code 0 malgré tout (vérifié), mais il l'écrit sur stderr — c'est direct,
+        // gratuit et précis, là où la comparaison de durées est indirecte.
+        const truncated = /File ended prematurely|Invalid data found|Truncating packet|corrupt/i.test(demuxOutput)
+        // Filet secondaire, volontairement large : attrape un démux mort en
+        // silence, sans rejeter les fichiers dont les sous-titres dépassent
+        // l'image. Pas de `encoded > 0` : un encodage vide (ratio 0) doit tomber.
+        const tooShort = expected > 0 && encoded / expected < minRatio
+
+        if (truncated || tooShort) {
+            const why = truncated
+                ? `le démux signale une source incomplète`
+                : `${encoded.toFixed(0)}s encodées pour ${expected.toFixed(0)}s annoncées (${((encoded / expected) * 100).toFixed(1)}%)`
             throw new Error(
-                `encodage tronqué: ${encoded.toFixed(0)}s encodées pour ${expected.toFixed(0)}s de source ` +
-                `(${((encoded / expected) * 100).toFixed(1)}%) — MKV source probablement incomplet` +
-                (demuxErrors.length ? ` | démux: ${demuxErrors.join('').trim().slice(-200)}` : '')
+                `encodage tronqué: ${why} — MKV source probablement incomplet` +
+                (demuxOutput ? ` | démux: ${demuxOutput.trim().slice(-200)}` : '')
             )
         }
         await rename(tmp, dest)
