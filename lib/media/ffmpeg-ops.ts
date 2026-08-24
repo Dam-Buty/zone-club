@@ -1,6 +1,7 @@
 import ffmpeg from 'fluent-ffmpeg'
 import { rename, rm, readFile } from 'fs/promises'
 import { join } from 'path'
+import { ocrSupToSrt } from './ocr-subs'
 
 export interface AudioTarget {
     out: string           // chemin du .m4a intermédiaire
@@ -86,7 +87,17 @@ export function remuxOutputs(videoSrc: string, targets: RemuxTarget[]): Promise<
     }))).then(() => undefined)
 }
 
-export interface SubCandidate { lang: 'fr' | 'en'; streamIndex: number }
+export interface SubCandidate { lang: 'fr' | 'en'; streamIndex: number; kind?: 'text' | 'image' }
+
+// En dessous de ce nombre de cues, une piste ressemble à une piste FORCÉE
+// (panneaux et dialogues étrangers, ~90 à 150 lignes) plutôt qu'aux dialogues
+// complets (800 à 2000). Quand la meilleure piste texte est sous ce seuil et
+// qu'une piste image existe dans la même langue, on tente l'OCR : sur Gran Torino
+// la seule piste texte française EST la piste forcée, et la version complète
+// n'existe qu'en PGS — le film a donc été publié avec des sous-titres partiels.
+// Seuil volontairement haut : une OCR inutile ne coûte que ~100 s de CPU, alors
+// que servir des sous-titres forcés en guise de dialogues passe inaperçu.
+const FORCED_LIKE_MAX_CUES = Number(process.env.SUB_FORCED_MAX_CUES || 400)
 export interface ExtractedSub { lang: 'fr' | 'en'; vtt: string; srt: string; cues: number }
 
 // Compte les cues d'un WebVTT : une cue = une ligne contenant "-->".
@@ -116,21 +127,58 @@ export async function extractSubs(
 ): Promise<ExtractedSub[]> {
     if (candidates.length === 0) return []
 
-    const tmpOf = (c: SubCandidate) => join(outDir, `.sub-cand.${c.lang}.${c.streamIndex}.vtt`)
+    const textCands = candidates.filter(c => c.kind !== 'image')
+    const imageCands = candidates.filter(c => c.kind === 'image')
 
+    const tmpOf = (c: SubCandidate) => join(outDir, `.sub-cand.${c.lang}.${c.streamIndex}.vtt`)
+    const supOf = (c: SubCandidate) => join(outDir, `.sub-cand.${c.lang}.${c.streamIndex}.sup`)
+
+    // Une seule lecture du MKV pour tout le monde : les pistes texte sortent en
+    // WebVTT, les pistes image en .sup par simple copie de flux. Sortir les .sup
+    // ici ne coûte presque rien (aucun décodage), alors qu'une passe séparée
+    // relirait tout le fichier — et sur ce disque, saturé par les téléchargements,
+    // relire 15 Go se paie en minutes.
     await new Promise<void>((resolve, reject) => {
         const cmd = ffmpeg(mkv)
-        for (const c of candidates) {
+        for (const c of textCands) {
             cmd.output(tmpOf(c)).outputOptions([
                 '-y', '-f', 'webvtt', '-c:s', 'webvtt', '-map', `0:${c.streamIndex}`,
+            ])
+        }
+        for (const c of imageCands) {
+            cmd.output(supOf(c)).outputOptions([
+                '-y', '-f', 'sup', '-c:s', 'copy', '-map', `0:${c.streamIndex}`,
             ])
         }
         cmd.on('end', () => resolve()).on('error', reject).run()
     })
 
     const scored = await Promise.all(
-        candidates.map(async c => ({ ...c, tmp: tmpOf(c), cues: await countCues(tmpOf(c)) })),
+        textCands.map(async c => ({ ...c, tmp: tmpOf(c), cues: await countCues(tmpOf(c)) })),
     )
+
+    // OCR des pistes image, uniquement là où le texte est absent ou suspect.
+    for (const lang of ['fr', 'en'] as const) {
+        const images = imageCands.filter(c => c.lang === lang)
+        if (images.length === 0) continue
+        const bestText = scored.filter(s => s.lang === lang && s.cues > 0)
+            .reduce((a, b) => (!a || b.cues > a.cues ? b : a), null as (typeof scored)[number] | null)
+        if (bestText && bestText.cues >= FORCED_LIKE_MAX_CUES) continue
+        for (const c of images) {
+            const srt = await ocrSupToSrt(supOf(c), lang)
+            if (!srt) continue
+            // Ramené en WebVTT pour rejoindre les candidats texte et être départagé
+            // au nombre de cues, comme eux.
+            const vtt = join(outDir, `.sub-cand.${lang}.${c.streamIndex}.ocr.vtt`)
+            await new Promise<void>((resolve, reject) => {
+                ffmpeg(srt).outputOptions(['-y', '-f', 'webvtt', '-c:s', 'webvtt'])
+                    .output(vtt).on('end', () => resolve()).on('error', reject).run()
+            })
+            await rm(srt, { force: true }).catch(() => {})
+            scored.push({ ...c, tmp: vtt, cues: await countCues(vtt) })
+        }
+    }
+    await Promise.all(imageCands.map(c => rm(supOf(c), { force: true }).catch(() => {})))
 
     const kept: ExtractedSub[] = []
     for (const lang of ['fr', 'en'] as const) {

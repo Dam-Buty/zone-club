@@ -77,3 +77,16 @@ export function planVideo(streams: ProbeStream[], totalSize: number, duration: n
         bitrate,
     }
 }
+
+// Repère une source HDR (PQ/HLG). Le Spark n'expose ni Vulkan ni OpenCL, donc
+// aucun filtre de tonemapping n'y est utilisable : `scale_cuda=format=yuv420p`
+// se contente de ramener les 10 bits à 8 sans convertir la courbe de transfert.
+// Le résultat SDR est alors délavé et plat, SANS qu'aucune erreur ne remonte —
+// d'où ce marqueur, pour que le cas soit au moins visible dans les logs.
+export function isHdrSource(streams: ProbeStream[]): string | null {
+    const v = streams.find(s => s.codec_type === 'video')
+    const t = (v?.color_transfer || '').toLowerCase()
+    if (t === 'smpte2084') return 'HDR10 (PQ)'
+    if (t === 'arib-std-b67') return 'HLG'
+    return null
+}

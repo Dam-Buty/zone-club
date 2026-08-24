@@ -62,7 +62,13 @@ export function checkRelease(
     if (req.voAudio && (tracks.voAudioOrdinal == null || tracks.voAudioOrdinal === tracks.vfAudioOrdinal)) {
         missing.push('piste audio VO')
     }
-    if (req.frSubs && !tracks.textSubs.some(s => s.lang === 'fr')) missing.push('sous-titres français')
+    // Une piste PGS/VobSub compte : l'OCR la convertit en SRT au moment de
+    // l'extraction. Ne regarder que `textSubs` faisait refuser des releases qui
+    // portaient bel et bien des sous-titres français — c'est la norme sur les
+    // BluRay de catalogue, où le PGS est le seul format proposé.
+    const hasFr = tracks.textSubs.some(s => s.lang === 'fr')
+        || tracks.imageSubs.some(s => s.lang === 'fr')
+    if (req.frSubs && !hasFr) missing.push('sous-titres français')
 
     return { ok: missing.length === 0, missing }
 }

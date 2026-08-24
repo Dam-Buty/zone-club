@@ -129,14 +129,43 @@ const QUALITY_SIZES: Record<string, { preferredSize: number; maxSize: number }> 
     'WEBRip-1080p': { preferredSize: 130, maxSize: 250 },
     'Bluray-1080p': { preferredSize: 130, maxSize: 250 },
     'Remux-1080p': { preferredSize: 300, maxSize: 450 },
+    // Le 2160p est plafonné COMME le 1080p, et non plus haut : l'encodage
+    // redimensionne tout en 1080p, donc les octets au-delà de ~250 Mo/min sont
+    // jetés au scale et ne coûtent que de la bande passante — laquelle est déjà
+    // le goulot (le backup Hetzner tombe à 15 Mo/s quand l'usenet tourne).
+    // Ce plafond admet L'Exorciste 2160p MULTi (15,3 Go, 116 Mo/min) et écarte
+    // les rips 4K massifs comme le UHD.hdr.hevc du même film (36,9 Go, 280 Mo/min).
+    'HDTV-2160p': { preferredSize: 130, maxSize: 250 },
+    'WEBDL-2160p': { preferredSize: 130, maxSize: 250 },
+    'WEBRip-2160p': { preferredSize: 130, maxSize: 250 },
+    'Bluray-2160p': { preferredSize: 130, maxSize: 250 },
 }
 
 // Radarr classe les paliers par leur ordre dans `items` : le dernier est préféré.
-// Remux-1080p y figurait en tête, donc relever sa taille l'aurait rendu
-// PRIORITAIRE (26 Go choisis contre 4 Go). On le place juste au-dessus des paliers
-// 720p : tout 1080p compact passe devant, mais un remux reste préférable à un 720p
-// qu'on ne saurait pas agrandir.
-const REMUX_RANK = { quality: 'Remux-1080p', justAbove: 'HDTV-1080p' }
+// Certains paliers doivent rester ATTEIGNABLES sans devenir PRÉFÉRÉS. On les
+// regroupe donc juste sous l'ancre, dans l'ordre ci-dessous (du moins au plus
+// préféré), pour qu'ils ne servent qu'à défaut de mieux :
+//
+//   … 720p … │ Remux-1080p │ 2160p… │ HDTV-1080p │ WEB-1080p │ Bluray-1080p
+//                                    └── ancre, tout ce qui suit passe devant
+//
+// Sans ce classement, les deux tolérances se retourneraient contre nous : relever
+// la taille du remux suffisait à le faire choisir (26 Go retenus contre 4 Go), et
+// le 2160p figure nativement AU-DESSUS de tout le 1080p (rangs 20-23 contre 19),
+// donc l'autoriser le rendrait prioritaire d'office.
+const LAST_RESORT_ANCHOR = 'HDTV-1080p'
+const LAST_RESORT = ['Remux-1080p', 'HDTV-2160p', 'WEB 2160p', 'Bluray-2160p']
+
+// Paliers dont il faut forcer l'autorisation. Radarr répond « is not wanted in
+// profile » AVANT de regarder la taille, donc un plafond ne suffit pas à tolérer
+// le 2160p : il faut aussi cocher le palier.
+//
+// Motif : certains films n'ont aucune release 1080p multi-audio. Sur L'Exorciste,
+// les 12 meilleures 1080p plafonnent à 65 (h264 + Resolution1080p, sans MULTi) et
+// tombent sous le minFormatScore ; la seule VF+VO du lot est une 2160p à 140.
+// Remux-2160p reste volontairement interdit : à ~1 Go/min il ne passerait jamais
+// le plafond, autant ne pas l'offrir.
+const ALLOWED = ['HDTV-2160p', 'WEB 2160p', 'Bluray-2160p']
 
 // ─── Application ─────────────────────────────────────────────────────────────
 
@@ -198,19 +227,38 @@ async function ensureProfiles(): Promise<void> {
         if (p.language?.name !== want.language) { note(`profil "${want.name}" : langue ${p.language?.name} → ${want.language}`); p.language = { id: -1, name: 'Any' }; dirty = true }
         if (p.minFormatScore !== want.minFormatScore) { note(`profil "${want.name}" : minFormatScore → ${want.minFormatScore}`); p.minFormatScore = want.minFormatScore; dirty = true }
 
-        // Rétrogradation du remux : on le déplace juste sous `justAbove` dans
-        // l'ordre des paliers, pour qu'il ne soit choisi qu'à défaut d'autre chose.
         const idxOf = (name: string) => p.items.findIndex((it: any) =>
             it.quality ? it.quality.name === name : it.name === name)
-        const from = idxOf(REMUX_RANK.quality)
-        const target = idxOf(REMUX_RANK.justAbove)
-        // `from === target - 1` = déjà juste en dessous, rien à faire. Comparer
-        // `from !== target` rendrait le script non idempotent : après déplacement
-        // les deux indices restent différents, donc il « corrigeait » à chaque appel.
-        if (from >= 0 && target >= 0 && from !== target - 1) {
-            note(`profil "${want.name}" : ${REMUX_RANK.quality} rétrogradé sous ${REMUX_RANK.justAbove} (dernier recours)`)
-            const [moved] = p.items.splice(from, 1)
-            p.items.splice(idxOf(REMUX_RANK.justAbove), 0, moved)
+        const nameAt = (i: number) => {
+            const it = p.items[i]
+            return it ? (it.quality ? it.quality.name : it.name) : ''
+        }
+
+        // Autorisation des paliers tolérés.
+        for (const name of ALLOWED) {
+            const it = p.items[idxOf(name)]
+            if (!it || it.allowed) continue
+            note(`profil "${want.name}" : palier ${name} autorisé`)
+            it.allowed = true
+            // Un groupe (« WEB 2160p ») n'ouvre pas ses membres en s'ouvrant :
+            // WEBDL-2160p et WEBRip-2160p resteraient refusés individuellement.
+            if (it.items) for (const sub of it.items) sub.allowed = true
+            dirty = true
+        }
+
+        // Regroupement du bloc « dernier recours » juste sous l'ancre.
+        // L'idempotence se vérifie sur la disposition RÉELLE — les noms qui
+        // précèdent l'ancre — et non sur des indices : comparer `from !== target`
+        // laissait les deux indices différents après déplacement, donc le script
+        // « corrigeait » à chaque appel.
+        const present = LAST_RESORT.filter(n => idxOf(n) >= 0)
+        const anchor = idxOf(LAST_RESORT_ANCHOR)
+        const already = anchor >= present.length
+            && present.every((n, k) => nameAt(anchor - present.length + k) === n)
+        if (anchor >= 0 && present.length > 0 && !already) {
+            note(`profil "${want.name}" : ${present.join(', ')} regroupés sous ${LAST_RESORT_ANCHOR} (dernier recours)`)
+            const moved = present.map(n => p.items.splice(idxOf(n), 1)[0])
+            p.items.splice(idxOf(LAST_RESORT_ANCHOR), 0, ...moved)
             dirty = true
         }
 

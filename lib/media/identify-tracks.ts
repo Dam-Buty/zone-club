@@ -9,6 +9,8 @@ export interface ProbeStream {
   pix_fmt?: string;
   profile?: string;
   bit_rate?: string | number;
+  color_transfer?: string;
+  color_primaries?: string;
   tags?: { language?: string; title?: string };
 }
 
@@ -20,6 +22,7 @@ export interface TrackIdentification {
   voAudioOrdinal: number | null; // position 0-based dans la liste audio (Nième piste)
   vfAudioOrdinal: number | null;
   textSubs: SubTrack[];        // ordre: fr d'abord, puis en
+  imageSubs: SubTrack[];       // pistes PGS/VobSub, récupérables par OCR
   imageSubsFlagged: boolean;   // au moins une piste sub image détectée
 }
 
@@ -40,15 +43,24 @@ export function identifyTracks(streams: ProbeStream[], originalLanguage: string 
   const vo = voByLang ?? voNonFr ?? audio[0];
 
   const textSubs: SubTrack[] = [];
+  const imageSubs: SubTrack[] = [];
   let imageSubsFlagged = false;
   for (const s of subs) {
     const codec = (s.codec_name || '').toLowerCase();
     const lang = s.tags?.language;
-    if (IMAGE_SUB_CODECS.has(codec)) { imageSubsFlagged = true; continue; }
-    if (!TEXT_SUB_CODECS.has(codec)) continue;
     const title = s.tags?.title;
-    if (isFrench(lang)) textSubs.push({ lang: 'fr', streamIndex: s.index, codec, title });
-    else if (isEnglish(lang)) textSubs.push({ lang: 'en', streamIndex: s.index, codec, title });
+    // Les pistes image ne sont plus jetées : elles sont récupérables par OCR.
+    // C'est la norme sur les BluRay de catalogue — Saving Private Ryan, Die Hard 2
+    // et Naked Gun n'ont QUE du PGS, et étaient donc refusés faute de sous-titres
+    // alors qu'ils en portaient. Sur Gran Torino, la seule piste texte française
+    // est la piste forcée : la version complète n'existe qu'en PGS.
+    const target = IMAGE_SUB_CODECS.has(codec) ? imageSubs
+      : TEXT_SUB_CODECS.has(codec) ? textSubs
+        : null;
+    if (!target) continue;
+    if (target === imageSubs) imageSubsFlagged = true;
+    if (isFrench(lang)) target.push({ lang: 'fr', streamIndex: s.index, codec, title });
+    else if (isEnglish(lang)) target.push({ lang: 'en', streamIndex: s.index, codec, title });
   }
   // TOUTES les pistes candidates sont retournées, pas une par langue.
   //
@@ -68,6 +80,7 @@ export function identifyTracks(streams: ProbeStream[], originalLanguage: string 
     voAudioOrdinal: vo ? audio.indexOf(vo) : null,
     vfAudioOrdinal: vf ? audio.indexOf(vf) : null,
     textSubs: dedup,
+    imageSubs: [...imageSubs].sort((a, b) => order[a.lang] - order[b.lang] || a.streamIndex - b.streamIndex),
     imageSubsFlagged,
   };
 }

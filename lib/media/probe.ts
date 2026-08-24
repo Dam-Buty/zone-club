@@ -15,6 +15,11 @@ export function probeStreams(filePath: string): Promise<{ streams: ProbeStream[]
           pix_fmt: s.pix_fmt,
           profile: s.profile,
           bit_rate: s.bit_rate,
+          // Nécessaires pour repérer une source HDR : le Spark n'a ni Vulkan ni
+          // OpenCL, donc aucun tonemapping GPU. Sans ces champs, une source HDR
+          // encodée en SDR passerait inaperçue (image délavée, sans erreur).
+          color_transfer: s.color_transfer,
+          color_primaries: s.color_primaries,
           tags: s.tags,
         })),
         duration: Number(meta.format?.duration) || 0,

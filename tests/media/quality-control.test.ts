@@ -9,6 +9,7 @@ const tracks = (over: Partial<TrackIdentification> = {}): TrackIdentification =>
   voAudioIndex: 2, vfAudioIndex: 1,
   voAudioOrdinal: 1, vfAudioOrdinal: 0,
   textSubs: [{ lang: 'fr', streamIndex: 3, codec: 'subrip' }],
+  imageSubs: [],
   imageSubsFlagged: false,
   ...over,
 });
@@ -74,4 +75,27 @@ test('exigences désactivables une par une', () => {
     { ...ALL, vfAudio: false },
   );
   assert.equal(noVf.ok, true);
+});
+
+// Le cas qui faisait refuser Saving Private Ryan, Die Hard 2 et Naked Gun : la
+// release PORTE des sous-titres français, mais en PGS. L'OCR les récupère à
+// l'extraction, donc ils comptent au contrôle qualité.
+test('sous-titres français uniquement en PGS: acceptée (OCR)', () => {
+  const v = checkRelease(
+    tracks({ textSubs: [], imageSubs: [{ lang: 'fr', streamIndex: 4, codec: 'hdmv_pgs_subtitle' }] }),
+    'en',
+    ALL,
+  );
+  assert.equal(v.ok, true);
+  assert.deepEqual(v.missing, []);
+});
+
+test('sous-titres image dans une autre langue: toujours rejetée', () => {
+  const v = checkRelease(
+    tracks({ textSubs: [], imageSubs: [{ lang: 'en', streamIndex: 4, codec: 'hdmv_pgs_subtitle' }] }),
+    'en',
+    ALL,
+  );
+  assert.equal(v.ok, false);
+  assert.deepEqual(v.missing, ['sous-titres français']);
 });

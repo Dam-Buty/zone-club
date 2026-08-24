@@ -9,7 +9,7 @@ import { isFrench } from './iso639'
 import { mediaDirFromMoviePath } from './media-dir'
 import { encodeVideoRemote } from './remote-encode'
 import { encodeAudioTracks, remuxOutputs, extractSubs, type AudioTarget, type RemuxTarget } from './ffmpeg-ops'
-import { planVideo, estimateVideoBitrate } from './video-plan'
+import { planVideo, estimateVideoBitrate, isHdrSource } from './video-plan'
 import { checkRelease, maxQcAttempts } from './quality-control'
 import { startRun, patchRun, finishRun } from './run-stats'
 
@@ -202,7 +202,7 @@ export async function processFilm(filmId: number): Promise<void> {
             `pistes: VO ordinal ${tracks.voAudioOrdinal}` +
             (wantVf ? `, VF ordinal ${tracks.vfAudioOrdinal}` : ' (pas de VF séparée)') +
             (tracks.textSubs.length ? `, subs ${tracks.textSubs.map(s => s.lang).join('+')}` : ' (aucun sub texte)') +
-            (tracks.imageSubsFlagged ? ' ⚠️ subs IMAGE ignorés' : '') +
+            (tracks.imageSubs.length ? `, subs image ${tracks.imageSubs.map(s => s.lang).join('+')} (OCR)` : '') +
             (frenchFilm ? ' 🇫🇷 film FR natif' : '') +
             ` | source ${sourceDuration.toFixed(0)}s ${sourceWidth ?? '?'}×${sourceHeight ?? '?'}`
         )
@@ -272,10 +272,19 @@ export async function processFilm(filmId: number): Promise<void> {
             })()
 
             const subsJob = (async () => {
-                if (!tracks.textSubs.length) return
+                // Les pistes image partent avec les autres : elles sont extraites en
+                // .sup dans la même passe, puis converties par OCR seulement si la
+                // piste texte de la langue manque ou ressemble à une piste forcée.
+                const subCandidates = [
+                    ...tracks.textSubs.map(s => ({ ...s, kind: 'text' as const })),
+                    ...tracks.imageSubs.map(s => ({ ...s, kind: 'image' as const })),
+                ]
+                if (!subCandidates.length) return
                 const t = Date.now()
-                log(`extraction de ${tracks.textSubs.length} piste(s) sub candidate(s) en une passe…`)
-                const kept = await extractSubs(mkv, tracks.textSubs, outDir)
+                const nImg = tracks.imageSubs.length
+                log(`extraction de ${subCandidates.length} piste(s) sub candidate(s) en une passe…`
+                    + (nImg ? ` (dont ${nImg} image, OCR si nécessaire)` : ''))
+                const kept = await extractSubs(mkv, subCandidates, outDir)
                 for (const s of kept) {
                     log(`sub ${s.lang}: ${s.cues} cues retenues`)
                     subCols[`subtitle_${s.lang}_srt`] = `${mediaDir}/sub.${s.lang}.srt`
@@ -311,6 +320,10 @@ export async function processFilm(filmId: number): Promise<void> {
                 log('video.mkv déjà présent — encodage skippé')
             } else {
                 log(`réencodage nécessaire — ${plan.reason}`)
+                const hdr = isHdrSource(streams)
+                if (hdr) {
+                    log(`⚠ source ${hdr} encodée en SDR sans tonemapping (indisponible sur le Spark) — image probablement délavée, à contrôler`)
+                }
                 setStatus(filmId, 'transcoding_remote', 0)
                 log('encodage GPU distant (démux vidéo seule → pipe SSH → nvenc)…')
                 const t0 = Date.now()
@@ -374,7 +387,12 @@ export async function processFilm(filmId: number): Promise<void> {
         const vfRel = wantVf ? `${mediaDir}/vf.mp4` : (frenchFilm ? `${mediaDir}/vo.mp4` : null)
 
         // Les sous-titres ont été extraits dans la phase parallèle (subCols rempli là).
-        if (tracks.imageSubsFlagged) console.warn(`[processFilm] "${film.title}": subs IMAGE non extraits (PGS/VOBSUB)`)
+        // Alerte seulement si une piste image existait ET qu'aucun sous-titre n'a
+        // survécu : l'OCR a échoué, ce qui mérite un regard. Le cas nominal (OCR
+        // réussi, ou piste texte préférée) ne dit plus rien.
+        if (tracks.imageSubs.length && !Object.keys(subCols).length) {
+            console.warn(`[processFilm] "${film.title}": OCR des subs image sans résultat (PGS/VOBSUB)`)
+        }
 
         // 6. DB + dispo immédiate — UNIQUEMENT ici, une fois tout terminé.
         //    (ne pas écrire file_path_vo_transcoded avant : getPendingFilms() s'en sert pour la reprise)

@@ -1,0 +1,62 @@
+import { spawn } from 'child_process'
+import { rename, access, rm } from 'fs/promises'
+
+// Conversion des sous-titres image (PGS/VobSub) en SRT par OCR.
+//
+// Les BluRay de catalogue ne proposent souvent QUE du PGS — des bitmaps, pas du
+// texte. Le pipeline les ignorait, et le contrôle qualité refusait donc des
+// releases qui portaient pourtant des sous-titres français : Saving Private Ryan,
+// Die Hard 2 et Naked Gun ont tous été rejetés pour cette raison alors que
+// MediaInfo les annonçait correctement.
+//
+// L'OCR (tesseract, via pgsrip) rend ces pistes exploitables. Mesuré sur un film
+// entier — La La Land, piste anglaise de 939 sous-titres — : 100 s. C'est assez
+// court pour tenir dans la phase parallèle, à côté de l'encodage GPU.
+//
+// Avantage sur une récupération externe (OpenSubtitles) : la synchronisation est
+// exacte par construction, puisque les temps viennent de la release elle-même.
+// Un SRT tiers vise un autre montage ou un autre master et dérive.
+
+const TIMEOUT_MS = Number(process.env.OCR_TIMEOUT_MS || 15 * 60 * 1000)
+
+// pgsrip déduit la langue du NOM de fichier (via babelfish) et écarte en silence
+// tout fichier qu'il n'arrive pas à étiqueter — un `t.sup` donne
+// « 1 file filtered out » sans autre explication. D'où le suffixe obligatoire.
+const ALPHA3: Record<'fr' | 'en', string> = { fr: 'fra', en: 'eng' }
+
+function run(cmd: string, args: string[], timeoutMs: number): Promise<{ code: number; out: string }> {
+    return new Promise(resolve => {
+        const child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] })
+        let out = ''
+        child.stdout.on('data', (c: Buffer) => { out += c.toString() })
+        child.stderr.on('data', (c: Buffer) => { out += c.toString() })
+        const timer = setTimeout(() => child.kill('SIGKILL'), timeoutMs)
+        timer.unref()
+        child.on('error', err => { clearTimeout(timer); resolve({ code: -1, out: `${out}${err.message}` }) })
+        child.on('close', code => { clearTimeout(timer); resolve({ code: code ?? -1, out }) })
+    })
+}
+
+const exists = (p: string) => access(p).then(() => true, () => false)
+
+// Convertit un .sup en .srt. Rend le chemin du SRT, ou null si l'OCR n'a rien
+// produit — un échec d'OCR n'est jamais fatal, on retombe sur les pistes texte.
+export async function ocrSupToSrt(supPath: string, lang: 'fr' | 'en'): Promise<string | null> {
+    // Nom imposé par pgsrip : `<base>.<lang2>.sup` → `<base>.<lang2>.srt`. Le base
+    // est dérivé du chemin d'entrée, déjà unique par flux : un nom fixe ferait
+    // collisionner deux pistes image de même langue (courant — une forcée et une
+    // complète), la seconde écrasant le SRT de la première.
+    const base = supPath.replace(/\.sup$/, '')
+    const tagged = `${base}.${lang}.sup`
+    const srt = `${base}.${lang}.srt`
+    if (supPath !== tagged) await rename(supPath, tagged)
+
+    const { code, out } = await run('pgsrip', ['-l', ALPHA3[lang], '--force', tagged], TIMEOUT_MS)
+    // Le .sup taggé a échappé au nom d'origine : il se nettoie ici, sinon il
+    // resterait sur le disque de sortie (plusieurs Mo par piste).
+    await rm(tagged, { force: true }).catch(() => {})
+    if (await exists(srt)) return srt
+
+    console.warn(`[ocr-subs] aucun SRT produit pour ${lang} (code ${code}): ${out.trim().slice(-200)}`)
+    return null
+}
