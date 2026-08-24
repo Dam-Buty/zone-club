@@ -1,5 +1,5 @@
 import { spawn } from 'child_process'
-import { rename, access, rm } from 'fs/promises'
+import { rename, access, rm, readFile, writeFile } from 'fs/promises'
 
 // Conversion des sous-titres image (PGS/VobSub) en SRT par OCR.
 //
@@ -53,6 +53,35 @@ function run(
 
 const exists = (p: string) => access(p).then(() => true, () => false)
 
+// Corrections des confusions de tesseract, établies en comptant les caractères
+// réellement produits sur trois films OCR-isés (Las Vegas Parano, Kiss Kiss Bang
+// Bang, L'Associé du diable) et en les comparant à des fichiers issus de pistes
+// TEXTE, qui n'en portent aucun :
+//
+//   `|`  163 lignes, dont 129 en fin de ligne, ZÉRO en début de mot — donc jamais
+//        un `I` ou un `l` mal lu, toujours un point d'exclamation. Le caractère
+//        n'a par ailleurs aucun usage légitime dans un sous-titre français.
+//   `Ÿ`  5 occurrences, inexistant en français courant : c'est un `Y`.
+//
+// Volontairement limité à ces deux-là : `€` et `°` apparaissent aussi mais sont
+// légitimes (le fichier témoin en contient également).
+const OCR_FIXES: [RegExp, string][] = [
+    [/\|/g, '!'],
+    [/Ÿ/g, 'Y'],
+]
+
+async function cleanOcrText(srt: string): Promise<number> {
+    const before = await readFile(srt, 'utf8')
+    let after = before
+    for (const [re, to] of OCR_FIXES) after = after.replace(re, to)
+    if (after === before) return 0
+    await writeFile(srt, after, 'utf8')
+    // Nombre de caractères corrigés, pour le journal.
+    let n = 0
+    for (const [re] of OCR_FIXES) n += (before.match(re) || []).length
+    return n
+}
+
 // Convertit un .sup en .srt. Rend le chemin du SRT, ou null si l'OCR n'a rien
 // produit — un échec d'OCR n'est jamais fatal, on retombe sur les pistes texte.
 export async function ocrSupToSrt(
@@ -73,7 +102,11 @@ export async function ocrSupToSrt(
     // Le .sup taggé a échappé au nom d'origine : il se nettoie ici, sinon il
     // resterait sur le disque de sortie (plusieurs Mo par piste).
     await rm(tagged, { force: true }).catch(() => {})
-    if (await exists(srt)) return srt
+    if (await exists(srt)) {
+        const fixed = await cleanOcrText(srt).catch(() => 0)
+        if (fixed > 0) console.log(`[ocr-subs] ${lang}: ${fixed} caractère(s) mal lu(s) corrigé(s)`)
+        return srt
+    }
 
     console.warn(`[ocr-subs] aucun SRT produit pour ${lang} (code ${code}): ${out.trim().slice(-200)}`)
     return null
