@@ -103,6 +103,12 @@ const PROFILES: ProfileSpec[] = [
 // 80 Mo/min plafonnait un film de 2h45 à ~12,9 Go — or un BluRay 1080p MULTi avec
 // pistes DTS pèse 15 à 19 Go, donc TOUS étaient rejetés pour dépassement de taille.
 //
+// Puis 180 s'est révélé pénaliser les films COURTS : Massacre à la tronçonneuse
+// (83 min) a vu sa seule bonne candidate — BluRay 1080p MULTi h264, score 165 —
+// refusée pour 1,8 Gio de trop. Un plafond au ratio suppose une densité constante,
+// or un remaster granuleux de 1974 tient légitimement 212 Mo/min. Les bonnes
+// releases du catalogue s'étalent de 93 à 212 Mo/min ; 250 les couvre toutes.
+//
 // Puis 150 s'est révélé encore trop juste : sur Interstellar (169 min), la
 // meilleure release — seule 1080p MULTi h264, score maximum 205 — pesait très
 // exactement le plafond et se faisait refuser sur l'ex æquo, laissant la place à
@@ -112,14 +118,25 @@ const PROFILES: ProfileSpec[] = [
 // longs (~10 min pour 26 Go). Le backup tournant en parallèle de l'encodage, ça ne
 // rallonge le traitement que s'il dépasse la durée du transcode.
 //
-// Remux-1080p reste volontairement à 80 : un remux (~300 Mo/min) dépasse toujours,
-// ce qui l'exclut de fait sans avoir à le retirer du profil.
+// Remux-1080p était plafonné à 80, ce qui l'excluait de fait — un remux pèse
+// ~300 Mo/min. Mais certains films n'ont AUCUNE autre release éligible (Naked Gun,
+// Massacre à la tronçonneuse) et restaient donc sans média. On le rend atteignable
+// à 450 Mo/min, et on le RÉTROGRADE dans l'ordre du profil (voir REMUX_RANK) pour
+// qu'il ne serve que de dernier recours au lieu d'être préféré.
 const QUALITY_SIZES: Record<string, { preferredSize: number; maxSize: number }> = {
-    'HDTV-1080p': { preferredSize: 130, maxSize: 180 },
-    'WEBDL-1080p': { preferredSize: 130, maxSize: 180 },
-    'WEBRip-1080p': { preferredSize: 130, maxSize: 180 },
-    'Bluray-1080p': { preferredSize: 130, maxSize: 180 },
+    'HDTV-1080p': { preferredSize: 130, maxSize: 250 },
+    'WEBDL-1080p': { preferredSize: 130, maxSize: 250 },
+    'WEBRip-1080p': { preferredSize: 130, maxSize: 250 },
+    'Bluray-1080p': { preferredSize: 130, maxSize: 250 },
+    'Remux-1080p': { preferredSize: 300, maxSize: 450 },
 }
+
+// Radarr classe les paliers par leur ordre dans `items` : le dernier est préféré.
+// Remux-1080p y figurait en tête, donc relever sa taille l'aurait rendu
+// PRIORITAIRE (26 Go choisis contre 4 Go). On le place juste au-dessus des paliers
+// 720p : tout 1080p compact passe devant, mais un remux reste préférable à un 720p
+// qu'on ne saurait pas agrandir.
+const REMUX_RANK = { quality: 'Remux-1080p', justAbove: 'HDTV-1080p' }
 
 // ─── Application ─────────────────────────────────────────────────────────────
 
@@ -180,6 +197,22 @@ async function ensureProfiles(): Promise<void> {
         if (p.upgradeAllowed !== want.upgradeAllowed) { note(`profil "${want.name}" : upgradeAllowed → ${want.upgradeAllowed}`); p.upgradeAllowed = want.upgradeAllowed; dirty = true }
         if (p.language?.name !== want.language) { note(`profil "${want.name}" : langue ${p.language?.name} → ${want.language}`); p.language = { id: -1, name: 'Any' }; dirty = true }
         if (p.minFormatScore !== want.minFormatScore) { note(`profil "${want.name}" : minFormatScore → ${want.minFormatScore}`); p.minFormatScore = want.minFormatScore; dirty = true }
+
+        // Rétrogradation du remux : on le déplace juste sous `justAbove` dans
+        // l'ordre des paliers, pour qu'il ne soit choisi qu'à défaut d'autre chose.
+        const idxOf = (name: string) => p.items.findIndex((it: any) =>
+            it.quality ? it.quality.name === name : it.name === name)
+        const from = idxOf(REMUX_RANK.quality)
+        const target = idxOf(REMUX_RANK.justAbove)
+        // `from === target - 1` = déjà juste en dessous, rien à faire. Comparer
+        // `from !== target` rendrait le script non idempotent : après déplacement
+        // les deux indices restent différents, donc il « corrigeait » à chaque appel.
+        if (from >= 0 && target >= 0 && from !== target - 1) {
+            note(`profil "${want.name}" : ${REMUX_RANK.quality} rétrogradé sous ${REMUX_RANK.justAbove} (dernier recours)`)
+            const [moved] = p.items.splice(from, 1)
+            p.items.splice(idxOf(REMUX_RANK.justAbove), 0, moved)
+            dirty = true
+        }
 
         for (const item of p.formatItems) {
             const target = want.scores[item.name] ?? 0
