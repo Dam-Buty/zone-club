@@ -18,6 +18,11 @@
  * qui portait la clé de production dans un dépôt public).
  */
 
+// Ce fichier ne comporte ni import ni export : sans ce marqueur, TypeScript le
+// traiterait comme un script GLOBAL, et ses `api`/`main` collisionneraient avec
+// celles des autres scripts du dossier.
+export {}
+
 const URL_BASE = process.env.RADARR_URL || 'http://radarr:7878'
 const API_KEY = process.env.RADARR_API_KEY || ''
 const DRY = process.argv.includes('--dry')
@@ -121,7 +126,7 @@ const PROFILES: ProfileSpec[] = [
 // Remux-1080p était plafonné à 80, ce qui l'excluait de fait — un remux pèse
 // ~300 Mo/min. Mais certains films n'ont AUCUNE autre release éligible (Naked Gun,
 // Massacre à la tronçonneuse) et restaient donc sans média. On le rend atteignable
-// à 450 Mo/min, et on le RÉTROGRADE dans l'ordre du profil (voir REMUX_RANK) pour
+// à 450 Mo/min, et on le RÉTROGRADE dans l'ordre du profil (voir LAST_RESORT) pour
 // qu'il ne serve que de dernier recours au lieu d'être préféré.
 const QUALITY_SIZES: Record<string, { preferredSize: number; maxSize: number }> = {
     'HDTV-1080p': { preferredSize: 130, maxSize: 250 },

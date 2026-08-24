@@ -24,7 +24,12 @@ const TIMEOUT_MS = Number(process.env.OCR_TIMEOUT_MS || 15 * 60 * 1000)
 // « 1 file filtered out » sans autre explication. D'où le suffixe obligatoire.
 const ALPHA3: Record<'fr' | 'en', string> = { fr: 'fra', en: 'eng' }
 
-function run(cmd: string, args: string[], timeoutMs: number): Promise<{ code: number; out: string }> {
+function run(
+    cmd: string,
+    args: string[],
+    timeoutMs: number,
+    signal?: AbortSignal,
+): Promise<{ code: number; out: string }> {
     return new Promise(resolve => {
         const child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] })
         let out = ''
@@ -32,8 +37,17 @@ function run(cmd: string, args: string[], timeoutMs: number): Promise<{ code: nu
         child.stderr.on('data', (c: Buffer) => { out += c.toString() })
         const timer = setTimeout(() => child.kill('SIGKILL'), timeoutMs)
         timer.unref()
-        child.on('error', err => { clearTimeout(timer); resolve({ code: -1, out: `${out}${err.message}` }) })
-        child.on('close', code => { clearTimeout(timer); resolve({ code: code ?? -1, out }) })
+        // L'OCR dure des minutes : sans arrêt explicite, un tesseract continuerait
+        // à tourner longtemps après l'abandon du film qui l'a lancé.
+        const onAbort = (): void => { child.kill('SIGKILL') }
+        signal?.addEventListener('abort', onAbort, { once: true })
+        const done = (r: { code: number; out: string }): void => {
+            clearTimeout(timer)
+            signal?.removeEventListener('abort', onAbort)
+            resolve(r)
+        }
+        child.on('error', err => done({ code: -1, out: `${out}${err.message}` }))
+        child.on('close', code => done({ code: code ?? -1, out }))
     })
 }
 
@@ -41,7 +55,11 @@ const exists = (p: string) => access(p).then(() => true, () => false)
 
 // Convertit un .sup en .srt. Rend le chemin du SRT, ou null si l'OCR n'a rien
 // produit — un échec d'OCR n'est jamais fatal, on retombe sur les pistes texte.
-export async function ocrSupToSrt(supPath: string, lang: 'fr' | 'en'): Promise<string | null> {
+export async function ocrSupToSrt(
+    supPath: string,
+    lang: 'fr' | 'en',
+    signal?: AbortSignal,
+): Promise<string | null> {
     // Nom imposé par pgsrip : `<base>.<lang2>.sup` → `<base>.<lang2>.srt`. Le base
     // est dérivé du chemin d'entrée, déjà unique par flux : un nom fixe ferait
     // collisionner deux pistes image de même langue (courant — une forcée et une
@@ -51,7 +69,7 @@ export async function ocrSupToSrt(supPath: string, lang: 'fr' | 'en'): Promise<s
     const srt = `${base}.${lang}.srt`
     if (supPath !== tagged) await rename(supPath, tagged)
 
-    const { code, out } = await run('pgsrip', ['-l', ALPHA3[lang], '--force', tagged], TIMEOUT_MS)
+    const { code, out } = await run('pgsrip', ['-l', ALPHA3[lang], '--force', tagged], TIMEOUT_MS, signal)
     // Le .sup taggé a échappé au nom d'origine : il se nettoie ici, sinon il
     // resterait sur le disque de sortie (plusieurs Mo par piste).
     await rm(tagged, { force: true }).catch(() => {})

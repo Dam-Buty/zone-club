@@ -161,6 +161,9 @@ export async function processFilm(filmId: number): Promise<void> {
     const film = getFilmById(filmId)
     if (!film || !film.radarr_id) throw new Error(`processFilm: film ${filmId} sans radarr_id`)
 
+    // Renseigné quand les jobs latéraux démarrent ; sert au nettoyage en cas d'échec.
+    let sideAbortRef: AbortController | null = null
+
     // 1. Localiser le MKV via Radarr
     const status = await getMovieStatus(film.radarr_id)
     if (!status.hasFile || !status.movieFile?.path) { setStatus(filmId, 'pending'); return; }
@@ -255,6 +258,11 @@ export async function processFilm(filmId: number): Promise<void> {
             // partent maintenant et se terminent pendant que le GPU travaille. Le
             // chemin critique se réduit alors au seul remux (mesuré 8,4× plus rapide
             // qu'un mux qui décode et réencode l'audio).
+            // Les jobs latéraux tournent en parallèle de l'encodage GPU : s'il
+            // échoue, il faut les TUER, sinon leurs ffmpeg survivent au film
+            // abandonné et s'accumulent à chaque reprise du poller.
+            const sideAbort = new AbortController()
+            sideAbortRef = sideAbort
             const audioTargets: AudioTarget[] = [{ out: voAac, audioOrdinal: tracks.voAudioOrdinal }]
             if (wantVf) audioTargets.push({ out: vfAac, audioOrdinal: tracks.vfAudioOrdinal! })
             const audioJob = (async () => {
@@ -263,7 +271,7 @@ export async function processFilm(filmId: number): Promise<void> {
                 const missing = todo.filter((t): t is AudioTarget => t !== null)
                 if (missing.length) {
                     log(`encodage audio ${missing.length} piste(s) → AAC stéréo (en parallèle de la vidéo)…`)
-                    await encodeAudioTracks(mkv, missing)
+                    await encodeAudioTracks(mkv, missing, sideAbort.signal)
                     log('audio encodé')
                     patchRun(runId, { audio_seconds: (Date.now() - t) / 1000 })
                 } else {
@@ -284,7 +292,7 @@ export async function processFilm(filmId: number): Promise<void> {
                 const nImg = tracks.imageSubs.length
                 log(`extraction de ${subCandidates.length} piste(s) sub candidate(s) en une passe…`
                     + (nImg ? ` (dont ${nImg} image, OCR si nécessaire)` : ''))
-                const kept = await extractSubs(mkv, subCandidates, outDir)
+                const kept = await extractSubs(mkv, subCandidates, outDir, sideAbort.signal)
                 for (const s of kept) {
                     log(`sub ${s.lang}: ${s.cues} cues retenues`)
                     subCols[`subtitle_${s.lang}_srt`] = `${mediaDir}/sub.${s.lang}.srt`
@@ -426,6 +434,10 @@ export async function processFilm(filmId: number): Promise<void> {
         })
     } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
+        // Couper l'audio et les sous-titres AVANT de rendre la main : sans ça le
+        // film sort de `active`, le poller le remet en file, et une nouvelle paire
+        // de ffmpeg démarre pendant que l'ancienne lit encore le MKV.
+        sideAbortRef?.abort()
         console.error(`[processFilm] Erreur "${film.title}":`, msg)
         setStatus(filmId, 'error', 0, msg)
         finishRun(runId, 'error', runStartedAt, msg)

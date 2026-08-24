@@ -16,6 +16,36 @@ export interface RemuxTarget {
 const AUDIO_BITRATE = process.env.MUX_AUDIO_BITRATE || '192k'
 const AUDIO_CHANNELS = process.env.MUX_AUDIO_CHANNELS || '2'
 
+// Exécute une commande fluent-ffmpeg en la rendant interruptible.
+//
+// Sans ça, l'audio et les sous-titres — lancés EN PARALLÈLE de l'encodage GPU —
+// survivaient à l'échec de celui-ci : processFilm remontait l'erreur et rendait la
+// main, le film sortait de `active`, le poller le remettait en file deux minutes
+// plus tard, et une nouvelle paire de ffmpeg démarrait par-dessus la précédente.
+// Constaté sur American Psycho pendant l'indisponibilité du GPU du Spark :
+// 6 tentatives = 12 ffmpeg vivants, tous à relire le même MKV de 8,7 Go, saturant
+// le disque au passage.
+function runFfmpeg(cmd: ReturnType<typeof ffmpeg>, signal?: AbortSignal): Promise<void> {
+    return new Promise((resolve, reject) => {
+        let settled = false
+        const onAbort = (): void => {
+            if (settled) return
+            settled = true
+            try { cmd.kill('SIGKILL') } catch { /* déjà mort */ }
+            reject(new Error('opération ffmpeg annulée'))
+        }
+        if (signal?.aborted) return onAbort()
+        signal?.addEventListener('abort', onAbort, { once: true })
+        const finish = (err?: Error): void => {
+            if (settled) return
+            settled = true
+            signal?.removeEventListener('abort', onAbort)
+            if (err) reject(err); else resolve()
+        }
+        cmd.on('end', () => finish()).on('error', (e: Error) => finish(e)).run()
+    })
+}
+
 // Produit vo.mp4 et vf.mp4 en UNE passe ffmpeg à deux sorties.
 //
 // La vidéo est copiée telle quelle depuis l'encodage GPU (identique dans les deux
@@ -40,27 +70,31 @@ const AUDIO_CHANNELS = process.env.MUX_AUDIO_CHANNELS || '2'
 //
 // Vérifié bit à bit : l'audio produit par ce détour via un .m4a intermédiaire est
 // rigoureusement identique à celui d'un mux direct (différence à -inf dB).
-export function encodeAudioTracks(mkv: string, targets: AudioTarget[]): Promise<void> {
-    if (targets.length === 0) return Promise.resolve()
-    return new Promise((resolve, reject) => {
-        const cmd = ffmpeg().input(mkv)
-        for (const t of targets) {
-            cmd.output(`${t.out}.part`).outputOptions([
-                '-y', '-vn', '-sn', '-dn',
-                // Extension `.part` non reconnue par ffmpeg → forcer le muxer.
-                '-f', 'mp4',
-                '-map', `0:a:${t.audioOrdinal}`,
-                '-c:a', 'aac', '-ac', AUDIO_CHANNELS, '-b:a', AUDIO_BITRATE,
-            ])
-        }
-        cmd
-            .on('end', () => {
-                Promise.all(targets.map(t => rename(`${t.out}.part`, t.out)))
-                    .then(() => resolve(), reject)
-            })
-            .on('error', reject)
-            .run()
-    })
+export async function encodeAudioTracks(
+    mkv: string,
+    targets: AudioTarget[],
+    signal?: AbortSignal,
+): Promise<void> {
+    if (targets.length === 0) return
+    const cmd = ffmpeg().input(mkv)
+    for (const t of targets) {
+        cmd.output(`${t.out}.part`).outputOptions([
+            '-y', '-vn', '-sn', '-dn',
+            // Extension `.part` non reconnue par ffmpeg → forcer le muxer.
+            '-f', 'mp4',
+            '-map', `0:a:${t.audioOrdinal}`,
+            '-c:a', 'aac', '-ac', AUDIO_CHANNELS, '-b:a', AUDIO_BITRATE,
+        ])
+    }
+    try {
+        await runFfmpeg(cmd, signal)
+    } catch (err) {
+        // Une annulation laisse des .part derrière elle : ils seraient pris pour
+        // des fichiers valides au prochain passage (le code teste l'existence).
+        await Promise.all(targets.map(t => rm(`${t.out}.part`, { force: true }).catch(() => {})))
+        throw err
+    }
+    await Promise.all(targets.map(t => rename(`${t.out}.part`, t.out)))
 }
 
 // Assemble vidéo + audio déjà encodés, en copie pure. Aucun décodage, aucun
@@ -124,6 +158,7 @@ export async function extractSubs(
     mkv: string,
     candidates: SubCandidate[],
     outDir: string,
+    signal?: AbortSignal,
 ): Promise<ExtractedSub[]> {
     if (candidates.length === 0) return []
 
@@ -138,20 +173,18 @@ export async function extractSubs(
     // ici ne coûte presque rien (aucun décodage), alors qu'une passe séparée
     // relirait tout le fichier — et sur ce disque, saturé par les téléchargements,
     // relire 15 Go se paie en minutes.
-    await new Promise<void>((resolve, reject) => {
-        const cmd = ffmpeg(mkv)
-        for (const c of textCands) {
-            cmd.output(tmpOf(c)).outputOptions([
-                '-y', '-f', 'webvtt', '-c:s', 'webvtt', '-map', `0:${c.streamIndex}`,
-            ])
-        }
-        for (const c of imageCands) {
-            cmd.output(supOf(c)).outputOptions([
-                '-y', '-f', 'sup', '-c:s', 'copy', '-map', `0:${c.streamIndex}`,
-            ])
-        }
-        cmd.on('end', () => resolve()).on('error', reject).run()
-    })
+    const pass = ffmpeg(mkv)
+    for (const c of textCands) {
+        pass.output(tmpOf(c)).outputOptions([
+            '-y', '-f', 'webvtt', '-c:s', 'webvtt', '-map', `0:${c.streamIndex}`,
+        ])
+    }
+    for (const c of imageCands) {
+        pass.output(supOf(c)).outputOptions([
+            '-y', '-f', 'sup', '-c:s', 'copy', '-map', `0:${c.streamIndex}`,
+        ])
+    }
+    await runFfmpeg(pass, signal)
 
     const scored = await Promise.all(
         textCands.map(async c => ({ ...c, tmp: tmpOf(c), cues: await countCues(tmpOf(c)) })),
@@ -165,15 +198,18 @@ export async function extractSubs(
             .reduce((a, b) => (!a || b.cues > a.cues ? b : a), null as (typeof scored)[number] | null)
         if (bestText && bestText.cues >= FORCED_LIKE_MAX_CUES) continue
         for (const c of images) {
-            const srt = await ocrSupToSrt(supOf(c), lang)
+            // L'OCR est la phase la plus longue : sans ce test, une annulation
+            // attendrait la fin de chaque piste avant d'être prise en compte.
+            if (signal?.aborted) throw new Error('extraction des sous-titres annulée')
+            const srt = await ocrSupToSrt(supOf(c), lang, signal)
             if (!srt) continue
             // Ramené en WebVTT pour rejoindre les candidats texte et être départagé
             // au nombre de cues, comme eux.
             const vtt = join(outDir, `.sub-cand.${lang}.${c.streamIndex}.ocr.vtt`)
-            await new Promise<void>((resolve, reject) => {
-                ffmpeg(srt).outputOptions(['-y', '-f', 'webvtt', '-c:s', 'webvtt'])
-                    .output(vtt).on('end', () => resolve()).on('error', reject).run()
-            })
+            await runFfmpeg(
+                ffmpeg(srt).outputOptions(['-y', '-f', 'webvtt', '-c:s', 'webvtt']).output(vtt),
+                signal,
+            )
             await rm(srt, { force: true }).catch(() => {})
             scored.push({ ...c, tmp: vtt, cues: await countCues(vtt) })
         }
@@ -190,15 +226,12 @@ export async function extractSubs(
         await rename(best.tmp, vtt)
         // webvtt → srt par transcodage (la copie `subrip` sur certains MKV bloque
         // ffmpeg sur un EOF mal détecté ; repasser par le vtt déjà extrait est sûr).
-        await new Promise<void>((resolve, reject) => {
-            const tmp = `${srt}.part`
-            ffmpeg(vtt)
-                .outputOptions(['-y', '-f', 'srt', '-c:s', 'srt'])
-                .output(tmp)
-                .on('end', () => rename(tmp, srt).then(resolve, reject))
-                .on('error', reject)
-                .run()
-        })
+        const srtTmp = `${srt}.part`
+        await runFfmpeg(
+            ffmpeg(vtt).outputOptions(['-y', '-f', 'srt', '-c:s', 'srt']).output(srtTmp),
+            signal,
+        )
+        await rename(srtTmp, srt)
         kept.push({ lang, vtt, srt, cues: best.cues })
     }
 

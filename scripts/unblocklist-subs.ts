@@ -1,60 +1,76 @@
 /**
- * Déblocage des releases blacklistées à tort pour « sous-titres français ».
+ * Retire des releases de la blocklist Radarr et relance ce qui en a besoin.
  *
  * Avant l'OCR des PGS, une release dont les sous-titres français n'étaient que des
- * images était refusée au contrôle qualité, blacklistée, et remplacée par une
- * recherche. Ces releases sont bonnes : ce script les retire de la blocklist et
- * remet les films en file.
+ * images était refusée au contrôle qualité, blacklistée, puis remplacée. Ces
+ * releases sont bonnes : ce script les rend à nouveau disponibles.
+ *
+ * La sélection se fait par IDENTIFIANT DE BLOCKLIST, pas par le message d'erreur
+ * en base : celui-ci est effacé dès que le film repasse en `pending` (la reprise au
+ * démarrage le fait), ce qui rendait toute sélection par motif inopérante quelques
+ * minutes après le rejet.
  *
  * Usage:
- *   npx tsx scripts/unblocklist-subs.ts            # liste seulement
- *   npx tsx scripts/unblocklist-subs.ts --apply    # applique
+ *   npx tsx scripts/unblocklist-subs.ts --ids 112,125,126,129,130,131
+ *   npx tsx scripts/unblocklist-subs.ts --ids ... --apply
  */
-import { db } from '../lib/db'
 
+// Sans au moins un import/export, TypeScript traite le fichier comme un script
+// GLOBAL et non comme un module : ses `api` et `main` collisionnent alors avec
+// celles de configure-radarr.ts (« Duplicate function implementation »).
+export {}
 const APPLY = process.argv.includes('--apply')
-const URL = process.env.RADARR_URL
+const BASE = process.env.RADARR_URL
 const KEY = process.env.RADARR_API_KEY
 
+const idsArg = process.argv[process.argv.indexOf('--ids') + 1]
+const IDS = process.argv.includes('--ids') && idsArg
+    ? idsArg.split(',').map(s => Number(s.trim())).filter(Number.isFinite)
+    : []
+
 async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
-    const r = await fetch(`${URL}/api/v3${path}`, {
+    const r = await fetch(`${BASE}/api/v3${path}`, {
         ...init,
         headers: { 'X-Api-Key': KEY as string, 'Content-Type': 'application/json', ...(init.headers || {}) },
     })
     if (!r.ok) throw new Error(`${path}: HTTP ${r.status}`)
-    return r.status === 200 && r.headers.get('content-length') !== '0'
-        ? (r.json() as Promise<T>) : (undefined as T)
+    const body = await r.text()
+    return (body ? JSON.parse(body) : undefined) as T
 }
 
+interface BlocklistItem { id: number; movieId: number; sourceTitle: string }
+interface QueueItem { movieId: number }
+
 async function main(): Promise<void> {
-    const films = db.prepare(
-        "SELECT id, title, radarr_id FROM films WHERE transcode_error LIKE '%sous-titres%' AND radarr_id IS NOT NULL",
-    ).all() as { id: number; title: string; radarr_id: number }[]
-    if (!films.length) { console.log('Aucun film rejeté pour sous-titres.'); return }
+    if (!IDS.length) { console.error('Rien à faire : passer --ids 1,2,3'); process.exit(1) }
 
-    const bl = await api<{ records: { id: number; movieId: number; sourceTitle: string }[] }>('/blocklist?pageSize=500')
-    const byMovie = new Map<number, typeof bl.records>()
-    for (const b of bl.records || []) {
-        if (!byMovie.has(b.movieId)) byMovie.set(b.movieId, [])
-        byMovie.get(b.movieId)!.push(b)
+    const bl = await api<{ records: BlocklistItem[] }>('/blocklist?pageSize=500')
+    const found = (bl.records || []).filter(b => IDS.includes(b.id))
+    const missing = IDS.filter(id => !found.some(b => b.id === id))
+    for (const id of missing) console.warn(`  ⚠️  blocklist id ${id} introuvable (déjà retirée ?)`)
+
+    const movieIds = [...new Set(found.map(b => b.movieId))]
+    for (const b of found) {
+        console.log(`  ${APPLY ? 'retrait' : '[à retirer]'} ${b.sourceTitle}`)
+        if (APPLY) await api(`/blocklist/${b.id}`, { method: 'DELETE' })
     }
+    if (!APPLY) { console.log('\nRien appliqué. Relancer avec --apply.'); return }
 
-    for (const f of films) {
-        const entries = byMovie.get(f.radarr_id) || []
-        console.log(`${f.title} — ${entries.length} entrée(s)`)
-        for (const b of entries) {
-            console.log(`  ${APPLY ? 'déblocage' : '[à débloquer]'} ${b.sourceTitle}`)
-            if (APPLY) await api(`/blocklist/${b.id}`, { method: 'DELETE' })
+    // Ne relancer une recherche QUE pour les films qui n'ont ni fichier ni
+    // téléchargement en cours : sinon Radarr pourrait abandonner une release déjà
+    // téléchargée à 100 % au profit d'une autre, et on paierait la bande passante
+    // deux fois pour rien.
+    const queue = await api<{ records: QueueItem[] }>('/queue?pageSize=200')
+    const busy = new Set((queue.records || []).map(q => q.movieId))
+    for (const movieId of movieIds) {
+        const m = await api<{ title: string; hasFile: boolean }>(`/movie/${movieId}`)
+        if (m.hasFile || busy.has(movieId)) {
+            console.log(`  ${m.title} : déjà servi (fichier ou téléchargement en cours) — pas de recherche`)
+            continue
         }
-        if (!APPLY) continue
-        // Le compteur de tentatives doit repartir de zéro : sinon les films
-        // rejetés 1 ou 2 fois atteindraient la limite dès la prochaine anomalie.
-        db.prepare("UPDATE films SET qc_attempts = 0, transcode_status = 'pending', transcode_error = NULL WHERE id = ?")
-            .run(f.id)
-        await api('/command', { method: 'POST', body: JSON.stringify({ name: 'MoviesSearch', movieIds: [f.radarr_id] }) })
-        console.log('  → compteur remis à zéro, recherche relancée')
+        await api('/command', { method: 'POST', body: JSON.stringify({ name: 'MoviesSearch', movieIds: [movieId] }) })
+        console.log(`  ${m.title} : recherche relancée`)
     }
-    if (!APPLY) console.log('\nRien appliqué. Relancer avec --apply.')
 }
 
 main().catch(err => { console.error('Erreur fatale :', err instanceof Error ? err.message : err); process.exit(1) })
