@@ -35,6 +35,10 @@ export interface EncodeProgress {
 export interface RemoteEncodeOptions {
     sourceHeight?: number | null
     sourceWidth?: number | null
+    // Étiquette HDR de la source ("HDR10 (PQ)", "HLG") — déclenche le tonemapping.
+    hdr?: string | null
+    sourceCodec?: string | null
+    sourcePixFmt?: string | null
     // Durée de la source (s), telle que rapportée par le conteneur. Sert de
     // garde-fou LARGE contre une source tronquée — voir minRatio.
     expectedDuration?: number | null
@@ -60,8 +64,90 @@ export interface RemoteEncodeOptions {
 // `force_original_aspect_ratio=decrease` fait tenir l'image dans la boîte en
 // gardant son ratio (3840×1608 → 1920×804), `force_divisible_by=2` garantit des
 // dimensions paires, exigées par yuv420p.
-export function remoteFfmpegCommand(sourceHeight?: number | null, sourceWidth?: number | null): string {
+export interface SourceInfo {
+    height?: number | null
+    width?: number | null
+    // Étiquette de transfert HDR ("HDR10 (PQ)", "HLG") ou null si SDR.
+    hdr?: string | null
+    codec?: string | null
+    pixFmt?: string | null
+}
+
+// La sortie est TOUJOURS du SDR BT.709, et doit le déclarer.
+//
+// ffmpeg recopie sinon les tags colorimétriques de la source : un H.264 8 bits
+// se retrouvait étiqueté `smpte2084`/`bt2020nc`, c'est-à-dire annoncé comme du
+// HDR10 alors qu'il n'en est plus. Sur un écran d'ordinateur ça passait inaperçu
+// (les lecteurs ne déclenchent leur traitement HDR que sur du HEVC/AV1 10 bits),
+// mais une TV HDR via Chromecast — usage central ici — honore ces tags et
+// bascule en mode HDR sur un fichier qui n'en est pas un.
+const SDR_TAGS = ['-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709']
+
+// NVDEC ne décode le H.264 QU'EN 8 BITS : le profil High 10 n'est pas géré (seuls
+// HEVC et AV1 le sont). Le décodeur refuse alors la trame et toute la chaîne tombe
+// sur AVERROR(ENOSYS) — vu sur Saving Private Ryan, qui sortait en « ssh code 218 »
+// sans autre explication. Pour ces sources, on décode sur le CPU du Spark et on
+// garde NVENC pour l'encodage : vérifié fonctionnel.
+function needsSoftwareDecode(src: SourceInfo): boolean {
+    return src.codec === 'h264' && !!src.pixFmt && src.pixFmt !== 'yuv420p'
+}
+
+export function remoteFfmpegCommand(src: SourceInfo = {}): string {
+    const sourceHeight = src.height
+    const sourceWidth = src.width
     const downscale = (!!sourceHeight && sourceHeight > MAX_HEIGHT) || (!!sourceWidth && sourceWidth > MAX_WIDTH)
+    const swDecode = needsSoftwareDecode(src)
+
+    if (src.hdr) return hdrCommand(src, downscale, swDecode)
+    if (swDecode) return softwareDecodeCommand(downscale)
+    return cudaCommand(downscale)
+}
+
+// Chaîne HDR → SDR. `tonemap_cuda` n'existe pas dans le ffmpeg du Spark et
+// l'interop CUDA→Vulkan y répond « Function not implemented », donc les trames
+// transitent par la mémoire système entre le décodeur et libplacebo. Coût mesuré
+// sur une source 10 bits : 6,0× contre 9,1× sans tonemapping, soit −34 %.
+// Sans cette conversion, les valeurs PQ sont lues comme du gamma SDR : image
+// délavée et couleurs BT.2020 interprétées en BT.709 (−27 % de saturation mesurés
+// sur Starship Troopers).
+function hdrCommand(src: SourceInfo, downscale: boolean, swDecode: boolean): string {
+    // `format=p010le` est obligatoire pour préserver les 10 bits jusqu'au
+    // tonemapper : passer par nv12 tronquerait à 8 bits AVANT la conversion, ce qui
+    // ruinerait précisément ce qu'on cherche à récupérer.
+    const download = swDecode ? [] : ['hwdownload', 'format=p010le']
+    const box = downscale ? `w=${MAX_WIDTH}:h=${MAX_HEIGHT}:force_original_aspect_ratio=decrease:` : ''
+    const chain = [
+        ...(swDecode ? ['format=p010le'] : download),
+        'hwupload',
+        `libplacebo=${box}tonemapping=bt.2390:colorspace=bt709:color_primaries=bt709:color_trc=bt709:format=yuv420p`,
+        'hwdownload',
+        'format=yuv420p',
+    ].join(',')
+    return [
+        'ffmpeg', '-hide_banner', '-nostdin', '-nostats', '-loglevel', 'error',
+        '-progress', 'pipe:2',
+        '-init_hw_device', 'vulkan=vk', '-filter_hw_device', 'vk',
+        ...(swDecode ? [] : ['-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda']),
+        '-i', 'pipe:0', '-vf', chain,
+        '-c:v', 'h264_nvenc', '-preset', PRESET, '-cq', String(CQ),
+        ...SDR_TAGS, '-f', 'matroska', 'pipe:1',
+    ].join(' ')
+}
+
+// Décodage CPU (H.264 10 bits), redimensionnement logiciel, encodage NVENC.
+function softwareDecodeCommand(downscale: boolean): string {
+    const scale = downscale
+        ? `scale=w=${MAX_WIDTH}:h=${MAX_HEIGHT}:force_original_aspect_ratio=decrease:force_divisible_by=2,format=yuv420p`
+        : 'format=yuv420p'
+    return [
+        'ffmpeg', '-hide_banner', '-nostdin', '-nostats', '-loglevel', 'error',
+        '-progress', 'pipe:2', '-i', 'pipe:0', '-vf', scale,
+        '-c:v', 'h264_nvenc', '-preset', PRESET, '-cq', String(CQ),
+        ...SDR_TAGS, '-f', 'matroska', 'pipe:1',
+    ].join(' ')
+}
+
+function cudaCommand(downscale: boolean): string {
     // `format=yuv420p` est OBLIGATOIRE, redimensionnement ou pas : h264_nvenc
     // n'encode qu'en 8 bits. Une source 10 bits (HEVC Main10, AV1 10 bits — très
     // répandues) fait sortir du décodeur des trames CUDA en p010 que l'encodeur
@@ -77,7 +163,7 @@ export function remoteFfmpegCommand(sourceHeight?: number | null, sourceWidth?: 
         '-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda', '-i', 'pipe:0',
         '-vf', scaleFilter,
         '-c:v', 'h264_nvenc', '-preset', PRESET, '-cq', String(CQ),
-        '-f', 'matroska', 'pipe:1',
+        ...SDR_TAGS, '-f', 'matroska', 'pipe:1',
     ].join(' ')
 }
 
@@ -111,7 +197,18 @@ function makeProgressParser(onProgress?: (p: EncodeProgress) => void) {
                     case 'speed': speed = parseFloat(value) || 0; break
                     case 'progress': onProgress?.({ outSeconds, fps, speed }); break
                     default:
-                        if (line.trim()) errorLines.push(line.trim())
+                        // Ne retenir comme erreur que ce qui n'appartient PAS au flux
+                        // `-progress`. Auparavant tout `clé=valeur` non traité y
+                        // atterrissait — `bitrate=`, `total_size=`, `dup_frames=`… —
+                        // et comme on ne garde que les 5 dernières lignes, ces clés
+                        // chassaient le vrai message. Sur Saving Private Ryan l'échec
+                        // se résumait à « bitrate=N/A | total_size=0 | out_time=N/A »,
+                        // alors que ffmpeg avait bien écrit « Function not
+                        // implemented » : il a fallu reproduire l'erreur à la main
+                        // pour la retrouver.
+                        if (line.trim() && !/^[A-Za-z0-9_]+=/.test(line.trim())) {
+                            errorLines.push(line.trim())
+                        }
                 }
             }
         },
@@ -130,7 +227,13 @@ export async function encodeVideoRemote(
     opts: RemoteEncodeOptions = {},
 ): Promise<number> {
     const tmp = `${dest}.part`
-    const remoteCmd = remoteFfmpegCommand(opts.sourceHeight, opts.sourceWidth)
+    const remoteCmd = remoteFfmpegCommand({
+        height: opts.sourceHeight,
+        width: opts.sourceWidth,
+        hdr: opts.hdr,
+        codec: opts.sourceCodec,
+        pixFmt: opts.sourcePixFmt,
+    })
 
     // Démux local : piste vidéo seule, sans réencodage.
     const demux = spawn('ffmpeg', [

@@ -330,7 +330,7 @@ export async function processFilm(filmId: number): Promise<void> {
                 log(`réencodage nécessaire — ${plan.reason}`)
                 const hdr = isHdrSource(streams)
                 if (hdr) {
-                    log(`⚠ source ${hdr} encodée en SDR sans tonemapping (indisponible sur le Spark) — image probablement délavée, à contrôler`)
+                    log(`source ${hdr} → tonemapping libplacebo vers BT.709 (environ −34 % de vitesse)`)
                 }
                 setStatus(filmId, 'transcoding_remote', 0)
                 log('encodage GPU distant (démux vidéo seule → pipe SSH → nvenc)…')
@@ -339,6 +339,9 @@ export async function processFilm(filmId: number): Promise<void> {
                 encodedDuration = await encodeVideoRemote(mkv, videoMkv, {
                     sourceHeight,
                     sourceWidth,
+                    hdr,
+                    sourceCodec: videoStream?.codec_name ?? null,
+                    sourcePixFmt: videoStream?.pix_fmt ?? null,
                     expectedDuration: sourceDuration,
                     onProgress: p => {
                         const pct = sourceDuration > 0 ? Math.min(100, (p.outSeconds / sourceDuration) * 100) : 0
