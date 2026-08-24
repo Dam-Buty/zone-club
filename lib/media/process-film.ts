@@ -38,6 +38,28 @@ async function exists(p: string): Promise<boolean> {
 // (il empêche seulement la suppression du MKV, voir releaseSource).
 const backupsInFlight = new Set<string>()
 
+// Les backups s'exécutent EN FILE, un seul à la fois.
+//
+// backupDone est délibérément non bloquant : le film est publié sans attendre sa
+// copie. Mais du coup, le film suivant démarrait la sienne pendant que la
+// précédente tournait encore, et rien ne les limitait. Sur vingt films d'affilée,
+// plusieurs copies SSHFS se disputaient le lien Hetzner et étranglaient tout le
+// reste — mesuré : 40 s pour le premier backup, 283 s, 1378 s, 4765 s, jusqu'à
+// 7307 s pour le dernier. Les colonnes de The Murderer le montrent bien
+// (enc=1379 aud=1378 sub=1378 bkp=1378 : quatre étapes au rythme du disque).
+//
+// Les sérialiser ne coûte rien puisqu'ils sont hors du chemin critique, et rend
+// le reste plus rapide.
+let backupChain: Promise<unknown> = Promise.resolve()
+
+function queueBackup<T>(task: () => Promise<T>): Promise<T> {
+    const run = backupChain.then(task, task)
+    // La chaîne ne doit jamais rester en état rejeté, sinon tous les backups
+    // suivants seraient court-circuités.
+    backupChain = run.catch(() => {})
+    return run
+}
+
 async function backupSource(mkv: string, mediaDir: string, title: string): Promise<{ ok: boolean; seconds: number }> {
     const log = (msg: string) => console.log(`[backup] "${title}": ${msg}`)
     const startedAt = Date.now()
@@ -215,7 +237,7 @@ export async function processFilm(filmId: number): Promise<void> {
 
         // Backup lancé maintenant, pas à la fin : il tourne pendant l'encodage.
         // On garde la promesse pour ne libérer la source qu'une fois la copie finie.
-        const backupDone = backupSource(mkv, mediaDir, film.title)
+        const backupDone = queueBackup(() => backupSource(mkv, mediaDir, film.title))
 
         // 3 + 4. Vidéo (GPU distant ou copie directe) et audio/sous-titres EN PARALLÈLE,
         //        puis remux final en copie pure.
