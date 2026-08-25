@@ -2,7 +2,7 @@ import { join } from 'path'
 import { mkdir, copyFile, rm, access, stat } from 'fs/promises'
 import { db } from '../db'
 import { getFilmById, updateFilmMedia } from '../films'
-import { getMovieStatus, setMonitored, rejectCurrentRelease } from '../radarr'
+import { getMovieStatus, setMonitored, rejectCurrentRelease, getQueue } from '../radarr'
 import { probeStreams } from './probe'
 import { identifyTracks } from './identify-tracks'
 import { isFrench } from './iso639'
@@ -465,16 +465,70 @@ const queue: number[] = []
 const active = new Set<number>()
 const MAX = Number(process.env.PROCESS_MAX_CONCURRENT || 1)
 
-export function enqueueProcessFilm(filmId: number): void {
-    if (queue.includes(filmId) || active.has(filmId)) return
-    queue.push(filmId)
-    drain()
+// Priorité aux téléchargements : aucun transcode ne démarre tant que Radarr
+// annonce trop de téléchargements en cours.
+//
+// Le transcode et le téléchargement se disputent les mêmes disques — la phase
+// d'extraction lit le MKV source sur phat-two pendant que les unpacks y écrivent.
+// Sur une grosse session de rattrapage, mieux vaut laisser passer les
+// téléchargements et transcoder ensuite, plutôt que de ralentir les deux.
+//
+// Deux seuils distincts, donc une hystérésis : on bloque AU-DESSUS de PAUSE_ABOVE
+// et on ne repart qu'EN DESSOUS de RESUME_BELOW. Sans cet écart, un compteur
+// oscillant autour d'une valeur unique ferait démarrer et bloquer les transcodes
+// en alternance.
+//
+// ATTENTION à la sémantique de Radarr : il marque `downloading` TOUT ce qui est
+// dans sa file, alors que SABnzbd n'en télécharge qu'un à la fois. Le compteur
+// reflète donc la profondeur de la file, pas le nombre de transferts simultanés.
+const PAUSE_ABOVE = Number(process.env.TRANSCODE_PAUSE_ABOVE || 2)
+const RESUME_BELOW = Number(process.env.TRANSCODE_RESUME_BELOW || 2)
+
+let throttled = false
+
+async function downloadGateOpen(): Promise<boolean> {
+    let n: number
+    try {
+        n = (await getQueue()).filter(q => q.status === 'downloading').length
+    } catch (err) {
+        // Radarr injoignable : on ne bloque pas le pipeline pour autant.
+        console.warn('[processFilm] file Radarr illisible, throttle ignoré:',
+            err instanceof Error ? err.message : String(err))
+        return true
+    }
+    if (throttled) {
+        if (n < RESUME_BELOW) {
+            console.log(`[processFilm] ${n} téléchargement(s) en cours — reprise des transcodes`)
+            throttled = false
+        }
+    } else if (n > PAUSE_ABOVE) {
+        console.log(`[processFilm] ${n} téléchargement(s) en cours (> ${PAUSE_ABOVE}) — transcodes suspendus`)
+        throttled = true
+    }
+    return !throttled
 }
 
-function drain(): void {
-    while (active.size < MAX && queue.length) {
-        const id = queue.shift()!
-        active.add(id)
-        processFilm(id).catch(() => {}).finally(() => { active.delete(id); drain() })
+export function enqueueProcessFilm(filmId: number): void {
+    // Le drain est tenté MÊME si le film est déjà en file : quand le throttle a
+    // bloqué, plus rien ne relancerait la file autrement, puisque le poller
+    // ré-enfile toujours les mêmes identifiants.
+    if (!queue.includes(filmId) && !active.has(filmId)) queue.push(filmId)
+    void drain()
+}
+
+let draining = false
+
+async function drain(): Promise<void> {
+    if (draining) return   // le gate est asynchrone : une seule vidange à la fois
+    draining = true
+    try {
+        while (active.size < MAX && queue.length) {
+            if (!(await downloadGateOpen())) break   // la file reste intacte
+            const id = queue.shift()!
+            active.add(id)
+            processFilm(id).catch(() => {}).finally(() => { active.delete(id); void drain() })
+        }
+    } finally {
+        draining = false
     }
 }
