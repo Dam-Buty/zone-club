@@ -58,3 +58,28 @@ test('audio sans tags: VO=première audio, pas de VF', () => {
   assert.equal(r.voAudioOrdinal, 0);
   assert.equal(r.vfAudioOrdinal, null);
 });
+
+// Irréversible : une piste VobSub proposée à l'extraction faisait échouer ffmpeg
+// (le conteneur .sup n'accepte que du PGS) et, depuis la passe unique, emportait
+// l'audio avec elle. Les VobSub doivent être signalés mais jamais candidats.
+test('VobSub signalé mais non candidat à l OCR', () => {
+  const r = identifyTracks([
+    { index: 0, codec_type: 'video', codec_name: 'h264' },
+    { index: 1, codec_type: 'audio', codec_name: 'dts', tags: { language: 'fre' } },
+    { index: 3, codec_type: 'subtitle', codec_name: 'dvd_subtitle', tags: { language: 'eng' } },
+    { index: 4, codec_type: 'subtitle', codec_name: 'subrip', tags: { language: 'eng' } },
+  ], 'fr');
+  assert.equal(r.imageSubsFlagged, true, 'la piste image doit être signalée');
+  assert.deepEqual(r.imageSubs, [], 'un VobSub ne doit pas être candidat OCR');
+  assert.equal(r.textSubs.length, 1);
+});
+
+test('PGS reste candidat à l OCR', () => {
+  const r = identifyTracks([
+    { index: 0, codec_type: 'video', codec_name: 'h264' },
+    { index: 1, codec_type: 'audio', codec_name: 'ac3', tags: { language: 'fre' } },
+    { index: 2, codec_type: 'subtitle', codec_name: 'hdmv_pgs_subtitle', tags: { language: 'fre' } },
+  ], 'en');
+  assert.equal(r.imageSubs.length, 1);
+  assert.equal(r.imageSubs[0].lang, 'fr');
+});

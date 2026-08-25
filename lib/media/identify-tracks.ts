@@ -29,6 +29,18 @@ export interface TrackIdentification {
 const TEXT_SUB_CODECS = new Set(['subrip', 'srt', 'ass', 'ssa', 'mov_text', 'webvtt', 'text']);
 const IMAGE_SUB_CODECS = new Set(['hdmv_pgs_subtitle', 'dvd_subtitle', 'dvb_subtitle', 'pgssub']);
 
+// Parmi les sous-titres image, SEUL le PGS est récupérable par notre chaîne :
+// l'extraction passe par un conteneur `.sup`, qui n'accepte que ce format, et
+// pgsrip ne sait lire que lui.
+//
+// Sur Irréversible, une piste `dvd_subtitle` (VobSub) proposée à l'extraction
+// faisait échouer ffmpeg — « Error submitting a packet to the muxer: Invalid data
+// found » — et, depuis que l'audio et les sous-titres partagent une seule passe,
+// entraînait l'audio dans sa chute. Les VobSub restent donc signalés mais ne sont
+// pas offerts à l'OCR, et ne comptent pas non plus au contrôle qualité : une piste
+// qu'on ne sait pas convertir n'est pas une piste de sous-titres utilisable.
+const OCR_SUB_CODECS = new Set(['hdmv_pgs_subtitle', 'pgssub']);
+
 export function identifyTracks(streams: ProbeStream[], originalLanguage: string | null): TrackIdentification {
   const audio = streams.filter(s => s.codec_type === 'audio');
   const subs = streams.filter(s => s.codec_type === 'subtitle');
@@ -54,11 +66,11 @@ export function identifyTracks(streams: ProbeStream[], originalLanguage: string 
     // et Naked Gun n'ont QUE du PGS, et étaient donc refusés faute de sous-titres
     // alors qu'ils en portaient. Sur Gran Torino, la seule piste texte française
     // est la piste forcée : la version complète n'existe qu'en PGS.
-    const target = IMAGE_SUB_CODECS.has(codec) ? imageSubs
+    if (IMAGE_SUB_CODECS.has(codec)) imageSubsFlagged = true;
+    const target = OCR_SUB_CODECS.has(codec) ? imageSubs
       : TEXT_SUB_CODECS.has(codec) ? textSubs
         : null;
     if (!target) continue;
-    if (target === imageSubs) imageSubsFlagged = true;
     if (isFrench(lang)) target.push({ lang: 'fr', streamIndex: s.index, codec, title });
     else if (isEnglish(lang)) target.push({ lang: 'en', streamIndex: s.index, codec, title });
   }
