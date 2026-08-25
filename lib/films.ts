@@ -30,6 +30,8 @@ export interface Film {
     subtitle_en_vtt: string | null;
     subtitle_en_srt: string | null;
     qc_attempts: number;
+    /** Laissez-passer manuel : 1 = le contrôle qualité est ignoré pour ce film. */
+    qc_force: number;
     aisle: string | null;
     is_nouveaute: boolean;
     is_available: boolean;

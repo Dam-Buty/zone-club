@@ -227,6 +227,15 @@ export async function processFilm(filmId: number): Promise<void> {
         const alreadyPublished = film.transcode_status === 'done' && (await exists(voMp4))
         if (alreadyPublished) {
             log('film déjà publié depuis cette release — contrôle qualité non rejoué')
+        } else if (film.qc_force) {
+            // Laissez-passer manuel : certains films n'ont aucune release conforme
+            // (pas de VF, pas de sous-titres français) et valent quand même d'être
+            // servis. Sans ce drapeau, chaque tentative serait rejetée et
+            // blacklistée jusqu'à épuisement du compteur, laissant le film absent.
+            const verdict = checkRelease(tracks, film.original_language)
+            log(verdict.ok
+                ? 'qc_force actif — contrôle qualité contourné (release conforme de toute façon)'
+                : `qc_force actif — release acceptée MALGRÉ: ${verdict.missing.join(', ')}`)
         } else {
             const verdict = checkRelease(tracks, film.original_language)
             if (!verdict.ok) {
