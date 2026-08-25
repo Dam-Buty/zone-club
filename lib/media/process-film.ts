@@ -8,7 +8,7 @@ import { identifyTracks } from './identify-tracks'
 import { isFrench } from './iso639'
 import { mediaDirFromMoviePath } from './media-dir'
 import { encodeVideoRemote } from './remote-encode'
-import { encodeAudioTracks, remuxOutputs, extractSubs, type AudioTarget, type RemuxTarget } from './ffmpeg-ops'
+import { extractAudioAndSubs, remuxOutputs, type AudioTarget, type RemuxTarget } from './ffmpeg-ops'
 import { planVideo, estimateVideoBitrate, isHdrSource } from './video-plan'
 import { checkRelease, maxQcAttempts } from './quality-control'
 import { startRun, patchRun, finishRun } from './run-stats'
@@ -265,56 +265,53 @@ export async function processFilm(filmId: number): Promise<void> {
             sideAbortRef = sideAbort
             const audioTargets: AudioTarget[] = [{ out: voAac, audioOrdinal: tracks.voAudioOrdinal }]
             if (wantVf) audioTargets.push({ out: vfAac, audioOrdinal: tracks.vfAudioOrdinal! })
-            const audioJob = (async () => {
+            // Audio et sous-titres sortent d'une SEULE lecture du MKV.
+            //
+            // Deux passes séparées, même lancées en parallèle, faisaient deux
+            // curseurs de lecture sur le même fichier — trois avec le démux qui
+            // alimente le GPU. Sur un plateau mécanique, ces flux séquentiels
+            // entrelacés dégénèrent en accès aléatoire : mesuré à 19 Mo/s pour un
+            // disque occupé à 100 %, pendant qu'un unrar tentait d'y écrire.
+            const sideJob = (async () => {
                 const t = Date.now()
                 const todo = await Promise.all(audioTargets.map(async t => (await exists(t.out)) ? null : t))
-                const missing = todo.filter((t): t is AudioTarget => t !== null)
-                if (missing.length) {
-                    log(`encodage audio ${missing.length} piste(s) → AAC stéréo (en parallèle de la vidéo)…`)
-                    await encodeAudioTracks(mkv, missing, sideAbort.signal)
-                    log('audio encodé')
-                    patchRun(runId, { audio_seconds: (Date.now() - t) / 1000 })
-                } else {
-                    log('audio déjà encodé — étape sautée')
-                }
-            })()
-
-            const subsJob = (async () => {
-                // Les pistes image partent avec les autres : elles sont extraites en
-                // .sup dans la même passe, puis converties par OCR seulement si la
-                // piste texte de la langue manque ou ressemble à une piste forcée.
+                const missingAudio = todo.filter((t): t is AudioTarget => t !== null)
+                // Les pistes image partent avec les autres : extraites en .sup dans
+                // la même passe, puis converties par OCR seulement si la piste texte
+                // de la langue manque ou ressemble à une piste forcée.
                 const subCandidates = [
                     ...tracks.textSubs.map(s => ({ ...s, kind: 'text' as const })),
                     ...tracks.imageSubs.map(s => ({ ...s, kind: 'image' as const })),
                 ]
-                if (!subCandidates.length) return
-                const t = Date.now()
+                if (!missingAudio.length && !subCandidates.length) {
+                    log('audio et sous-titres déjà présents — étape sautée')
+                    return
+                }
                 const nImg = tracks.imageSubs.length
-                log(`extraction de ${subCandidates.length} piste(s) sub candidate(s) en une passe…`
-                    + (nImg ? ` (dont ${nImg} image, OCR si nécessaire)` : ''))
-                const kept = await extractSubs(mkv, subCandidates, outDir, sideAbort.signal)
+                log(`passe unique: ${missingAudio.length} piste(s) audio + ${subCandidates.length} sub(s)`
+                    + (nImg ? ` (dont ${nImg} image, OCR si nécessaire)` : '')
+                    + ' — en parallèle de la vidéo…')
+                const kept = await extractAudioAndSubs(mkv, missingAudio, subCandidates, outDir, sideAbort.signal)
                 for (const s of kept) {
                     log(`sub ${s.lang}: ${s.cues} cues retenues`)
                     subCols[`subtitle_${s.lang}_srt`] = `${mediaDir}/sub.${s.lang}.srt`
                     subCols[`subtitle_${s.lang}_vtt`] = `${mediaDir}/sub.${s.lang}.vtt`
                 }
+                // Les deux colonnes reçoivent la durée de la passe commune : elles ne
+                // sont plus séparables, et la renseigner deux fois vaut mieux que de
+                // laisser un trou dans l'historique.
+                const seconds = (Date.now() - t) / 1000
                 patchRun(runId, {
-                    subs_seconds: (Date.now() - t) / 1000,
+                    audio_seconds: seconds,
+                    subs_seconds: seconds,
                     sub_langs: kept.map(s => s.lang).join('+') || null,
                 })
             })()
 
-            // Audio et sous-titres côte à côte, pas l'un après l'autre : ils ne
-            // dépendent que du MKV source. Enchaînés, l'extraction ne démarrait
-            // qu'à la fin de l'audio et débordait de la fenêtre d'encodage — 109 s
-            // ajoutées au chemin critique sur Interstellar.
-            // allSettled plutôt que all : si l'un échoue, l'autre garde un
-            // gestionnaire et ne remonte pas en rejet non géré.
-            const sideWork = (async () => {
-                const results = await Promise.allSettled([audioJob, subsJob])
-                const failed = results.find(r => r.status === 'rejected')
-                if (failed) throw (failed as PromiseRejectedResult).reason
-            })()
+            // La passe latérale ne dépend que du MKV source, donc elle tourne
+            // pendant l'encodage GPU au lieu de s'y ajouter — c'est ce qui avait
+            // retiré 109 s du chemin critique sur Interstellar.
+            const sideWork = sideJob
             // Sans ce catch immédiat, un échec de la branche parallèle remonterait en
             // rejet non géré pendant qu'on attend la vidéo.
             let sideError: unknown = null

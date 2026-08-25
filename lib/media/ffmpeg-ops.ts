@@ -70,13 +70,7 @@ function runFfmpeg(cmd: ReturnType<typeof ffmpeg>, signal?: AbortSignal): Promis
 //
 // Vérifié bit à bit : l'audio produit par ce détour via un .m4a intermédiaire est
 // rigoureusement identique à celui d'un mux direct (différence à -inf dB).
-export async function encodeAudioTracks(
-    mkv: string,
-    targets: AudioTarget[],
-    signal?: AbortSignal,
-): Promise<void> {
-    if (targets.length === 0) return
-    const cmd = ffmpeg().input(mkv)
+function addAudioOutputs(cmd: ReturnType<typeof ffmpeg>, targets: AudioTarget[]): void {
     for (const t of targets) {
         cmd.output(`${t.out}.part`).outputOptions([
             '-y', '-vn', '-sn', '-dn',
@@ -86,6 +80,16 @@ export async function encodeAudioTracks(
             '-c:a', 'aac', '-ac', AUDIO_CHANNELS, '-b:a', AUDIO_BITRATE,
         ])
     }
+}
+
+export async function encodeAudioTracks(
+    mkv: string,
+    targets: AudioTarget[],
+    signal?: AbortSignal,
+): Promise<void> {
+    if (targets.length === 0) return
+    const cmd = ffmpeg().input(mkv)
+    addAudioOutputs(cmd, targets)
     try {
         await runFfmpeg(cmd, signal)
     } catch (err) {
@@ -154,13 +158,27 @@ async function countCues(path: string): Promise<number> {
 // Pourquoi une seule passe : extraire une piste oblige ffmpeg à démuxer tout le
 // MKV. Avec N passes on relisait N fois un fichier de plusieurs Go ; ici on le lit
 // une fois et on écrit N sorties.
-export async function extractSubs(
+// Extrait audio ET sous-titres en UNE SEULE lecture du MKV.
+//
+// Les deux étapes lisaient auparavant le fichier chacune de leur côté, en
+// parallèle. Avec le démux qui alimente l'encodage GPU, ça faisait TROIS curseurs
+// de lecture sur le même fichier de plusieurs Go — et sur un plateau mécanique,
+// trois flux séquentiels entrelacés deviennent de l'accès aléatoire. Mesuré à
+// l'œuvre : `phat-two` occupé à 100 % pour seulement 19 Mo/s de lecture, pendant
+// qu'un unrar tentait d'y écrire.
+//
+// Une passe unique à N sorties ramène le pipeline à deux lecteurs. C'est le même
+// procédé que celui déjà employé pour les pistes de sous-titres entre elles et
+// pour les deux pistes audio, et il ne coûte rien au recouvrement : la passe reste
+// lancée en parallèle de l'encodage GPU.
+export async function extractAudioAndSubs(
     mkv: string,
+    audioTargets: AudioTarget[],
     candidates: SubCandidate[],
     outDir: string,
     signal?: AbortSignal,
 ): Promise<ExtractedSub[]> {
-    if (candidates.length === 0) return []
+    if (audioTargets.length === 0 && candidates.length === 0) return []
 
     const textCands = candidates.filter(c => c.kind !== 'image')
     const imageCands = candidates.filter(c => c.kind === 'image')
@@ -168,12 +186,11 @@ export async function extractSubs(
     const tmpOf = (c: SubCandidate) => join(outDir, `.sub-cand.${c.lang}.${c.streamIndex}.vtt`)
     const supOf = (c: SubCandidate) => join(outDir, `.sub-cand.${c.lang}.${c.streamIndex}.sup`)
 
-    // Une seule lecture du MKV pour tout le monde : les pistes texte sortent en
-    // WebVTT, les pistes image en .sup par simple copie de flux. Sortir les .sup
-    // ici ne coûte presque rien (aucun décodage), alors qu'une passe séparée
-    // relirait tout le fichier — et sur ce disque, saturé par les téléchargements,
-    // relire 15 Go se paie en minutes.
+    // Les pistes texte sortent en WebVTT, les pistes image en .sup par simple copie
+    // de flux (aucun décodage, donc quasi gratuit), l'audio en AAC — le tout depuis
+    // la même entrée.
     const pass = ffmpeg(mkv)
+    addAudioOutputs(pass, audioTargets)
     for (const c of textCands) {
         pass.output(tmpOf(c)).outputOptions([
             '-y', '-f', 'webvtt', '-c:s', 'webvtt', '-map', `0:${c.streamIndex}`,
@@ -184,7 +201,15 @@ export async function extractSubs(
             '-y', '-f', 'sup', '-c:s', 'copy', '-map', `0:${c.streamIndex}`,
         ])
     }
-    await runFfmpeg(pass, signal)
+    try {
+        await runFfmpeg(pass, signal)
+    } catch (err) {
+        await Promise.all(audioTargets.map(t => rm(`${t.out}.part`, { force: true }).catch(() => {})))
+        throw err
+    }
+    // L'audio n'est publié qu'une fois la passe entière réussie : un .part promu
+    // trop tôt serait pris pour un fichier valide au prochain passage.
+    await Promise.all(audioTargets.map(t => rename(`${t.out}.part`, t.out)))
 
     const scored = await Promise.all(
         textCands.map(async c => ({ ...c, tmp: tmpOf(c), cues: await countCues(tmpOf(c)) })),
