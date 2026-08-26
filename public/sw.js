@@ -3,7 +3,12 @@
 // (posters are served by /api/poster proxy with HTTP Cache-Control: max-age=2592000 immutable,
 // so the browser HTTP cache handles them — duplicating in SW cache wasted ~58 MB on mobile).
 // Bump VERSION on every deploy to invalidate stale caches.
-const VERSION = 'v5'
+// v6 : le catalogue est passé de 18 à 127 films sans que cette version soit
+// touchée, donc les navigateurs servaient un cache `zone-club-v5` figé sur un état
+// antérieur au reset de la base — au point d'afficher encore des films devenus
+// indisponibles. Le bump supprime les anciens caches à l'activation (voir
+// l'événement `activate` plus bas).
+const VERSION = 'v6'
 const CACHE_NAME = `zone-club-${VERSION}`
 
 // Assets to pre-cache on install (critical path)
