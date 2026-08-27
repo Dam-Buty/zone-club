@@ -114,12 +114,22 @@ function hdrCommand(src: SourceInfo, downscale: boolean, swDecode: boolean): str
     // `format=p010le` est obligatoire pour préserver les 10 bits jusqu'au
     // tonemapper : passer par nv12 tronquerait à 8 bits AVANT la conversion, ce qui
     // ruinerait précisément ce qu'on cherche à récupérer.
-    const download = swDecode ? [] : ['hwdownload', 'format=p010le']
-    const box = downscale ? `w=${MAX_WIDTH}:h=${MAX_HEIGHT}:force_original_aspect_ratio=decrease:` : ''
+    //
+    // Le redimensionnement se fait AVANT le téléversement Vulkan, et pas dans
+    // libplacebo. Une source 4K téléversée entière (3840×2078 en 10 bits) épuise la
+    // mémoire du Spark dès que vLLM en occupe la majeure partie — mémoire unifiée
+    // sur GB10 — et l'encodage meurt sur « VK_ERROR_DEVICE_LOST / Cannot allocate
+    // memory ». Les Misérables a bouclé une nuit entière là-dessus. Réduire d'abord
+    // côté CUDA divise par quatre la mémoire Vulkan nécessaire, et accélère au
+    // passage puisqu'il y a moins de pixels à tonemapper (mesuré 4,5× sur le
+    // segment qui échouait).
+    const box = `w=${MAX_WIDTH}:h=${MAX_HEIGHT}:force_original_aspect_ratio=decrease:force_divisible_by=2`
+    const preScale = downscale ? [swDecode ? `scale=${box}` : `scale_cuda=${box}`] : []
     const chain = [
-        ...(swDecode ? ['format=p010le'] : download),
+        ...preScale,
+        ...(swDecode ? ['format=p010le'] : ['hwdownload', 'format=p010le']),
         'hwupload',
-        `libplacebo=${box}tonemapping=bt.2390:colorspace=bt709:color_primaries=bt709:color_trc=bt709:format=yuv420p`,
+        'libplacebo=tonemapping=bt.2390:colorspace=bt709:color_primaries=bt709:color_trc=bt709:format=yuv420p',
         'hwdownload',
         'format=yuv420p',
     ].join(',')
