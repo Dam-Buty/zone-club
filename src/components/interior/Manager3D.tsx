@@ -81,6 +81,9 @@ export function Manager3D({ position, rotation = [0, 0, 0], onInteract }: Manage
     groupRef.current.position.y = position[1] + breathe
   })
 
+  // Jamais appelé : aucun événement pointer ne remonte jusqu'ici en pointer lock, et l'unique site
+  // d'appel (Aisle.tsx) ne passe pas onInteract.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const handleClick = useCallback(() => {
     if (onInteract) {
       onInteract()

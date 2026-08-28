@@ -1,7 +1,7 @@
 import { db } from './db';
 import { fetchFullMovieData } from './tmdb';
 import { addMovie as addToRadarr } from './radarr';
-import { RENTAL_COSTS, RENTAL_DURATIONS, type RentalTier } from '../src/types';
+import { type RentalTier } from '../src/types';
 
 export interface Film {
     id: number;

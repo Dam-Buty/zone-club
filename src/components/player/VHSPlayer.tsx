@@ -70,8 +70,14 @@ export function VHSPlayer() {
   const [isAirPlayConnected, setIsAirPlayConnected] = useState(false);
   const [showMobileRemotePrompt, setShowMobileRemotePrompt] = useState(false);
 
-  // Push notification state
+  // Push notification state.
+  // ⚠️ Rien ne lit ces états et rien n'appelle handleEnablePushNotifications plus bas : c'est le SEUL
+  // chemin d'abonnement Web Push du client, donc la table push_subscriptions ne peut pas se remplir et
+  // la notification « film terminé sur la TV » n'a personne à qui parler. Le backend (VAPID, lib/push.ts,
+  // nettoyage des 410/404) est complet — il manque le bouton qui déclenche l'abonnement.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- feature non branchée, voir ci-dessus
   const [pushSubscribed, setPushSubscribed] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- idem
   const [pushPromptDismissed, setPushPromptDismissed] = useState(false);
 
   // Overlay auto-hide (4s inactivity)
@@ -936,7 +942,9 @@ export function VHSPlayer() {
     void handleCastCurrentVideo();
   }, [isAirPlaySupported, handleCastCurrentVideo, handleAirPlayPicker]);
 
-  // Push notification subscription handler
+  // Push notification subscription handler — aucun appelant, voir la note sur pushSubscribed en haut
+  // du composant.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const handleEnablePushNotifications = useCallback(async () => {
     try {
       const permission = await Notification.requestPermission();

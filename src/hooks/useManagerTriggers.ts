@@ -1,6 +1,5 @@
 import { useEffect, useRef } from 'react';
 import { useStore } from '../store';
-import type { AisleType } from '../types';
 
 const CASSETTE_HOVER_TRIGGER_MS = 30000;
 const HESITATION_WINDOW_MS = 60000;

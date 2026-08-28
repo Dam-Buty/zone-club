@@ -244,7 +244,6 @@ export function Controls({
   const setTargetedFilm = useStore((state) => state.setTargetedFilm);
   const setPointerLocked = useStore((state) => state.setPointerLocked);
   const showManager = useStore((state) => state.showManager);
-  const openTerminal = useStore((state) => state.openTerminal);
   const requestPointerUnlock = useStore((state) => state.requestPointerUnlock);
   const pointerLockRequested = useStore((state) => state.pointerLockRequested);
   const clearPointerLockRequest = useStore(

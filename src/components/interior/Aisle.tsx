@@ -170,8 +170,7 @@ function PrivateSign({ position }: { position: [number, number, number] }) {
   )
 }
 
-function MergedWalls({ wallTextures, roomWidth, roomDepth, roomHeight }: {
-  wallTextures: Record<string, THREE.Texture>
+function MergedWalls({ roomWidth, roomDepth, roomHeight }: {
   roomWidth: number
   roomDepth: number
   roomHeight: number
@@ -568,8 +567,6 @@ export const Aisle = memo(function Aisle({ films, filmsByAisle }: AisleProps) {
   // Sol — Carrelage Kent octogone+cabochon noir 33×33cm (procédural Canvas2D)
   // 9m / 0.33m ≈ 27 carreaux en X, 8.5m / 0.33m ≈ 26 en Y
   const floorTextures = useMemo(() => generateKentTileTextures(27, 26, 256, 6), [])
-  // Textures PBR - Murs (alignées sur la matière perçue depuis la devanture)
-  const wallTextures = usePBRTextures('/textures/storefront', 4, 1.5, true)
   // Textures PBR - Bois (pour comptoir)
   const woodTextures = usePBRTextures('/textures/wood', 2, 1)
 
@@ -696,9 +693,7 @@ export const Aisle = memo(function Aisle({ films, filmsByAisle }: AisleProps) {
   }, [films])
 
   const leftLongLength = (3.5 - SECTION_GAP) / 2
-  const leftLongOffset = leftLongLength / 2 + SECTION_GAP / 2
   const leftMediumLength = (2.5 - SECTION_GAP) / 2
-  const leftMediumOffset = leftMediumLength / 2 + SECTION_GAP / 2
   const leftEqualSectionLength = (leftLongLength + leftMediumLength) / 2
   const leftEqualSectionOffset = leftEqualSectionLength / 2 + SECTION_GAP / 2
   const horreurExtraWidth = WALL_CASSETTE_SPACING
@@ -794,11 +789,6 @@ export const Aisle = memo(function Aisle({ films, filmsByAisle }: AisleProps) {
       [0.05, ISLAND_SHELF_PEDESTAL_HEIGHT, -0.2], [0, 0, 0], sfIslandLeft, classiquesIslandRight, 'island2'
     ))
 
-    // DEBUG: count cassettes per section
-    const islandLeft = all.filter(c => c.cassetteKey.startsWith('island-left'))
-    const islandRight = all.filter(c => c.cassetteKey.startsWith('island-right'))
-    const island2Left = all.filter(c => c.cassetteKey.startsWith('island2-left'))
-    const island2Right = all.filter(c => c.cassetteKey.startsWith('island2-right'))
     // Publish positions to global registry for the minitel CassetteHighlight,
     // and a filmId→cassetteKey map for the minitel detail screen lookup.
     setCassetteRegistry(all.map((c) => ({ cassetteKey: c.cassetteKey, worldPosition: c.worldPosition })))
@@ -852,7 +842,6 @@ export const Aisle = memo(function Aisle({ films, filmsByAisle }: AisleProps) {
 
       {/* 3 murs (nord + gauche + droit) fusionnés en 1 mesh — mergeGeometries */}
       <MergedWalls
-        wallTextures={wallTextures}
         roomWidth={ROOM_WIDTH}
         roomDepth={ROOM_DEPTH}
         roomHeight={ROOM_HEIGHT}

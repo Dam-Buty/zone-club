@@ -14,6 +14,9 @@ export function ServiceBell({ position, rotation = [0, 0, 0] }: ServiceBellProps
   const bellRef = useRef<THREE.Group>(null)
   const arrowRef = useRef<THREE.Group>(null)
   const [isPressed, setIsPressed] = useState(false)
+  // setIsHovered n'a pas d'appelant : le survol de la clochette n'est pas branché sur le raycaster de
+  // Controls (leçon « Ciblage FPS » d'AGENTS.md), donc isHovered reste false et le glow ne s'allume jamais.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [isHovered, setIsHovered] = useState(false)
 
   const timeRef = useRef(0)
@@ -66,6 +69,9 @@ export function ServiceBell({ position, rotation = [0, 0, 0] }: ServiceBellProps
     }
   })
 
+  // Jamais appelé : la clochette n'est pas enregistrée auprès du raycaster de Controls, donc sonner le
+  // gérant est aujourd'hui impossible depuis la scène 3D.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const handleClick = () => {
     if (isPressed) return
 

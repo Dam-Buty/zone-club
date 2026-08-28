@@ -443,7 +443,6 @@ function LaZoneWatchingOverlay() {
 // Navigation hints auto-hide policy
 const NAV_HELP_DURATION = 30000
 const NAV_HELP_FADE_MS = 800
-const MOBILE_AIM_HINT_DELAY = 1200
 const URL_BENCHMARK_MODE = typeof window !== 'undefined'
   && new URLSearchParams(window.location.search).get('benchmark') === '1'
 
@@ -502,31 +501,6 @@ function UIOverlays({ isMobile }: { isMobile: boolean }) {
       clearTimeout(hideTimer)
     }
   }, [overlaysEnabled, isMobile, isPointerLocked, isTerminalOpen, selectedFilmId])
-
-  // Mobile aim hint: guaranteed display, then fade out after 30s
-  const [showAimHint, setShowAimHint] = useState(false)
-  const [aimHintFading, setAimHintFading] = useState(false)
-
-  useEffect(() => {
-    if (!overlaysEnabled || !isMobile || !isPointerLocked) {
-      setShowAimHint(false)
-      setAimHintFading(false)
-      return
-    }
-    setShowAimHint(false)
-    setAimHintFading(false)
-    const showTimer = setTimeout(() => setShowAimHint(true), MOBILE_AIM_HINT_DELAY)
-    const fadeTimer = setTimeout(
-      () => setAimHintFading(true),
-      MOBILE_AIM_HINT_DELAY + NAV_HELP_DURATION - NAV_HELP_FADE_MS
-    )
-    const hideTimer = setTimeout(() => setShowAimHint(false), MOBILE_AIM_HINT_DELAY + NAV_HELP_DURATION)
-    return () => {
-      clearTimeout(showTimer)
-      clearTimeout(fadeTimer)
-      clearTimeout(hideTimer)
-    }
-  }, [overlaysEnabled, isMobile, isPointerLocked])
 
   const handleCloseTerminal = useCallback(() => {
     closeTerminal()

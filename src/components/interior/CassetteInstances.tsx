@@ -4,7 +4,7 @@ import * as THREE from 'three/webgpu'
 import {
   texture, uv, attribute,
   Fn, instanceIndex, deltaTime, instancedArray,
-  uniform, mix, min, vec3, vec2, positionLocal, float, step,
+  uniform, mix, vec3, vec2, positionLocal, float, step,
   abs, cos, sin,
 } from 'three/tsl'
 import { CassetteTextureAtlas, type CassetteInstanceData } from '../../utils/CassetteTextureArray'

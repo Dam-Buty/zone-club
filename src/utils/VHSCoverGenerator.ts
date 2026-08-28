@@ -405,25 +405,6 @@ function wrapText(
   return lines;
 }
 
-function drawStars(
-  ctx: CanvasRenderingContext2D,
-  rating: number,
-  x: number,
-  y: number,
-  size: number,
-) {
-  const fullStars = Math.floor(rating / 2);
-  const halfStar = (rating / 2) % 1 >= 0.5;
-  for (let i = 0; i < 5; i++) {
-    ctx.fillStyle =
-      i < fullStars || (i === fullStars && halfStar)
-        ? "#ffd700"
-        : "rgba(255,215,0,0.2)";
-    ctx.font = `${size}px sans-serif`;
-    ctx.fillText("\u2605", x + i * (size + 2), y);
-  }
-}
-
 async function loadImage(url: string): Promise<HTMLImageElement> {
   try {
     return await preloadPosterImage(url);
@@ -620,31 +601,6 @@ function roundRect(
   ctx.lineTo(x, y + r);
   ctx.quadraticCurveTo(x, y, x + r, y);
   ctx.closePath();
-}
-
-/** Draw runtime indicator bar */
-function drawRuntimeBar(
-  ctx: CanvasRenderingContext2D,
-  runtime: number | null,
-  x: number,
-  y: number,
-  maxW: number,
-  accentColor: string,
-) {
-  if (!runtime) return;
-  const barH = 4;
-  // Background track
-  ctx.fillStyle = "rgba(255,255,255,0.1)";
-  ctx.fillRect(x, y, maxW, barH);
-  // Fill proportional to runtime (scale: 60min=30%, 180min=100%)
-  const ratio = Math.min(1, runtime / 180);
-  ctx.fillStyle = accentColor;
-  ctx.fillRect(x, y, Math.round(maxW * ratio), barH);
-  // Label
-  ctx.font = "8px sans-serif";
-  ctx.fillStyle = "rgba(255,255,255,0.5)";
-  ctx.textAlign = "right";
-  ctx.fillText(`${runtime} min`, x + maxW, y + barH + 9);
 }
 
 /** Enable subtle text shadow for readability */
@@ -938,17 +894,6 @@ function drawLogoAdaptive(
   } else {
     ctx.drawImage(img, x, y, w, h);
   }
-}
-
-/** Awards badge based on vote_average (proxy for critical acclaim) */
-function getAwardsText(film: Film): string | null {
-  const vc = film.vote_count || 0;
-  if (film.vote_average >= 8.5 && vc >= 5000)
-    return "CHEF-D'\u0152UVRE DU CIN\u00c9MA";
-  if (film.vote_average >= 8.0 && vc >= 2000)
-    return "ACCLAM\u00c9 PAR LA CRITIQUE";
-  if (film.vote_average >= 7.5 && vc >= 3000) return "RECOMMAND\u00c9";
-  return null;
 }
 
 // ---- Data types ----

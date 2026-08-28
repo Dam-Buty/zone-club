@@ -46,7 +46,7 @@ function ReviewReader({ review, filmTitle, totalReviews, currentIndex, onNavigat
   }, [onClose, onNavigate, currentIndex, totalReviews]);
 
   // Swipe left/right to navigate between reviews (mobile)
-  const bind = useDrag(({ movement: [mx], direction: [dx], velocity: [vx], last, cancel }) => {
+  const bind = useDrag(({ movement: [mx], direction: [dx], velocity: [vx], last }) => {
     if (!last) return;
     const threshold = 50;
     if (Math.abs(mx) < threshold && vx < 0.3) return;

@@ -373,9 +373,6 @@ function App() {
     return () => window.removeEventListener('beforeinstallprompt', handler);
   }, []);
 
-  // Transition state
-  const [isTransitioning, setIsTransitioning] = useState(false);
-
   // Loading screen: minimum 2s visible + fade-out
   const [loadingDismissed, setLoadingDismissed] = useState(false);
   const [loaderCanFade, setLoaderCanFade] = useState(false);
@@ -506,11 +503,7 @@ function App() {
   }, [selectFilm, requestPointerLock]);
 
   const handleEnterStore = useCallback(() => {
-    setIsTransitioning(true);
-    setTimeout(() => {
-      setScene('interior');
-      setIsTransitioning(false);
-    }, 100);
+    setTimeout(() => setScene('interior'), 100);
   }, [setScene]);
 
   // WebGPU support gate — runs AFTER all hooks so hook order stays stable

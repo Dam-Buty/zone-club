@@ -43,11 +43,6 @@ const vcrSeparationMat = new THREE.MeshStandardMaterial({
   roughness: 0.8,
   metalness: 0.0,
 })
-const vcrDoorMat = new THREE.MeshStandardMaterial({
-  color: '#1a1a1e',
-  roughness: 0.85,
-  metalness: 0.0,
-})
 // Fente K7: tons proches du body (#5a5862) mais légèrement plus sombres
 const vcrFenteFrameMat = new THREE.MeshStandardMaterial({
   color: '#4a4852',
@@ -164,38 +159,10 @@ const tvBodyMat = new THREE.MeshStandardMaterial({
   roughness: 0.5,
   metalness: 0.05,
 })
-const tvPanelMat = new THREE.MeshStandardMaterial({
-  color: '#1c1a22',
-  roughness: 0.65,
-  metalness: 0.05,
-})
-const tvButtonMat = new THREE.MeshStandardMaterial({
-  color: '#585460',
-  roughness: 0.3,
-  metalness: 0.1,
-})
-
 const tvInnerBezelMat = new THREE.MeshStandardMaterial({
   color: '#0a0a0e',
   roughness: 0.9,
 })
-const tvTopEdgeMat = new THREE.MeshStandardMaterial({
-  color: '#4a4850',
-  roughness: 0.4,
-  metalness: 0.1,
-})
-const tvCreaseMat = new THREE.MeshStandardMaterial({
-  color: '#111115',
-  roughness: 0.9,
-})
-const tvConcaveMat = new THREE.MeshStandardMaterial({
-  color: '#18161c',
-  roughness: 0.75,
-})
-
-// --- Sony Trinitron: Shared geometry ---
-const tvButtonGeo = new THREE.CylinderGeometry(0.012, 0.012, 0.010, 12)
-
 // Rounded corner geometries for TV body (r=0.008, ~2px visual)
 const _tvR = 0.008
 
@@ -286,20 +253,6 @@ const tvRearGeo = new THREE.ExtrudeGeometry(tvRearShape, { depth: 0.30, bevelEna
   tvRearGeo.computeVertexNormals()
   tvRearGeo.computeBoundingSphere()
 }
-
-// Bottom control panel: rounded rect 0.60×0.10, depth 0.07
-const tvPanelShape = new THREE.Shape()
-const _tpw = 0.60 / 2, _tph = 0.10 / 2
-tvPanelShape.moveTo(-_tpw + _tvR, -_tph)
-tvPanelShape.lineTo(_tpw - _tvR, -_tph)
-tvPanelShape.quadraticCurveTo(_tpw, -_tph, _tpw, -_tph + _tvR)
-tvPanelShape.lineTo(_tpw, _tph - _tvR)
-tvPanelShape.quadraticCurveTo(_tpw, _tph, _tpw - _tvR, _tph)
-tvPanelShape.lineTo(-_tpw + _tvR, _tph)
-tvPanelShape.quadraticCurveTo(-_tpw, _tph, -_tpw, _tph - _tvR)
-tvPanelShape.lineTo(-_tpw, -_tph + _tvR)
-tvPanelShape.quadraticCurveTo(-_tpw, -_tph, -_tpw + _tvR, -_tph)
-const tvPanelGeo = new THREE.ExtrudeGeometry(tvPanelShape, { depth: 0.07, bevelEnabled: false })
 
 interface InteractiveTVDisplayProps {
   position: [number, number, number]
@@ -437,12 +390,6 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
   const [settingsMenuIndex, setSettingsMenuIndex] = useState(0)
   const [settingsSubIndex, setSettingsSubIndex] = useState(0)
   const [accountMenuIndex, setAccountMenuIndex] = useState(0) // 0=benchmark, 1=retour
-  const [isHovered, setIsHovered] = useState(false)
-
-  // Refs pour les textures dynamiques
-  const idleTextureRef = useRef<THREE.CanvasTexture | null>(null)
-  const menuTextureRef = useRef<THREE.CanvasTexture | null>(null)
-  const indicatorTextureRef = useRef<THREE.CanvasTexture | null>(null)
 
   // Individual selectors to avoid re-rendering on unrelated store changes
   const rentals = useStore(state => state.rentals)

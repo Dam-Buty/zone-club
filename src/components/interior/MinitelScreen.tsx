@@ -34,8 +34,6 @@ const PALETTE = {
 // Backward-compat aliases for any draw code still referencing the old names.
 // New code should read PALETTE.* directly.
 const COLOR_BG = PALETTE.BG
-const COLOR_TEXT = PALETTE.BLUE       // main body text → phosphor-blue
-const COLOR_ACCENT = PALETTE.CYAN
 const COLOR_DIM = 'rgba(79, 168, 255, 0.55)' // dimmed blue (kept as rgba for canvas)
 
 // Visual tokens tuned per input type. Mobile gets larger touch targets, more
@@ -136,15 +134,6 @@ function drawHeader(ctx: CanvasRenderingContext2D, title: string) {
   ctx.textAlign = 'left'
 }
 
-function drawFooter(ctx: CanvasRenderingContext2D, text: string) {
-  ctx.fillStyle = COLOR_DIM
-  ctx.font = SMALL_FONT
-  ctx.textBaseline = 'bottom'
-  ctx.textAlign = 'center'
-  ctx.fillText(text, SCREEN_W / 2, SCREEN_H - 8)
-  ctx.textAlign = 'left'
-}
-
 // Inverse-video pill button: solid colored block + black label, no border.
 // `bg` drives the visual semantics (cyan = primary action, green = available,
 // magenta = order, red = request, yellow = focus). Hitboxes preserved for
@@ -173,18 +162,6 @@ function drawInversePill(
     xStart: opts.x - 2, xEnd: opts.x + btnW + 2,
   })
   return { w: btnW, h: btnH }
-}
-
-// Back-compat: old call sites still ask for "the default cyan pill". Route
-// them through drawInversePill with CYAN bg.
-function drawPillButton(
-  ctx: CanvasRenderingContext2D,
-  label: string,
-  hitboxes: HitBox[],
-  opts: { x: number; y: number; index: number; fillAlpha?: number; bg?: string },
-): { w: number; h: number } {
-  void opts.fillAlpha
-  return drawInversePill(ctx, label, hitboxes, { x: opts.x, y: opts.y, index: opts.index, bg: opts.bg ?? PALETTE.CYAN })
 }
 
 function drawBackButton(
