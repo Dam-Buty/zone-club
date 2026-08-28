@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { PlayerState } from '../../types';
-import type { AudioTrack } from './VHSPlayer';
+import type { AudioTrack, SubtitleTrack } from './VHSPlayer';
 import styles from './VHSControls.module.css';
 
 interface VHSControlsProps {
@@ -18,11 +18,12 @@ interface VHSControlsProps {
   // Audio track props
   audioTrack: AudioTrack;
   onAudioTrackChange: (track: AudioTrack) => void;
-  showSubtitles: boolean;
-  onSubtitlesToggle: () => void;
+  subtitleTrack: SubtitleTrack;
+  onSubtitleTrackChange: (lang: Exclude<SubtitleTrack, 'off'>) => void;
   hasVF: boolean;
   hasVO: boolean;
-  hasSubtitles: boolean;
+  hasSubtitlesFr: boolean;
+  hasSubtitlesEn: boolean;
   onCast: () => void;
   onAirPlay: () => void;
   onMirroringHelp: () => void;
@@ -73,11 +74,12 @@ export function VHSControls({
   onResumeFromRW,
   audioTrack,
   onAudioTrackChange,
-  showSubtitles,
-  onSubtitlesToggle,
+  subtitleTrack,
+  onSubtitleTrackChange,
   hasVF,
   hasVO,
-  hasSubtitles,
+  hasSubtitlesFr,
+  hasSubtitlesEn,
   onCast,
   onAirPlay,
   onMirroringHelp,
@@ -267,13 +269,24 @@ export function VHSControls({
                 )}
               </div>
             )}
-            {hasSubtitles && (
+            {/* Une langue absente n'a pas de bouton du tout : contrairement à VF/VO, l'absence de
+                sous-titres n'a rien à expliquer à l'utilisateur — il n'a pas payé pour eux. */}
+            {hasSubtitlesFr && (
               <button
-                onClick={onSubtitlesToggle}
-                className={`${styles.trackBtn} ${showSubtitles ? styles.trackActive : ''}`}
+                onClick={() => onSubtitleTrackChange('fr')}
+                className={`${styles.trackBtn} ${subtitleTrack === 'fr' ? styles.trackActive : ''}`}
                 title="Sous-titres français [T]"
               >
                 STFR
+              </button>
+            )}
+            {hasSubtitlesEn && (
+              <button
+                onClick={() => onSubtitleTrackChange('en')}
+                className={`${styles.trackBtn} ${subtitleTrack === 'en' ? styles.trackActive : ''}`}
+                title="Sous-titres anglais [T]"
+              >
+                STEN
               </button>
             )}
           </div>

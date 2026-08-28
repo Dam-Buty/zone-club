@@ -397,6 +397,16 @@ Store exposé sur `window.__store` hors production (debug / Playwright).
 `PlayerState` : `'playing' | 'paused' | 'seeking' | 'rewinding' | 'fastforwarding' | 'casting' |
 'awaitingCast'`.
 
+**Pistes** : `AudioTrack` (`'vf' | 'vo'`) et `SubtitleTrack` (`'off' | 'fr' | 'en'`). Les quatre
+peuvent manquer indépendamment — un film est régulièrement VF-only, ou VO avec les seuls sous-titres
+anglais. Deux effets « snap » ramènent la sélection sur quelque chose qui existe, sans jamais rallumer
+des sous-titres coupés à la main. Côté `<video>`, une seule `<track>` est montée à la fois, avec une
+`key` par langue : swapper le `src` d'une `<track>` déjà montée ne rafraîchit pas la textTrack, et
+l'attribut `default` d'une `<track>` insérée après le parse n'est pas honoré de façon fiable — d'où
+l'effet qui force `track.mode` explicitement (`addtrack` inclus, la piste pouvant arriver après le rendu).
+
+Le Cast ne transporte **pas** les sous-titres : le receiver reçoit l'URL du MP4, rien d'autre.
+
 **Pattern central** : `activeCastFilmId` **persiste à travers `closePlayer()`**. La session Cast vit
 sur le receiver indépendamment de l'overlay : on peut fermer le lecteur, marcher dans les rayons, le
 rouvrir et retomber directement en mode télécommande.
@@ -541,6 +551,7 @@ régressions constatées lors des audits.
 | `RADARR_ROOT_FOLDER` | Racine Radarr côté container |
 | `MEDIA_LIBRARY_PATH` / `MEDIA_FILMS_PATH` / `MEDIA_BACKUP_PATH` / `SYMLINKS_PATH` | Chemins média |
 | `DELETE_MKV_AFTER_BACKUP` | Suppression de la source après backup |
+| `FORCED_RENTAL_VIDEO_URL` / `FORCED_RENTAL_FILE_PATH` | **Dev/staging** : sert la même vidéo pour toute location, VF **et** VO, sans sous-titres. Court-circuite les symlinks — donc rend la dispo VF/VO/ST intestable en local |
 | `SPARK_SSH_HOST` / `_HOSTNAME` / `_PORT` / `_USER` | Accès à la machine d'encodage distante |
 | `GPU_ENCODE_PRESET` / `GPU_ENCODE_CQ` / `GPU_MAX_WIDTH` / `GPU_MAX_HEIGHT` | Paramètres NVENC |
 | `VIDEO_COPY_MAX_BITRATE` | Seuil copie vs réencodage (défaut 6000000) |

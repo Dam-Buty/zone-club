@@ -34,9 +34,9 @@ Le code est décrit par ses commits ; les décisions durables sont passées dans
    section HISTORIQUE → titre + date + état (« en cours » / « terminé »), le plus récent en premier.
 3. **Décision produit ouverte** : l'historique affiche aujourd'hui les locations **actives** aussi
    (badge « en cours »). À confirmer ou restreindre aux locations terminées.
-4. **Hors périmètre, à décider** : `streaming_urls.subtitles_en` existe côté serveur depuis la
-   refonte média mais n'est branché sur aucune UI. Le sélecteur de pistes de `VHSControls` est
-   l'endroit logique pour l'exposer.
+4. **Sous-titres EN** : branchés dans le sélecteur (boutons STFR / STEN, touche T qui cycle). À
+   vérifier en prod sur un film qui a les deux langues — la bascule d'une langue à l'autre est le
+   chemin le moins sûr côté navigateur (voir la note textTracks dans `AGENTS.md`).
 
 ---
 
