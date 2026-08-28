@@ -49,6 +49,18 @@ export type InteractionMode =
   | 'lazoneWatching'   // watching La Zone fullscreen
   | 'film'             // VHS case overlay open (selectedFilmId !== null)
 
+/** Une ligne d'historique telle que /api/me la renvoie, remise au format du store. */
+export interface RentalHistoryEntry {
+  filmId: number;
+  /** Titre joint côté serveur : le catalogue 3D ne contient que les rayons chargés. */
+  title: string | null;
+  posterUrl: string | null;
+  rentedAt: number;
+  /** expires_at, pas une date de retour. */
+  returnedAt: number;
+  isActive: boolean;
+}
+
 export interface VideoClubState {
   // Auth
   isAuthenticated: boolean;
@@ -75,7 +87,6 @@ export interface VideoClubState {
   rentals: Rental[];
   setRentals: (rentals: Rental[]) => void;
   addRental: (rental: Rental) => void;
-  removeRental: (filmId: number) => void;
   getRental: (filmId: number) => Rental | undefined;
   // Push to server + sync local store. Single source of truth so seek-on-reopen
   // and recast both read the latest position without round-trip.
@@ -148,12 +159,12 @@ export interface VideoClubState {
   pointerLockRequested: 'lock' | 'unlock' | null;
   clearPointerLockRequest: () => void;
 
-  // Rental history
-  // Server-sourced (fetchMe) = ALL of the user's rentals (active + past), so it survives across devices /
-  // localStorage clears. title/posterUrl/isActive are optional so the legacy optimistic-append helpers
-  // still typecheck. returnedAt carries expires_at (rental window end) for display.
-  rentalHistory: { filmId: number; rentedAt: number; returnedAt: number; title?: string | null; posterUrl?: string | null; isActive?: boolean }[];
-  addToHistory: (filmId: number, rentedAt: number) => void;
+  // Rental history — alimenté UNIQUEMENT par fetchMe (/api/me). Le serveur renvoie TOUTES les locations
+  // de l'utilisateur, actives comprises, donc l'historique survit au changement d'appareil et au vidage
+  // du localStorage. Pas de writer local : une insertion optimiste produirait une entrée sans titre et
+  // ferait doublon au prochain fetchMe. returnedAt porte expires_at (fin de fenêtre), pas une date de
+  // retour effective — d'où l'affichage « en cours / terminé » plutôt qu'une date.
+  rentalHistory: RentalHistoryEntry[];
 
   // User reviews
   userReviews: ReviewWithUser[];
@@ -403,7 +414,8 @@ export const useStore = create<VideoClubState>()(
               posterUrl: h.film_poster_url,
               rentedAt: toMs(h.rented_at) || Date.now(),
               returnedAt: toMs(h.expires_at) || 0,
-              isActive: h.is_active,
+              // SQLite renvoie 0/1 malgré le typage `boolean` de l'API.
+              isActive: !!h.is_active,
             })),
             userReviews: data.reviews || [],
             weeklyBonusStatus: data.weeklyBonus ?? null,
@@ -469,18 +481,6 @@ export const useStore = create<VideoClubState>()(
               totalRentals: newTotalRentals,
               level: calculateLevel(newTotalRentals),
             },
-          };
-        }),
-
-      removeRental: (filmId) =>
-        set((state) => {
-          const rental = state.rentals.find((r) => r.filmId === filmId);
-          const newHistory = rental
-            ? [...state.rentalHistory, { filmId, rentedAt: rental.rentedAt, returnedAt: Date.now() }].slice(-50)
-            : state.rentalHistory;
-          return {
-            rentals: state.rentals.filter((r) => r.filmId !== filmId),
-            rentalHistory: newHistory,
           };
         }),
 
@@ -764,10 +764,6 @@ export const useStore = create<VideoClubState>()(
 
       // Rental history
       rentalHistory: [],
-      addToHistory: (filmId, rentedAt) =>
-        set((state) => ({
-          rentalHistory: [...state.rentalHistory, { filmId, rentedAt, returnedAt: Date.now() }].slice(-50),
-        })),
 
       // User reviews
       userReviews: [],
