@@ -43,7 +43,7 @@ Variables surchargeables :
 ```bash
 VIDEO_NR=10 \
 CARD_LABEL="Zone Club Cinéma" \
-HLS_URL=https://club-storage.lazone.at/cinema-live/live.m3u8 \
+HLS_URL=https://${STORAGE_SUBDOMAIN}.${DOMAIN}/cinema-live/live.m3u8 \
 SCALE=1280:720 \
 ./scripts/cinema-cam-install.sh
 ```

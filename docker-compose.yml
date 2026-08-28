@@ -100,24 +100,6 @@ services:
       - "traefik.http.services.radarr.loadbalancer.server.port=7878"
 
 
-  bazarr:
-    image: linuxserver/bazarr:latest
-    container_name: zone-bazarr
-    environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ=Europe/Paris
-    volumes:
-      - ./bazarr-config:/config
-      - /data/big-boi/zone-club/films:/movies
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.bazarr.rule=Host(`bazarr.${DOMAIN}`)"
-      - "traefik.http.routers.bazarr.entrypoints=websecure"
-      - "traefik.http.routers.bazarr.tls.certresolver=letsencrypt"
-      - "traefik.http.services.bazarr.loadbalancer.server.port=6767"
-
-
   cinema-stream:
     build: ./cinema-stream
     container_name: zone-cinema-stream
