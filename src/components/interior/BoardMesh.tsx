@@ -117,6 +117,9 @@ const BoardNote3D = memo(function BoardNote3D({ note }: { note: ApiBoardNote }) 
   const meshRef = useRef<THREE.Mesh>(null!)
   const texture = useMemo(
     () => createNoteTexture(note),
+    // Deps volontairement granulaires : le polling du board renvoie de nouveaux objets à chaque
+    // rafraîchissement, donc dépendre de `note` régénérerait le canvas de chaque post-it pour rien.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [note.id, note.content, note.color, note.username]
   )
 

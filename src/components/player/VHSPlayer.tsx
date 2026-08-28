@@ -248,6 +248,9 @@ export function VHSPlayer() {
         video.play().catch(() => {});
       }
     }
+    // Volontairement déclenché par le seul changement de piste : ajouter currentTime relancerait un
+    // seek à chaque timeupdate, et playerState ferait rejouer la vidéo à chaque pause.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [audioTrack]);
 
   // Aligner explicitement les textTracks du <video> sur la sélection. L'attribut `default` d'un <track>
@@ -543,7 +546,7 @@ export function VHSPlayer() {
       setPlayerState('paused');
       setShowBlueScreen(true);
     }
-  }, [stopRW, currentPlayingFilm, hasReachedMilestone, rental?.rewindClaimed, playerState, getRemoteCurrentTime, remoteCastDuration, remoteStop, setActiveCastFilmId]);
+  }, [stopRW, currentPlayingFilm, hasReachedMilestone, rental?.rewindClaimed, playerState, getRemoteCurrentTime, remoteCastDuration, remoteStop, setActiveCastFilmId, updateRentalProgress]);
 
   // Rewind to start (⏮) — simulates VHS tape rewind with proportional duration
   const handleRewindToStart = useCallback(() => {
@@ -643,7 +646,7 @@ export function VHSPlayer() {
       setRewindingToStart(false);
       closePlayer();
     }
-  }, [closePlayer, stopRW, currentPlayingFilm, hasReachedMilestone, rental?.rewindClaimed, playerState, getRemoteCurrentTime, remoteCastDuration, remoteStop]);
+  }, [closePlayer, stopRW, currentPlayingFilm, hasReachedMilestone, rental?.rewindClaimed, playerState, getRemoteCurrentTime, remoteCastDuration, remoteStop, updateRentalProgress]);
 
   // Clean up intervals on unmount
   useEffect(() => {
@@ -999,7 +1002,7 @@ export function VHSPlayer() {
     }, 10000);
 
     return () => clearInterval(interval);
-  }, [isPlayerOpen, currentPlayingFilm, playerState, remoteCastMediaLoaded, remoteCastDuration, getRemoteCurrentTime]);
+  }, [isPlayerOpen, currentPlayingFilm, playerState, remoteCastMediaLoaded, remoteCastDuration, getRemoteCurrentTime, updateRentalProgress]);
 
   // ===== Flush position on player close =====
   //
@@ -1048,7 +1051,7 @@ export function VHSPlayer() {
 
     document.addEventListener('visibilitychange', handleVisibility);
     return () => document.removeEventListener('visibilitychange', handleVisibility);
-  }, [playerState, currentPlayingFilm, getRemoteCurrentTime, remoteCastDuration]);
+  }, [playerState, currentPlayingFilm, getRemoteCurrentTime, remoteCastDuration, updateRentalProgress]);
 
   // ===== MediaSession API (lock screen controls during cast) =====
   useEffect(() => {
@@ -1099,7 +1102,7 @@ export function VHSPlayer() {
 
     video.addEventListener('ended', handleEnded);
     return () => video.removeEventListener('ended', handleEnded);
-  }, [currentPlayingFilm, stopRW, rental?.rewindClaimed, closePlayer]);
+  }, [currentPlayingFilm, stopRW, rental?.rewindClaimed, closePlayer, updateRentalProgress]);
 
   // ===== Remote Film Ended / Stopped Detection =====
   // IDLE can mean film finished OR manual stop on receiver — distinguish by position
@@ -1143,7 +1146,7 @@ export function VHSPlayer() {
         setPlayerState('paused');
       }
     }
-  }, [remoteCastPlayerState, playerState, currentPlayingFilm, rental?.rewindClaimed, closePlayer, remoteCastDuration, getRemoteCurrentTime, setActiveCastFilmId]);
+  }, [remoteCastPlayerState, playerState, currentPlayingFilm, rental?.rewindClaimed, closePlayer, remoteCastDuration, getRemoteCurrentTime, setActiveCastFilmId, updateRentalProgress]);
 
   // Track whether the SDK has EVER reported a connected cast session in
   // this player mount. Without this gate, the disconnect handler below
@@ -1200,7 +1203,7 @@ export function VHSPlayer() {
 
       lastKnownCastTimeRef.current = 0;
     }
-  }, [isCastConnected, playerState, setActiveCastFilmId, currentPlayingFilm, rental?.rewindClaimed, closePlayer]);
+  }, [isCastConnected, playerState, setActiveCastFilmId, currentPlayingFilm, rental?.rewindClaimed, closePlayer, endCast, updateRentalProgress]);
 
   // ===== Rewind Animation =====
   const startRewind = useCallback(() => {
@@ -1320,7 +1323,7 @@ export function VHSPlayer() {
       setOverlayVisible(true);
       if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
     }
-  }, [isPlayerOpen, stopRW]);
+  }, [isPlayerOpen, stopRW, setReviewContent]);
 
   // ===== Overlay auto-hide (4s inactivity) =====
   const resetIdleTimer = useCallback(() => {

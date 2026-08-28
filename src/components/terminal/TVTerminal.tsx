@@ -137,6 +137,8 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
 
     document.addEventListener('keydown', handleSecretKey);
     return () => document.removeEventListener('keydown', handleSecretKey);
+    // Listener clavier : le relier à l'identité de loadAdminStats le ré-enregistrerait à chaque rendu.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, isAuthenticated, authUser, secretCode]);
 
   // Gérer les touches clavier (navigation)
@@ -194,6 +196,9 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
+    // Idem : les handlers de navigation changent d'identité à chaque rendu, le listener doit rester
+    // attaché à la seule ouverture du terminal et à la position du curseur.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, onClose, currentSection, selectedIndex]);
 
   // Reset au montage
@@ -211,6 +216,9 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
       setSelectedIndex(0);
       setSecretCode('');
     }
+    // Reset d'ouverture : dépendre de isAuthenticated/terminalAdminMode remettrait le terminal à zéro
+    // en pleine navigation dès que l'un d'eux change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
   // Poll transcode status when on admin-films page

@@ -189,6 +189,19 @@ export function ReviewModal({ isOpen, onClose, film }: ReviewModalProps) {
     }
   }, [isOpen, film, authUser]);
 
+  const handleClose = useCallback(() => {
+    setContent('');
+    setRatingDirection(3);
+    setRatingScreenplay(3);
+    setRatingActing(3);
+    setError(null);
+    setSuccess(false);
+    setReviewsData(null);
+    setEditMode(false);
+    setReadingReview(null);
+    onClose();
+  }, [onClose]);
+
   const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     if (!film || !isAuthenticated) return;
@@ -223,20 +236,7 @@ export function ReviewModal({ isOpen, onClose, film }: ReviewModalProps) {
     } finally {
       setSubmitting(false);
     }
-  }, [film, isAuthenticated, content, ratingDirection, ratingScreenplay, ratingActing, addCredits, editMode]);
-
-  const handleClose = useCallback(() => {
-    setContent('');
-    setRatingDirection(3);
-    setRatingScreenplay(3);
-    setRatingActing(3);
-    setError(null);
-    setSuccess(false);
-    setReviewsData(null);
-    setEditMode(false);
-    setReadingReview(null);
-    onClose();
-  }, [onClose]);
+  }, [film, isAuthenticated, content, ratingDirection, ratingScreenplay, ratingActing, addCredits, editMode, handleClose]);
 
   if (!isOpen || !film) return null;
 

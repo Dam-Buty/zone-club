@@ -341,6 +341,11 @@ function PersonModal({ person, detail, loading, onClose }: {
   );
 }
 
+// Ordre du cycle de highlight du tutoriel. Au niveau module : le tableau était recréé à chaque rendu,
+// donc l'effet qui le parcourt ne pouvait pas le déclarer en dépendance.
+const TUTORIAL_HIGHLIGHT_TARGETS = ['credits', 'louer', 'trailer', 'gerant'] as const;
+type TutorialHighlightTarget = typeof TUTORIAL_HIGHLIGHT_TARGETS[number];
+
 export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
   useBackGuard(isOpen, onClose);
   const isMobile = useIsMobile();
@@ -405,8 +410,6 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
   >(null);
 
   // Tutorial step 3: cycling highlight on buttons
-  const TUTORIAL_HIGHLIGHT_TARGETS = ['credits', 'louer', 'trailer', 'gerant'] as const;
-  type TutorialHighlightTarget = typeof TUTORIAL_HIGHLIGHT_TARGETS[number];
   const [tutorialHighlight, setTutorialHighlight] = useState<TutorialHighlightTarget>('credits');
 
   // Mobile tutorial expand indicator auto-hide

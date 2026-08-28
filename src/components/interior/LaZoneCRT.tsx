@@ -389,7 +389,10 @@ export function LaZoneCRT({ position, rotation = [0, 0, 0], tilt = -10 }: LaZone
       cancelled = true
       video.removeEventListener('ended', onEnded)
       video.removeEventListener('error', onError)
-      // Invalidate any in-flight play callbacks
+      // Invalidate any in-flight play callbacks. Copier la ref dans une variable locale (ce que
+      // suggère la règle) casserait justement l'intention : on veut incrémenter la génération COURANTE
+      // au moment du démontage, pas celle observée au montage.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
       srcGenRef.current++
       if (switchTimeoutRef.current) { clearTimeout(switchTimeoutRef.current); switchTimeoutRef.current = null }
       video.pause()

@@ -147,6 +147,9 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
       bloomStrengthRef.current = null
       ;(window as unknown as { __postProcessing?: THREE.PostProcessing | null }).__postProcessing = null
     }
+    // Ces deux valeurs passent par des refs : les mettre en deps reconstruirait toute la chaîne de
+    // post-processing à chaque ouverture de K7, ce que les refs existent justement pour éviter.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [renderer, scene, camera, isMobile, dofTrigger])
 
   const renderAccumRef = useRef(0)

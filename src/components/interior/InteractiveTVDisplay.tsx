@@ -254,6 +254,21 @@ const tvRearGeo = new THREE.ExtrudeGeometry(tvRearShape, { depth: 0.30, bevelEna
   tvRearGeo.computeBoundingSphere()
 }
 
+// Palette du CRT de réglages. Au niveau module : littérale et stable, elle était recréée à chaque
+// rendu, ce qui rendait sous-spécifiés tous les useMemo de dessin qui la lisent.
+const SETTINGS_COLORS = {
+  green: '#00ff00',
+  greenDim: '#009900',
+  // Bumped cyan from #00fff7 → light aqua: sharper at distance on the CRT
+  // mesh without becoming intrusive. Same hue family.
+  cyan: '#A8FCEC',
+  gold: '#ffd700',
+  red: '#ff4444',
+  pink: '#ff2d95',
+  dimText: '#666666',
+  label: '#888888',
+} as const
+
 interface InteractiveTVDisplayProps {
   position: [number, number, number]
   rotation?: [number, number, number]
@@ -697,19 +712,6 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
   }, [])
 
   // --- Settings CRT Textures (replacing old TVTerminal HTML overlay for Parametres) ---
-  const SETTINGS_COLORS = {
-    green: '#00ff00',
-    greenDim: '#009900',
-    // Bumped cyan from #00fff7 → light aqua: sharper at distance on the CRT
-    // mesh without becoming intrusive. Same hue family.
-    cyan: '#A8FCEC',
-    gold: '#ffd700',
-    red: '#ff4444',
-    pink: '#ff2d95',
-    dimText: '#666666',
-    label: '#888888',
-  }
-
   const getFilmTitle = useCallback((filmId: number) => {
     const allFilms = Object.values(films).flat()
     return allFilms.find(f => f.id === filmId)?.title || 'Film inconnu'
@@ -965,7 +967,9 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
     const texture = new THREE.CanvasTexture(canvas)
     texture.needsUpdate = true
     return texture
-  }, [isAuthenticated, authUser, localUser])
+  // Cette texture ne dessine que le solde et le niveau : credits manquait (montant périmé après une
+  // location ou un bonus), isAuthenticated/authUser n'ont jamais servi ici.
+  }, [localUser, credits])
 
   // Settings: MON COMPTE sub-screen
   const settingsAccountTexture = useMemo(() => {
@@ -1044,7 +1048,7 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
     const texture = new THREE.CanvasTexture(canvas)
     texture.needsUpdate = true
     return texture
-  }, [isAuthenticated, authUser, localUser, rentals.length, rentalHistory.length, userReviews.length, benchmarkEnabled, accountMenuIndex])
+  }, [isAuthenticated, authUser, localUser, credits, rentals.length, rentalHistory.length, userReviews.length, benchmarkEnabled, accountMenuIndex])
 
   // Texture indicateur films disponibles
   const indicatorTexture = useMemo(() => {

@@ -799,7 +799,8 @@ export const Aisle = memo(function Aisle({ films, filmsByAisle }: AisleProps) {
     }
     return all
   // ROOM_WIDTH & ROOM_DEPTH in deps: ensures recomputation when room dimensions change (HMR cache fix)
-  }, [actionSlice, animationSlice, aventureSlice, bizarreCenterZ, bizarreSlice, classiquesIslandRight, comedieSlice, drameSlice, horreurCenterZ, horreurLength, horreurSlice, leftEqualSectionLength, northLongLength, northLongOffset, northMediumLength, northMediumOffset, nouveautesLeft, nouveautesRight, policierSlice, rightLongLength, rightLongOffset, romanceSlice, sfIslandLeft, ROOM_WIDTH, ROOM_DEPTH])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [actionSlice, animationSlice, aventureSlice, bizarreCenterZ, bizarreSlice, classiquesIslandRight, comedieSlice, drameSlice, horreurCenterZ, horreurLength, horreurSlice, leftEqualSectionLength, leftEqualSectionOffset, northLongLength, northLongOffset, northMediumLength, northMediumOffset, nouveautesLeft, nouveautesRight, policierSlice, rightLongLength, rightLongOffset, romanceSlice, sfIslandLeft, thrillerSlice, ROOM_WIDTH, ROOM_DEPTH])
 
   return (
     <group>

@@ -197,6 +197,8 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
       currentRentedOutBuffer: curRentedOut,
       computeNode: cNode,
     }
+    // isMobile ne bouge pas pendant une session ; le déclarer réallouerait tous les storage buffers.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [count])
 
   // Geometry with per-instance atlasRect (vec4) attribute
@@ -265,6 +267,9 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
     mat.emissiveNode = hoverEmissive.add(cappedColor.mul(float(0.20)))
 
     return mat
+    // Même raison : recompiler le matériau TSL est coûteux et ces deux valeurs ne changent pas
+    // en cours de session.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [atlas, currentHoverZBuffer, currentEmissiveBuffer, currentRentedOutBuffer])
 
   useEffect(() => {

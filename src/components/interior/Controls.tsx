@@ -822,6 +822,8 @@ export function Controls({
       controlsCreated.current = false;
       setPointerLocked(false);
     };
+    // scene.children muterait à chaque ajout d'objet : les contrôles seraient recréés en boucle.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isMobile, camera, gl, setPointerLocked]);
 
   // Main loop — movement + targeting
