@@ -5,20 +5,14 @@
 // immutable : le cache HTTP du navigateur suffit, les dupliquer ici coûtait
 // ~58 Mo sur mobile.
 //
-// VERSION à bumper quand les assets précachés changent (modèles GLB, textures
-// KTX2, HDR) : leurs URLs ne sont pas content-hashées, donc rien d'autre ne les
-// invalide. L'`activate` supprime tous les caches dont le nom ne correspond pas.
+// ⚠️ BUMPER VERSION À CHAQUE MODIFICATION D'UN ASSET 3D (/models, /textures,
+// /basis). Ces URLs ne sont pas content-hashées : sans bump, un visiteur déjà
+// venu garde l'ancien fichier indéfiniment. La sélection cache-first se fait par
+// chemin, donc tous les GLB et toutes les textures sont concernés, pas seulement
+// PRECACHE_URLS. L'`activate` supprime les caches dont le nom ne correspond pas.
 //
-// v7 : le catalogue sort du cache applicatif. Il y était en
-// stale-while-revalidate, ce qui servait toujours une version en retard d'une
-// visite, et les entrées mortes ne disparaissaient qu'au bump manuel de VERSION
-// — le catalogue est passé de 18 à 127 films sans que personne y pense, et les
-// navigateurs ont servi pendant des jours un état antérieur au reset de la base,
-// jusqu'à afficher des films devenus indisponibles. La fraîcheur d'une donnée
-// qui bouge chaque semaine ne peut pas dépendre d'un geste manuel au
-// déploiement. Le coût réel de ce cache était de 233 Ko gzip, ramenés à 120 Ko
-// en cessant de servir la ligne SQL entière (voir FILM_LIST_COLUMNS dans
-// lib/films.ts) — largement payable à chaque visite.
+// Le catalogue, lui, est network-only : c'est de la donnée mutable, sa fraîcheur
+// est pilotée par le Cache-Control des routes (voir app/api/films/*).
 const VERSION = 'v7'
 const CACHE_NAME = `zone-club-${VERSION}`
 
