@@ -33,6 +33,16 @@ export interface RadarrQualityProfile {
     name: string;
 }
 
+/** Le sous-ensemble de /movie/lookup que l'on consomme réellement. */
+interface RadarrLookupResult {
+    tmdbId: number;
+    title: string;
+    year: number;
+    titleSlug: string;
+    images: unknown[];
+    [key: string]: unknown;
+}
+
 class RadarrClient {
     constructor(
         private url: string,
@@ -89,7 +99,7 @@ class RadarrClient {
             throw new Error('Radarr not configured: missing root folder');
         }
 
-        const lookupResults = await this.fetch<any[]>(`/movie/lookup?term=tmdb:${tmdbId}`);
+        const lookupResults = await this.fetch<RadarrLookupResult[]>(`/movie/lookup?term=tmdb:${tmdbId}`);
 
         if (lookupResults.length === 0) {
             throw new Error(`Movie not found in TMDB: ${tmdbId}`);
@@ -174,7 +184,7 @@ class RadarrClient {
     }
 
     async setMonitored(radarrId: number, monitored: boolean): Promise<void> {
-        const movie = await this.fetch<any>(`/movie/${radarrId}`);
+        const movie = await this.fetch<Record<string, unknown>>(`/movie/${radarrId}`);
         await this.fetch(`/movie/${radarrId}`, {
             method: 'PUT',
             body: JSON.stringify({ ...movie, monitored })

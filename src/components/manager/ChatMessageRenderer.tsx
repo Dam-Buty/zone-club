@@ -1,4 +1,5 @@
 import type { UIMessage } from 'ai';
+import type { ChatToolOutput } from '../../types/chat';
 import { isToolUIPart, getToolName } from 'ai';
 import { GenUIRentCard } from './GenUIRentCard';
 import { GenUICriticForm } from './GenUICriticForm';
@@ -33,7 +34,7 @@ export function ChatMessageRenderer({ message }: Props) {
 
         // Only render GenUI when tool output is available
         if (part.state !== 'output-available') return null;
-        const output = part.output as any;
+        const output = part.output as ChatToolOutput | undefined;
         if (!output) return null;
 
         switch (toolName) {
@@ -50,8 +51,8 @@ export function ChatMessageRenderer({ message }: Props) {
                   data={{
                     name: 'critic',
                     filmId: output.filmId,
-                    filmTitle: output.filmTitle,
-                    preWrittenReview: output.preWrittenReview,
+                    filmTitle: output.filmTitle ?? '',
+                    preWrittenReview: output.preWrittenReview ?? '',
                   }}
                 />
               );
@@ -62,7 +63,7 @@ export function ChatMessageRenderer({ message }: Props) {
               return (
                 <GenUIWatchButton
                   key={part.toolCallId}
-                  data={{ name: 'watch', filmId: output.filmId, title: output.title }}
+                  data={{ name: 'watch', filmId: output.filmId, title: output.title ?? '' }}
                 />
               );
             }

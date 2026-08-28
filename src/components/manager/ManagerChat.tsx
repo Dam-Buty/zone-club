@@ -1,6 +1,7 @@
 import { useRef, useEffect, useCallback, useState } from 'react';
 import { useChat } from '@ai-sdk/react';
 import { isToolUIPart, getToolName } from 'ai';
+import type { ChatToolOutput } from '../../types/chat';
 import { useStore } from '../../store';
 import { ChatMessageRenderer } from './ChatMessageRenderer';
 import { useBackGuard } from '../../hooks/useBackGuard';
@@ -40,7 +41,7 @@ export function ManagerChat() {
         if (processedToolCalls.current.has(part.toolCallId)) continue;
 
         const toolName = getToolName(part);
-        const output = part.output as any;
+        const output = part.output as ChatToolOutput | undefined;
         if (!output) continue;
 
         processedToolCalls.current.add(part.toolCallId);

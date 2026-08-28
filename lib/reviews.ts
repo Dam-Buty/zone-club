@@ -18,6 +18,15 @@ export interface ReviewWithUser extends Review {
     average_rating: number;
 }
 
+/** Agrégat renvoyé par la requête de moyennes : les AVG sont NULL tant qu'il n'y a aucune critique. */
+interface RatingsRow {
+    direction: number;
+    screenplay: number;
+    acting: number;
+    overall: number;
+    count: number;
+}
+
 export interface FilmRatings {
     direction: number;
     screenplay: number;
@@ -47,7 +56,7 @@ export function getFilmRatings(filmId: number): FilmRatings | null {
             COUNT(*) as count
         FROM reviews
         WHERE film_id = ?
-    `).get(filmId) as any;
+    `).get(filmId) as RatingsRow | undefined;
 
     if (!result || result.count === 0) return null;
 
@@ -99,7 +108,7 @@ export function canUserReview(userId: number, filmId: number, isAdmin?: boolean)
         WHERE user_id = ? AND film_id = ?
         ORDER BY rented_at DESC
         LIMIT 1
-    `).get(userId, filmId) as any;
+    `).get(userId, filmId) as { rented_at: string; watch_progress: number | null } | undefined;
 
     if (!rental) {
         // Not rented — allow 1 non-rented review per week

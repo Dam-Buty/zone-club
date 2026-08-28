@@ -32,6 +32,14 @@ const PORTRAIT_QUAT = new THREE.Quaternion().setFromAxisAngle(
 
 // Albedo dampening — base attenuation for scene lighting (IBL 0.7 + PointLights)
 // Per-fragment Y-gradient correction is applied via TSL colorNode (see texture apply useEffect)
+/** Un MeshStandardMaterial piloté en TSL : ces champs ne figurent pas dans les typings de three. */
+type TSLStandardMaterial = THREE.MeshStandardMaterial & {
+  colorNode?: unknown
+  normalNode?: unknown
+  clearcoat?: number
+  sheen?: number
+}
+
 const ALBEDO_COLOR = new THREE.Color(0.89, 0.89, 0.89)
 
 // Animation constants
@@ -107,8 +115,8 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
           mat.envMap = null
           mat.envMapIntensity = 0
           // Kill clearcoat/sheen if GLB model has them
-          if ('clearcoat' in mat) (mat as any).clearcoat = 0
-          if ('sheen' in mat) (mat as any).sheen = 0
+          if ('clearcoat' in mat) (mat as TSLStandardMaterial).clearcoat = 0
+          if ('sheen' in mat) (mat as TSLStandardMaterial).sheen = 0
           mat.color.copy(ALBEDO_COLOR)
           if (mat.map) {
             // Only include cover surfaces (1024×1024 atlas), not tape/reel meshes
@@ -214,9 +222,9 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
       for (const mesh of meshesWithMap) {
         const mat = mesh.material as THREE.MeshStandardMaterial
         mat.map = null
-        ;(mat as any).colorNode = fadedColor
+        ;(mat as TSLStandardMaterial).colorNode = fadedColor
         if (bumpTex) {
-          ;(mat as any).normalNode = bumpMap(texture(bumpTex), 1.2)
+          ;(mat as TSLStandardMaterial).normalNode = bumpMap(texture(bumpTex), 1.2)
         }
         mat.needsUpdate = true
       }

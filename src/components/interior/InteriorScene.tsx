@@ -15,7 +15,8 @@ declare global {
 // Initialize LTC textures for RectAreaLight PBR shading (must run before first render)
 if (typeof window !== 'undefined') {
   RectAreaLightTexturesLib.init();
-  (THREE as any).RectAreaLightNode.setLTC(RectAreaLightTexturesLib)
+  (THREE as unknown as { RectAreaLightNode: { setLTC(lib: unknown): void } })
+    .RectAreaLightNode.setLTC(RectAreaLightTexturesLib)
 }
 import { Controls } from './Controls'
 import { PostProcessingEffects } from './PostProcessingEffects'
@@ -811,7 +812,7 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
       <Canvas
         shadows
         dpr={isMobile ? Math.min(window.devicePixelRatio, 1.7) : Math.min(window.devicePixelRatio * DESKTOP_SUPERSAMPLE, 3)}
-        gl={(async (props: any) => {
+        gl={(async (props: THREE.WebGPURendererParameters) => {
 
 
           // Let Three.js handle adapter creation internally — avoid redundant

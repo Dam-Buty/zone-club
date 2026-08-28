@@ -3,6 +3,11 @@ import { cookies } from 'next/headers';
 import { db } from '@/lib/db';
 import { getUserFromSession } from '@/lib/session';
 
+/** Les COUNT(*) de cette route renvoient tous la même forme. */
+function countOf(sql: string): number {
+    return (db.prepare(sql).get() as { count: number }).count;
+}
+
 export async function GET() {
     const cookieStore = await cookies();
     const user = getUserFromSession(cookieStore.get('session')?.value);
@@ -12,13 +17,13 @@ export async function GET() {
     }
 
     const stats = {
-        totalUsers: (db.prepare('SELECT COUNT(*) as count FROM users').get() as any).count,
-        totalFilms: (db.prepare('SELECT COUNT(*) as count FROM films').get() as any).count,
-        availableFilms: (db.prepare('SELECT COUNT(*) as count FROM films WHERE is_available = 1').get() as any).count,
-        activeRentals: (db.prepare("SELECT COUNT(*) as count FROM rentals WHERE is_active = 1 AND expires_at > datetime('now')").get() as any).count,
-        totalRentals: (db.prepare('SELECT COUNT(*) as count FROM rentals').get() as any).count,
-        totalReviews: (db.prepare('SELECT COUNT(*) as count FROM reviews').get() as any).count,
-        pendingRequests: (db.prepare("SELECT COUNT(*) as count FROM film_requests WHERE status = 'pending'").get() as any).count,
+        totalUsers: countOf('SELECT COUNT(*) as count FROM users'),
+        totalFilms: countOf('SELECT COUNT(*) as count FROM films'),
+        availableFilms: countOf('SELECT COUNT(*) as count FROM films WHERE is_available = 1'),
+        activeRentals: countOf("SELECT COUNT(*) as count FROM rentals WHERE is_active = 1 AND expires_at > datetime('now')"),
+        totalRentals: countOf('SELECT COUNT(*) as count FROM rentals'),
+        totalReviews: countOf('SELECT COUNT(*) as count FROM reviews'),
+        pendingRequests: countOf("SELECT COUNT(*) as count FROM film_requests WHERE status = 'pending'"),
 
         // Films per aisle
         filmsPerAisle: db.prepare(

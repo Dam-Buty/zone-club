@@ -585,7 +585,12 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
     tmdb.getDetailedCredits(id).then(setDetailedCredits).catch(e => console.warn('Credits fetch failed:', e));
     tmdb.getCertification(id).then(c => { console.log(`[VHS] Certification for tmdb_id=${id}:`, JSON.stringify(c)); setCertification(c); }).catch(e => console.warn('Certification fetch failed:', e));
     tmdb.getReviews(id).then(setTmdbReviews).catch(e => console.warn('Reviews fetch failed:', e));
-    tmdb.getFilm(id).then(d => { setBudget((d as any).budget || 0); setRevenue((d as any).revenue || 0); }).catch(() => {});
+    tmdb.getFilm(id).then(d => {
+      // budget/revenue existent sur le détail TMDB mais pas dans le type Film local.
+      const detail = d as Film & { budget?: number; revenue?: number };
+      setBudget(detail.budget || 0);
+      setRevenue(detail.revenue || 0);
+    }).catch(() => {});
     // Fetch club review ratings
     if (film.id) {
       api.reviews.getByFilm(film.id).then(data => setClubRatings(data.ratings)).catch(() => {});

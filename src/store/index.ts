@@ -1003,7 +1003,7 @@ export const useStore = create<VideoClubState>()(
 
 // Dev/test hook — expose store to browser console & Playwright MCP
 if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production') {
-  (window as any).__store = useStore;
+  (window as unknown as { __store?: typeof useStore }).__store = useStore;
 }
 
 // Single source of truth for the displayed credit count. Picks authUser.credits

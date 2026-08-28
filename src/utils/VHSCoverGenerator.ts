@@ -1352,7 +1352,7 @@ function drawFrontCover(
   blitFlipped(ctx, FRONT, (tc, w, h) => {
     // Record all fillText calls for bump map replay
     const origFillText = tc.fillText;
-    (tc as any).fillText = (
+    tc.fillText = (
       text: string,
       x: number,
       y: number,
@@ -1404,7 +1404,7 @@ function drawFrontCover(
     }
 
     // Restore fillText (remove instance shadow → prototype method)
-    delete (tc as any).fillText;
+    Reflect.deleteProperty(tc, "fillText");
   });
   titleInfo.textOps = textOps;
   return titleInfo;
@@ -1620,7 +1620,7 @@ function drawBackCover(
   blitFlipped(ctx, BACK, (tc, w, h) => {
     // Record all fillText calls for bump map replay
     const origFillText = tc.fillText;
-    (tc as any).fillText = (
+    tc.fillText = (
       text: string,
       x: number,
       y: number,
@@ -1799,7 +1799,7 @@ function drawBackCover(
     tc.fillText("ZONE CLUB \u00c9DITIONS", w / 2, h - 10);
 
     // Restore fillText
-    delete (tc as any).fillText;
+    Reflect.deleteProperty(tc, "fillText");
   });
   return textOps;
 }
