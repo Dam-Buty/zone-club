@@ -15,28 +15,32 @@ export interface ApiUser {
   created_at: string;
 }
 
+// Les routes de liste (/api/films, /api/films/aisle, /api/films/genre,
+// /api/films/desk-display) ne renvoient que les champs non optionnels ci-dessous.
+// Les optionnels n'arrivent que par le détail (/api/films/[tmdbId]) ou la liste
+// admin (/api/films?all=true) — voir FILM_LIST_COLUMNS dans lib/films.ts.
 export interface ApiFilm {
   id: number;
   tmdb_id: number;
   title: string;
-  title_original: string | null;
   synopsis: string | null;
   release_year: number | null;
   poster_url: string | null;
   backdrop_url: string | null;
   genres: { id: number; name: string }[];
-  directors: { tmdb_id: number; name: string }[];
-  actors: { tmdb_id: number; name: string; character: string }[];
   runtime: number | null;
-  radarr_vo_id: number | null;
-  radarr_vf_id: number | null;
-  radarr_id: number | null;
   aisle: string | null;
   is_nouveaute: boolean;
   is_available: boolean;
   stock?: number;
   active_rentals?: number;
-  created_at: string;
+  title_original?: string | null;
+  directors?: { tmdb_id: number; name: string }[];
+  actors?: { tmdb_id: number; name: string; character: string }[];
+  radarr_vo_id?: number | null;
+  radarr_vf_id?: number | null;
+  radarr_id?: number | null;
+  created_at?: string;
 }
 
 export interface ApiRental {

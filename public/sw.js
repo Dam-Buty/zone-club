@@ -1,9 +1,19 @@
-// Service Worker — cache-first for immutable 3D assets, stale-while-revalidate for the
-// film catalog API, network-only for everything else (posters, auth, rentals…).
-// (posters are served by /api/poster proxy with HTTP Cache-Control: max-age=2592000 immutable,
-// so the browser HTTP cache handles them — duplicating in SW cache wasted ~58 MB on mobile).
-// Bump VERSION on every deploy to invalidate stale caches.
-const VERSION = 'v5'
+// Service Worker — cache-first pour les assets 3D immuables, network-only pour
+// tout le reste (catalogue, posters, auth, locations…).
+//
+// Les posters sont servis par /api/poster avec un Cache-Control max-age=2592000
+// immutable : le cache HTTP du navigateur suffit, les dupliquer ici coûtait
+// ~58 Mo sur mobile.
+//
+// ⚠️ BUMPER VERSION À CHAQUE MODIFICATION D'UN ASSET 3D (/models, /textures,
+// /basis). Ces URLs ne sont pas content-hashées : sans bump, un visiteur déjà
+// venu garde l'ancien fichier indéfiniment. La sélection cache-first se fait par
+// chemin, donc tous les GLB et toutes les textures sont concernés, pas seulement
+// PRECACHE_URLS. L'`activate` supprime les caches dont le nom ne correspond pas.
+//
+// Le catalogue, lui, est network-only : c'est de la donnée mutable, sa fraîcheur
+// est pilotée par le Cache-Control des routes (voir app/api/films/*).
+const VERSION = 'v7'
 const CACHE_NAME = `zone-club-${VERSION}`
 
 // Assets to pre-cache on install (critical path)
@@ -50,20 +60,10 @@ function getStrategy(url) {
     return 'cache-first'
   }
 
-  // Poster proxy — network-only: served by /api/poster with HTTP Cache-Control
-  // max-age=2592000 immutable. Browser HTTP cache handles repeat fetches without
-  // SW intervention; duplicating in SW cache wasted ~58 MB on mobile.
-
-  // Film catalog API — stale-while-revalidate: serve the cached catalog
-  // instantly, then refresh it in the background so newly-added films surface
-  // on the NEXT visit without needing a deploy + VERSION bump. (Was cache-first,
-  // which stranded new films in stale caches until a redeploy — the trade-off
-  // saved ~1 MB of revalidation per visit but caused a freshness bug.)
-  if (path.startsWith('/api/films/')) {
-    return 'stale-while-revalidate'
-  }
-
-  // Everything else (auth, rentals, reviews, admin, etc.)
+  // Tout le reste — catalogue, proxy poster, auth, locations, critiques, admin.
+  // Le catalogue compris : c'est de la donnée mutable, son cache est celui du
+  // navigateur, piloté par le Cache-Control des routes (voir l'en-tête de ce
+  // fichier).
   return 'network-only'
 }
 
@@ -115,27 +115,6 @@ self.addEventListener('fetch', (event) => {
             }
             return response
           })
-        })
-      )
-    )
-    return
-  }
-
-  if (strategy === 'stale-while-revalidate') {
-    event.respondWith(
-      caches.open(CACHE_NAME).then((cache) =>
-        cache.match(request).then((cached) => {
-          // Background refresh; .catch keeps it from ever rejecting so waitUntil is safe.
-          const networkFetch = fetch(request)
-            .then((response) => {
-              if (response.ok) cache.put(request, response.clone())
-              return response
-            })
-            .catch(() => undefined)
-          // Keep the SW alive until the background revalidation settles.
-          event.waitUntil(networkFetch)
-          // Serve cache instantly when present; otherwise wait for the network.
-          return cached || networkFetch.then((response) => response || fetch(request))
         })
       )
     )

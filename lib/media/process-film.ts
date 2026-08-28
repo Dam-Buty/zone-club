@@ -8,8 +8,8 @@ import { identifyTracks } from './identify-tracks'
 import { isFrench } from './iso639'
 import { mediaDirFromMoviePath } from './media-dir'
 import { encodeVideoRemote } from './remote-encode'
-import { encodeAudioTracks, remuxOutputs, extractSubs, type AudioTarget, type RemuxTarget } from './ffmpeg-ops'
-import { planVideo, estimateVideoBitrate } from './video-plan'
+import { extractAudioAndSubs, remuxOutputs, type AudioTarget, type RemuxTarget } from './ffmpeg-ops'
+import { planVideo, estimateVideoBitrate, isHdrSource } from './video-plan'
 import { checkRelease, maxQcAttempts } from './quality-control'
 import { startRun, patchRun, finishRun } from './run-stats'
 
@@ -161,6 +161,9 @@ export async function processFilm(filmId: number): Promise<void> {
     const film = getFilmById(filmId)
     if (!film || !film.radarr_id) throw new Error(`processFilm: film ${filmId} sans radarr_id`)
 
+    // Renseigné quand les jobs latéraux démarrent ; sert au nettoyage en cas d'échec.
+    let sideAbortRef: AbortController | null = null
+
     // 1. Localiser le MKV via Radarr
     const status = await getMovieStatus(film.radarr_id)
     if (!status.hasFile || !status.movieFile?.path) { setStatus(filmId, 'pending'); return; }
@@ -202,7 +205,7 @@ export async function processFilm(filmId: number): Promise<void> {
             `pistes: VO ordinal ${tracks.voAudioOrdinal}` +
             (wantVf ? `, VF ordinal ${tracks.vfAudioOrdinal}` : ' (pas de VF séparée)') +
             (tracks.textSubs.length ? `, subs ${tracks.textSubs.map(s => s.lang).join('+')}` : ' (aucun sub texte)') +
-            (tracks.imageSubsFlagged ? ' ⚠️ subs IMAGE ignorés' : '') +
+            (tracks.imageSubs.length ? `, subs image ${tracks.imageSubs.map(s => s.lang).join('+')} (OCR)` : '') +
             (frenchFilm ? ' 🇫🇷 film FR natif' : '') +
             ` | source ${sourceDuration.toFixed(0)}s ${sourceWidth ?? '?'}×${sourceHeight ?? '?'}`
         )
@@ -224,6 +227,15 @@ export async function processFilm(filmId: number): Promise<void> {
         const alreadyPublished = film.transcode_status === 'done' && (await exists(voMp4))
         if (alreadyPublished) {
             log('film déjà publié depuis cette release — contrôle qualité non rejoué')
+        } else if (film.qc_force) {
+            // Laissez-passer manuel : certains films n'ont aucune release conforme
+            // (pas de VF, pas de sous-titres français) et valent quand même d'être
+            // servis. Sans ce drapeau, chaque tentative serait rejetée et
+            // blacklistée jusqu'à épuisement du compteur, laissant le film absent.
+            const verdict = checkRelease(tracks, film.original_language)
+            log(verdict.ok
+                ? 'qc_force actif — contrôle qualité contourné (release conforme de toute façon)'
+                : `qc_force actif — release acceptée MALGRÉ: ${verdict.missing.join(', ')}`)
         } else {
             const verdict = checkRelease(tracks, film.original_language)
             if (!verdict.ok) {
@@ -255,49 +267,60 @@ export async function processFilm(filmId: number): Promise<void> {
             // partent maintenant et se terminent pendant que le GPU travaille. Le
             // chemin critique se réduit alors au seul remux (mesuré 8,4× plus rapide
             // qu'un mux qui décode et réencode l'audio).
+            // Les jobs latéraux tournent en parallèle de l'encodage GPU : s'il
+            // échoue, il faut les TUER, sinon leurs ffmpeg survivent au film
+            // abandonné et s'accumulent à chaque reprise du poller.
+            const sideAbort = new AbortController()
+            sideAbortRef = sideAbort
             const audioTargets: AudioTarget[] = [{ out: voAac, audioOrdinal: tracks.voAudioOrdinal }]
             if (wantVf) audioTargets.push({ out: vfAac, audioOrdinal: tracks.vfAudioOrdinal! })
-            const audioJob = (async () => {
+            // Audio et sous-titres sortent d'une SEULE lecture du MKV.
+            //
+            // Deux passes séparées, même lancées en parallèle, faisaient deux
+            // curseurs de lecture sur le même fichier — trois avec le démux qui
+            // alimente le GPU. Sur un plateau mécanique, ces flux séquentiels
+            // entrelacés dégénèrent en accès aléatoire : mesuré à 19 Mo/s pour un
+            // disque occupé à 100 %, pendant qu'un unrar tentait d'y écrire.
+            const sideJob = (async () => {
                 const t = Date.now()
                 const todo = await Promise.all(audioTargets.map(async t => (await exists(t.out)) ? null : t))
-                const missing = todo.filter((t): t is AudioTarget => t !== null)
-                if (missing.length) {
-                    log(`encodage audio ${missing.length} piste(s) → AAC stéréo (en parallèle de la vidéo)…`)
-                    await encodeAudioTracks(mkv, missing)
-                    log('audio encodé')
-                    patchRun(runId, { audio_seconds: (Date.now() - t) / 1000 })
-                } else {
-                    log('audio déjà encodé — étape sautée')
+                const missingAudio = todo.filter((t): t is AudioTarget => t !== null)
+                // Les pistes image partent avec les autres : extraites en .sup dans
+                // la même passe, puis converties par OCR seulement si la piste texte
+                // de la langue manque ou ressemble à une piste forcée.
+                const subCandidates = [
+                    ...tracks.textSubs.map(s => ({ ...s, kind: 'text' as const })),
+                    ...tracks.imageSubs.map(s => ({ ...s, kind: 'image' as const })),
+                ]
+                if (!missingAudio.length && !subCandidates.length) {
+                    log('audio et sous-titres déjà présents — étape sautée')
+                    return
                 }
-            })()
-
-            const subsJob = (async () => {
-                if (!tracks.textSubs.length) return
-                const t = Date.now()
-                log(`extraction de ${tracks.textSubs.length} piste(s) sub candidate(s) en une passe…`)
-                const kept = await extractSubs(mkv, tracks.textSubs, outDir)
+                const nImg = tracks.imageSubs.length
+                log(`passe unique: ${missingAudio.length} piste(s) audio + ${subCandidates.length} sub(s)`
+                    + (nImg ? ` (dont ${nImg} image, OCR si nécessaire)` : '')
+                    + ' — en parallèle de la vidéo…')
+                const kept = await extractAudioAndSubs(mkv, missingAudio, subCandidates, outDir, sideAbort.signal)
                 for (const s of kept) {
                     log(`sub ${s.lang}: ${s.cues} cues retenues`)
                     subCols[`subtitle_${s.lang}_srt`] = `${mediaDir}/sub.${s.lang}.srt`
                     subCols[`subtitle_${s.lang}_vtt`] = `${mediaDir}/sub.${s.lang}.vtt`
                 }
+                // Les deux colonnes reçoivent la durée de la passe commune : elles ne
+                // sont plus séparables, et la renseigner deux fois vaut mieux que de
+                // laisser un trou dans l'historique.
+                const seconds = (Date.now() - t) / 1000
                 patchRun(runId, {
-                    subs_seconds: (Date.now() - t) / 1000,
+                    audio_seconds: seconds,
+                    subs_seconds: seconds,
                     sub_langs: kept.map(s => s.lang).join('+') || null,
                 })
             })()
 
-            // Audio et sous-titres côte à côte, pas l'un après l'autre : ils ne
-            // dépendent que du MKV source. Enchaînés, l'extraction ne démarrait
-            // qu'à la fin de l'audio et débordait de la fenêtre d'encodage — 109 s
-            // ajoutées au chemin critique sur Interstellar.
-            // allSettled plutôt que all : si l'un échoue, l'autre garde un
-            // gestionnaire et ne remonte pas en rejet non géré.
-            const sideWork = (async () => {
-                const results = await Promise.allSettled([audioJob, subsJob])
-                const failed = results.find(r => r.status === 'rejected')
-                if (failed) throw (failed as PromiseRejectedResult).reason
-            })()
+            // La passe latérale ne dépend que du MKV source, donc elle tourne
+            // pendant l'encodage GPU au lieu de s'y ajouter — c'est ce qui avait
+            // retiré 109 s du chemin critique sur Interstellar.
+            const sideWork = sideJob
             // Sans ce catch immédiat, un échec de la branche parallèle remonterait en
             // rejet non géré pendant qu'on attend la vidéo.
             let sideError: unknown = null
@@ -311,6 +334,10 @@ export async function processFilm(filmId: number): Promise<void> {
                 log('video.mkv déjà présent — encodage skippé')
             } else {
                 log(`réencodage nécessaire — ${plan.reason}`)
+                const hdr = isHdrSource(streams)
+                if (hdr) {
+                    log(`source ${hdr} → tonemapping libplacebo vers BT.709 (environ −34 % de vitesse)`)
+                }
                 setStatus(filmId, 'transcoding_remote', 0)
                 log('encodage GPU distant (démux vidéo seule → pipe SSH → nvenc)…')
                 const t0 = Date.now()
@@ -318,6 +345,9 @@ export async function processFilm(filmId: number): Promise<void> {
                 encodedDuration = await encodeVideoRemote(mkv, videoMkv, {
                     sourceHeight,
                     sourceWidth,
+                    hdr,
+                    sourceCodec: videoStream?.codec_name ?? null,
+                    sourcePixFmt: videoStream?.pix_fmt ?? null,
                     expectedDuration: sourceDuration,
                     onProgress: p => {
                         const pct = sourceDuration > 0 ? Math.min(100, (p.outSeconds / sourceDuration) * 100) : 0
@@ -374,7 +404,12 @@ export async function processFilm(filmId: number): Promise<void> {
         const vfRel = wantVf ? `${mediaDir}/vf.mp4` : (frenchFilm ? `${mediaDir}/vo.mp4` : null)
 
         // Les sous-titres ont été extraits dans la phase parallèle (subCols rempli là).
-        if (tracks.imageSubsFlagged) console.warn(`[processFilm] "${film.title}": subs IMAGE non extraits (PGS/VOBSUB)`)
+        // Alerte seulement si une piste image existait ET qu'aucun sous-titre n'a
+        // survécu : l'OCR a échoué, ce qui mérite un regard. Le cas nominal (OCR
+        // réussi, ou piste texte préférée) ne dit plus rien.
+        if (tracks.imageSubs.length && !Object.keys(subCols).length) {
+            console.warn(`[processFilm] "${film.title}": OCR des subs image sans résultat (PGS/VOBSUB)`)
+        }
 
         // 6. DB + dispo immédiate — UNIQUEMENT ici, une fois tout terminé.
         //    (ne pas écrire file_path_vo_transcoded avant : getPendingFilms() s'en sert pour la reprise)
@@ -408,6 +443,10 @@ export async function processFilm(filmId: number): Promise<void> {
         })
     } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
+        // Couper l'audio et les sous-titres AVANT de rendre la main : sans ça le
+        // film sort de `active`, le poller le remet en file, et une nouvelle paire
+        // de ffmpeg démarre pendant que l'ancienne lit encore le MKV.
+        sideAbortRef?.abort()
         console.error(`[processFilm] Erreur "${film.title}":`, msg)
         setStatus(filmId, 'error', 0, msg)
         finishRun(runId, 'error', runStartedAt, msg)

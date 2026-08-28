@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import { getAllFilms } from '@/lib/films';
+import { getAllFilms, getAvailableFilmsList } from '@/lib/films';
 import { getUserFromSession } from '@/lib/session';
 
 export async function GET(request: NextRequest) {
@@ -11,11 +11,13 @@ export async function GET(request: NextRequest) {
 
     const availableOnly = includeAll && user?.is_admin ? false : true;
 
-    const films = getAllFilms(availableOnly);
+    // L'admin a besoin des colonnes internes (radarr_id, created_at pour le tri) ;
+    // le public reçoit la projection de liste.
+    const films = availableOnly ? getAvailableFilmsList() : getAllFilms(false);
     const response = NextResponse.json(films);
     // Public cache only for non-admin filtered list; admin sees all → no cache
     if (availableOnly) {
-        response.headers.set('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=3600');
+        response.headers.set('Cache-Control', 'public, max-age=0, must-revalidate, s-maxage=300, stale-while-revalidate=3600');
     } else {
         response.headers.set('Cache-Control', 'private, no-cache');
     }

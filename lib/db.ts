@@ -75,6 +75,12 @@ const mediaCols: [string, string][] = [
   ["subtitle_en_vtt", "TEXT"],
   ["subtitle_en_srt", "TEXT"],
   ["qc_attempts", "INTEGER DEFAULT 0"],
+  // Laissez-passer manuel : le contrôle qualité est ignoré pour ce film.
+  // Certaines releases n'existent qu'en VO, ou sans sous-titres français, et
+  // valent quand même d'être servies. Sans ce drapeau, elles sont rejetées puis
+  // blacklistées en boucle jusqu'à épuisement des tentatives, et le film reste
+  // introuvable.
+  ["qc_force", "INTEGER DEFAULT 0"],
 ];
 
 for (const [col, type] of mediaCols) {

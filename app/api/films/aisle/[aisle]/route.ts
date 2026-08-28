@@ -33,7 +33,7 @@ export async function GET(
         const films = getNouveautes();
         const filmsWithStock = enrichFilmsWithStock(films);
         const response = NextResponse.json({ aisle, films: filmsWithStock });
-        response.headers.set('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=3600');
+        response.headers.set('Cache-Control', 'public, max-age=0, must-revalidate, s-maxage=300, stale-while-revalidate=3600');
         return response;
     }
 
@@ -44,6 +44,6 @@ export async function GET(
     const films = getFilmsByAisle(aisle);
     const filmsWithStock = enrichFilmsWithStock(films);
     const response = NextResponse.json({ aisle, films: filmsWithStock });
-    response.headers.set('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=3600');
+    response.headers.set('Cache-Control', 'public, max-age=0, must-revalidate, s-maxage=300, stale-while-revalidate=3600');
     return response;
 }
