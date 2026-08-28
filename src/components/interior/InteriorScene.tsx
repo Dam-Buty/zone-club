@@ -80,11 +80,16 @@ class SceneErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundar
   }
 }
 
-// Extend Three.js WebGPU elements for R3F
+// Extend Three.js WebGPU elements for R3F.
+// Les deux entorses ci-dessous sont la convention documentée dans AGENTS.md pour faire cohabiter
+// R3F et three/webgpu : l'interface vide est le mécanisme d'augmentation de module de TS, et
+// extend() n'accepte pas le namespace three/webgpu tel quel.
 declare module '@react-three/fiber' {
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   interface ThreeElements extends ThreeToJSXElements<typeof THREE> {}
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 extend(THREE as any)
 
 interface InteriorSceneProps {

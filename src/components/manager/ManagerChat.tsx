@@ -25,8 +25,9 @@ export function ManagerChat() {
   // Track which tool calls we've already processed for side-effects
   const processedToolCalls = useRef<Set<string>>(new Set());
 
-  // Stable session UUID for Langfuse grouping — generated once when chat opens
-  const sessionIdRef = useRef<string>(globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2));
+  // Stable session UUID for Langfuse grouping — posé par l'effet d'ouverture ci-dessous.
+  // (Le passer en argument de useRef le régénérait à chaque rendu pour le jeter aussitôt.)
+  const sessionIdRef = useRef<string>('');
 
   const { messages, sendMessage, status, error } = useChat({});
 

@@ -182,15 +182,16 @@ function LoadingDots() {
 }
 
 function LoadingTips() {
-  // Shuffle tips once on mount (Fisher-Yates)
-  const order = useRef<number[]>([])
-  if (order.current.length === 0) {
-    order.current = [...LOADING_TIPS.keys()]
-    for (let i = order.current.length - 1; i > 0; i--) {
+  // Shuffle tips once on mount (Fisher-Yates). Initialiseur paresseux de useState plutôt que
+  // l'écriture d'une ref pendant le rendu : même résultat, mais le rendu reste pur.
+  const [order] = useState<number[]>(() => {
+    const shuffled = [...LOADING_TIPS.keys()]
+    for (let i = shuffled.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
-      [order.current[i], order.current[j]] = [order.current[j], order.current[i]]
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
     }
-  }
+    return shuffled
+  })
 
   const [pos, setPos] = useState(0)
   const [phase, setPhase] = useState<'in' | 'out'>('in')
@@ -202,7 +203,7 @@ function LoadingTips() {
       timerRef.current = setTimeout(() => setPhase('out'), 2500)
     } else if (phase === 'out') {
       safetyRef.current = setTimeout(() => {
-        setPos(p => (p + 1) % order.current.length)
+        setPos(p => (p + 1) % LOADING_TIPS.length)
         setPhase('in')
       }, 600)
     }
@@ -215,7 +216,7 @@ function LoadingTips() {
   const handleTransitionEnd = useCallback(() => {
     if (phase === 'out') {
       if (safetyRef.current) clearTimeout(safetyRef.current)
-      setPos(p => (p + 1) % order.current.length)
+      setPos(p => (p + 1) % LOADING_TIPS.length)
       setPhase('in')
     }
   }, [phase])
@@ -232,7 +233,7 @@ function LoadingTips() {
         transition: 'opacity 0.4s ease',
       }}
     >
-      {LOADING_TIPS[order.current[pos]]}
+      {LOADING_TIPS[order[pos]]}
     </p>
   )
 }

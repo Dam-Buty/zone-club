@@ -110,10 +110,11 @@ export function getUserActiveRentals(userId: number): RentalWithFilm[] {
         JOIN films f ON r.film_id = f.id
         WHERE r.user_id = ? AND r.is_active = 1 AND r.expires_at > datetime('now')
         ORDER BY r.rented_at DESC
+    `)
     // Projection JOIN à colonnes préfixées f_ : pas de type de ligne dédié tant que la forme du film
     // d'une location n'est pas unifiée avec enrichRental (voir la note sur parseFilm dans lib/films.ts).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    `).all(userId) as any[];
+    .all(userId) as any[];
 
     return rows.map(row => {
         const film = parseFilm({

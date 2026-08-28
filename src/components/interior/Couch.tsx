@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback } from 'react'
+import { useRef, useEffect, useCallback, useMemo } from 'react'
 import * as THREE from 'three'
 import { useGLTF } from '@react-three/drei'
 import { RAYCAST_LAYER_INTERACTIVE } from './Controls'
@@ -16,11 +16,12 @@ export function Couch({ position, rotation = [0, 0, 0], onSit }: CouchProps) {
   const groupRef = useRef<THREE.Group>(null)
   const { scene: glbScene } = useGLTF('/models/leather_couch.glb', true)
 
-  // Clone scene + materials (per memory: GLB clone shares materials by reference)
-  const clonedScene = useRef<THREE.Group | null>(null)
-  if (!clonedScene.current) {
-    clonedScene.current = glbScene.clone(true)
-    clonedScene.current.traverse((child) => {
+  // Clone scene + materials (per memory: GLB clone shares materials by reference).
+  // useMemo plutôt qu'une ref écrite pendant le rendu : le rendu redevient pur, et le clone
+  // se refait si le GLB change — ce que le `if (!ref.current)` empêchait définitivement.
+  const clonedScene = useMemo(() => {
+    const clone = glbScene.clone(true)
+    clone.traverse((child) => {
       if ((child as THREE.Mesh).isMesh) {
         const mesh = child as THREE.Mesh
         // Clone material to avoid shared state
@@ -36,7 +37,8 @@ export function Couch({ position, rotation = [0, 0, 0], onSit }: CouchProps) {
         mesh.userData.isCouch = true
       }
     })
-  }
+    return clone
+  }, [glbScene])
 
   const handleClick = useCallback((e?: { stopPropagation?: () => void }) => {
     // R3F propagates clicks through all intersected objects. A click on the
@@ -55,7 +57,7 @@ export function Couch({ position, rotation = [0, 0, 0], onSit }: CouchProps) {
   // Cleanup cloned materials on unmount
   useEffect(() => {
     return () => {
-      clonedScene.current?.traverse((child) => {
+      clonedScene.traverse((child) => {
         if ((child as THREE.Mesh).isMesh) {
           const mesh = child as THREE.Mesh
           if (Array.isArray(mesh.material)) {
@@ -66,13 +68,14 @@ export function Couch({ position, rotation = [0, 0, 0], onSit }: CouchProps) {
         }
       })
     }
-  }, [])
+    // Le cleanup libère les matériaux du clone courant : il doit donc suivre le clone.
+  }, [clonedScene])
 
   return (
     <group ref={groupRef} position={position} rotation={rotation}>
       {/* leather_couch.glb: scale 0.98 (+15% from 0.85) → ~1.98m wide, 0.81m high, 0.91m deep */}
       <primitive
-        object={clonedScene.current!}
+        object={clonedScene}
         scale={0.98}
         position={[0, 0, 0]}
         onClick={handleClick}
