@@ -232,10 +232,13 @@ session Cast survit à la fermeture du lecteur — la télé continue de jouer p
 retourne marcher dans les rayons, et rouvrir le lecteur retombe directement en mode
 télécommande.
 
-**PWA.** Service worker à stratégies différenciées : cache-first sur les assets 3D
-immuables, stale-while-revalidate sur le catalogue, network-only sur tout ce qui touche
-au compte. Notifications push Web Push, dont celle qui prévient que le film est terminé
-sur la télé pendant que le téléphone dormait — et son clic rouvre l'app au bon endroit.
+**PWA.** Service worker à deux vitesses : cache-first sur les assets 3D immuables,
+network-only sur tout le reste. Le catalogue y était en stale-while-revalidate ; il en est
+sorti, parce qu'une donnée qui bouge chaque semaine ne peut pas dépendre d'un bump de
+version fait à la main au déploiement — ce cache a servi pendant des jours un catalogue
+antérieur à un reset de la base. Notifications push Web Push, dont celle qui prévient que
+le film est terminé sur la télé pendant que le téléphone dormait — et son clic rouvre
+l'app au bon endroit.
 
 **Tests.** Pas de framework : le runner natif de Node. Une bonne partie des tests sont de
 l'analyse statique du code source — audits de sécurité et de performance figés en

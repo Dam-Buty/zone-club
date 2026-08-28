@@ -17,6 +17,6 @@ export async function GET(
     const films = getFilmsByGenre(slug);
 
     const response = NextResponse.json({ genre, films });
-    response.headers.set('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=3600');
+    response.headers.set('Cache-Control', 'public, max-age=0, must-revalidate, s-maxage=300, stale-while-revalidate=3600');
     return response;
 }

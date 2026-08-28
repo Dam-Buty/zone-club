@@ -59,6 +59,46 @@ function slugify(text: string): string {
         .replace(/(^-|-$)/g, '');
 }
 
+/**
+ * Colonnes servies par les routes de catalogue (liste publique, rayon, genre,
+ * comptoir). Restreint à ce que `apiFilmToFilm` (src/api/index.ts) consomme
+ * réellement.
+ *
+ * Le `SELECT *` d'avant renvoyait la ligne entière. Deux problèmes : `actors`
+ * pesait à lui seul 232 Ko sur 854 Ko de catalogue alors que rien ne le lit
+ * (les crédits affichés dans la K7 viennent de TMDB côté client, pas d'ici), et
+ * les colonnes internes — chemins de fichiers, `radarr_id`, état de
+ * transcodage, `qc_*` — partaient sur des routes publiques sans authentification.
+ *
+ * L'admin continue de passer par `getAllFilms`, qui garde la ligne complète.
+ */
+const FILM_LIST_COLUMNS = [
+    'id', 'tmdb_id', 'title', 'synopsis', 'release_year', 'poster_url',
+    'backdrop_url', 'genres', 'runtime', 'aisle', 'is_nouveaute',
+    'is_available', 'stock',
+] as const;
+
+export type FilmListItem = Pick<Film,
+    'id' | 'tmdb_id' | 'title' | 'synopsis' | 'release_year' | 'poster_url' |
+    'backdrop_url' | 'genres' | 'runtime' | 'aisle' | 'is_nouveaute' | 'is_available'
+> & { stock: number };
+
+/** Liste de colonnes pour un SELECT, éventuellement préfixée par un alias de table. */
+export function filmListColumns(alias?: string): string {
+    const prefix = alias ? `${alias}.` : '';
+    return FILM_LIST_COLUMNS.map(c => prefix + c).join(', ');
+}
+
+/** Pendant de parseFilm pour les lignes de liste : ni directors ni actors à parser. */
+export function parseFilmListRow(row: any): FilmListItem {
+    return {
+        ...row,
+        genres: JSON.parse(row.genres || '[]'),
+        is_nouveaute: !!row.is_nouveaute,
+        is_available: !!row.is_available,
+    };
+}
+
 export function parseFilm(row: any): Film {
     return {
         ...row,
@@ -191,6 +231,7 @@ export function getFilmByTmdbId(tmdbId: number): Film | null {
     return row ? parseFilm(row) : null;
 }
 
+/** Ligne complète — réservé à l'admin, qui a besoin des colonnes internes. */
 export function getAllFilms(availableOnly = true): Film[] {
     const query = availableOnly
         ? 'SELECT * FROM films WHERE is_available = 1 ORDER BY created_at DESC'
@@ -199,16 +240,23 @@ export function getAllFilms(availableOnly = true): Film[] {
     return db.prepare(query).all().map(parseFilm);
 }
 
-export function getFilmsByGenre(genreSlug: string): Film[] {
+/** Catalogue public : colonnes de liste uniquement. */
+export function getAvailableFilmsList(): FilmListItem[] {
+    return db.prepare(
+        `SELECT ${filmListColumns()} FROM films WHERE is_available = 1 ORDER BY created_at DESC`
+    ).all().map(parseFilmListRow);
+}
+
+export function getFilmsByGenre(genreSlug: string): FilmListItem[] {
     const rows = db.prepare(`
-        SELECT f.* FROM films f
+        SELECT ${filmListColumns('f')} FROM films f
         JOIN film_genres fg ON f.id = fg.film_id
         JOIN genres g ON fg.genre_id = g.id
         WHERE g.slug = ? AND f.is_available = 1
         ORDER BY f.release_year DESC
     `).all(genreSlug);
 
-    return rows.map(parseFilm);
+    return rows.map(parseFilmListRow);
 }
 
 export function getAllGenres(): Genre[] {
@@ -227,10 +275,10 @@ export function getGenresWithFilmCount(): (Genre & { film_count: number })[] {
     `).all() as (Genre & { film_count: number })[];
 }
 
-export function getFilmsByAisle(aisle: string): Film[] {
+export function getFilmsByAisle(aisle: string): FilmListItem[] {
     return db.prepare(
-        'SELECT * FROM films WHERE aisle = ? AND is_available = 1 ORDER BY title'
-    ).all(aisle).map(parseFilm);
+        `SELECT ${filmListColumns()} FROM films WHERE aisle = ? AND is_available = 1 ORDER BY title`
+    ).all(aisle).map(parseFilmListRow);
 }
 
 export function getAllAvailableFilmsGroupedByAisle(): Map<string, Film[]> {
@@ -253,10 +301,10 @@ export function getAllAvailableFilmsGroupedByAisle(): Map<string, Film[]> {
     return grouped;
 }
 
-export function getNouveautes(): Film[] {
+export function getNouveautes(): FilmListItem[] {
     return db.prepare(
-        'SELECT * FROM films WHERE is_nouveaute = 1 AND is_available = 1 ORDER BY created_at DESC'
-    ).all().map(parseFilm);
+        `SELECT ${filmListColumns()} FROM films WHERE is_nouveaute = 1 AND is_available = 1 ORDER BY created_at DESC`
+    ).all().map(parseFilmListRow);
 }
 
 export function setFilmAvailability(filmId: number, available: boolean): void {

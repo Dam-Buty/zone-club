@@ -196,6 +196,7 @@ Colonnes clés de `films` :
 | `transcode_status` / `_progress` / `_error` | `pending` · `done` · `error` · `qc_failed` · `rejected_release` |
 | `qc_attempts` / `qc_force` | Compteur de rejets QC / laissez-passer manuel |
 | `duration_sec` | Cache ffprobe — **utilisé par la chaîne 24/7** |
+| `actors` / `directors` / `synopsis` | Lourds — `actors` seul pèse 232 Ko sur l'ensemble du catalogue. Servis par le **détail** uniquement, jamais par les listes |
 | `stock` | Nombre de copies (défaut 2) |
 
 ⚠️ `radarr_vo_id`, `radarr_vf_id`, `file_path_vo`, `file_path_vf` sont des **colonnes mortes**
@@ -445,13 +446,33 @@ Le SDK attend des UIMessages avec `id`, `role`, `content` **et** `parts`.
 
 ## PWA
 
-`public/sw.js` (bumper `VERSION` à chaque changement de stratégie) :
+`public/sw.js` — deux stratégies seulement :
 
 - **cache-first** : assets 3D immuables (`/models`, `/textures`, `/basis`, `.glb/.ktx2/.hdr/.wasm`)
   et bundles Next hashés
-- **stale-while-revalidate** : `/api/films/*`
-- **network-only** : tout le reste — auth, rentals, reviews, admin, et le proxy poster
-  (délibérément exclu : déjà couvert par `Cache-Control: immutable`, sinon ~58 Mo dupliqués sur mobile)
+- **network-only** : tout le reste, catalogue compris
+
+⚠️ **Bumper `VERSION` quand les assets précachés changent** (GLB, KTX2, HDR) : leurs URLs ne sont
+pas content-hashées, donc rien d'autre ne les invalide. Ce n'est plus nécessaire pour le catalogue —
+il a été sorti du cache applicatif justement parce que sa fraîcheur dépendait de ce geste manuel
+(voir « Fraîcheur du catalogue » ci-dessous).
+
+### Fraîcheur du catalogue
+
+Le catalogue était en `stale-while-revalidate` dans le service worker. Deux défauts : on servait
+toujours une version en retard d'une visite, et les entrées mortes ne disparaissaient qu'au bump
+manuel de `VERSION`. Le catalogue est passé de 18 à 127 films sans que personne y pense, et les
+navigateurs ont servi pendant des jours un état antérieur au reset de la base — jusqu'à afficher des
+films devenus indisponibles.
+
+La donnée est mutable et bouge chaque semaine : sa fraîcheur ne peut pas dépendre d'un geste au
+déploiement. Le catalogue est donc `network-only`, et son cache est celui du navigateur, piloté par
+le `Cache-Control` des routes (`public, max-age=0, must-revalidate, s-maxage=300,
+stale-while-revalidate=3600`). Le `max-age=0` explicite est là pour ne pas laisser la fraîcheur à
+l'heuristique du navigateur, faute de directive.
+
+Le coût de ce cache était de 233 Ko gzip par visite, ramenés à 120 Ko en cessant de servir la ligne
+SQL entière — voir `FILM_LIST_COLUMNS` dans `lib/films.ts`.
 
 Push : `web-push` + VAPID, table `push_subscriptions`, nettoyage auto des abonnements 410/404. La
 notification « film terminé sur la TV » ouvre `/?castEnded={filmId}`, consommé en deep-link par `App.tsx`.

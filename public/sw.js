@@ -1,14 +1,25 @@
-// Service Worker — cache-first for immutable 3D assets, stale-while-revalidate for the
-// film catalog API, network-only for everything else (posters, auth, rentals…).
-// (posters are served by /api/poster proxy with HTTP Cache-Control: max-age=2592000 immutable,
-// so the browser HTTP cache handles them — duplicating in SW cache wasted ~58 MB on mobile).
-// Bump VERSION on every deploy to invalidate stale caches.
-// v6 : le catalogue est passé de 18 à 127 films sans que cette version soit
-// touchée, donc les navigateurs servaient un cache `zone-club-v5` figé sur un état
-// antérieur au reset de la base — au point d'afficher encore des films devenus
-// indisponibles. Le bump supprime les anciens caches à l'activation (voir
-// l'événement `activate` plus bas).
-const VERSION = 'v6'
+// Service Worker — cache-first pour les assets 3D immuables, network-only pour
+// tout le reste (catalogue, posters, auth, locations…).
+//
+// Les posters sont servis par /api/poster avec un Cache-Control max-age=2592000
+// immutable : le cache HTTP du navigateur suffit, les dupliquer ici coûtait
+// ~58 Mo sur mobile.
+//
+// VERSION à bumper quand les assets précachés changent (modèles GLB, textures
+// KTX2, HDR) : leurs URLs ne sont pas content-hashées, donc rien d'autre ne les
+// invalide. L'`activate` supprime tous les caches dont le nom ne correspond pas.
+//
+// v7 : le catalogue sort du cache applicatif. Il y était en
+// stale-while-revalidate, ce qui servait toujours une version en retard d'une
+// visite, et les entrées mortes ne disparaissaient qu'au bump manuel de VERSION
+// — le catalogue est passé de 18 à 127 films sans que personne y pense, et les
+// navigateurs ont servi pendant des jours un état antérieur au reset de la base,
+// jusqu'à afficher des films devenus indisponibles. La fraîcheur d'une donnée
+// qui bouge chaque semaine ne peut pas dépendre d'un geste manuel au
+// déploiement. Le coût réel de ce cache était de 233 Ko gzip, ramenés à 120 Ko
+// en cessant de servir la ligne SQL entière (voir FILM_LIST_COLUMNS dans
+// lib/films.ts) — largement payable à chaque visite.
+const VERSION = 'v7'
 const CACHE_NAME = `zone-club-${VERSION}`
 
 // Assets to pre-cache on install (critical path)
@@ -55,20 +66,10 @@ function getStrategy(url) {
     return 'cache-first'
   }
 
-  // Poster proxy — network-only: served by /api/poster with HTTP Cache-Control
-  // max-age=2592000 immutable. Browser HTTP cache handles repeat fetches without
-  // SW intervention; duplicating in SW cache wasted ~58 MB on mobile.
-
-  // Film catalog API — stale-while-revalidate: serve the cached catalog
-  // instantly, then refresh it in the background so newly-added films surface
-  // on the NEXT visit without needing a deploy + VERSION bump. (Was cache-first,
-  // which stranded new films in stale caches until a redeploy — the trade-off
-  // saved ~1 MB of revalidation per visit but caused a freshness bug.)
-  if (path.startsWith('/api/films/')) {
-    return 'stale-while-revalidate'
-  }
-
-  // Everything else (auth, rentals, reviews, admin, etc.)
+  // Tout le reste — catalogue, proxy poster, auth, locations, critiques, admin.
+  // Le catalogue compris : c'est de la donnée mutable, son cache est celui du
+  // navigateur, piloté par le Cache-Control des routes (voir l'en-tête de ce
+  // fichier).
   return 'network-only'
 }
 
@@ -120,27 +121,6 @@ self.addEventListener('fetch', (event) => {
             }
             return response
           })
-        })
-      )
-    )
-    return
-  }
-
-  if (strategy === 'stale-while-revalidate') {
-    event.respondWith(
-      caches.open(CACHE_NAME).then((cache) =>
-        cache.match(request).then((cached) => {
-          // Background refresh; .catch keeps it from ever rejecting so waitUntil is safe.
-          const networkFetch = fetch(request)
-            .then((response) => {
-              if (response.ok) cache.put(request, response.clone())
-              return response
-            })
-            .catch(() => undefined)
-          // Keep the SW alive until the background revalidation settles.
-          event.waitUntil(networkFetch)
-          // Serve cache instantly when present; otherwise wait for the network.
-          return cached || networkFetch.then((response) => response || fetch(request))
         })
       )
     )
