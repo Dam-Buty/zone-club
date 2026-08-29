@@ -244,7 +244,6 @@ export function Controls({
   const setTargetedFilm = useStore((state) => state.setTargetedFilm);
   const setPointerLocked = useStore((state) => state.setPointerLocked);
   const showManager = useStore((state) => state.showManager);
-  const openTerminal = useStore((state) => state.openTerminal);
   const requestPointerUnlock = useStore((state) => state.requestPointerUnlock);
   const pointerLockRequested = useStore((state) => state.pointerLockRequested);
   const clearPointerLockRequest = useStore(
@@ -823,6 +822,8 @@ export function Controls({
       controlsCreated.current = false;
       setPointerLocked(false);
     };
+    // scene.children muterait à chaque ajout d'objet : les contrôles seraient recréés en boucle.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isMobile, camera, gl, setPointerLocked]);
 
   // Main loop — movement + targeting

@@ -4,6 +4,17 @@ import { generatePassphrase } from './passphrase';
 
 const SALT_ROUNDS = 12;
 
+/** Ligne brute de la table `users` — inclut les hachages, que `User` n'expose pas. */
+interface UserRow {
+    id: number;
+    username: string;
+    credits: number;
+    is_admin: number;
+    created_at: string;
+    password_hash: string;
+    recovery_phrase_hash: string;
+}
+
 export interface User {
     id: number;
     username: string;
@@ -44,7 +55,7 @@ export async function registerUser(username: string, password: string): Promise<
 }
 
 export async function loginUser(username: string, password: string): Promise<User | null> {
-    const row = db.prepare('SELECT * FROM users WHERE username = ?').get(username) as any;
+    const row = db.prepare('SELECT * FROM users WHERE username = ?').get(username) as UserRow | undefined;
 
     if (!row) return null;
 
@@ -55,13 +66,13 @@ export async function loginUser(username: string, password: string): Promise<Use
         id: row.id,
         username: row.username,
         credits: row.credits,
-        is_admin: row.is_admin,
+        is_admin: !!row.is_admin,
         created_at: row.created_at
     };
 }
 
 export async function recoverAccount(username: string, recoveryPhrase: string, newPassword: string): Promise<{ user: User; newRecoveryPhrase: string } | null> {
-    const row = db.prepare('SELECT * FROM users WHERE username = ?').get(username) as any;
+    const row = db.prepare('SELECT * FROM users WHERE username = ?').get(username) as UserRow | undefined;
 
     if (!row) return null;
 
@@ -83,7 +94,7 @@ export async function recoverAccount(username: string, recoveryPhrase: string, n
             id: row.id,
             username: row.username,
             credits: row.credits,
-            is_admin: row.is_admin,
+            is_admin: !!row.is_admin,
             created_at: row.created_at
         },
         newRecoveryPhrase

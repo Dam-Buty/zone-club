@@ -192,8 +192,40 @@ function note(msg: string): void {
     console.log(`  ${DRY ? '[dry] ' : ''}${msg}`)
 }
 
+/** Sous-ensembles de l'API Radarr v3 effectivement manipulés par ce script. */
+interface RadarrCustomFormat {
+    id: number
+    name: string
+    specifications?: { fields?: { name: string; value: unknown }[] }[]
+}
+
+/** Un palier de qualité, ou un groupe qui en contient (« WEB 2160p »). */
+interface RadarrQualityItem {
+    name?: string
+    allowed: boolean
+    quality?: { id: number; name: string }
+    items?: RadarrQualityItem[]
+}
+
+interface RadarrProfile {
+    id: number
+    name: string
+    cutoff: number
+    upgradeAllowed: boolean
+    minFormatScore: number
+    language?: { id: number; name: string }
+    items: RadarrQualityItem[]
+    formatItems: { name: string; score: number }[]
+}
+
+interface RadarrQualityDefinition {
+    title: string
+    maxSize: number
+    preferredSize: number
+}
+
 async function ensureCustomFormats(): Promise<void> {
-    const existing = await api<any[]>('/customformat')
+    const existing = await api<RadarrCustomFormat[]>('/customformat')
     for (const want of CUSTOM_FORMATS) {
         const found = existing.find(f => f.name === want.name)
         const specs = want.specs.map(s => ({
@@ -208,7 +240,7 @@ async function ensureCustomFormats(): Promise<void> {
             if (!DRY) await api('/customformat', { method: 'POST', body: JSON.stringify({ name: want.name, includeCustomFormatWhenRenaming: false, specifications: specs }) })
             continue
         }
-        const actual = found.specifications?.[0]?.fields?.find((f: any) => f.name === 'value')?.value
+        const actual = found.specifications?.[0]?.fields?.find(f => f.name === 'value')?.value
         if (String(actual) !== String(want.specs[0].value)) {
             note(`format "${want.name}" : regex ${JSON.stringify(actual)} → ${JSON.stringify(want.specs[0].value)}`)
             if (!DRY) await api(`/customformat/${found.id}`, { method: 'PUT', body: JSON.stringify({ ...found, specifications: specs }) })
@@ -217,13 +249,15 @@ async function ensureCustomFormats(): Promise<void> {
 }
 
 async function ensureProfiles(): Promise<void> {
-    const profiles = await api<any[]>('/qualityprofile')
+    const profiles = await api<RadarrProfile[]>('/qualityprofile')
     for (const want of PROFILES) {
         const p = profiles.find(x => x.name === want.name)
         if (!p) { console.warn(`  ⚠️  profil "${want.name}" absent — à créer à la main (les paliers de qualité ne sont pas décrits ici)`); continue }
 
-        const flat = p.items.flatMap((it: any) => (it.quality ? [it] : it.items))
-        const cutoff = flat.find((x: any) => x.quality.name === want.cutoffQuality)
+        const flat = p.items
+            .flatMap(it => (it.quality ? [it] : it.items ?? []))
+            .filter((it): it is RadarrQualityItem & { quality: { id: number; name: string } } => !!it.quality)
+        const cutoff = flat.find(x => x.quality.name === want.cutoffQuality)
         if (!cutoff) { console.warn(`  ⚠️  "${want.cutoffQuality}" introuvable dans "${want.name}"`); continue }
 
         let dirty = false
@@ -232,7 +266,7 @@ async function ensureProfiles(): Promise<void> {
         if (p.language?.name !== want.language) { note(`profil "${want.name}" : langue ${p.language?.name} → ${want.language}`); p.language = { id: -1, name: 'Any' }; dirty = true }
         if (p.minFormatScore !== want.minFormatScore) { note(`profil "${want.name}" : minFormatScore → ${want.minFormatScore}`); p.minFormatScore = want.minFormatScore; dirty = true }
 
-        const idxOf = (name: string) => p.items.findIndex((it: any) =>
+        const idxOf = (name: string) => p.items.findIndex(it =>
             it.quality ? it.quality.name === name : it.name === name)
         const nameAt = (i: number) => {
             const it = p.items[i]
@@ -276,7 +310,7 @@ async function ensureProfiles(): Promise<void> {
 }
 
 async function ensureQualitySizes(): Promise<void> {
-    const defs = await api<any[]>('/qualitydefinition')
+    const defs = await api<RadarrQualityDefinition[]>('/qualitydefinition')
     const todo = defs.filter(d => QUALITY_SIZES[d.title] &&
         (d.maxSize !== QUALITY_SIZES[d.title].maxSize || d.preferredSize !== QUALITY_SIZES[d.title].preferredSize))
     if (todo.length === 0) return
@@ -288,14 +322,14 @@ async function ensureQualitySizes(): Promise<void> {
 }
 
 async function ensureRootFolder(): Promise<void> {
-    const folders = await api<any[]>('/rootfolder')
+    const folders = await api<{ path: string }[]>('/rootfolder')
     if (folders.some(f => f.path === ROOT_FOLDER)) return
     note(`dossier racine "${ROOT_FOLDER}" ajouté`)
     if (!DRY) await api('/rootfolder', { method: 'POST', body: JSON.stringify({ path: ROOT_FOLDER }) })
 }
 
 async function checkRemotePathMappings(): Promise<void> {
-    const maps = await api<any[]>('/remotepathmapping')
+    const maps = await api<{ host: string; remotePath: string; localPath: string }[]>('/remotepathmapping')
     if (maps.length > 0) {
         console.warn(`  ⚠️  ${maps.length} remote path mapping(s) présent(s) : inutiles quand Radarr voit les mêmes chemins que l'hôte, et nuisibles s'ils pointent vers d'anciens chemins.`)
         for (const m of maps) console.warn(`      ${m.host}: ${m.remotePath} → ${m.localPath}`)

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { PlayerState } from '../../types';
-import type { AudioTrack } from './VHSPlayer';
+import type { AudioTrack, SubtitleTrack } from './VHSPlayer';
 import styles from './VHSControls.module.css';
 
 interface VHSControlsProps {
@@ -18,11 +18,12 @@ interface VHSControlsProps {
   // Audio track props
   audioTrack: AudioTrack;
   onAudioTrackChange: (track: AudioTrack) => void;
-  showSubtitles: boolean;
-  onSubtitlesToggle: () => void;
+  subtitleTrack: SubtitleTrack;
+  onSubtitleTrackChange: (lang: Exclude<SubtitleTrack, 'off'>) => void;
   hasVF: boolean;
   hasVO: boolean;
-  hasSubtitles: boolean;
+  hasSubtitlesFr: boolean;
+  hasSubtitlesEn: boolean;
   onCast: () => void;
   onAirPlay: () => void;
   onMirroringHelp: () => void;
@@ -73,11 +74,12 @@ export function VHSControls({
   onResumeFromRW,
   audioTrack,
   onAudioTrackChange,
-  showSubtitles,
-  onSubtitlesToggle,
+  subtitleTrack,
+  onSubtitleTrackChange,
   hasVF,
   hasVO,
-  hasSubtitles,
+  hasSubtitlesFr,
+  hasSubtitlesEn,
   onCast,
   onAirPlay,
   onMirroringHelp,
@@ -239,31 +241,52 @@ export function VHSControls({
           <div className={styles.trackControls}>
             {(hasVF || hasVO) && (
               <div className={styles.trackSelector}>
+                {/* Unavailable version: greyed + a clear "indisponible" label instead of a dead disabled
+                    button (a disabled button swallows the tap with no feedback on mobile). onClick is
+                    guarded so an unavailable version can't be selected. */}
                 <button
-                  onClick={() => onAudioTrackChange('vf')}
+                  onClick={() => hasVF && onAudioTrackChange('vf')}
                   className={`${styles.trackBtn} ${audioTrack === 'vf' ? styles.trackActive : ''}`}
-                  disabled={!hasVF}
-                  title="Version Française [V]"
+                  style={!hasVF ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
+                  aria-disabled={!hasVF}
+                  title={hasVF ? 'Version Française [V]' : 'VF indisponible pour ce film'}
                 >
                   VF
                 </button>
                 <button
-                  onClick={() => onAudioTrackChange('vo')}
+                  onClick={() => hasVO && onAudioTrackChange('vo')}
                   className={`${styles.trackBtn} ${audioTrack === 'vo' ? styles.trackActive : ''}`}
-                  disabled={!hasVO}
-                  title="Version Originale [V]"
+                  style={!hasVO ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
+                  aria-disabled={!hasVO}
+                  title={hasVO ? 'Version Originale [V]' : 'VO indisponible pour ce film'}
                 >
                   VO
                 </button>
+                {hasVF !== hasVO && (
+                  <span style={{ fontSize: '0.62rem', opacity: 0.7, alignSelf: 'center', marginLeft: 6, letterSpacing: '0.3px', whiteSpace: 'nowrap' }}>
+                    {hasVF ? 'VO' : 'VF'} indisponible
+                  </span>
+                )}
               </div>
             )}
-            {hasSubtitles && (
+            {/* Une langue absente n'a pas de bouton du tout : contrairement à VF/VO, l'absence de
+                sous-titres n'a rien à expliquer à l'utilisateur — il n'a pas payé pour eux. */}
+            {hasSubtitlesFr && (
               <button
-                onClick={onSubtitlesToggle}
-                className={`${styles.trackBtn} ${showSubtitles ? styles.trackActive : ''}`}
+                onClick={() => onSubtitleTrackChange('fr')}
+                className={`${styles.trackBtn} ${subtitleTrack === 'fr' ? styles.trackActive : ''}`}
                 title="Sous-titres français [T]"
               >
                 STFR
+              </button>
+            )}
+            {hasSubtitlesEn && (
+              <button
+                onClick={() => onSubtitleTrackChange('en')}
+                className={`${styles.trackBtn} ${subtitleTrack === 'en' ? styles.trackActive : ''}`}
+                title="Sous-titres anglais [T]"
+              >
+                STEN
               </button>
             )}
           </div>

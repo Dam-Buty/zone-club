@@ -43,11 +43,6 @@ const vcrSeparationMat = new THREE.MeshStandardMaterial({
   roughness: 0.8,
   metalness: 0.0,
 })
-const vcrDoorMat = new THREE.MeshStandardMaterial({
-  color: '#1a1a1e',
-  roughness: 0.85,
-  metalness: 0.0,
-})
 // Fente K7: tons proches du body (#5a5862) mais légèrement plus sombres
 const vcrFenteFrameMat = new THREE.MeshStandardMaterial({
   color: '#4a4852',
@@ -164,38 +159,10 @@ const tvBodyMat = new THREE.MeshStandardMaterial({
   roughness: 0.5,
   metalness: 0.05,
 })
-const tvPanelMat = new THREE.MeshStandardMaterial({
-  color: '#1c1a22',
-  roughness: 0.65,
-  metalness: 0.05,
-})
-const tvButtonMat = new THREE.MeshStandardMaterial({
-  color: '#585460',
-  roughness: 0.3,
-  metalness: 0.1,
-})
-
 const tvInnerBezelMat = new THREE.MeshStandardMaterial({
   color: '#0a0a0e',
   roughness: 0.9,
 })
-const tvTopEdgeMat = new THREE.MeshStandardMaterial({
-  color: '#4a4850',
-  roughness: 0.4,
-  metalness: 0.1,
-})
-const tvCreaseMat = new THREE.MeshStandardMaterial({
-  color: '#111115',
-  roughness: 0.9,
-})
-const tvConcaveMat = new THREE.MeshStandardMaterial({
-  color: '#18161c',
-  roughness: 0.75,
-})
-
-// --- Sony Trinitron: Shared geometry ---
-const tvButtonGeo = new THREE.CylinderGeometry(0.012, 0.012, 0.010, 12)
-
 // Rounded corner geometries for TV body (r=0.008, ~2px visual)
 const _tvR = 0.008
 
@@ -287,19 +254,20 @@ const tvRearGeo = new THREE.ExtrudeGeometry(tvRearShape, { depth: 0.30, bevelEna
   tvRearGeo.computeBoundingSphere()
 }
 
-// Bottom control panel: rounded rect 0.60×0.10, depth 0.07
-const tvPanelShape = new THREE.Shape()
-const _tpw = 0.60 / 2, _tph = 0.10 / 2
-tvPanelShape.moveTo(-_tpw + _tvR, -_tph)
-tvPanelShape.lineTo(_tpw - _tvR, -_tph)
-tvPanelShape.quadraticCurveTo(_tpw, -_tph, _tpw, -_tph + _tvR)
-tvPanelShape.lineTo(_tpw, _tph - _tvR)
-tvPanelShape.quadraticCurveTo(_tpw, _tph, _tpw - _tvR, _tph)
-tvPanelShape.lineTo(-_tpw + _tvR, _tph)
-tvPanelShape.quadraticCurveTo(-_tpw, _tph, -_tpw, _tph - _tvR)
-tvPanelShape.lineTo(-_tpw, -_tph + _tvR)
-tvPanelShape.quadraticCurveTo(-_tpw, -_tph, -_tpw + _tvR, -_tph)
-const tvPanelGeo = new THREE.ExtrudeGeometry(tvPanelShape, { depth: 0.07, bevelEnabled: false })
+// Palette du CRT de réglages. Au niveau module : littérale et stable, elle était recréée à chaque
+// rendu, ce qui rendait sous-spécifiés tous les useMemo de dessin qui la lisent.
+const SETTINGS_COLORS = {
+  green: '#00ff00',
+  greenDim: '#009900',
+  // Bumped cyan from #00fff7 → light aqua: sharper at distance on the CRT
+  // mesh without becoming intrusive. Same hue family.
+  cyan: '#A8FCEC',
+  gold: '#ffd700',
+  red: '#ff4444',
+  pink: '#ff2d95',
+  dimText: '#666666',
+  label: '#888888',
+} as const
 
 interface InteractiveTVDisplayProps {
   position: [number, number, number]
@@ -437,12 +405,6 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
   const [settingsMenuIndex, setSettingsMenuIndex] = useState(0)
   const [settingsSubIndex, setSettingsSubIndex] = useState(0)
   const [accountMenuIndex, setAccountMenuIndex] = useState(0) // 0=benchmark, 1=retour
-  const [isHovered, setIsHovered] = useState(false)
-
-  // Refs pour les textures dynamiques
-  const idleTextureRef = useRef<THREE.CanvasTexture | null>(null)
-  const menuTextureRef = useRef<THREE.CanvasTexture | null>(null)
-  const indicatorTextureRef = useRef<THREE.CanvasTexture | null>(null)
 
   // Individual selectors to avoid re-rendering on unrelated store changes
   const rentals = useStore(state => state.rentals)
@@ -750,19 +712,6 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
   }, [])
 
   // --- Settings CRT Textures (replacing old TVTerminal HTML overlay for Parametres) ---
-  const SETTINGS_COLORS = {
-    green: '#00ff00',
-    greenDim: '#009900',
-    // Bumped cyan from #00fff7 → light aqua: sharper at distance on the CRT
-    // mesh without becoming intrusive. Same hue family.
-    cyan: '#A8FCEC',
-    gold: '#ffd700',
-    red: '#ff4444',
-    pink: '#ff2d95',
-    dimText: '#666666',
-    label: '#888888',
-  }
-
   const getFilmTitle = useCallback((filmId: number) => {
     const allFilms = Object.values(films).flat()
     return allFilms.find(f => f.id === filmId)?.title || 'Film inconnu'
@@ -931,10 +880,14 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
       ctx.font = `bold 34px ${CRT_FONT}`
       const startY = 170 + subOY
       const lineH = 90
-      const reversed = [...rentalHistory].reverse().slice(0, 8)
+      // Server order is already recent-first (ORDER BY rented_at DESC) — do NOT reverse,
+      // that would show the 8 OLDEST. Same list/labels as the TVTerminal history tab.
+      const recent = rentalHistory.slice(0, 8)
 
-      reversed.forEach((entry, i) => {
-        const title = getFilmTitle(entry.filmId).substring(0, 22)
+      recent.forEach((entry, i) => {
+        // Prefer the server-joined title: the 3D catalogue only holds the loaded aisles, so an
+        // older rental would otherwise fall back to "Film #id".
+        const title = (entry.title || getFilmTitle(entry.filmId)).substring(0, 22)
         ctx.shadowColor = SETTINGS_COLORS.green
         ctx.shadowBlur = 1
         ctx.fillStyle = SETTINGS_COLORS.green
@@ -943,7 +896,9 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
         ctx.font = `26px ${CRT_FONT}`
         ctx.fillStyle = SETTINGS_COLORS.dimText
         ctx.shadowBlur = 0
-        ctx.fillText(`   Loué ${formatDate(entry.rentedAt)} - Rendu ${formatDate(entry.returnedAt)}`, subOX + 60, startY + i * lineH + 35)
+        // `returnedAt` carries expires_at (end of the rental window), NOT an actual return date —
+        // printing "Rendu <date>" showed a FUTURE date for a rental still in progress.
+        ctx.fillText(`   Loué ${formatDate(entry.rentedAt)} · ${entry.isActive ? 'en cours' : 'terminé'}`, subOX + 60, startY + i * lineH + 35)
         ctx.font = `bold 34px ${CRT_FONT}`
       })
     }
@@ -1012,7 +967,9 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
     const texture = new THREE.CanvasTexture(canvas)
     texture.needsUpdate = true
     return texture
-  }, [isAuthenticated, authUser, localUser])
+  // Cette texture ne dessine que le solde et le niveau : credits manquait (montant périmé après une
+  // location ou un bonus), isAuthenticated/authUser n'ont jamais servi ici.
+  }, [localUser, credits])
 
   // Settings: MON COMPTE sub-screen
   const settingsAccountTexture = useMemo(() => {
@@ -1041,7 +998,9 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
       rows.push(['Utilisateur', authUser.username, SETTINGS_COLORS.gold])
     }
     rows.push(['Niveau', localUser.level.toUpperCase(), SETTINGS_COLORS.gold])
-    rows.push(['Total locations', `${rentals.length + rentalHistory.length}`, SETTINGS_COLORS.green])
+    // History now = ALL rentals (active + past) from the server, so adding the active ones would
+    // double-count them. Fall back to rentals.length when the history hasn't loaded (guest / offline).
+    rows.push(['Total locations', `${rentalHistory.length || rentals.length}`, SETTINGS_COLORS.green])
     rows.push(['Crédits', `${credits}`, SETTINGS_COLORS.green])
     rows.push(['Locations actives', `${rentals.length}`, SETTINGS_COLORS.green])
     rows.push(['Critiques publiées', `${userReviews.length}`, SETTINGS_COLORS.green])
@@ -1089,7 +1048,7 @@ export function InteractiveTVDisplay({ position, rotation = [0, 0, 0] }: Interac
     const texture = new THREE.CanvasTexture(canvas)
     texture.needsUpdate = true
     return texture
-  }, [isAuthenticated, authUser, localUser, rentals.length, rentalHistory.length, userReviews.length, benchmarkEnabled, accountMenuIndex])
+  }, [isAuthenticated, authUser, localUser, credits, rentals.length, rentalHistory.length, userReviews.length, benchmarkEnabled, accountMenuIndex])
 
   // Texture indicateur films disponibles
   const indicatorTexture = useMemo(() => {

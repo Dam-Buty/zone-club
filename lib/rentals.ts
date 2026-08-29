@@ -110,7 +110,11 @@ export function getUserActiveRentals(userId: number): RentalWithFilm[] {
         JOIN films f ON r.film_id = f.id
         WHERE r.user_id = ? AND r.is_active = 1 AND r.expires_at > datetime('now')
         ORDER BY r.rented_at DESC
-    `).all(userId) as any[];
+    `)
+    // Projection JOIN à colonnes préfixées f_ : pas de type de ligne dédié tant que la forme du film
+    // d'une location n'est pas unifiée avec enrichRental (voir la note sur parseFilm dans lib/films.ts).
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .all(userId) as any[];
 
     return rows.map(row => {
         const film = parseFilm({
@@ -144,12 +148,23 @@ export function getUserActiveRentals(userId: number): RentalWithFilm[] {
     });
 }
 
-export function getUserRentalHistory(userId: number): Rental[] {
+// History rows are a SUPERSET of Rental (all rental columns are preserved, so existing callers like
+// lib/chat.ts that read r.film_id / r.rented_at keep working) + the film title/poster joined in, so the
+// client can render a useful list even for films no longer in the loaded 3D catalogue. LEFT JOIN so a
+// deleted film still yields a row (title null).
+export type RentalHistoryEntry = Rental & {
+    film_title: string | null;
+    film_poster_url: string | null;
+};
+
+export function getUserRentalHistory(userId: number): RentalHistoryEntry[] {
     return db.prepare(`
-        SELECT * FROM rentals
-        WHERE user_id = ?
-        ORDER BY rented_at DESC
-    `).all(userId) as Rental[];
+        SELECT r.*, f.title AS film_title, f.poster_url AS film_poster_url
+        FROM rentals r
+        LEFT JOIN films f ON f.id = r.film_id
+        WHERE r.user_id = ?
+        ORDER BY r.rented_at DESC
+    `).all(userId) as RentalHistoryEntry[];
 }
 
 export function hasUserRentedFilm(userId: number, filmId: number): boolean {

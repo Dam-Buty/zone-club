@@ -71,24 +71,46 @@ async function tmdbFetch<T>(endpoint: string, params: Record<string, string> = {
     return res.json();
 }
 
+/** Sous-ensembles de la réponse TMDB effectivement lus ici. */
+interface TmdbMovie {
+    id: number;
+    title: string;
+    original_title: string | null;
+    overview: string | null;
+    release_date: string | null;
+    poster_path: string | null;
+    backdrop_path: string | null;
+    runtime: number | null;
+    genres?: { id: number; name: string }[];
+}
+
+interface TmdbCredits {
+    cast?: { id: number; name: string; character: string; order: number }[];
+    crew?: { id: number; name: string; job: string }[];
+}
+
+interface TmdbImages {
+    posters?: { iso_639_1: string | null; file_path: string }[];
+}
+
 async function fetchFullMovie(tmdbId: number) {
     const [movie, credits, images] = await Promise.all([
-        tmdbFetch<any>(`/movie/${tmdbId}`),
-        tmdbFetch<any>(`/movie/${tmdbId}/credits`),
-        tmdbFetch<any>(`/movie/${tmdbId}/images`, { include_image_language: 'fr,null' }),
+        tmdbFetch<TmdbMovie>(`/movie/${tmdbId}`),
+        tmdbFetch<TmdbCredits>(`/movie/${tmdbId}/credits`),
+        tmdbFetch<TmdbImages>(`/movie/${tmdbId}/images`, { include_image_language: 'fr,null' }),
     ]);
 
-    const frPoster = images.posters?.find((p: any) => p.iso_639_1 === 'fr');
+    const frPoster = images.posters?.find(p => p.iso_639_1 === 'fr');
     const posterPath = frPoster?.file_path || movie.poster_path;
 
     const actors = (credits.cast || [])
-        .sort((a: any, b: any) => a.order - b.order)
+        .sort((a, b) => a.order - b.order)
         .slice(0, 10)
-        .map((a: any) => ({ tmdb_id: a.id, name: a.name, character: a.character }));
+        .map(a => ({ tmdb_id: a.id, name: a.name, character: a.character }));
 
     const directors = (credits.crew || [])
-        .filter((c: any) => c.job === 'Director')
-        .map((d: any) => ({ tmdb_id: d.id, name: d.name }));
+        .filter(c => c.job === 'Director')
+        .map(d => ({ tmdb_id: d.id, name: d.name }));
 
     return {
         tmdb_id: movie.id,

@@ -52,9 +52,6 @@ const BORDER_TUBE_GEOM = new THREE.CylinderGeometry(0.006, 0.006, 1, 14)
 const CHAIN_GEOM = new THREE.BoxGeometry(0.022, 1, 0.003) // flat metal straps (wider = survives FXAA)
 const CORNER_GEOM = new THREE.CylinderGeometry(0.012, 0.012, 0.014, 6) // hex bolt shape
 CORNER_GEOM.rotateX(Math.PI / 2)
-// Bezel edge strips — thin L-profile around panel perimeter
-const BEZEL_GEOM_H = new THREE.BoxGeometry(1, 0.018, 0.025) // horizontal (scaled per panel)
-const BEZEL_GEOM_V = new THREE.BoxGeometry(0.018, 1, 0.025) // vertical (scaled per panel)
 // Materials — industrial painted sheet metal look
 const SHARED_CHAIN_MAT = new THREE.MeshStandardMaterial({ color: '#4a4a4a', metalness: 0.85, roughness: 0.35 })
 const SHARED_BAR_MAT = new THREE.MeshStandardMaterial({ color: '#2a2a2a', metalness: 0.75, roughness: 0.35 })

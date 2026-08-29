@@ -16,7 +16,7 @@
  *   npx tsx scripts/inject-local.ts --apply
  */
 import { db } from '../lib/db'
-import { readdirSync, mkdirSync, renameSync, existsSync, statSync } from 'fs'
+import { readdirSync, mkdirSync, renameSync, statSync } from 'fs'
 import { join, basename } from 'path'
 
 const APPLY = process.argv.includes('--apply')

@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect, useCallback } from 'react';
+import { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import { useStore } from '../../store';
 import { VHSEffects } from './VHSEffects';
 import { VHSControls } from './VHSControls';
@@ -21,6 +21,18 @@ function formatCastTime(seconds: number): string {
 }
 
 export type AudioTrack = 'vf' | 'vo';
+
+/**
+ * Piste de sous-titres affichée. Le pipeline média extrait FR et EN séparément
+ * (`subtitle_fr_vtt` / `subtitle_en_vtt`) et la location les expose toutes les deux ;
+ * les deux peuvent manquer indépendamment, d'où un état à trois valeurs plutôt qu'un booléen.
+ */
+export type SubtitleTrack = 'off' | 'fr' | 'en';
+
+const SUBTITLE_LABELS: Record<Exclude<SubtitleTrack, 'off'>, { button: string; label: string; title: string }> = {
+  fr: { button: 'STFR', label: 'Français', title: 'Sous-titres français [T]' },
+  en: { button: 'STEN', label: 'English', title: 'Sous-titres anglais [T]' },
+};
 
 // Rewind state machine
 type RewindPhase = 'none' | 'prompt' | 'rewinding';
@@ -47,7 +59,7 @@ export function VHSPlayer() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [playerState, setPlayerState] = useState<PlayerState>('paused');
   const [audioTrack, setAudioTrack] = useState<AudioTrack>('vf');
-  const [showSubtitles, setShowSubtitles] = useState(true);
+  const [subtitleTrack, setSubtitleTrack] = useState<SubtitleTrack>('fr');
   const [currentTime, setCurrentTime] = useState(0);
   const [showBlueScreen, setShowBlueScreen] = useState(false);
   const [remoteError, setRemoteError] = useState<string | null>(null);
@@ -58,8 +70,14 @@ export function VHSPlayer() {
   const [isAirPlayConnected, setIsAirPlayConnected] = useState(false);
   const [showMobileRemotePrompt, setShowMobileRemotePrompt] = useState(false);
 
-  // Push notification state
+  // Push notification state.
+  // ⚠️ Rien ne lit ces états et rien n'appelle handleEnablePushNotifications plus bas : c'est le SEUL
+  // chemin d'abonnement Web Push du client, donc la table push_subscriptions ne peut pas se remplir et
+  // la notification « film terminé sur la TV » n'a personne à qui parler. Le backend (VAPID, lib/push.ts,
+  // nettoyage des 410/404) est complet — il manque le bouton qui déclenche l'abonnement.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- feature non branchée, voir ci-dessus
   const [pushSubscribed, setPushSubscribed] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- idem
   const [pushPromptDismissed, setPushPromptDismissed] = useState(false);
 
   // Overlay auto-hide (4s inactivity)
@@ -144,7 +162,33 @@ export function VHSPlayer() {
   // Determine available tracks
   const hasVF = !!streamingUrls?.vf;
   const hasVO = !!streamingUrls?.vo;
-  const hasSubtitles = !!streamingUrls?.subtitles;
+  const hasSubtitlesFr = !!streamingUrls?.subtitles;
+  const hasSubtitlesEn = !!streamingUrls?.subtitles_en;
+  // Ordre d'affichage et de cycle clavier : FR d'abord, EN ensuite, et seulement ce qui existe.
+  const availableSubtitles = useMemo(
+    () => (['fr', 'en'] as const).filter(lang => (lang === 'fr' ? hasSubtitlesFr : hasSubtitlesEn)),
+    [hasSubtitlesFr, hasSubtitlesEn]
+  );
+
+  // Snap the selected audio track to a version that ACTUALLY exists for this rental. A film can be VF-only
+  // (e.g. The Big Short) or VO-only; without this the player keeps the default 'vf' and getVideoUrl
+  // silently serves the other version → UI says one thing, audio is another. Here we make the selection
+  // honest so the controls + the served stream agree.
+  useEffect(() => {
+    if (!streamingUrls) return;
+    if (audioTrack === 'vf' && !hasVF && hasVO) setAudioTrack('vo');
+    else if (audioTrack === 'vo' && !hasVO && hasVF) setAudioTrack('vf');
+  }, [streamingUrls, hasVF, hasVO, audioTrack]);
+
+  // Même principe pour les sous-titres : le défaut est FR, mais un film peut n'avoir que l'EN (ou rien).
+  // On ne retombe QUE depuis une langue absente — 'off' est un choix explicite de l'utilisateur et ne doit
+  // jamais être réactivé tout seul.
+  useEffect(() => {
+    if (!streamingUrls || subtitleTrack === 'off') return;
+    if (!availableSubtitles.includes(subtitleTrack)) {
+      setSubtitleTrack(availableSubtitles[0] ?? 'off');
+    }
+  }, [streamingUrls, availableSubtitles, subtitleTrack]);
 
   // Get current video URL based on selected track
   const getVideoUrl = useCallback(() => {
@@ -181,6 +225,20 @@ export function VHSPlayer() {
     setAudioTrack(newTrack);
   }, []);
 
+  // Bouton STFR/STEN : cliquer la langue active la coupe, cliquer l'autre bascule dessus.
+  const handleSubtitleTrackChange = useCallback((lang: Exclude<SubtitleTrack, 'off'>) => {
+    setSubtitleTrack(prev => (prev === lang ? 'off' : lang));
+  }, []);
+
+  // Touche T : off → FR → EN → off, en ne s'arrêtant que sur les langues réellement présentes.
+  const cycleSubtitleTrack = useCallback(() => {
+    setSubtitleTrack(prev => {
+      const cycle: SubtitleTrack[] = ['off', ...availableSubtitles];
+      const index = cycle.indexOf(prev);
+      return cycle[(index + 1) % cycle.length] ?? 'off';
+    });
+  }, [availableSubtitles]);
+
   // Restore playback position after track change
   useEffect(() => {
     const video = videoRef.current;
@@ -190,7 +248,29 @@ export function VHSPlayer() {
         video.play().catch(() => {});
       }
     }
+    // Volontairement déclenché par le seul changement de piste : ajouter currentTime relancerait un
+    // seek à chaque timeupdate, et playerState ferait rejouer la vidéo à chaque pause.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [audioTrack]);
+
+  // Aligner explicitement les textTracks du <video> sur la sélection. L'attribut `default` d'un <track>
+  // inséré APRÈS le parse n'est pas honoré de façon fiable (la piste reste en mode 'disabled') ; avec une
+  // seule langue le symptôme était intermittent, avec deux il devient un « je clique STEN et rien ne
+  // change ». `addtrack` couvre le cas où la piste est montée après ce rendu (remount du <video> sur
+  // changement VF/VO).
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const tracks = video.textTracks;
+    const applySelection = () => {
+      for (const track of Array.from(tracks)) {
+        track.mode = subtitleTrack !== 'off' && track.language === subtitleTrack ? 'showing' : 'disabled';
+      }
+    };
+    applySelection();
+    tracks.addEventListener('addtrack', applySelection);
+    return () => tracks.removeEventListener('addtrack', applySelection);
+  }, [subtitleTrack, videoUrl]);
 
   // Multi-device sync: refresh rental data on player open so seek picks up
   // progress made elsewhere (other browser/device, or background cast).
@@ -466,7 +546,7 @@ export function VHSPlayer() {
       setPlayerState('paused');
       setShowBlueScreen(true);
     }
-  }, [stopRW, currentPlayingFilm, hasReachedMilestone, rental?.rewindClaimed, playerState, getRemoteCurrentTime, remoteCastDuration, remoteStop, setActiveCastFilmId]);
+  }, [stopRW, currentPlayingFilm, hasReachedMilestone, rental?.rewindClaimed, playerState, getRemoteCurrentTime, remoteCastDuration, remoteStop, setActiveCastFilmId, updateRentalProgress]);
 
   // Rewind to start (⏮) — simulates VHS tape rewind with proportional duration
   const handleRewindToStart = useCallback(() => {
@@ -566,7 +646,7 @@ export function VHSPlayer() {
       setRewindingToStart(false);
       closePlayer();
     }
-  }, [closePlayer, stopRW, currentPlayingFilm, hasReachedMilestone, rental?.rewindClaimed, playerState, getRemoteCurrentTime, remoteCastDuration, remoteStop]);
+  }, [closePlayer, stopRW, currentPlayingFilm, hasReachedMilestone, rental?.rewindClaimed, playerState, getRemoteCurrentTime, remoteCastDuration, remoteStop, updateRentalProgress]);
 
   // Clean up intervals on unmount
   useEffect(() => {
@@ -693,8 +773,8 @@ export function VHSPlayer() {
           break;
         case 't':
         case 'T':
-          if (hasSubtitles) {
-            setShowSubtitles(prev => !prev);
+          if (availableSubtitles.length > 0) {
+            cycleSubtitleTrack();
           }
           break;
         case 'r':
@@ -709,7 +789,7 @@ export function VHSPlayer() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isPlayerOpen, playerState, rewindingToStart, rewindPhase, pendingEject, closePlayer, closeRewindModal, handleEject, handleStop, handleFFCycle, handleRWCycle, handleRewindToStart, resumePlayFromRW, hasVF, hasVO, hasSubtitles, audioTrack, handleAudioTrackChange, stopRW, remotePlayOrPause]);
+  }, [isPlayerOpen, playerState, rewindingToStart, rewindPhase, pendingEject, closePlayer, closeRewindModal, handleEject, handleStop, handleFFCycle, handleRWCycle, handleRewindToStart, resumePlayFromRW, hasVF, hasVO, availableSubtitles, cycleSubtitleTrack, audioTrack, handleAudioTrackChange, stopRW, remotePlayOrPause]);
 
   // ===== Remote playback (AirPlay) =====
   useEffect(() => {
@@ -865,7 +945,9 @@ export function VHSPlayer() {
     void handleCastCurrentVideo();
   }, [isAirPlaySupported, handleCastCurrentVideo, handleAirPlayPicker]);
 
-  // Push notification subscription handler
+  // Push notification subscription handler — aucun appelant, voir la note sur pushSubscribed en haut
+  // du composant.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const handleEnablePushNotifications = useCallback(async () => {
     try {
       const permission = await Notification.requestPermission();
@@ -920,7 +1002,7 @@ export function VHSPlayer() {
     }, 10000);
 
     return () => clearInterval(interval);
-  }, [isPlayerOpen, currentPlayingFilm, playerState, remoteCastMediaLoaded, remoteCastDuration, getRemoteCurrentTime]);
+  }, [isPlayerOpen, currentPlayingFilm, playerState, remoteCastMediaLoaded, remoteCastDuration, getRemoteCurrentTime, updateRentalProgress]);
 
   // ===== Flush position on player close =====
   //
@@ -969,7 +1051,7 @@ export function VHSPlayer() {
 
     document.addEventListener('visibilitychange', handleVisibility);
     return () => document.removeEventListener('visibilitychange', handleVisibility);
-  }, [playerState, currentPlayingFilm, getRemoteCurrentTime, remoteCastDuration]);
+  }, [playerState, currentPlayingFilm, getRemoteCurrentTime, remoteCastDuration, updateRentalProgress]);
 
   // ===== MediaSession API (lock screen controls during cast) =====
   useEffect(() => {
@@ -1020,7 +1102,7 @@ export function VHSPlayer() {
 
     video.addEventListener('ended', handleEnded);
     return () => video.removeEventListener('ended', handleEnded);
-  }, [currentPlayingFilm, stopRW, rental?.rewindClaimed, closePlayer]);
+  }, [currentPlayingFilm, stopRW, rental?.rewindClaimed, closePlayer, updateRentalProgress]);
 
   // ===== Remote Film Ended / Stopped Detection =====
   // IDLE can mean film finished OR manual stop on receiver — distinguish by position
@@ -1064,7 +1146,7 @@ export function VHSPlayer() {
         setPlayerState('paused');
       }
     }
-  }, [remoteCastPlayerState, playerState, currentPlayingFilm, rental?.rewindClaimed, closePlayer, remoteCastDuration, getRemoteCurrentTime, setActiveCastFilmId]);
+  }, [remoteCastPlayerState, playerState, currentPlayingFilm, rental?.rewindClaimed, closePlayer, remoteCastDuration, getRemoteCurrentTime, setActiveCastFilmId, updateRentalProgress]);
 
   // Track whether the SDK has EVER reported a connected cast session in
   // this player mount. Without this gate, the disconnect handler below
@@ -1121,7 +1203,7 @@ export function VHSPlayer() {
 
       lastKnownCastTimeRef.current = 0;
     }
-  }, [isCastConnected, playerState, setActiveCastFilmId, currentPlayingFilm, rental?.rewindClaimed, closePlayer]);
+  }, [isCastConnected, playerState, setActiveCastFilmId, currentPlayingFilm, rental?.rewindClaimed, closePlayer, endCast, updateRentalProgress]);
 
   // ===== Rewind Animation =====
   const startRewind = useCallback(() => {
@@ -1241,7 +1323,7 @@ export function VHSPlayer() {
       setOverlayVisible(true);
       if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
     }
-  }, [isPlayerOpen, stopRW]);
+  }, [isPlayerOpen, stopRW, setReviewContent]);
 
   // ===== Overlay auto-hide (4s inactivity) =====
   const resetIdleTimer = useCallback(() => {
@@ -1314,7 +1396,7 @@ export function VHSPlayer() {
           <span className={styles.filmTitle}>{currentFilm.title}</span>
           <span className={styles.trackIndicator}>
             {audioTrack.toUpperCase()}
-            {showSubtitles && hasSubtitles && ' + STFR'}
+            {subtitleTrack !== 'off' && ` + ${SUBTITLE_LABELS[subtitleTrack].button}`}
           </span>
         </div>
       )}
@@ -1371,12 +1453,16 @@ export function VHSPlayer() {
             element which cascades into closePlayer paths and unmounts the
             whole player. */}
         {videoUrl && <source src={videoUrl} type="video/mp4" />}
-        {showSubtitles && hasSubtitles && streamingUrls?.subtitles && (
+        {/* Une seule piste montée à la fois, avec `default` pour qu'elle s'affiche : swapper le `src`
+            d'un <track> déjà monté ne rafraîchit pas la textTrack côté navigateur, alors qu'un
+            démontage/remontage (via la key) est le chemin que le toggle on/off empruntait déjà. */}
+        {subtitleTrack !== 'off' && (
           <track
+            key={subtitleTrack}
             kind="subtitles"
-            src={streamingUrls.subtitles}
-            srcLang="fr"
-            label="Français"
+            src={(subtitleTrack === 'fr' ? streamingUrls?.subtitles : streamingUrls?.subtitles_en) ?? undefined}
+            srcLang={subtitleTrack}
+            label={SUBTITLE_LABELS[subtitleTrack].label}
             default
           />
         )}
@@ -1840,11 +1926,12 @@ export function VHSPlayer() {
           onResumeFromRW={resumePlayFromRW}
           audioTrack={audioTrack}
           onAudioTrackChange={handleAudioTrackChange}
-          showSubtitles={showSubtitles}
-          onSubtitlesToggle={() => setShowSubtitles(prev => !prev)}
+          subtitleTrack={subtitleTrack}
+          onSubtitleTrackChange={handleSubtitleTrackChange}
           hasVF={hasVF}
           hasVO={hasVO}
-          hasSubtitles={hasSubtitles}
+          hasSubtitlesFr={hasSubtitlesFr}
+          hasSubtitlesEn={hasSubtitlesEn}
           onCast={handleCastCurrentVideo}
           onAirPlay={handleAirPlayPicker}
           onMirroringHelp={() => openMirroringFallback('generic')}

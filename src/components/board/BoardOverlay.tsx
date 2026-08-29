@@ -47,6 +47,12 @@ export default function BoardOverlay() {
     }
   }, [boardOverlayMode])
 
+  const handleClose = useCallback(() => {
+    if (Date.now() - openTimeRef.current < 300) return
+    closeBoard()
+    requestPointerLock()
+  }, [closeBoard, requestPointerLock])
+
   // Keyboard: Escape to close
   useEffect(() => {
     if (!boardOverlayMode) return
@@ -58,13 +64,7 @@ export default function BoardOverlay() {
     }
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
-  }, [boardOverlayMode])
-
-  const handleClose = useCallback(() => {
-    if (Date.now() - openTimeRef.current < 300) return
-    closeBoard()
-    requestPointerLock()
-  }, [closeBoard, requestPointerLock])
+  }, [boardOverlayMode, handleClose])
 
   const handleCreate = useCallback(async () => {
     if (!newContent.trim() || isSubmitting) return

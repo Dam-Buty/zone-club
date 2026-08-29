@@ -297,6 +297,9 @@ export const filmRequests = {
 // ============ FILMS ============
 
 export interface FilmWithRentalStatus extends ApiFilm {
+  // Playable audio versions (transcoded file exists). Lets the fiche show VF/VO availability pre-rental.
+  has_vf?: boolean;
+  has_vo?: boolean;
   rental_status: {
     is_rented: boolean;
     rented_by_current_user: boolean;
@@ -390,10 +393,17 @@ export interface WeeklyBonusStatus {
   reason?: string;
 }
 
+// History entry = a rental row + the joined film title/poster (server enriches via LEFT JOIN), so the
+// client list stays useful even for films no longer in the loaded catalogue.
+export interface ApiRentalHistoryEntry extends ApiRental {
+  film_title: string | null;
+  film_poster_url: string | null;
+}
+
 export interface MeResponse {
   user: ApiUser;
   activeRentals: ApiRentalWithFilm[];
-  rentalHistory: ApiRental[];
+  rentalHistory: ApiRentalHistoryEntry[];
   reviews: ReviewWithUser[];
   weeklyBonus: WeeklyBonusStatus;
 }

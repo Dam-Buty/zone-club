@@ -25,7 +25,7 @@ export async function PATCH(
     }
 
     if (status === 'added') {
-        const filmRequest = db.prepare('SELECT * FROM film_requests WHERE id = ?').get(requestId) as any;
+        const filmRequest = db.prepare('SELECT * FROM film_requests WHERE id = ?').get(requestId) as { tmdb_id: number } | undefined;
         if (!filmRequest) {
             return NextResponse.json({ error: 'Demande non trouvée' }, { status: 404 });
         }

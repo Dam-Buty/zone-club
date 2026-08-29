@@ -101,7 +101,7 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
   const user = isAuthenticated && authUser
     ? {
         credits,
-        totalRentals: rentals.length + rentalHistory.length,
+        totalRentals: rentalHistory.length || rentals.length, // history now = ALL rentals (active+past); avoid double-count
         level: localUser.level, // Le niveau est calculé localement
         badges: localUser.badges,
         username: authUser.username
@@ -137,6 +137,8 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
 
     document.addEventListener('keydown', handleSecretKey);
     return () => document.removeEventListener('keydown', handleSecretKey);
+    // Listener clavier : le relier à l'identité de loadAdminStats le ré-enregistrerait à chaque rendu.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, isAuthenticated, authUser, secretCode]);
 
   // Gérer les touches clavier (navigation)
@@ -194,6 +196,9 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
+    // Idem : les handlers de navigation changent d'identité à chaque rendu, le listener doit rester
+    // attaché à la seule ouverture du terminal et à la position du curseur.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, onClose, currentSection, selectedIndex]);
 
   // Reset au montage
@@ -211,6 +216,9 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
       setSelectedIndex(0);
       setSecretCode('');
     }
+    // Reset d'ouverture : dépendre de isAuthenticated/terminalAdminMode remettrait le terminal à zéro
+    // en pleine navigation dès que l'un d'eux change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
   // Poll transcode status when on admin-films page
@@ -565,11 +573,11 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
               {rentalHistory.length === 0 ? (
                 <div className={styles.emptyMessage}>Aucun historique disponible</div>
               ) : (
-                rentalHistory.slice().reverse().map((entry, idx) => (
+                rentalHistory.map((entry, idx) => (
                   <div key={idx} className={styles.rentalItem}>
-                    <div className={styles.rentalTitle}>{getFilmTitle(entry.filmId)}</div>
+                    <div className={styles.rentalTitle}>{entry.title || getFilmTitle(entry.filmId)}</div>
                     <div className={styles.rentalMeta}>
-                      Loué le {formatDate(entry.rentedAt)} - Rendu le {formatDate(entry.returnedAt)}
+                      Loué le {formatDate(entry.rentedAt)} · {entry.isActive ? 'en cours' : 'terminé'}
                     </div>
                   </div>
                 ))

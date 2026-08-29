@@ -1,9 +1,8 @@
 import { useRef, useEffect } from 'react'
 import { useThree, useFrame } from '@react-three/fiber'
 import * as THREE from 'three/webgpu'
-import { pass, mrt, output, normalView, viewportUV, clamp, float, uniform } from 'three/tsl'
+import { pass, viewportUV, clamp, float, uniform } from 'three/tsl'
 import { bloom } from 'three/addons/tsl/display/BloomNode.js'
-import { ssgi } from 'three/addons/tsl/display/SSGINode.js'
 import { fxaa } from 'three/addons/tsl/display/FXAANode.js'
 import { smaa } from 'three/addons/tsl/display/SMAANode.js'
 import { dof } from 'three/addons/tsl/display/DepthOfFieldNode.js'
@@ -148,6 +147,9 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
       bloomStrengthRef.current = null
       ;(window as unknown as { __postProcessing?: THREE.PostProcessing | null }).__postProcessing = null
     }
+    // Ces deux valeurs passent par des refs : les mettre en deps reconstruirait toute la chaîne de
+    // post-processing à chaque ouverture de K7, ce que les refs existent justement pour éviter.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [renderer, scene, camera, isMobile, dofTrigger])
 
   const renderAccumRef = useRef(0)

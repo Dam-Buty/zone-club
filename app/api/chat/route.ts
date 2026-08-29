@@ -11,6 +11,13 @@ import { langfuseSpanProcessor } from '@/instrumentation';
 
 const CHAT_MODEL = process.env.CHAT_MODEL || 'z-ai/glm-4.7-flash';
 
+/** Ce que le client envoie : des UIMessages du SDK, dont on ne lit ici que le rôle et les parts. */
+interface IncomingMessage {
+  role: string;
+  parts?: { type: string }[];
+  [key: string]: unknown;
+}
+
 const openrouter = createOpenAI({
   baseURL: 'https://openrouter.ai/api/v1',
   apiKey: process.env.OPENROUTER_API_KEY || '',
@@ -67,9 +74,9 @@ export async function POST(req: Request) {
   }));
 
   // Strip reasoning parts from assistant messages (OpenRouter doesn't support Responses API format)
-  const cleanedMessages = messages.map((msg: any) => {
+  const cleanedMessages = messages.map((msg: IncomingMessage) => {
     if (msg.role === 'assistant' && Array.isArray(msg.parts)) {
-      return { ...msg, parts: msg.parts.filter((p: any) => p.type !== 'reasoning') };
+      return { ...msg, parts: msg.parts.filter(p => p.type !== 'reasoning') };
     }
     return msg;
   });

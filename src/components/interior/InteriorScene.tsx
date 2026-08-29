@@ -15,7 +15,8 @@ declare global {
 // Initialize LTC textures for RectAreaLight PBR shading (must run before first render)
 if (typeof window !== 'undefined') {
   RectAreaLightTexturesLib.init();
-  (THREE as any).RectAreaLightNode.setLTC(RectAreaLightTexturesLib)
+  (THREE as unknown as { RectAreaLightNode: { setLTC(lib: unknown): void } })
+    .RectAreaLightNode.setLTC(RectAreaLightTexturesLib)
 }
 import { Controls } from './Controls'
 import { PostProcessingEffects } from './PostProcessingEffects'
@@ -79,11 +80,16 @@ class SceneErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundar
   }
 }
 
-// Extend Three.js WebGPU elements for R3F
+// Extend Three.js WebGPU elements for R3F.
+// Les deux entorses ci-dessous sont la convention documentée dans AGENTS.md pour faire cohabiter
+// R3F et three/webgpu : l'interface vide est le mécanisme d'augmentation de module de TS, et
+// extend() n'accepte pas le namespace three/webgpu tel quel.
 declare module '@react-three/fiber' {
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   interface ThreeElements extends ThreeToJSXElements<typeof THREE> {}
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 extend(THREE as any)
 
 interface InteriorSceneProps {
@@ -443,7 +449,6 @@ function LaZoneWatchingOverlay() {
 // Navigation hints auto-hide policy
 const NAV_HELP_DURATION = 30000
 const NAV_HELP_FADE_MS = 800
-const MOBILE_AIM_HINT_DELAY = 1200
 const URL_BENCHMARK_MODE = typeof window !== 'undefined'
   && new URLSearchParams(window.location.search).get('benchmark') === '1'
 
@@ -502,31 +507,6 @@ function UIOverlays({ isMobile }: { isMobile: boolean }) {
       clearTimeout(hideTimer)
     }
   }, [overlaysEnabled, isMobile, isPointerLocked, isTerminalOpen, selectedFilmId])
-
-  // Mobile aim hint: guaranteed display, then fade out after 30s
-  const [showAimHint, setShowAimHint] = useState(false)
-  const [aimHintFading, setAimHintFading] = useState(false)
-
-  useEffect(() => {
-    if (!overlaysEnabled || !isMobile || !isPointerLocked) {
-      setShowAimHint(false)
-      setAimHintFading(false)
-      return
-    }
-    setShowAimHint(false)
-    setAimHintFading(false)
-    const showTimer = setTimeout(() => setShowAimHint(true), MOBILE_AIM_HINT_DELAY)
-    const fadeTimer = setTimeout(
-      () => setAimHintFading(true),
-      MOBILE_AIM_HINT_DELAY + NAV_HELP_DURATION - NAV_HELP_FADE_MS
-    )
-    const hideTimer = setTimeout(() => setShowAimHint(false), MOBILE_AIM_HINT_DELAY + NAV_HELP_DURATION)
-    return () => {
-      clearTimeout(showTimer)
-      clearTimeout(fadeTimer)
-      clearTimeout(hideTimer)
-    }
-  }, [overlaysEnabled, isMobile, isPointerLocked])
 
   const handleCloseTerminal = useCallback(() => {
     closeTerminal()
@@ -837,7 +817,7 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
       <Canvas
         shadows
         dpr={isMobile ? Math.min(window.devicePixelRatio, 1.7) : Math.min(window.devicePixelRatio * DESKTOP_SUPERSAMPLE, 3)}
-        gl={(async (props: any) => {
+        gl={(async (props: THREE.WebGPURendererParameters) => {
 
 
           // Let Three.js handle adapter creation internally — avoid redundant

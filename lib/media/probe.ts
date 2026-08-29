@@ -6,14 +6,15 @@ export function probeStreams(filePath: string): Promise<{ streams: ProbeStream[]
     ffmpeg.ffprobe(filePath, (err, meta) => {
       if (err) return reject(err)
       resolve({
-        streams: (meta.streams as any[]).map(s => ({
+        streams: meta.streams.map(s => ({
           index: s.index,
           codec_type: s.codec_type,
           codec_name: s.codec_name,
           width: s.width,
           height: s.height,
           pix_fmt: s.pix_fmt,
-          profile: s.profile,
+          // @types/fluent-ffmpeg annonce un number ; ffprobe renvoie une chaîne ("High", "High 10").
+          profile: s.profile as unknown as string | undefined,
           bit_rate: s.bit_rate,
           // Nécessaires pour repérer une source HDR : le Spark n'a ni Vulkan ni
           // OpenCL, donc aucun tonemapping GPU. Sans ces champs, une source HDR

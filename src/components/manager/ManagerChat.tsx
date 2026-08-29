@@ -1,6 +1,7 @@
 import { useRef, useEffect, useCallback, useState } from 'react';
 import { useChat } from '@ai-sdk/react';
 import { isToolUIPart, getToolName } from 'ai';
+import type { ChatToolOutput } from '../../types/chat';
 import { useStore } from '../../store';
 import { ChatMessageRenderer } from './ChatMessageRenderer';
 import { useBackGuard } from '../../hooks/useBackGuard';
@@ -24,8 +25,9 @@ export function ManagerChat() {
   // Track which tool calls we've already processed for side-effects
   const processedToolCalls = useRef<Set<string>>(new Set());
 
-  // Stable session UUID for Langfuse grouping — generated once when chat opens
-  const sessionIdRef = useRef<string>(globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2));
+  // Stable session UUID for Langfuse grouping — posé par l'effet d'ouverture ci-dessous.
+  // (Le passer en argument de useRef le régénérait à chaque rendu pour le jeter aussitôt.)
+  const sessionIdRef = useRef<string>('');
 
   const { messages, sendMessage, status, error } = useChat({});
 
@@ -40,7 +42,7 @@ export function ManagerChat() {
         if (processedToolCalls.current.has(part.toolCallId)) continue;
 
         const toolName = getToolName(part);
-        const output = part.output as any;
+        const output = part.output as ChatToolOutput | undefined;
         if (!output) continue;
 
         processedToolCalls.current.add(part.toolCallId);

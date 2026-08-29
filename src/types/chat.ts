@@ -56,3 +56,20 @@ export type ChatAnnotation =
   | GenUISignupData
   | GenUISigninData
   | SessionData;
+
+/**
+ * Sortie brute d'un outil du gérant, telle que le SDK la remonte dans `part.output`.
+ * Chaque outil ne renseigne que ses propres champs ; `action` sert de discriminant côté rendu.
+ * Voir `lib/chat-tools.ts` pour les schémas Zod côté serveur.
+ */
+export interface ChatToolOutput {
+  action?: 'rent' | 'critic' | 'watch' | 'signup' | 'signin' | 'credits';
+  film?: GenUIRentData['film'];
+  filmId?: number;
+  filmTitle?: string;
+  preWrittenReview?: string;
+  title?: string;
+  /** backdrop */
+  success?: boolean;
+  url?: string;
+}

@@ -1,7 +1,7 @@
 import { db } from './db';
 import { fetchFullMovieData } from './tmdb';
 import { addMovie as addToRadarr } from './radarr';
-import { RENTAL_COSTS, RENTAL_DURATIONS, type RentalTier } from '../src/types';
+import { type RentalTier } from '../src/types';
 
 export interface Film {
     id: number;
@@ -90,6 +90,7 @@ export function filmListColumns(alias?: string): string {
 }
 
 /** Pendant de parseFilm pour les lignes de liste : ni directors ni actors à parser. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- voir la note sur parseFilm
 export function parseFilmListRow(row: any): FilmListItem {
     return {
         ...row,
@@ -99,6 +100,17 @@ export function parseFilmListRow(row: any): FilmListItem {
     };
 }
 
+/**
+ * better-sqlite3 renvoie `unknown` : les colonnes JSON sont encore du TEXT et les booléens des 0/1.
+ *
+ * ⚠️ Le `any` est assumé faute d'un type de ligne exploitable. Le remplacer par un `FilmRow` strict
+ * fait remonter une incohérence réelle qu'il vaut mieux traiter séparément : `getUserActiveRentals`
+ * construit son film à partir d'une projection à laquelle il manque sept colonnes
+ * (radarr_id, original_language, media_dir, subtitle_*_srt, qc_attempts, qc_force), alors que
+ * `enrichRental` passe par `getFilmById` et renvoie la ligne ENTIÈRE — colonnes internes comprises,
+ * jusqu'au client. Deux formes différentes sous le même type `RentalWithFilm['film']`.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function parseFilm(row: any): Film {
     return {
         ...row,
@@ -340,7 +352,8 @@ export function updateFilmMedia(filmId: number, media: {
     const cols = Object.keys(media);
     if (cols.length === 0) return;
     const sets = cols.map(c => `${c} = ?`).join(', ');
-    db.prepare(`UPDATE films SET ${sets} WHERE id = ?`).run(...cols.map(c => (media as any)[c]), filmId);
+    const values = media as Record<string, string | null | undefined>;
+    db.prepare(`UPDATE films SET ${sets} WHERE id = ?`).run(...cols.map(c => values[c]), filmId);
 }
 
 export interface TranscodeStatusInfo {
@@ -362,8 +375,8 @@ export function getTranscodeStatuses(): TranscodeStatusInfo[] {
     FROM films
     WHERE radarr_id IS NOT NULL
     ORDER BY created_at DESC
-  `).all().map(row => ({
-    ...(row as any),
-    is_available: !!(row as any).is_available
-  })) as TranscodeStatusInfo[];
+  `).all().map(row => {
+    const r = row as Omit<TranscodeStatusInfo, 'is_available'> & { is_available: number };
+    return { ...r, is_available: !!r.is_available };
+  });
 }

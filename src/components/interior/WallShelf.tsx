@@ -136,7 +136,9 @@ export function WallShelf({
       shelfNormalMap?.dispose()
       shelfRoughnessMap?.dispose()
     }
-  }, [shelfMaterial, shelfMap])
+    // normal/roughness figuraient dans le cleanup sans être en deps : un changement de textures
+    // laissait les anciennes non libérées.
+  }, [shelfMaterial, shelfMap, shelfNormalMap, shelfRoughnessMap])
 
   return (
     <group position={position} rotation={rotation}>

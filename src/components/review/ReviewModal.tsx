@@ -46,7 +46,7 @@ function ReviewReader({ review, filmTitle, totalReviews, currentIndex, onNavigat
   }, [onClose, onNavigate, currentIndex, totalReviews]);
 
   // Swipe left/right to navigate between reviews (mobile)
-  const bind = useDrag(({ movement: [mx], direction: [dx], velocity: [vx], last, cancel }) => {
+  const bind = useDrag(({ movement: [mx], direction: [dx], velocity: [vx], last }) => {
     if (!last) return;
     const threshold = 50;
     if (Math.abs(mx) < threshold && vx < 0.3) return;
@@ -189,6 +189,19 @@ export function ReviewModal({ isOpen, onClose, film }: ReviewModalProps) {
     }
   }, [isOpen, film, authUser]);
 
+  const handleClose = useCallback(() => {
+    setContent('');
+    setRatingDirection(3);
+    setRatingScreenplay(3);
+    setRatingActing(3);
+    setError(null);
+    setSuccess(false);
+    setReviewsData(null);
+    setEditMode(false);
+    setReadingReview(null);
+    onClose();
+  }, [onClose]);
+
   const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     if (!film || !isAuthenticated) return;
@@ -223,20 +236,7 @@ export function ReviewModal({ isOpen, onClose, film }: ReviewModalProps) {
     } finally {
       setSubmitting(false);
     }
-  }, [film, isAuthenticated, content, ratingDirection, ratingScreenplay, ratingActing, addCredits, editMode]);
-
-  const handleClose = useCallback(() => {
-    setContent('');
-    setRatingDirection(3);
-    setRatingScreenplay(3);
-    setRatingActing(3);
-    setError(null);
-    setSuccess(false);
-    setReviewsData(null);
-    setEditMode(false);
-    setReadingReview(null);
-    onClose();
-  }, [onClose]);
+  }, [film, isAuthenticated, content, ratingDirection, ratingScreenplay, ratingActing, addCredits, editMode, handleClose]);
 
   if (!isOpen || !film) return null;
 
