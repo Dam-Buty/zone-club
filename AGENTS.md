@@ -517,9 +517,40 @@ notification « film terminé sur la TV » ouvre `/?castEnded={filmId}`, consomm
 
 ### Seed
 
-`npm run seed` lit `src/data/mock/films.json` (`{ "action": [tmdb_id, ...], ... }`). Premier rayon
-gagne en cas de doublon, `nouveautes` positionne `is_nouveaute`, 250 ms entre chaque appel TMDB. Ne
-lance **pas** les téléchargements.
+`SEED_MOCK=1 npm run seed` lit `src/data/mock/films.json` (`{ "action": [tmdb_id, ...], ... }`).
+Premier rayon gagne en cas de doublon, `nouveautes` positionne `is_nouveaute`, 250 ms entre chaque
+appel TMDB. Ne lance **pas** les téléchargements. Les rayons sont les clés du JSON elles-mêmes : pas
+de seconde liste à tenir à jour, et `tests/domain/consistency.test.mjs` vérifie qu'elles existent
+toutes dans `AisleType`.
+
+Le fichier contient **380 IDs sur les 12 rayons**, calqué sur le catalogue réel. C'est délibéré : le
+nombre de cassettes affichées ne dépend pas de la taille du catalogue (`buildDisplaySequence` répète
+les films pour remplir une capacité d'étagère fixe), mais **l'atlas de jaquettes est dimensionné sur
+le nombre de posters uniques**. À 135 films il pèse 34,6 Mo, à 314 il en pèse 77,8 — mesurer le
+premier affichage sur un catalogue tronqué donne des chiffres faux d'un facteur 2.
+
+#### État média synthétique
+
+Le seed pose aussi de quoi rendre le catalogue **jouable sans pipeline média** : `is_available`,
+`transcode_status`, `media_dir`, `original_language` (TMDB), `duration_sec` (`runtime × 60`), les
+chemins VO/VF et les sous-titres.
+
+- **Vidéo** : la même pour tous les films — Big Buck Bunny sur archive.org (CC BY 3.0), ~10 min,
+  `accept-ranges: bytes` + `access-control-allow-origin: *`.
+- **Sous-titres** : un jeu unique dans `public/seed-media/` (`sub.{fr,en}.{vtt,srt}`), servi en
+  same-origin — un `<track>` cross-origin exigerait du CORS *et* l'attribut `crossorigin`.
+- **Passe-plat** : `lib/symlinks.ts` expose `isDirectMediaUrl()`, qui reconnaît ces valeurs à leur
+  forme (`http(s)://` ou `/`). `buildStreamingUrls()` dans `lib/rentals.ts` les renvoie telles
+  quelles et `createRentalSymlinks()` ne crée aucun lien pour elles. Un chemin de pipeline reste
+  relatif à `MEDIA_FILMS_PATH` et continue de passer par les symlinks : les deux cohabitent.
+
+La répartition VO/VF/sous-titres **reproduit celle de la prod** (constante `SEED_DISTRIBUTION`), parce
+que les cas qui cassent le player sont les buckets minoritaires : un film sans VF force le snap de
+piste audio, un film sans sous-titre FR celui des sous-titres. Le tirage est déterministe (haché sur
+le `tmdb_id`), donc reproductible d'une machine à l'autre et stable d'un run au suivant.
+
+Relancer le seed sur une base existante **ne réécrit que les états média de seed** : un chemin de
+pipeline réel n'est jamais écrasé.
 
 ## Tests
 
@@ -551,7 +582,7 @@ régressions constatées lors des audits.
 | `RADARR_ROOT_FOLDER` | Racine Radarr côté container |
 | `MEDIA_LIBRARY_PATH` / `MEDIA_FILMS_PATH` / `MEDIA_BACKUP_PATH` / `SYMLINKS_PATH` | Chemins média |
 | `DELETE_MKV_AFTER_BACKUP` | Suppression de la source après backup |
-| `FORCED_RENTAL_VIDEO_URL` / `FORCED_RENTAL_FILE_PATH` | **Dev/staging** : sert la même vidéo pour toute location, VF **et** VO, sans sous-titres. Court-circuite les symlinks — donc rend la dispo VF/VO/ST intestable en local |
+| `FORCED_RENTAL_VIDEO_URL` / `FORCED_RENTAL_FILE_PATH` | **Dev/staging** : sert la même vidéo pour toute location, VF **et** VO, sans sous-titres. Court-circuite les symlinks — donc rend la dispo VF/VO/ST intestable en local. Préférer le seed, qui pose une dispo par film (voir « État média synthétique ») |
 | `SPARK_SSH_HOST` / `_HOSTNAME` / `_PORT` / `_USER` | Accès à la machine d'encodage distante |
 | `GPU_ENCODE_PRESET` / `GPU_ENCODE_CQ` / `GPU_MAX_WIDTH` / `GPU_MAX_HEIGHT` | Paramètres NVENC |
 | `VIDEO_COPY_MAX_BITRATE` | Seuil copie vs réencodage (défaut 6000000) |
@@ -630,11 +661,12 @@ Vulkan/NVIDIA et sur Metal iOS. L'atlas 2D de `CassetteTextureArray.ts` existe p
 **Boutons `disabled` = échec silencieux sur mobile** — `<button disabled>` avale le tap sans aucun
 retour. Laisser le bouton actif, laisser le `onClick` décider et afficher une popup explicative.
 
-**Dispo VF/VO = le fichier TRANSCODÉ, et ça ne se teste pas en dev** — la version réellement jouable
-est `file_path_v{f,o}_transcoded` (c'est ce dont `streaming_urls` et les symlinks se servent), jamais
-`file_path_v*` ni `radarr_v*_id` (colonnes mortes). La DB de dev n'a aucun transcode et
-`FORCED_RENTAL_VIDEO_URL` force les deux versions : la validation VF/VO se fait **en prod** ou sur une
-réponse d'API mockée.
+**Dispo VF/VO = le fichier TRANSCODÉ** — la version réellement jouable est
+`file_path_v{f,o}_transcoded` (c'est ce dont `streaming_urls` et les symlinks se servent), jamais
+`file_path_v*` ni `radarr_v*_id` (colonnes mortes). Ça se teste désormais en local : le seed pose une
+dispo VF/VO/ST **par film**, aux proportions de la prod. `FORCED_RENTAL_VIDEO_URL`, lui, force
+toujours les deux versions sans sous-titres — s'il est défini, il gagne sur le seed et on ne teste
+plus rien de tout ça.
 
 **Historique de location : serveur, pas local** — `getUserRentalHistory` renvoyait déjà tout, mais
 `store.fetchMe` ne câblait pas `rentalHistory` ; les writers locaux (`addToHistory`, `removeRental`)

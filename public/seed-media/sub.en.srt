@@ -1,0 +1,55 @@
+1
+00:00:02,000 --> 00:00:07,000
+Demo subtitles — Zone Club seed set.
+
+2
+00:00:12,000 --> 00:00:18,000
+This is the ENGLISH track. If you can read this, subtitle_en_vtt is being served.
+
+3
+00:00:30,000 --> 00:00:36,000
+The video is Big Buck Bunny (Blender Foundation, CC BY 3.0) — not the film on the cover.
+
+4
+00:01:00,000 --> 00:01:06,000
+Minute 1 — sync marker.
+
+5
+00:02:00,000 --> 00:02:06,000
+Minute 2 — sync marker.
+
+6
+00:03:00,000 --> 00:03:06,000
+Minute 3 — sync marker. Switch VF/VO here to check the track follows.
+
+7
+00:04:00,000 --> 00:04:06,000
+Minute 4 — sync marker.
+
+8
+00:05:00,000 --> 00:05:06,000
+Minute 5 — sync marker. Halfway through.
+
+9
+00:06:00,000 --> 00:06:06,000
+Minute 6 — sync marker.
+
+10
+00:07:00,000 --> 00:07:06,000
+Minute 7 — sync marker. Try rewinding from here.
+
+11
+00:08:00,000 --> 00:08:06,000
+Minute 8 — sync marker.
+
+12
+00:09:00,000 --> 00:09:06,000
+Minute 9 — sync marker.
+
+13
+00:10:00,000 --> 00:10:06,000
+Minute 10 — sync marker. Nearly the end.
+
+14
+00:10:20,000 --> 00:10:30,000
+End of the seed subtitle set. Auto-return should follow.
