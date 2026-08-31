@@ -1092,29 +1092,50 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
     );
   }
 
-  // VF/VO availability pills — shown on the fiche so the user knows BEFORE renting which audio versions
-  // exist (the missing one is dimmed + ✕). Source: detail API has_vf/has_vo (transcoded file present).
+  // Pistes audio réellement jouables pour ce film (fichier transcodé présent, exposé par l'API de détail
+  // en has_vf / has_vo). Affichées AVANT la location — pour que le choix se fasse en connaissance de
+  // cause — et pendant la location, au moment de lancer le film : c'est là qu'on veut savoir en quelle
+  // langue on va regarder.
   function renderVersionBadges() {
     if (!filmVersions || (!filmVersions.vf && !filmVersions.vo)) return null;
     const pill = (label: string, on: boolean) => (
       <span
         style={{
-          fontSize: '0.66rem', fontFamily: 'Orbitron, sans-serif', letterSpacing: '0.5px',
-          padding: '2px 8px', borderRadius: 4,
-          border: `1px solid ${on ? '#00fff7' : '#555'}`,
-          color: on ? '#00fff7' : '#777',
-          background: on ? 'rgba(0,255,247,0.12)' : 'transparent',
-          opacity: on ? 1 : 0.6,
+          fontSize: '0.85rem', fontFamily: 'Orbitron, sans-serif', letterSpacing: '0.5px',
+          fontWeight: on ? 700 : 400,
+          padding: '4px 12px', borderRadius: 4,
+          border: `1px solid ${on ? '#00fff7' : '#4a4a4a'}`,
+          color: on ? '#00fff7' : '#7a7a7a',
+          background: on ? 'rgba(0,255,247,0.14)' : 'transparent',
+          // Le barré porte le sens même si le ✕ passe inaperçu : deux signaux redondants valent mieux
+          // qu'un seul glyphe de 8 pixels.
+          textDecoration: on ? 'none' : 'line-through',
+          opacity: on ? 1 : 0.45,
+          whiteSpace: 'nowrap',
         }}
-        title={on ? `${label} disponible` : `${label} indisponible`}
+        title={on ? `${label} disponible` : `${label} indisponible pour ce film`}
       >
-        {label}{on ? '' : ' ✕'}
+        {label} {on ? '✓' : '✕'}
       </span>
     );
+    // Une seule des deux versions existe → le dire en toutes lettres. Un `title` ne se survole pas au
+    // doigt : c'est le même angle mort que le <button disabled> du bouton LOUER (commit 40f70fe). Le
+    // player affiche déjà ce libellé à côté de ses boutons VF/VO ; on reprend la même forme ici.
+    const missing = filmVersions.vf !== filmVersions.vo ? (filmVersions.vf ? 'VO' : 'VF') : null;
     return (
-      <div style={{ display: 'flex', gap: 6, justifyContent: 'center', marginTop: 4 }}>
-        {pill('VF', filmVersions.vf)}
-        {pill('VO', filmVersions.vo)}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, marginTop: 6 }}>
+        <span style={{ fontSize: '0.6rem', fontFamily: 'Orbitron, sans-serif', letterSpacing: '1.5px', color: '#888' }}>
+          AUDIO
+        </span>
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+          {pill('VF', filmVersions.vf)}
+          {pill('VO', filmVersions.vo)}
+        </div>
+        {missing && (
+          <span style={{ fontSize: '0.62rem', fontFamily: 'Orbitron, sans-serif', color: '#9a9a9a', letterSpacing: '0.3px', textAlign: 'center' }}>
+            {missing} indisponible pour ce film
+          </span>
+        )}
       </div>
     );
   }
@@ -1153,6 +1174,7 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
           <>
             {statusEl}
             {earlyHint}
+            {renderVersionBadges()}
             {renderDesktopRewindStatus()}
             {renderDesktopExtensionButton()}
             <button
@@ -1177,6 +1199,7 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
         <>
           {statusEl}
           {earlyHint}
+          {renderVersionBadges()}
           {renderDesktopRewindStatus()}
           {renderDesktopExtensionButton()}
           {isCastBlocked ? (
@@ -1299,6 +1322,7 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
         return (
           <>
             {timerEl}
+            {renderVersionBadges()}
             {renderMobileRewindStatus()}
             {renderMobileExtensionButton()}
             <button
@@ -1319,6 +1343,7 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
       return (
         <>
           {timerEl}
+          {renderVersionBadges()}
           {renderMobileRewindStatus()}
           {renderMobileExtensionButton()}
           {isCastBlocked ? (
