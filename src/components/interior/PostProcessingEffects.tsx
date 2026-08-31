@@ -29,39 +29,8 @@ const IDLE_INTERVAL = 1 / IDLE_FPS
 // posters without adding source resolution / VRAM. Tunable.
 const SHARPEN_AMOUNT = 0.4
 
-// --- Adaptive resolution scaler (dynamic resolution) --------------------------
-// The render is fragment-bound (cost ∝ pixels). On a Retina M1 Air the backbuffer
-// is ~8 MP (devicePixelRatio 2 × supersample 1.25) → unplayable. Instead of a fixed
-// low resolution, scale the pixelRatio with GPU load: drop it WHILE MOVING (you can't
-// perceive resolution in motion), restore the full supersampled res AT REST (when you
-// actually read the posters). The frame-interval EMA (rAF spacing under vsync) is the
-// load signal — no timestamp query needed. Scale is a fraction of the Canvas max dpr,
-// so the ceiling already encodes the desktop/mobile cap.
-// The signal is the interval between EFFECTIVE renders (after the 60-fps throttle gate), NOT the
-// rAF interval — the throttle caps rendering at 60 fps regardless of a 120 Hz display, so rAF
-// spacing (8.3 ms on 120 Hz) is meaningless; render-to-render is ≈16.7 ms when we hold 60 fps and
-// climbs when the GPU can't. Clean on a 60 Hz panel (the M1 Air — the actual target).
-// Raise is PROBED (after a saturation-free spell), not threshold-based: when vsync caps us we can't
-// see headroom, so we can't tell "holds 60 with margin" from "holds 60 exactly" — probe up slowly,
-// and if it re-saturates the reactive drop catches it.
-// Floor vs the Canvas max dpr — keeps a legible minimum in motion. Split desktop/mobile: the mobile
-// ceiling is already capped at 1.7, so a 0.5 floor would render at 0.85 dpr = HALF the linear resolution.
-// That is below the K7-legibility threshold we hit (and rejected) with TAAU 0.75× — see
-// memory/taau-mobile-rejected.md. 0.7 keeps the posters readable while still buying ~50 % of the pixels
-// back on a struggling phone. Desktop has real headroom above its floor, so it keeps 0.5.
-const DRS_MIN_SCALE_DESKTOP = 0.5
-const DRS_MIN_SCALE_MOBILE = 0.7
-const DRS_STEP = 0.1          // per-adjustment increment (discrete levels, fewer resizes)
-const DRS_DROP_MS = 22         // render-to-render EMA above → not holding 60 fps → drop (reactive)
-const DRS_PROBE_MS = 4000     // no saturation for this long → probe one step up (recover sharpness)
-const DRS_DROP_COOLDOWN = 350 // min ms between drops
-const DRS_RAISE_COOLDOWN = 700
-const DRS_SETTLE_MS = 300     // after a resize, ignore intervals (RT realloc spike) this long
-const DRS_EMA_SEED = 16.7     // 60 fps
-
 export function PostProcessingEffects({ isMobile = false }: PostProcessingEffectsProps) {
   const { gl: renderer, scene, camera } = useThree()
-  const setDpr = useThree((s) => s.setDpr)
   const postProcessingRef = useRef<THREE.PostProcessing | null>(null)
   const bokehRef = useRef<ReturnType<typeof uniform> | null>(null)
   const bloomStrengthRef = useRef<ReturnType<typeof uniform> | null>(null)
@@ -153,16 +122,6 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
   }, [renderer, scene, camera, isMobile, dofTrigger])
 
   const renderAccumRef = useRef(0)
-  // Adaptive resolution state
-  const drsMinScale = isMobile ? DRS_MIN_SCALE_MOBILE : DRS_MIN_SCALE_DESKTOP
-  const dprMaxRef = useRef(0)         // Canvas max dpr (captured at first frame), the ceiling
-  const dprScaleRef = useRef(1)       // current fraction of the ceiling (1 = full)
-  const frameMsEmaRef = useRef(DRS_EMA_SEED) // EMA of the render-to-render interval (ms)
-  const lastDrsAdjustRef = useRef(0)
-  const lastRenderTimeRef = useRef(0) // timestamp of the previous EFFECTIVE render (0 = none/reset)
-  const lastSaturationRef = useRef(0) // last time the EMA exceeded DROP_MS
-  const drsSettleUntilRef = useRef(0) // ignore intervals until this time (post-resize spike)
-  const drsEnabledRef = useRef(true)  // dev toggle (A/B the scaler) — always true in normal use
   const isTerminalOpen = useStore(state => state.isTerminalOpen)
   const isPlayerOpen = useStore(state => state.isPlayerOpen)
 
@@ -170,17 +129,6 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
   useEffect(() => {
     installRenderActivityListeners()
   }, [])
-
-  // Dev hooks to observe / drive the adaptive resolution scaler (Playwright + console).
-  useEffect(() => {
-    if (process.env.NODE_ENV === 'production') return
-    const w = window as unknown as Record<string, unknown>
-    w.__drs = () => ({ scale: dprScaleRef.current, emaMs: +frameMsEmaRef.current.toFixed(1), maxPR: dprMaxRef.current, curPR: renderer.getPixelRatio() })
-    // Force a high ceiling to test the scaler on a fast GPU (simulate Retina saturation).
-    w.__drsSetMax = (pr: number) => { dprMaxRef.current = pr; dprScaleRef.current = 1; lastDrsAdjustRef.current = 0; frameMsEmaRef.current = DRS_EMA_SEED; lastRenderTimeRef.current = 0; setDpr(pr) }
-    w.__drsEnable = (b: boolean) => { drsEnabledRef.current = !!b }
-    return () => { delete w.__drs; delete w.__drsSetMax; delete w.__drsEnable }
-  }, [renderer, setDpr])
 
   useFrame((_, delta) => {
     if (document.hidden) return
@@ -221,56 +169,12 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
       )
     const interval = active ? ACTIVE_INTERVAL : IDLE_INTERVAL
 
-    // --- Adaptive resolution scaler: DECISION (runs every frame) -----------
-    // Reads the render-to-render EMA (fed at render time below) and adjusts the scale.
-    if (dprMaxRef.current === 0) dprMaxRef.current = renderer.getPixelRatio()
-    const nowDrs = performance.now()
-    const applyScale = (s: number) => {
-      dprScaleRef.current = s
-      setDpr(dprMaxRef.current * s)
-      lastDrsAdjustRef.current = nowDrs
-      drsSettleUntilRef.current = nowDrs + DRS_SETTLE_MS // skip the RT-realloc spike
-      lastRenderTimeRef.current = 0                       // don't measure across the resize
-    }
-    if (!drsEnabledRef.current) {
-      // Scaler disabled (dev A/B) — leave the resolution under manual control.
-    } else if (!active) {
-      // At rest → full (supersampled) resolution for max sharpness when reading.
-      if (dprScaleRef.current < 1 && nowDrs - lastDrsAdjustRef.current > DRS_DROP_COOLDOWN) applyScale(1)
-      lastRenderTimeRef.current = 0 // idle gap must not pollute the active EMA
-    } else {
-      const ema = frameMsEmaRef.current
-      const s = dprScaleRef.current
-      if (ema > DRS_DROP_MS) {
-        // Not holding 60 fps → drop a step, reactively.
-        lastSaturationRef.current = nowDrs
-        if (s > drsMinScale && nowDrs - lastDrsAdjustRef.current > DRS_DROP_COOLDOWN) {
-          applyScale(Math.max(drsMinScale, +(s - DRS_STEP).toFixed(2)))
-        }
-      } else if (s < 1 && nowDrs - lastSaturationRef.current > DRS_PROBE_MS && nowDrs - lastDrsAdjustRef.current > DRS_RAISE_COOLDOWN) {
-        // Saturation-free for a while → probe one step up to recover sharpness.
-        applyScale(Math.min(1, +(s + DRS_STEP).toFixed(2)))
-      }
-    }
-
     renderAccumRef.current += delta
     if (renderAccumRef.current < interval) return
     // Carry the remainder for an accurate cadence (resetting to 0 drops the
     // overshoot and under-shoots the target rate); clamp so a long stall
     // — tab switch, GC pause — can't unleash a burst of catch-up renders.
     renderAccumRef.current = Math.min(renderAccumRef.current - interval, interval)
-
-    // --- Adaptive resolution scaler: MEASURE (at effective render) ---------
-    // Interval between actual renders = true per-frame cost (≈16.7 ms when holding
-    // 60 fps, higher when the GPU can't). Skip right after a resize (RT realloc spike).
-    if (active) {
-      const tRender = performance.now()
-      if (lastRenderTimeRef.current > 0 && tRender >= drsSettleUntilRef.current) {
-        const ivl = Math.min(tRender - lastRenderTimeRef.current, 100) // clamp tab/GC stalls
-        frameMsEmaRef.current = frameMsEmaRef.current * 0.9 + ivl * 0.1
-      }
-      lastRenderTimeRef.current = tRender
-    }
 
     pp.render()
   }, 1)
