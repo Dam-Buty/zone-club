@@ -110,3 +110,21 @@ test('domain: apiFilmToFilm is a single shared mapper consumed by App and store'
   assert.ok(appSource.includes('apiFilmToFilm'), 'App.tsx must use the shared apiFilmToFilm');
   assert.ok(storeSource.includes('apiFilmToFilm'), 'store/index.ts must use the shared apiFilmToFilm');
 });
+
+test('domain: mock seed aisles stay within AisleType', () => {
+  // La liste de rayons codée en dur dans scripts/seed-films.ts avait perdu
+  // `aventure` et `romance` : les films de ces deux rayons étaient seedés avec
+  // `aisle = NULL`, donc invisibles dans le 3D, sans la moindre erreur. Le script
+  // dérive désormais ses rayons des clés du JSON — reste à vérifier que ces clés
+  // sont des rayons réels.
+  const typesSource = readText(path.join(ROOT, 'src/types/index.ts'));
+  const known = new Set(extractAisleTypeItems(typesSource));
+
+  const seed = JSON.parse(readText(path.join(ROOT, 'src/data/mock/films.json')));
+  const unknown = Object.keys(seed).filter((key) => !known.has(key));
+  assert.deepEqual(unknown, [], 'films.json contains aisle keys absent from AisleType');
+
+  const physical = [...known].filter((a) => a !== 'nouveautes');
+  const missing = physical.filter((a) => !Array.isArray(seed[a]) || seed[a].length === 0);
+  assert.deepEqual(missing, [], 'every physical aisle must be seeded with at least one film');
+});

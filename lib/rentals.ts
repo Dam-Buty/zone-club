@@ -1,5 +1,5 @@
 import { db } from './db';
-import { createRentalSymlinks, deleteRentalSymlinks, getStreamingUrl } from './symlinks';
+import { createRentalSymlinks, deleteRentalSymlinks, getStreamingUrl, isDirectMediaUrl } from './symlinks';
 import { getFilmById, getFilmTier, parseFilm, type Film } from './films';
 import { RENTAL_COSTS, RENTAL_DURATIONS } from '../src/types';
 import { access } from 'fs/promises';
@@ -65,6 +65,37 @@ const SYMLINKS_PATH = process.env.SYMLINKS_PATH || '/media/public/symlinks';
 const FORCED_RENTAL_VIDEO_URL = process.env.FORCED_RENTAL_VIDEO_URL || null;
 const FORCED_RENTAL_FILE_PATH = process.env.FORCED_RENTAL_FILE_PATH || null;
 const IS_FORCED_RENTAL_MODE = !!(FORCED_RENTAL_VIDEO_URL || FORCED_RENTAL_FILE_PATH);
+
+/** Colonnes média d'un film, seul sous-ensemble dont dépend le calcul des URLs. */
+type StreamableFilm = Pick<Film,
+    'file_path_vf_transcoded' | 'file_path_vo_transcoded' | 'subtitle_fr_vtt' | 'subtitle_en_vtt'
+>;
+
+/**
+ * Une valeur reconnue comme média direct (URL de seed) part telle quelle ; sinon
+ * c'est un chemin relatif à MEDIA_FILMS_PATH, servi via le symlink de location.
+ */
+function mediaUrl(path: string | null, symlinkUuid: string, filename: string): string | null {
+    if (isDirectMediaUrl(path)) return path;
+    return path ? getStreamingUrl(symlinkUuid, filename) : null;
+}
+
+/**
+ * Construit les quatre URLs exposées au player. Factorisé parce que
+ * getUserActiveRentals et enrichRental en tenaient chacun une copie littérale du
+ * même calcul — deux endroits à corriger pour toute évolution du mode de service.
+ */
+function buildStreamingUrls(film: StreamableFilm, symlinkUuid: string): RentalWithFilm['streaming_urls'] {
+    if (FORCED_RENTAL_VIDEO_URL) {
+        return { vf: FORCED_RENTAL_VIDEO_URL, vo: FORCED_RENTAL_VIDEO_URL, subtitles: null, subtitles_en: null };
+    }
+    return {
+        vf: mediaUrl(film.file_path_vf_transcoded, symlinkUuid, 'film_vf.mp4'),
+        vo: mediaUrl(film.file_path_vo_transcoded, symlinkUuid, 'film_vo.mp4'),
+        subtitles: mediaUrl(film.subtitle_fr_vtt, symlinkUuid, 'subs_fr.vtt'),
+        subtitles_en: mediaUrl(film.subtitle_en_vtt, symlinkUuid, 'subs_en.vtt'),
+    };
+}
 
 export function getActiveRentalForFilm(filmId: number): Rental | null {
     return db.prepare(`
@@ -135,14 +166,7 @@ export function getUserActiveRentals(userId: number): RentalWithFilm[] {
         const now = new Date();
         const timeRemaining = Math.max(0, Math.floor((expiresAt.getTime() - now.getTime()) / 60000));
 
-        const streamingUrls = FORCED_RENTAL_VIDEO_URL
-            ? { vf: FORCED_RENTAL_VIDEO_URL, vo: FORCED_RENTAL_VIDEO_URL, subtitles: null, subtitles_en: null }
-            : {
-                vf: film.file_path_vf_transcoded ? getStreamingUrl(row.symlink_uuid, 'film_vf.mp4') : null,
-                vo: film.file_path_vo_transcoded ? getStreamingUrl(row.symlink_uuid, 'film_vo.mp4') : null,
-                subtitles: film.subtitle_fr_vtt ? getStreamingUrl(row.symlink_uuid, 'subs_fr.vtt') : null,
-                subtitles_en: film.subtitle_en_vtt ? getStreamingUrl(row.symlink_uuid, 'subs_en.vtt') : null
-            };
+        const streamingUrls = buildStreamingUrls(film, row.symlink_uuid);
 
         return { ...row, film, streaming_urls: streamingUrls, time_remaining: timeRemaining } as RentalWithFilm;
     });
@@ -208,19 +232,7 @@ function enrichRental(rental: Rental): RentalWithFilm | null {
     const now = new Date();
     const timeRemaining = Math.max(0, Math.floor((expiresAt.getTime() - now.getTime()) / 60000));
 
-    const streamingUrls = FORCED_RENTAL_VIDEO_URL
-        ? {
-            vf: FORCED_RENTAL_VIDEO_URL,
-            vo: FORCED_RENTAL_VIDEO_URL,
-            subtitles: null,
-            subtitles_en: null
-        }
-        : {
-            vf: film.file_path_vf_transcoded ? getStreamingUrl(rental.symlink_uuid, 'film_vf.mp4') : null,
-            vo: film.file_path_vo_transcoded ? getStreamingUrl(rental.symlink_uuid, 'film_vo.mp4') : null,
-            subtitles: film.subtitle_fr_vtt ? getStreamingUrl(rental.symlink_uuid, 'subs_fr.vtt') : null,
-            subtitles_en: film.subtitle_en_vtt ? getStreamingUrl(rental.symlink_uuid, 'subs_en.vtt') : null
-        };
+    const streamingUrls = buildStreamingUrls(film, rental.symlink_uuid);
 
     return {
         ...rental,

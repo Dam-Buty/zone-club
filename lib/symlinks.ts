@@ -13,6 +13,17 @@ export interface SymlinkPaths {
     subtitles_en: string | null;
 }
 
+/**
+ * Un chemin média écrit par le pipeline est relatif à MEDIA_FILMS_PATH
+ * (« Titre (Année)/vo.mp4 ») et se consomme via un symlink servi par lighttpd.
+ * Le seed de dev (`npm run seed`) y écrit à la place une URL absolue ou un
+ * chemin racine : reconnaissable à sa forme, il part tel quel vers le <video>
+ * sans symlink ni storage à héberger. Voir scripts/seed-films.ts.
+ */
+export function isDirectMediaUrl(value: string | null | undefined): value is string {
+    return !!value && /^(https?:\/\/|\/)/.test(value);
+}
+
 export async function createRentalSymlinks(
     tmdbId: number,
     filePaths: {
@@ -26,11 +37,22 @@ export async function createRentalSymlinks(
 ): Promise<SymlinkPaths> {
     const uuid = uuidv4();
 
+    // Un média servi directement (URL de seed) n'a rien à lier : on le retire ici
+    // plutôt que de garder un test par branche plus bas.
+    const toLink = {
+        vf: isDirectMediaUrl(filePaths.vf) ? null : filePaths.vf,
+        vo: isDirectMediaUrl(filePaths.vo) ? null : filePaths.vo,
+        subtitles: {
+            fr: isDirectMediaUrl(filePaths.subtitles.fr) ? null : filePaths.subtitles.fr,
+            en: isDirectMediaUrl(filePaths.subtitles.en) ? null : filePaths.subtitles.en,
+        },
+    };
+
     // Dev/seed reality: a film row can exist with no file_path yet (Radarr
     // hasn't downloaded, transcoder hasn't run). Returning a UUID stub lets
     // the rental row be created so the user can browse the rental flow —
     // the player will just have nothing to stream.
-    if (!filePaths.vf && !filePaths.vo && !filePaths.subtitles.fr && !filePaths.subtitles.en) {
+    if (!toLink.vf && !toLink.vo && !toLink.subtitles.fr && !toLink.subtitles.en) {
         return { uuid, vf: null, vo: null, subtitles: null, subtitles_en: null };
     }
 
@@ -46,8 +68,8 @@ export async function createRentalSymlinks(
         subtitles_en: null
     };
 
-    if (filePaths.vf) {
-        const source = resolve(MEDIA_FILMS_PATH, filePaths.vf);
+    if (toLink.vf) {
+        const source = resolve(MEDIA_FILMS_PATH, toLink.vf);
         if (!source.startsWith(resolve(MEDIA_FILMS_PATH))) {
             throw new Error('Invalid VF file path');
         }
@@ -56,8 +78,8 @@ export async function createRentalSymlinks(
         result.vf = `${uuid}/film_vf.mp4`;
     }
 
-    if (filePaths.vo) {
-        const source = resolve(MEDIA_FILMS_PATH, filePaths.vo);
+    if (toLink.vo) {
+        const source = resolve(MEDIA_FILMS_PATH, toLink.vo);
         if (!source.startsWith(resolve(MEDIA_FILMS_PATH))) {
             throw new Error('Invalid VO file path');
         }
@@ -66,8 +88,8 @@ export async function createRentalSymlinks(
         result.vo = `${uuid}/film_vo.mp4`;
     }
 
-    if (filePaths.subtitles.fr) {
-        const source = resolve(MEDIA_FILMS_PATH, filePaths.subtitles.fr);
+    if (toLink.subtitles.fr) {
+        const source = resolve(MEDIA_FILMS_PATH, toLink.subtitles.fr);
         if (!source.startsWith(resolve(MEDIA_FILMS_PATH))) {
             throw new Error('Invalid subtitles file path');
         }
@@ -76,8 +98,8 @@ export async function createRentalSymlinks(
         result.subtitles = `${uuid}/subs_fr.vtt`;
     }
 
-    if (filePaths.subtitles.en) {
-        const source = resolve(MEDIA_FILMS_PATH, filePaths.subtitles.en);
+    if (toLink.subtitles.en) {
+        const source = resolve(MEDIA_FILMS_PATH, toLink.subtitles.en);
         if (!source.startsWith(resolve(MEDIA_FILMS_PATH))) {
             throw new Error('Invalid subtitles file path');
         }
