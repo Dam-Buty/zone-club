@@ -28,10 +28,13 @@ export function getLastRenderActivity(): number {
 }
 
 // Discrete + continuous input that should keep the scene at full framerate.
-// pointermove fires during pointer-lock (FPS look) with movementX/Y, so desktop
-// look is covered here; held-key walking is marked from Controls' useFrame.
+// held-key walking / joystick is marked from Controls' useFrame (no repeated DOM
+// event), touch look is covered by touchmove below.
+//
+// ⚠️ pointermove n'est PAS dans cette liste : il est traité à part, voir
+// markFromPointerMove. Le mettre ici faisait tourner la scène à plein régime dès
+// qu'un pointeur SURVOLAIT la fenêtre, sans le moindre déplacement de caméra.
 const ACTIVITY_EVENTS = [
-  'pointermove',
   'pointerdown',
   'pointerup',
   'keydown',
@@ -40,6 +43,28 @@ const ACTIVITY_EVENTS = [
   'touchstart',
   'touchmove',
 ] as const
+
+/**
+ * pointermove ne vaut « activité » que s'il fait réellement bouger quelque chose.
+ *
+ * En pointer lock, pointermove EST le regard : on compte toujours.
+ * Hors pointer lock, la caméra ne suit pas la souris — un pointeur posé sur la
+ * fenêtre, un trackpad effleuré ou une souris qui dérive maintenaient la scène à
+ * plein régime indéfiniment. On ne garde alors que le glissement bouton enfoncé
+ * (drag d'un overlay), qui lui anime bien quelque chose.
+ *
+ * Mesuré avant correctif, scène intérieure au repos : des pointermove synthétiques
+ * — donc SANS déplacement réel — faisaient passer le rendu de 20,0 à 59,3 images
+ * par seconde. À 5,71 Mpx le GPU sature dès 38,3 images/s : la scène restait donc
+ * bloquée à 100 % de GPU tant que le pointeur traînait sur la fenêtre.
+ */
+function markFromPointerMove(event: Event): void {
+  if (typeof document !== 'undefined' && document.pointerLockElement !== null) {
+    markRenderActivity()
+    return
+  }
+  if ((event as PointerEvent).buttons) markRenderActivity()
+}
 
 /**
  * Install the window-level activity listeners once for the session. Idempotent —
@@ -52,4 +77,5 @@ export function installRenderActivityListeners(): void {
   const mark = () => markRenderActivity()
   const opts: AddEventListenerOptions = { passive: true, capture: true }
   for (const ev of ACTIVITY_EVENTS) window.addEventListener(ev, mark, opts)
+  window.addEventListener('pointermove', markFromPointerMove, opts)
 }
