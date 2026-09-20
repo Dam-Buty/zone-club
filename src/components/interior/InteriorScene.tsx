@@ -859,12 +859,17 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
               }
             })
 
-            // DIAGNOSTIC : compte les compute pipelines créés (jamais surveillés
-            // par les probes précédents qui ne traçaient que createRenderPipeline*).
-            // Si le spike au premier mouvement est dû à un compute pipeline compilé
-            // synchrone, ces logs le révèleront avec le timing exact.
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const dev = device as any
+
+            // DIAGNOSTIC, HORS PRODUCTION UNIQUEMENT — journalise la création des pipelines de
+            // calcul pour distinguer la voie synchrone (bloquante) de l'asynchrone. C'est cette
+            // sonde qui a établi que le traitement de calcul des cassettes compilait pendant la
+            // boucle de rendu ; elle a servi à valider la précompilation introduite dans
+            // CassetteInstances (compileComputeAsync, three PR #32551) et reste l'outil de
+            // vérification si l'à-coup revient. Elle n'a rien à faire chez les utilisateurs :
+            // enveloppes et console.warn restaient sur le chemin en production.
+            if (process.env.NODE_ENV !== 'production') {
             const origCompute = dev.createComputePipeline?.bind(dev)
             const origComputeAsync = dev.createComputePipelineAsync?.bind(dev)
             let computeCount = 0
@@ -891,8 +896,12 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
               }
             }
 
-            // Wrap render pipelines too — these compile synchronously when no
-            // promise is provided, blocking the main thread.
+            } // fin du diagnostic hors production
+
+            // Compteur de pipelines de rendu — FONCTIONNEL, pas du diagnostic : l'écran de
+            // chargement s'en sert pour détecter le plateau de compilation (3 itérations sans
+            // nouveau pipeline). Sans lui, getPipeCount() renverrait 0 et le warmup s'arrêterait
+            // immédiatement. Aucun log, coût négligeable — il reste donc en production.
             const origRP = dev.createRenderPipeline?.bind(dev)
             const origRPAsync = dev.createRenderPipelineAsync?.bind(dev)
             let rpCount = 0
