@@ -201,6 +201,33 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [count])
 
+  // Précompilation du traitement de calcul (three r186, PR #32551).
+  //
+  // Le pipeline de calcul de l'animation de survol se compilait au PREMIER dispatch, donc pendant
+  // la boucle de rendu et de façon bloquante — l'à-coup au premier déplacement que la sonde
+  // d'InteriorScene traquait. compileComputeAsync() fait ce travail en amont en rendant la main
+  // entre chaque étape. Mesuré : 659,7 ms déplacés dans l'écran de chargement.
+  //
+  // Sans garde de dispatch : si la précompilation n'a pas fini quand la première image arrive,
+  // renderer.compute() compile comme avant. On ne perd rien, on gagne le cas nominal.
+  useEffect(() => {
+    const renderer = gl as unknown as THREE.WebGPURenderer & {
+      compileComputeAsync?: (nodes: unknown) => Promise<void>
+    }
+    if (typeof renderer.compileComputeAsync !== 'function') return
+    let annule = false
+    renderer.compileComputeAsync(computeNode)
+      .then(() => {
+        if (!annule && process.env.NODE_ENV !== 'production') {
+          console.info(`[compute] tranche ${chunkIndex} précompilée`)
+        }
+      })
+      .catch((e: unknown) => {
+        console.warn('[compute] précompilation impossible, repli sur la compilation à la demande', e)
+      })
+    return () => { annule = true }
+  }, [gl, computeNode, chunkIndex])
+
   // Geometry with per-instance atlasRect (vec4) attribute
   const geometry = useMemo(() => {
     const chunkGeometry = SHARED_CASSETTE_GEOMETRY.clone()
