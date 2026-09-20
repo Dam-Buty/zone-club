@@ -815,13 +815,7 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
   return (
     <div style={{ position: 'fixed', inset: 0, touchAction: 'none' }}>
       <Canvas
-        // « shadows » nu vaut 'soft' chez R3F, donc PCFSoftShadowMap — SUPPRIMÉ en r186 (three
-        // PR #33987). R3F applique cette valeur APRÈS la fabrique gl ci-dessous, donc y poser
-        // PCFShadowMap ne suffisait pas : le type invalide repassait, « Shadow map type not
-        // supported yet » cassait la compilation des nœuds d'ombre, et la ShadowDepthTexture
-        // détruite puis resoumise déclenchait des centaines de GPUValidationError par seconde.
-        // 'percentage' = PCFShadowMap, le repli que r186 applique de toute façon.
-        shadows="percentage"
+        shadows
         dpr={isMobile ? Math.min(window.devicePixelRatio, 1.7) : Math.min(window.devicePixelRatio * DESKTOP_SUPERSAMPLE, 3)}
         gl={(async (props: THREE.WebGPURendererParameters) => {
 
@@ -923,16 +917,11 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
           }
 
           renderer.shadowMap.enabled = true
-          // r186 a SUPPRIMÉ PCFSoftShadowMap (three PR #33987) : la constante est marquée
-          // @deprecated dans src/constants.js et retombe sur PCFShadowMap avec un warning —
-          // donc pas de crash, mais un repli silencieux. On déclare le repli explicitement
-          // plutôt que de le subir. r185 a en contrepartie amélioré le filtre PCF restant
-          // (textureGatherCompare, three PR #33534), ce qui limite la perte de douceur.
-          renderer.shadowMap.type = THREE.PCFShadowMap
+          renderer.shadowMap.type = isMobile ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap
           renderer.toneMapping = THREE.ACESFilmicToneMapping
           renderer.toneMappingExposure = 0.82
           console.log(
-            `[Canvas] WebGPU renderer initialized — shadows: PCF, dpr: ${isMobile ? '≤1.7' : '≤3'}`
+            `[Canvas] WebGPU renderer initialized — shadows: ${isMobile ? 'PCF' : 'PCFSoft'}, dpr: ${isMobile ? '≤1.5' : '≤2'}`
           )
           return renderer
           // eslint-disable-next-line @typescript-eslint/no-explicit-any

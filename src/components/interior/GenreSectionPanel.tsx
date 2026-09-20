@@ -2,7 +2,7 @@ import { useMemo, useEffect, useRef, memo } from 'react'
 import { useFrame, useLoader } from '@react-three/fiber'
 import * as THREE from 'three'
 import { Text3D, Center } from '@react-three/drei'
-import { TTFLoader } from '../../vendor/TTFLoader.js'
+import { TTFLoader } from 'three/examples/jsm/loaders/TTFLoader.js'
 import type { FontData } from '@react-three/drei'
 
 // OPTIMISATION: Consolidated animation registry — 7 useFrame → 1 useFrame
