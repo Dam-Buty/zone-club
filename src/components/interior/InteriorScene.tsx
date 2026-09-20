@@ -815,7 +815,9 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
   return (
     <div style={{ position: 'fixed', inset: 0, touchAction: 'none' }}>
       <Canvas
-        shadows
+        // « shadows » nu vaut 'soft' chez R3F = PCFSoftShadowMap, SUPPRIMÉ en r186 (PR #33987),
+        // et R3F l'applique APRÈS la fabrique gl. 'percentage' = PCFShadowMap.
+        shadows="percentage"
         dpr={isMobile ? Math.min(window.devicePixelRatio, 1.7) : Math.min(window.devicePixelRatio * DESKTOP_SUPERSAMPLE, 3)}
         gl={(async (props: THREE.WebGPURendererParameters) => {
 
@@ -917,11 +919,11 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
           }
 
           renderer.shadowMap.enabled = true
-          renderer.shadowMap.type = isMobile ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap
+          renderer.shadowMap.type = THREE.PCFShadowMap
           renderer.toneMapping = THREE.ACESFilmicToneMapping
           renderer.toneMappingExposure = 0.82
           console.log(
-            `[Canvas] WebGPU renderer initialized — shadows: ${isMobile ? 'PCF' : 'PCFSoft'}, dpr: ${isMobile ? '≤1.5' : '≤2'}`
+            `[Canvas] WebGPU renderer initialized — shadows: PCF, dpr: ${isMobile ? '≤1.7' : '≤3'}`
           )
           return renderer
           // eslint-disable-next-line @typescript-eslint/no-explicit-any

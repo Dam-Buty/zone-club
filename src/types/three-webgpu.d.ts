@@ -76,6 +76,11 @@ declare module 'three/tsl' {
     export const instanceIndex: any;
     export const deltaTime: any;
     export const instancedArray: any;
+    // Fonction TSL publique qui applique la matrice d'instance à positionLocal ET normalLocal.
+    // Utilisée par CassetteInstances pour garantir l'ordre des transformations (voir le
+    // commentaire sur setupPosition là-bas).
+    export const instancedMesh: any;
+    export const positionGeometry: any;
     export const uniform: any;
     export const float: any;
     export const vec2: any;
