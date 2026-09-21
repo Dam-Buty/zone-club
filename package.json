@@ -78,7 +78,7 @@
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",
     "globals": "^16.5.0",
-    "sharp": "^0.34.5",
+    "sharp": "^0.35.4",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.46.4"
   }
