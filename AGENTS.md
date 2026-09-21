@@ -11,12 +11,12 @@ deux services Node autonomes.
 
 ## Stack
 
-- **Framework** : Next.js 15 App Router + React 19, `output: 'standalone'`
+- **Framework** : Next.js 16 App Router + React 19.2, `output: 'standalone'` — build en `--webpack` (cf. `next.config.ts`)
 - **3D** : Three.js 0.184 via React Three Fiber — WebGPU + TSL à l'intérieur, WebGL nu à l'extérieur
 - **État** : Zustand 5 avec persistance localStorage
 - **Styles** : Tailwind CSS v4 + CSS Modules
 - **DB** : SQLite via `better-sqlite3` (server-side only), migrations idempotentes au boot
-- **Auth** : cookies signés `cookie-signature` (pas de JWT) + CSRF par vérification d'origine (`middleware.ts`)
+- **Auth** : cookies signés `cookie-signature` (pas de JWT) + CSRF par vérification d'origine (`proxy.ts`)
 - **Média** : ffmpeg 7, NVENC distant par pipe SSH, tesseract/pgsrip, Radarr
 - **LLM** : Vercel AI SDK + OpenRouter, tracing Langfuse
 
@@ -35,14 +35,14 @@ deux services Node autonomes.
 
 ```bash
 npm run dev              # Dev server (port 3000) — dev:mobile pour 0.0.0.0:3001
-npm run build            # Build production standalone
+npm run build            # Build production standalone (--webpack : Turbopack sur-bundle, voir next.config.ts)
 npm run deploy           # Cycle complet : down app → rm -rf .next → npm i → build → up app
 npm run seed             # Seed catalogue depuis src/data/mock/films.json
 npm run refresh          # Rafraîchit les métadonnées TMDB
 npm run report           # Rapport de collection
 npm run migrate          # Migration media reset (--keep pour conserver)
 npm run configure:radarr # Configuration Radarr déclarative et idempotente (--dry)
-npm run test:phase       # Garde-fous (node --test) — test:phase:full ajoute le build
+npm run test:phase       # Garde-fous (node --test) — test:phase:full = lint + tests + build
 npm run audit:unused     # Assets/scripts orphelins (:strict = exit non-zéro)
 npm run transcode:progress   # watch SQL sur les films en cours de traitement
 
@@ -61,7 +61,7 @@ app/
 ├── page.tsx                 # Dynamic import de src/App (ssr: false)
 ├── layout.tsx               # Root layout — preload HDR / GLB / KTX2 dès le parse HTML
 └── api/                     # 40 routes App Router (table complète plus bas)
-middleware.ts                # CSRF Origin/Referer sur /api/* non-GET, bypass x-api-key
+proxy.ts                     # CSRF Origin/Referer sur /api/* non-GET, bypass x-api-key (ex-middleware.ts)
 instrumentation.ts           # Boot : cleanup scheduler, Radarr poller, recoverMediaPipeline, Langfuse
 
 lib/                         # Backend

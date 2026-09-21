@@ -14,12 +14,10 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     '/**': ['./lib/schema.sql'],
   },
-  eslint: {
-    // CI gate — `next build` will fail on ESLint errors. Warnings are
-    // surfaced but do not block. The current config (eslint.config.js) has
-    // bug-class rules at `error`, stylistic ones at `warn`.
-    ignoreDuringBuilds: false,
-  },
+  // Il n'y a plus de clé `eslint:` ici : Next 16 a supprimé l'option en même
+  // temps que la commande `next lint`, et `next build` ne lint plus du tout.
+  // Le garde-fou est passé dans le script `test:phase:full`, qui enchaîne
+  // désormais lint + tests + build.
   // Security + cache headers
   async headers() {
     const securityHeaders = [
@@ -50,13 +48,30 @@ const nextConfig: NextConfig = {
       },
     ]
   },
-  webpack(config) {
-    config.module.rules.push({
-      test: /\.wgsl$/,
-      type: 'asset/source',
-    });
-    return config;
-  },
+  // Pas de bloc `webpack()` : il déclarait un loader `asset/source` pour les
+  // .wgsl, or le dépôt n'a jamais contenu un seul fichier .wgsl (les shaders
+  // passent par TSL, en TypeScript). Règle morte, supprimée — et de toute façon
+  // un webpack custom fait échouer un build Turbopack.
+  //
+  // `npm run build` passe malgré tout `--webpack`, et c'est mesuré, pas
+  // décoratif : le traçage de fichiers de Turbopack n'arrive pas à borner les
+  // chemins fs construits à l'exécution (`join(CACHE_DIR, size, …)` dans
+  // /api/poster, `join(BACKUP, mediaDir)` dans process-film, les liens de
+  // location dans symlinks.ts) et ratisse tout le dossier du projet. Il le dit
+  // lui-même au build : « The file pattern … matches 20463 files — overly broad
+  // patterns can lead to over bundling ».
+  //
+  //   Turbopack : .next/standalone = 1,6 Go, instrumentation.js trace 5230
+  //               fichiers dont 4753 parasites — radarr-vo-config et
+  //               radarr-vf-config (1,3 Go à eux deux), zone.db, et .env.
+  //   webpack   : .next/standalone = 92 Mo, 56 fichiers tracés, 0 parasite.
+  //
+  // `outputFileTracingExcludes` ne rattrape rien : Turbopack l'ignore (testé, y
+  // compris sur la clé `/instrumentation`, le traçage fautif). Sous webpack il
+  // est inutile, la trace est déjà propre — d'où son absence ici.
+  //
+  // `next dev` reste sur Turbopack : il ne produit pas de sortie standalone,
+  // donc le problème ne s'y pose pas, et on garde le dev rapide.
 };
 
 export default nextConfig;
