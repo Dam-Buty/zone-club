@@ -35,6 +35,37 @@ const Aisle = lazy(() => import('./Aisle').then(module => ({ default: module.Ais
 // edges (the cassette "liseret") which post AA passes (FXAA/SMAA/MSAA) can't reach.
 // Cost scales ~×factor² per frame. 1.0 = native (off). Capped at dpr 3 below.
 const DESKTOP_SUPERSAMPLE = 1.25
+
+// Plafond de SURFACE rendue, en mégapixels.
+//
+// Le rendu est borné par le remplissage : le coût est proportionnel au nombre de pixels, pas à
+// la résolution de l'écran. Mesuré sur Mac M4 : ~215 Mpx/s, soit 3,58 Mpx pour tenir 60 ips.
+//
+// Or le dpr est multiplié par le suréchantillonnage AVANT d'être plafonné. Sur un écran haute
+// densité (dpr 2) en plein écran, cela donnait 3000×1905 = 5,71 Mpx, donc 38 ips au lieu de 60 —
+// GPU saturé en permanence, ventilateur compris.
+//
+// Un plafond sur le DPR ne règle rien, parce qu'il ignore la taille de la fenêtre. Un plafond sur
+// la SURFACE s'adapte : il ne se déclenche que quand la charge dépasse réellement le budget.
+//
+// Ce que ça change selon la machine :
+//   PC en dpr 1, 1920×1080  -> 1920*1080*1.25² = 3,24 Mpx  -> SOUS le plafond, rien ne change
+//   Mac Retina plein écran   -> 5,71 Mpx                    -> ramené à 3,5, soit ~60 ips
+// La majorité du parc n'est donc pas affectée ; seuls les écrans haute densité sont bridés, et
+// seulement lorsqu'ils dépassent le budget.
+const MAX_RENDER_MPX = 3.5
+
+/** dpr effectif : la règle habituelle, mais jamais au-delà du budget de surface. */
+function computeDpr(isMobile: boolean): number {
+  const base = isMobile
+    ? Math.min(window.devicePixelRatio, 1.7)
+    : Math.min(window.devicePixelRatio * DESKTOP_SUPERSAMPLE, 3)
+  const surfaceCss = window.innerWidth * window.innerHeight
+  if (surfaceCss <= 0) return base
+  // surface rendue = surfaceCss × dpr² → dpr max = √(budget / surfaceCss)
+  const dprBudget = Math.sqrt((MAX_RENDER_MPX * 1e6) / surfaceCss)
+  return Math.max(1, Math.min(base, dprBudget))
+}
 import { VHSCaseViewer } from './VHSCaseViewer'
 import { TVTerminal } from '../terminal/TVTerminal'
 import { AuthModal } from '../auth/AuthModal'
@@ -812,13 +843,32 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
     return allFilms.find(f => f.id === selectedFilmId) || deskFilms.find(f => f.id === selectedFilmId) || null
   }, [selectedFilmId, allFilms, deskFilms])
 
+  // Le budget de surface dépend de la TAILLE DE FENÊTRE : il doit donc être recalculé quand elle
+  // change, sinon le dpr reste figé sur celui du montage (une fenêtre agrandie puis réduite restait
+  // bridée à 1 au lieu de 1,25 — constaté). Anti-rebond de 200 ms : chaque changement de dpr
+  // redimensionne le canvas et réalloue la chaîne de post-traitement, on ne le fait qu'une fois le
+  // redimensionnement terminé.
+  const [dpr, setDpr] = useState(() => computeDpr(isMobile))
+  useEffect(() => {
+    let t: ReturnType<typeof setTimeout> | null = null
+    const onResize = () => {
+      if (t) clearTimeout(t)
+      t = setTimeout(() => setDpr(computeDpr(isMobile)), 200)
+    }
+    window.addEventListener('resize', onResize)
+    return () => {
+      if (t) clearTimeout(t)
+      window.removeEventListener('resize', onResize)
+    }
+  }, [isMobile])
+
   return (
     <div style={{ position: 'fixed', inset: 0, touchAction: 'none' }}>
       <Canvas
         // « shadows » nu vaut 'soft' chez R3F = PCFSoftShadowMap, SUPPRIMÉ en r186 (PR #33987),
         // et R3F l'applique APRÈS la fabrique gl. 'percentage' = PCFShadowMap.
         shadows="percentage"
-        dpr={isMobile ? Math.min(window.devicePixelRatio, 1.7) : Math.min(window.devicePixelRatio * DESKTOP_SUPERSAMPLE, 3)}
+        dpr={dpr}
         gl={(async (props: THREE.WebGPURendererParameters) => {
 
 
