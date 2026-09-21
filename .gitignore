@@ -14,9 +14,7 @@ dist/
 *.db
 
 # Service configs (host-specific)
-bazarr-config/
 radarr-config/
-radarr-vf-config/
 radarr-vo-config/
 transmission-config/
 
