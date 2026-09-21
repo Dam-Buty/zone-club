@@ -1,6 +1,7 @@
 import { cookies } from 'next/headers';
 import { NextResponse, after } from 'next/server';
-import { streamText, convertToModelMessages, stepCountIs } from 'ai';
+import { streamText, convertToModelMessages, isStepCount } from 'ai';
+import { propagateAttributes } from '@langfuse/tracing';
 import { createOpenAI } from '@ai-sdk/openai';
 import { getUserFromSession, getUserFromApiKey } from '@/lib/session';
 import { buildSystemPrompt, buildGuestSystemPrompt } from '@/lib/chat';
@@ -87,22 +88,31 @@ export async function POST(req: Request) {
   // Prepend event messages
   const allMessages = [...eventMessages, ...modelMessages];
 
-  const result = streamText({
-    model: openrouter.chat(CHAT_MODEL),
-    maxOutputTokens: 800,
-    system: systemPrompt,
-    messages: allMessages,
-    tools,
-    stopWhen: stepCountIs(5),
-    experimental_telemetry: {
-      isEnabled: true,
-      functionId: 'chat',
-      metadata: {
-        sessionId: sessionId || undefined,
-        userId: user ? String(user.id) : 'guest',
-      },
+  // sessionId / userId ne passent plus par `telemetry.metadata` : le champ a
+  // disparu de TelemetryOptions en AI SDK 7, et Langfuse 5 ne lit de toute façon
+  // plus les attributs `ai.telemetry.metadata.*`. La voie actuelle est
+  // `propagateAttributes`, qui pose les attributs sur tous les spans ouverts
+  // dans son callback — donc sur ceux qu'émet streamText.
+  const result = propagateAttributes(
+    {
+      ...(sessionId ? { sessionId: String(sessionId) } : {}),
+      userId: user ? String(user.id) : 'guest',
     },
-  });
+    () =>
+      streamText({
+        model: openrouter.chat(CHAT_MODEL),
+        maxOutputTokens: 800,
+        instructions: systemPrompt,
+        messages: allMessages,
+        tools,
+        stopWhen: isStepCount(5),
+        // Pas de `isEnabled: true` : en AI SDK 7 la télémétrie est opt-out dès
+        // que l'intégration est enregistrée (cf. instrumentation.ts).
+        telemetry: {
+          functionId: 'chat',
+        },
+      }),
+  );
 
   // Flush Langfuse traces after response is sent
   after(async () => await langfuseSpanProcessor.forceFlush());
