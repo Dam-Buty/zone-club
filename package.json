@@ -19,7 +19,7 @@
     "test:phase:full": "npm run lint && npm run test:phase && npm run build",
     "docker:build": "docker compose build app",
     "deploy": "docker compose down app && sudo rm -rf .next && npm i && npm run build && docker compose up -d app",
-    "logs": "docker compose logs -f $(docker compose ps --services --status running | grep -vx radarr)",
+    "logs": "docker compose logs -f app cinema-stream zone-discord-bot",
     "transcode:progress": "scripts/transcode-progress.sh",
     "bot:up": "docker compose up -d zone-discord-bot",
     "bot:down": "docker compose down zone-discord-bot",
