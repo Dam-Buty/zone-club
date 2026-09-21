@@ -37,6 +37,7 @@ deux services Node autonomes.
 npm run dev              # Dev server (port 3000) — dev:mobile pour 0.0.0.0:3001
 npm run build            # Build production standalone (--webpack : Turbopack sur-bundle, voir next.config.ts)
 npm run deploy           # Cycle complet : down app → rm -rf .next → npm i → build → up app
+npm run logs             # Logs suivis de toute la stack SAUF radarr (trop bavard)
 npm run seed             # Seed catalogue depuis src/data/mock/films.json
 npm run refresh          # Rafraîchit les métadonnées TMDB
 npm run report           # Rapport de collection
@@ -53,6 +54,13 @@ npm run loopback:start|stop|status            # renvoie l'audio de la chaîne ve
 
 **Deploy** : le container `app` monte le dossier du projet et sert le build standalone —
 on build depuis la machine hôte (bien plus rapide que dans le container).
+
+**Logs** : `npm run logs` liste les services par `docker compose ps --services --status running`
+puis retire `radarr` avec `grep -vx`. Le `--status running` n'est pas un détail : la variante
+évidente (`docker compose config --services`, qui liste les services *déclarés*) **crée et
+démarre** les services qui n'ont pas de container — demander des logs ne devrait pas lancer
+quoi que ce soit. Le `-x` de grep force la correspondance sur la ligne entière, sinon un futur
+`radarr-4k` serait filtré lui aussi.
 
 ## Arborescence
 
