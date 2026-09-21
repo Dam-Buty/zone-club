@@ -49,14 +49,22 @@ export default defineConfig([
       // Hard errors that catch real bugs:
       'react-hooks/rules-of-hooks': 'error',
       // Les règles react-hooks v7 ci-dessous sont les SEULES qui produisent encore
-      // des warnings : 23 au total, sur 12 fichiers. Tout le reste du dépôt est à zéro.
+      // des warnings : 113 au total, sur 23 fichiers. Tout le reste du dépôt est à zéro.
       //
-      // set-state-in-effect (10) : « init depuis un effet » ou synchronisation d'un
-      // objet impératif (scène ExteriorScene, élément <video>, timer d'inactivité).
-      // purity (7) et immutability (5) : le modèle R3F / Three.js lui-même —
+      // Le compte était de 23 sur 12 fichiers avec eslint-plugin-react-hooks 7.0.1 ;
+      // la 7.1.1 détecte les mêmes classes bien plus largement (vérifié cas par cas :
+      // aucune catégorie nouvelle, refs et preserve-manual-memoization se mettent
+      // simplement à parler). Le gros des hits est concentré sur la 3D —
+      // CassetteInstances (17), VHSPlayer (11), VHSCaseOverlay (11), LaZoneCRT (10).
+      //
+      // immutability (36) et purity (14) : le modèle R3F / Three.js lui-même —
       // Math.random() pour semer un système de particules, écriture directe dans les
       // Float32Array d'un BufferAttribute, mutation d'un matériau par instance.
-      // globals (1) : un drapeau de nettoyage de scène au niveau module.
+      // set-state-in-effect (33) : « init depuis un effet » ou synchronisation d'un
+      // objet impératif (scène ExteriorScene, élément <video>, timer d'inactivité).
+      // refs (23) : lecture d'une ref impérative dans le useMemo qui construit les
+      // buffers d'instances — c'est le point d'entrée du GPU, pas du rendu React.
+      // preserve-manual-memoization (6), globals (1) : idem, code de scène.
       //
       // Aucune n'est un bug : les corriger demande de restructurer du code 3D qui
       // marche, ce qui ne se valide qu'à l'œil. Gardées en warn pour rester visibles
