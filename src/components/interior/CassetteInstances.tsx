@@ -5,7 +5,7 @@ import {
   texture, uv, attribute,
   Fn, instanceIndex, deltaTime, instancedArray,
   uniform, mix, vec3, vec2, positionLocal, float, step,
-  abs, cos, sin,
+  abs, cos, sin, instancedMesh,
 } from 'three/tsl'
 import { CassetteTextureAtlas, type CassetteInstanceData } from '../../utils/CassetteTextureArray'
 import { useStore } from '../../store'
@@ -201,6 +201,33 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [count])
 
+  // Précompilation du traitement de calcul (three r186, PR #32551).
+  //
+  // Le pipeline de calcul de l'animation de survol se compilait au PREMIER dispatch, donc pendant
+  // la boucle de rendu et de façon bloquante — l'à-coup au premier déplacement que la sonde
+  // d'InteriorScene traquait. compileComputeAsync() fait ce travail en amont en rendant la main
+  // entre chaque étape. Mesuré : 659,7 ms déplacés dans l'écran de chargement.
+  //
+  // Sans garde de dispatch : si la précompilation n'a pas fini quand la première image arrive,
+  // renderer.compute() compile comme avant. On ne perd rien, on gagne le cas nominal.
+  useEffect(() => {
+    const renderer = gl as unknown as THREE.WebGPURenderer & {
+      compileComputeAsync?: (nodes: unknown) => Promise<void>
+    }
+    if (typeof renderer.compileComputeAsync !== 'function') return
+    let annule = false
+    renderer.compileComputeAsync(computeNode)
+      .then(() => {
+        if (!annule && process.env.NODE_ENV !== 'production') {
+          console.info(`[compute] tranche ${chunkIndex} précompilée`)
+        }
+      })
+      .catch((e: unknown) => {
+        console.warn('[compute] précompilation impossible, repli sur la compilation à la demande', e)
+      })
+    return () => { annule = true }
+  }, [gl, computeNode, chunkIndex])
+
   // Geometry with per-instance atlasRect (vec4) attribute
   const geometry = useMemo(() => {
     const chunkGeometry = SHARED_CASSETTE_GEOMETRY.clone()
@@ -250,7 +277,37 @@ function CassetteInstancesChunk({ instances, chunkIndex }: CassetteChunkProps) {
     const sinA = sin(tiltAngle)
     const rotatedY = positionLocal.y.mul(cosA).sub(positionLocal.z.mul(sinA))
     const rotatedZ = positionLocal.y.mul(sinA).add(positionLocal.z.mul(cosA))
-    mat.positionNode = vec3(positionLocal.x, rotatedY, rotatedZ).add(vec3(0, 0, hoverZ))
+    const hoverTransform = vec3(positionLocal.x, rotatedY, rotatedZ).add(vec3(0, 0, hoverZ))
+
+    // ⚠️ ORDRE DES TRANSFORMATIONS — ne pas repasser par `mat.positionNode`.
+    //
+    // La sortie de la K7 est un décalage sur son axe Z LOCAL, suivi d'une bascule dans son plan
+    // YZ local. Cela n'a de sens que si la matrice d'instance (qui porte la position ET
+    // l'orientation de la cassette sur son étagère) est appliquée APRÈS.
+    //
+    // Or `NodeMaterial.setupPosition` applique l'instanciation puis écrase avec `positionNode`.
+    // En r184 l'ordre émis dans le WGSL était pourtant l'inverse, grâce au `.toStack()` que
+    // three PR #33674 a supprimé. Mesuré sur le shader généré :
+    //
+    //   r184 : positionLocal = rotation + vec3(0,0,hoverZ)       <- local
+    //          positionLocal = instanceMatrix * positionLocal    <- puis instance   ✅
+    //   r186 : positionLocal = instanceMatrix * positionLocal    <- instance d'abord
+    //          positionLocal = rotation + vec3(0,0,hoverZ)       <- sur du monde    ❌
+    //
+    // Avec l'ordre r186 le décalage pousse sur le Z du MONDE : les étagères orientées voient
+    // leur cassette partir de travers, traverser le meuble, voire décoller. Observé.
+    //
+    // On surcharge donc le point d'extension prévu pour garantir l'ordre, indépendamment de la
+    // version : transformation locale d'abord, instanciation ensuite. `instancedMesh()` est une
+    // fonction TSL publique et transforme aussi `normalLocal`, donc l'éclairage reste juste.
+    mat.setupPosition = (builder: { object: THREE.Object3D }) => {
+      positionLocal.assign(hoverTransform)
+      const obj = builder.object as THREE.InstancedMesh
+      if (obj.isInstancedMesh && obj.instanceMatrix && obj.instanceMatrix.isInstancedBufferAttribute === true) {
+        instancedMesh(obj)
+      }
+      return positionLocal
+    }
 
     // Outline mask from box UVs: 1.0 on edges, 0.0 in center
     const border = float(0.012)

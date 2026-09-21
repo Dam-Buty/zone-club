@@ -35,6 +35,37 @@ const Aisle = lazy(() => import('./Aisle').then(module => ({ default: module.Ais
 // edges (the cassette "liseret") which post AA passes (FXAA/SMAA/MSAA) can't reach.
 // Cost scales ~×factor² per frame. 1.0 = native (off). Capped at dpr 3 below.
 const DESKTOP_SUPERSAMPLE = 1.25
+
+// Plafond de SURFACE rendue, en mégapixels.
+//
+// Le rendu est borné par le remplissage : le coût est proportionnel au nombre de pixels, pas à
+// la résolution de l'écran. Mesuré sur Mac M4 : ~215 Mpx/s, soit 3,58 Mpx pour tenir 60 ips.
+//
+// Or le dpr est multiplié par le suréchantillonnage AVANT d'être plafonné. Sur un écran haute
+// densité (dpr 2) en plein écran, cela donnait 3000×1905 = 5,71 Mpx, donc 38 ips au lieu de 60 —
+// GPU saturé en permanence, ventilateur compris.
+//
+// Un plafond sur le DPR ne règle rien, parce qu'il ignore la taille de la fenêtre. Un plafond sur
+// la SURFACE s'adapte : il ne se déclenche que quand la charge dépasse réellement le budget.
+//
+// Ce que ça change selon la machine :
+//   PC en dpr 1, 1920×1080  -> 1920*1080*1.25² = 3,24 Mpx  -> SOUS le plafond, rien ne change
+//   Mac Retina plein écran   -> 5,71 Mpx                    -> ramené à 3,5, soit ~60 ips
+// La majorité du parc n'est donc pas affectée ; seuls les écrans haute densité sont bridés, et
+// seulement lorsqu'ils dépassent le budget.
+const MAX_RENDER_MPX = 3.5
+
+/** dpr effectif : la règle habituelle, mais jamais au-delà du budget de surface. */
+function computeDpr(isMobile: boolean): number {
+  const base = isMobile
+    ? Math.min(window.devicePixelRatio, 1.7)
+    : Math.min(window.devicePixelRatio * DESKTOP_SUPERSAMPLE, 3)
+  const surfaceCss = window.innerWidth * window.innerHeight
+  if (surfaceCss <= 0) return base
+  // surface rendue = surfaceCss × dpr² → dpr max = √(budget / surfaceCss)
+  const dprBudget = Math.sqrt((MAX_RENDER_MPX * 1e6) / surfaceCss)
+  return Math.max(1, Math.min(base, dprBudget))
+}
 import { VHSCaseViewer } from './VHSCaseViewer'
 import { TVTerminal } from '../terminal/TVTerminal'
 import { AuthModal } from '../auth/AuthModal'
@@ -812,11 +843,32 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
     return allFilms.find(f => f.id === selectedFilmId) || deskFilms.find(f => f.id === selectedFilmId) || null
   }, [selectedFilmId, allFilms, deskFilms])
 
+  // Le budget de surface dépend de la TAILLE DE FENÊTRE : il doit donc être recalculé quand elle
+  // change, sinon le dpr reste figé sur celui du montage (une fenêtre agrandie puis réduite restait
+  // bridée à 1 au lieu de 1,25 — constaté). Anti-rebond de 200 ms : chaque changement de dpr
+  // redimensionne le canvas et réalloue la chaîne de post-traitement, on ne le fait qu'une fois le
+  // redimensionnement terminé.
+  const [dpr, setDpr] = useState(() => computeDpr(isMobile))
+  useEffect(() => {
+    let t: ReturnType<typeof setTimeout> | null = null
+    const onResize = () => {
+      if (t) clearTimeout(t)
+      t = setTimeout(() => setDpr(computeDpr(isMobile)), 200)
+    }
+    window.addEventListener('resize', onResize)
+    return () => {
+      if (t) clearTimeout(t)
+      window.removeEventListener('resize', onResize)
+    }
+  }, [isMobile])
+
   return (
     <div style={{ position: 'fixed', inset: 0, touchAction: 'none' }}>
       <Canvas
-        shadows
-        dpr={isMobile ? Math.min(window.devicePixelRatio, 1.7) : Math.min(window.devicePixelRatio * DESKTOP_SUPERSAMPLE, 3)}
+        // « shadows » nu vaut 'soft' chez R3F = PCFSoftShadowMap, SUPPRIMÉ en r186 (PR #33987),
+        // et R3F l'applique APRÈS la fabrique gl. 'percentage' = PCFShadowMap.
+        shadows="percentage"
+        dpr={dpr}
         gl={(async (props: THREE.WebGPURendererParameters) => {
 
 
@@ -853,12 +905,17 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
               }
             })
 
-            // DIAGNOSTIC : compte les compute pipelines créés (jamais surveillés
-            // par les probes précédents qui ne traçaient que createRenderPipeline*).
-            // Si le spike au premier mouvement est dû à un compute pipeline compilé
-            // synchrone, ces logs le révèleront avec le timing exact.
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const dev = device as any
+
+            // DIAGNOSTIC, HORS PRODUCTION UNIQUEMENT — journalise la création des pipelines de
+            // calcul pour distinguer la voie synchrone (bloquante) de l'asynchrone. C'est cette
+            // sonde qui a établi que le traitement de calcul des cassettes compilait pendant la
+            // boucle de rendu ; elle a servi à valider la précompilation introduite dans
+            // CassetteInstances (compileComputeAsync, three PR #32551) et reste l'outil de
+            // vérification si l'à-coup revient. Elle n'a rien à faire chez les utilisateurs :
+            // enveloppes et console.warn restaient sur le chemin en production.
+            if (process.env.NODE_ENV !== 'production') {
             const origCompute = dev.createComputePipeline?.bind(dev)
             const origComputeAsync = dev.createComputePipelineAsync?.bind(dev)
             let computeCount = 0
@@ -885,8 +942,12 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
               }
             }
 
-            // Wrap render pipelines too — these compile synchronously when no
-            // promise is provided, blocking the main thread.
+            } // fin du diagnostic hors production
+
+            // Compteur de pipelines de rendu — FONCTIONNEL, pas du diagnostic : l'écran de
+            // chargement s'en sert pour détecter le plateau de compilation (3 itérations sans
+            // nouveau pipeline). Sans lui, getPipeCount() renverrait 0 et le warmup s'arrêterait
+            // immédiatement. Aucun log, coût négligeable — il reste donc en production.
             const origRP = dev.createRenderPipeline?.bind(dev)
             const origRPAsync = dev.createRenderPipelineAsync?.bind(dev)
             let rpCount = 0
@@ -908,11 +969,11 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
           }
 
           renderer.shadowMap.enabled = true
-          renderer.shadowMap.type = isMobile ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap
+          renderer.shadowMap.type = THREE.PCFShadowMap
           renderer.toneMapping = THREE.ACESFilmicToneMapping
           renderer.toneMappingExposure = 0.82
           console.log(
-            `[Canvas] WebGPU renderer initialized — shadows: ${isMobile ? 'PCF' : 'PCFSoft'}, dpr: ${isMobile ? '≤1.5' : '≤2'}`
+            `[Canvas] WebGPU renderer initialized — shadows: PCF, dpr: ${isMobile ? '≤1.7' : '≤3'}`
           )
           return renderer
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
