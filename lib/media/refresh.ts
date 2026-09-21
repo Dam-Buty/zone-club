@@ -6,11 +6,11 @@ import { enqueueProcessFilm } from './process-film'
 export type RefreshResult = 'processing' | 'searching' | 'downloading'
 
 export async function refreshFilm(filmId: number): Promise<RefreshResult> {
-    let film = getFilmById(filmId)
+    const film = getFilmById(filmId)
     if (!film) throw new Error('film introuvable')
 
     if (!film.radarr_id) {
-        film = await triggerDownload(filmId) // (re)add + search
+        await triggerDownload(filmId) // (re)add + search
         return 'searching'
     }
 

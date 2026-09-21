@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
         );
     }
 
-    let fileSize = 0;
+    let fileSize: number;
     try {
         fileSize = (await stat(forcedPath)).size;
     } catch {

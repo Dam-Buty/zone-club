@@ -436,7 +436,7 @@ export async function getRentalDownloadSource(userId: number, filmId: number): P
     const vfPath = join(SYMLINKS_PATH, rental.symlink_uuid, 'film_vf.mp4');
     const voPath = join(SYMLINKS_PATH, rental.symlink_uuid, 'film_vo.mp4');
 
-    let absolutePath: string | null = null;
+    let absolutePath: string | null;
     let languageSuffix = 'VO';
 
     try {

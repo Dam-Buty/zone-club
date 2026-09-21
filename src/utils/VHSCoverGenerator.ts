@@ -1756,6 +1756,9 @@ function drawBackCover(
     tc.fillStyle = template.accentColor;
     tc.textAlign = "center";
     tc.fillText("SOYEZ COOL, REMBOBINEZ", w / 2, curY + 10);
+    // On garde le curseur vertical à jour : le bloc des logos studio
+    // juste en dessous repartirait de curY.
+    // eslint-disable-next-line no-useless-assignment
     curY += 16;
 
     // --- Production company logos (adaptive contrast — no pills) ---

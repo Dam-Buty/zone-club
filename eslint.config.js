@@ -37,7 +37,12 @@ export default defineConfig([
       // was not detected in your ESLint configuration ». Il apporte surtout des
       // règles bug-class propres au framework (no-sync-scripts,
       // no-async-client-component, no-document-import-in-page…).
-      next.flatConfig.coreWebVitals,
+      // @next/eslint-plugin-next 16 a déplacé les configs plates : elles sont
+      // désormais sous `configs`, et ce sont les anciennes (format eslintrc)
+      // qui portent le suffixe `-legacy`. En 15 c'était `flatConfig.coreWebVitals`,
+      // qui n'existe plus — d'où un « Cannot read properties of undefined » au
+      // chargement de la config si on ne suit pas.
+      next.configs['core-web-vitals'],
     ],
     languageOptions: {
       ecmaVersion: 2020,
