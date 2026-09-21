@@ -1,5 +1,6 @@
 import js from '@eslint/js'
 import globals from 'globals'
+import next from '@next/eslint-plugin-next'
 import reactHooks from 'eslint-plugin-react-hooks'
 import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
@@ -12,12 +13,31 @@ export default defineConfig([
     // Sub-projects with their own toolchains — keep them out of the main lint.
     'cinema-stream', 'zone-discord-bot', 'backend-zone-club', 'dist',
   ]),
+  // Bloc sans `files:` — uniquement pour que `next build` trouve le plugin.
+  // Sa sonde fait un calculateConfigForFile() sur package.json (cf.
+  // next/dist/lib/eslint/runLintCheck.js) : un plugin déclaré seulement dans un
+  // bloc limité à **/*.{ts,tsx} lui reste invisible, et il avertit alors « The
+  // Next.js plugin was not detected ». Même référence d'objet que celle
+  // enregistrée par flatConfig.coreWebVitals ci-dessous, donc pas de conflit.
+  // Les règles, elles, restent portées par le bloc ts/tsx.
+  //
+  // Le `rules: {}` n'est PAS décoratif : une fois le plugin détecté, la sonde
+  // fait Object.entries(completeConfig.rules) sur ce même calcul. Sans la clé,
+  // elle jette « ESLint: Cannot convert undefined or null to object » et le
+  // build saute silencieusement tout le lint — zéro warning affiché, zéro
+  // vérification faite.
+  { plugins: { '@next/next': next.default }, rules: {} },
   {
     files: ['**/*.{ts,tsx}'],
     extends: [
       js.configs.recommended,
       tseslint.configs.recommended,
       reactHooks.configs.flat.recommended,
+      // Sans ce plugin, `next build` avertit à chaque fois « The Next.js plugin
+      // was not detected in your ESLint configuration ». Il apporte surtout des
+      // règles bug-class propres au framework (no-sync-scripts,
+      // no-async-client-component, no-document-import-in-page…).
+      next.flatConfig.coreWebVitals,
     ],
     languageOptions: {
       ecmaVersion: 2020,
@@ -56,6 +76,19 @@ export default defineConfig([
       '@typescript-eslint/triple-slash-reference': 'warn',
       '@typescript-eslint/no-empty-object-type': 'warn',
       'prefer-const': 'warn',
+      // Les deux règles Next ci-dessous ne s'appliquent pas à ce projet :
+      //
+      // no-img-element pousse vers next/image. Le dépôt ne l'utilise nulle part
+      // (11 <img> natifs) et c'est délibéré : les jaquettes passent par le proxy
+      // maison /api/poster (cache disque 30 j) ou finissent en texture WebGPU
+      // dans l'atlas de CassetteTextureArray. next/image n'apporterait rien et
+      // rallumerait /_next/image, une surface d'attaque qu'on n'a pas besoin
+      // d'ouvrir (c'est là qu'était la RCE AVIF de next < 15.5.24).
+      '@next/next/no-img-element': 'off',
+      // no-page-custom-font raisonne en Pages Router : il veut la police dans
+      // pages/_document.js. Le <link> VT323 est dans app/layout.tsx, le root
+      // layout App Router — il vaut donc bien pour toute l'app. Faux positif.
+      '@next/next/no-page-custom-font': 'off',
     },
   },
 ])

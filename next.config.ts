@@ -3,7 +3,14 @@ import type { NextConfig } from 'next';
 const nextConfig: NextConfig = {
   output: 'standalone',
   devIndicators: false,
-  serverExternalPackages: ['better-sqlite3', 'bcrypt'],
+  // better-sqlite3 et bcrypt : modules natifs, impossibles à bundler.
+  // fluent-ffmpeg : sa fonctionnalité `preset()` fait un `require(modulePath)`
+  // calculé, que webpack ne sait pas analyser — d'où un « Critical dependency:
+  // the request of a dependency is an expression » à chaque build. On n'utilise
+  // aucun preset (le dépôt appelle ffmpeg en direct), et le paquet ne sert que
+  // côté serveur dans lib/media/ : l'externaliser retire le warning et évite de
+  // bundler un wrapper qui ne fait que piloter des binaires.
+  serverExternalPackages: ['better-sqlite3', 'bcrypt', 'fluent-ffmpeg'],
   outputFileTracingIncludes: {
     '/**': ['./lib/schema.sql'],
   },
