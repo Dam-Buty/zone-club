@@ -18,6 +18,7 @@ bazarr-config/
 radarr-config/
 radarr-vf-config/
 radarr-vo-config/
+transmission-config/
 
 # Logs
 logs

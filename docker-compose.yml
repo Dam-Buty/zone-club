@@ -36,6 +36,9 @@ services:
       - GPU_ENCODE_PRESET=p5
       - GPU_ENCODE_CQ=23
       - GPU_MAX_HEIGHT=1080
+      # 4 films en parallèle : le GPU du Spark encaisse sans broncher (testé).
+      # Les backups SSHFS restent sérialisés par leur propre mutex.
+      - PROCESS_MAX_CONCURRENT=4
       - MEDIA_FILMS_PATH=/media/films
       - MEDIA_LIBRARY_PATH=/media/library
       - MEDIA_BACKUP_PATH=/media/backup/zone-club
@@ -98,6 +101,24 @@ services:
       - "traefik.http.routers.radarr.entrypoints=websecure"
       - "traefik.http.routers.radarr.tls.certresolver=letsencrypt"
       - "traefik.http.services.radarr.loadbalancer.server.port=7878"
+
+
+  transmission:
+    image: linuxserver/transmission:latest
+    container_name: zone-transmission
+    environment:
+      - PUID=1000
+      - PGID=100
+      - TZ=Europe/Paris
+    volumes:
+      - ./transmission-config:/config
+      # Même montage que Radarr (/data/phat-two:/data/phat-two) : la library et les
+      # téléchargements partagent le même point de montage, condition nécessaire aux
+      # liens durs. Chemins identiques des deux côtés = pas de remote path mapping.
+      - /data/phat-two:/data/phat-two
+    ports:
+      - "9092:9091"
+    # No Traefik labels — direct LAN access on port 9092
 
 
   cinema-stream:
