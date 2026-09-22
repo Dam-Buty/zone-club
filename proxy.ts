@@ -15,10 +15,14 @@ import { NextRequest, NextResponse } from 'next/server'
 //
 // Replaces the (deleted) lib/csrf.ts double-submit token. Simpler, opt-out
 // by header rather than per-route opt-in.
+//
+// Ce fichier s'appelait middleware.ts jusqu'à Next 16, qui a renommé la
+// convention en `proxy` (et l'export `middleware` en `proxy`). Le runtime edge
+// n'est pas supporté par `proxy` — sans objet ici, on n'en déclarait aucun.
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
 
-export function middleware(req: NextRequest) {
+export function proxy(req: NextRequest) {
   // Only police /api/* routes — Next.js internals (RSC, _next/*) handle
   // their own security model and our static pages are GET-only anyway.
   if (!req.nextUrl.pathname.startsWith('/api/')) {

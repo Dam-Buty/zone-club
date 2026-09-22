@@ -115,7 +115,7 @@ async function request<T>(
 
   if (!response.ok) {
     // Backend convention: errors are { error: string } (NextResponse.json
-    // across all 79 sites + middleware.ts). Older code wrote `message` — kept
+    // across all 79 sites + proxy.ts). Older code wrote `message` — kept
     // as fallback for compat with any drift.
     const errorData = await response.json().catch(() => ({ error: 'Erreur inconnue' }));
     const msg = errorData.error || errorData.message || `Erreur ${response.status}`;

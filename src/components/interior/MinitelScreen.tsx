@@ -356,6 +356,9 @@ function drawPaginationStrip(ctx: CanvasRenderingContext2D, page: number, totalP
   if (page < totalPages - 1) {
     const bg = focused === 'next' ? PALETTE.YELLOW : PALETTE.CYAN
     const r = drawInversePill(ctx, 'SUIV >', hitboxes, { x, y, index: -2, bg })
+    // On garde le curseur à jour : le prochain bloc ajouté sous ce `if`
+    // doit pouvoir partir d'un x correct.
+    // eslint-disable-next-line no-useless-assignment
     x += r.w + TOK.navGap
   }
   ctx.font = FONT
