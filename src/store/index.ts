@@ -129,6 +129,15 @@ export interface VideoClubState {
   // Player
   isPlayerOpen: boolean;
   currentPlayingFilm: number | null;
+  /**
+   * Location synthétique de la page admin : elle ne vient pas du serveur et ne
+   * doit jamais entrer dans `rentals` (pas de crédit, pas d'historique, pas de
+   * stock). `getRental` la sert en priorité pour que le VHSPlayer reste le vrai
+   * player du vidéoclub, sans branche spéciale côté composant.
+   */
+  previewRental: Rental | null;
+  previewFilm: Film | null;
+  openPreviewPlayer: (film: Film, rental: Rental) => void;
   openPlayer: (filmId: number) => void;
   closePlayer: () => void;
 
@@ -484,16 +493,28 @@ export const useStore = create<VideoClubState>()(
           };
         }),
 
-      getRental: (filmId) => get().rentals.find((r) => r.filmId === filmId),
+      getRental: (filmId) =>
+        (get().previewRental?.filmId === filmId ? get().previewRental : null)
+        ?? get().rentals.find((r) => r.filmId === filmId),
 
       updateRentalProgress: (filmId, progress, position) => {
         set((state) => ({
+          previewRental: state.previewRental?.filmId === filmId
+            ? {
+                ...state.previewRental,
+                watchPosition: position,
+                watchProgress: Math.max(state.previewRental.watchProgress, progress),
+              }
+            : state.previewRental,
           rentals: state.rentals.map((r) =>
             r.filmId === filmId
               ? { ...r, watchPosition: position, watchProgress: Math.max(r.watchProgress, progress) }
               : r
           ),
         }));
+        // Une prévisualisation n'a pas de ligne `rentals` : appeler l'API
+        // renverrait 404 toutes les 10 s, et le store local suffit au player.
+        if (get().previewRental?.filmId === filmId) return Promise.resolve({ ok: true });
         return api.rentals.updateProgress(filmId, progress, position);
       },
 
@@ -705,6 +726,16 @@ export const useStore = create<VideoClubState>()(
       // Player
       isPlayerOpen: false,
       currentPlayingFilm: null,
+      previewRental: null,
+      previewFilm: null,
+      openPreviewPlayer: (film, rental) => set({
+        isPlayerOpen: true,
+        currentPlayingFilm: film.id,
+        previewFilm: film,
+        previewRental: rental,
+        managerVisible: false,
+        chatBackdropUrl: null,
+      }),
       activeCastFilmId: null,
       setActiveCastFilmId: (filmId) => set({ activeCastFilmId: filmId }),
       // End cast — clears activeCastFilmId. Call this when the cast genuinely
@@ -720,13 +751,27 @@ export const useStore = create<VideoClubState>()(
         //     show the player (the K7 overlay already shows the cast-busy
         //     state separately). The previous silent return left users
         //     wondering why the "Watch" button did nothing.
-        set({ isPlayerOpen: true, currentPlayingFilm: filmId, managerVisible: false, chatBackdropUrl: null });
+        set({
+          isPlayerOpen: true,
+          currentPlayingFilm: filmId,
+          // Une location réelle remplace toute prévisualisation admin restée
+          // ouverte dans le même onglet.
+          previewRental: null,
+          previewFilm: null,
+          managerVisible: false,
+          chatBackdropUrl: null,
+        });
       },
       // closePlayer no longer wipes activeCastFilmId. The cast continues on
       // the receiver independent of whether the player overlay is open, and
       // we want the next openPlayer to find the active cast and auto-enter
       // remote-control mode without forcing the user to manually re-cast.
-      closePlayer: () => set({ isPlayerOpen: false, currentPlayingFilm: null }),
+      closePlayer: () => set({
+        isPlayerOpen: false,
+        currentPlayingFilm: null,
+        previewRental: null,
+        previewFilm: null,
+      }),
 
       // Targeting
       targetedFilmId: null,

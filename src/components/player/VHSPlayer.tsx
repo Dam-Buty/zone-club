@@ -155,9 +155,13 @@ export function VHSPlayer() {
   const rental = currentPlayingFilm ? getRental(currentPlayingFilm) : null;
   const streamingUrls = rental?.streamingUrls;
 
-  // Get film title for display
+  // Get film title for display. La page admin ouvre un film qui n'est pas
+  // forcément dans le cache d'un rayon : `previewFilm` est alors la seule source.
+  const previewFilm = useStore(state => state.previewFilm);
   const allFilms = Object.values(films).flat();
-  const currentFilm = allFilms.find(f => f.id === currentPlayingFilm);
+  const currentFilm = previewFilm?.id === currentPlayingFilm
+    ? previewFilm
+    : allFilms.find(f => f.id === currentPlayingFilm);
 
   // Determine available tracks
   const hasVF = !!streamingUrls?.vf;
