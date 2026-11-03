@@ -1433,18 +1433,73 @@ export function VHSPlayer() {
 
   return (
     <div className={styles.player} style={!overlayVisible && rewindPhase === 'none' ? { cursor: 'none' } : undefined}>
-      {/* Film title header */}
-      {currentFilm && (
+      {/* Chrome haut en trois colonnes : retour au vidéoclub à gauche, titre
+          (avec le timer de location) au centre, cast / AirPlay / miroir empilés
+          à droite. Masqué pendant le cast et l'attente de connexion : le
+          panneau Now Playing occupe alors tout l'écran et porte ses propres
+          actions. */}
+      {playerState !== 'casting' && playerState !== 'awaitingCast' && (
         <div className={styles.header} style={{
           opacity: overlayVisible ? 1 : 0,
           transition: 'opacity 0.4s',
           pointerEvents: overlayVisible ? 'auto' : 'none',
         }}>
-          <span className={styles.filmTitle}>{currentFilm.title}</span>
-          <span className={styles.trackIndicator}>
-            {audioTrack.toUpperCase()}
-            {subtitleTrack !== 'off' && ` + ${SUBTITLE_LABELS[subtitleTrack].button}`}
-          </span>
+          <div className={styles.headerLeft}>
+            <button
+              type="button"
+              className={styles.backToStoreBtn}
+              onClick={handleEject}
+              title="Retourner dans le vidéoclub [Échap]"
+            >
+              <span aria-hidden="true">←</span> RETOUR VIDÉOCLUB
+            </button>
+          </div>
+
+          <div className={styles.headerCenter}>
+            {currentFilm && <span className={styles.filmTitle}>{currentFilm.title}</span>}
+            <div className={styles.rentalTimer}>
+              <RentalTimer expiresAt={rental.expiresAt} />
+            </div>
+          </div>
+
+          <div className={styles.headerRight}>
+            <div className={styles.castStack}>
+              <button
+                type="button"
+                onClick={handleCastCurrentVideo}
+                className={`${styles.castStackBtn} ${isCastConnected ? styles.castStackBtnActive : ''}`}
+                title={
+                  isCastConnected
+                    ? 'Casting actif'
+                    : !isCastReady
+                      ? 'Google Cast en cours de chargement…'
+                      : hasCastDevices
+                        ? 'Google Cast'
+                        : 'Aucun appareil Cast sur le réseau'
+                }
+                style={!isCastReady && !isCastConnected ? { opacity: 0.5, cursor: 'wait' } : undefined}
+              >
+                {isCastConnected ? 'CAST ON' : castState === 'CONNECTING' || !isCastReady ? 'CAST…' : hasCastDevices ? 'CAST' : 'CAST ?'}
+              </button>
+              <button
+                type="button"
+                onClick={handleAirPlayPicker}
+                className={`${styles.castStackBtn} ${isAirPlayConnected ? styles.castStackBtnActive : ''}`}
+                title={isAirPlayConnected ? 'AirPlay actif' : isAirPlaySupported ? 'AirPlay' : 'AirPlay indisponible'}
+              >
+                {isAirPlayConnected ? 'AIRPLAY ON' : isAirPlayAvailable ? 'AIRPLAY' : 'AIRPLAY ?'}
+              </button>
+              <button
+                type="button"
+                onClick={() => openMirroringFallback('generic')}
+                className={styles.castStackBtn}
+                title="Mode miroir (fallback)"
+              >
+                MIROIR
+              </button>
+            </div>
+            {remoteError && <div className={styles.castError}>{remoteError}</div>}
+          </div>
         </div>
       )}
 
@@ -1691,14 +1746,6 @@ export function VHSPlayer() {
           </div>
         </div>
       )}
-
-      <div className={styles.rentalTimer} style={{
-        opacity: overlayVisible ? 1 : 0,
-        transition: 'opacity 0.4s',
-        pointerEvents: overlayVisible ? 'auto' : 'none',
-      }}>
-        <RentalTimer expiresAt={rental.expiresAt} />
-      </div>
 
       {showMobileRemotePrompt && rewindPhase === 'none' && playerState !== 'casting' && playerState !== 'awaitingCast' && (
         <div className={styles.mobileRemotePrompt}>
@@ -2005,23 +2052,6 @@ export function VHSPlayer() {
           hasVO={hasVO}
           hasSubtitlesFr={hasSubtitlesFr}
           hasSubtitlesEn={hasSubtitlesEn}
-          onCast={handleCastCurrentVideo}
-          onAirPlay={handleAirPlayPicker}
-          onMirroringHelp={() => openMirroringFallback('generic')}
-          isCastReady={isCastReady}
-          hasCastDevices={hasCastDevices}
-          isCastConnected={isCastConnected}
-          isCastConnecting={castState === 'CONNECTING'}
-          isAirPlaySupported={isAirPlaySupported}
-          isAirPlayAvailable={isAirPlayAvailable}
-          isAirPlayConnected={isAirPlayConnected}
-          remoteError={remoteError}
-          isCasting={false /* casting renders the Now Playing panel above; VHSControls is local-only here */}
-          remoteCastTime={remoteCastTime}
-          remoteCastDuration={remoteCastDuration}
-          remoteCastPaused={remoteCastPaused}
-          onRemotePlayOrPause={remotePlayOrPause}
-          onRemoteStop={handleStop}
         />
         </div>
       )}
