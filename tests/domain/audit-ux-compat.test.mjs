@@ -243,6 +243,37 @@ test('MOBILE: store persistence name must be videoclub-storage', () => {
   );
 });
 
+// ===== SUB-01: Sous-titres cross-origin =====
+
+test('SUB-01: VHSPlayer must CORS-enable the video for remote subtitle tracks', () => {
+  const source = readText(path.join(ROOT, 'src/components/player/VHSPlayer.tsx'));
+
+  // Les sous-titres d'une location sont servis par le sous-domaine storage.
+  // Sans `crossOrigin` sur le <video>, le navigateur bloque la piste distante
+  // sans erreur visible : le bouton STFR paraît actif, aucun texte n'apparaît.
+  assert.ok(
+    source.includes("crossOrigin={hasRemoteSubtitles ? 'anonymous' : undefined}"),
+    'The <video> must set crossOrigin when subtitle URLs are cross-origin'
+  );
+  assert.ok(
+    source.includes('hasRemoteSubtitles') && source.includes('streamingUrls?.subtitles'),
+    'hasRemoteSubtitles must be derived from the streaming subtitle URLs'
+  );
+});
+
+test('SUB-02: cast must side-load the WebVTT tracks on the receiver', () => {
+  const hook = readText(path.join(ROOT, 'src/hooks/useGoogleCast.ts'));
+  const player = readText(path.join(ROOT, 'src/components/player/VHSPlayer.tsx'));
+
+  // Le <track> local ne traverse pas le réseau : sans `mediaInfo.tracks` et
+  // `activeTrackIds`, la TV reçoit le MP4 nu et n'affiche aucun sous-titre.
+  assert.ok(hook.includes('mediaInfo.tracks'), 'castMedia must declare mediaInfo.tracks');
+  assert.ok(hook.includes('request.activeTrackIds'), 'LoadRequest must carry activeTrackIds');
+  assert.ok(hook.includes('EditTracksInfoRequest'), 'Language switch during cast must use editTracksInfo');
+  assert.ok(player.includes('buildCastSubtitleTracks'), 'VHSPlayer must build the cast subtitle tracks');
+  assert.ok(player.includes('subtitles: castSubtitles'), 'VHSPlayer must pass the tracks to castMedia');
+});
+
 // ===== Cross-cutting: No localhost/hardcoded URLs anywhere in frontend =====
 
 test('CROSS: no hardcoded localhost URLs in API client', () => {

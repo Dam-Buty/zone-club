@@ -8,6 +8,7 @@ import type { PlayerState } from '../../types';
 import { useGoogleCast, preloadCastSdk } from '../../hooks/useGoogleCast';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { useBackGuard } from '../../hooks/useBackGuard';
+import { buildCastSubtitleTracks, activeSubtitleId } from '../../utils/cast-subtitles';
 import styles from './VHSPlayer.module.css';
 
 const MIN_CONTENT_LENGTH = 500;
@@ -139,6 +140,7 @@ export function VHSPlayer() {
     remoteSeek,
     remoteSetVolume,
     getRemoteCurrentTime,
+    setCastTextTrack,
   } = useGoogleCast({
     enabled: isPlayerOpen,
     receiverApplicationId: process.env.NEXT_PUBLIC_GOOGLE_CAST_APP_ID,
@@ -168,11 +170,33 @@ export function VHSPlayer() {
   const hasVO = !!streamingUrls?.vo;
   const hasSubtitlesFr = !!streamingUrls?.subtitles;
   const hasSubtitlesEn = !!streamingUrls?.subtitles_en;
+
+  // Un <track> distant (sous-domaine storage) n'est chargé que si l'élément
+  // <video> est en mode CORS : le navigateur refuse la piste sans l'attribut
+  // `crossOrigin`, et il le fait silencieusement (le bouton STFR paraît actif,
+  // aucun texte n'apparaît). On le déduit des URLs de sous-titres — pas de la
+  // piste sélectionnée, pour ne pas changer l'attribut en cours de lecture. Le
+  // seed sert ses sous-titres en same-origin et archive.org ne renvoie pas
+  // `Access-Control-Allow-Origin` sur sa réponse finale : forcer crossOrigin
+  // casserait la vidéo de seed.
+  const hasRemoteSubtitles =
+    /^https?:\/\//i.test(streamingUrls?.subtitles ?? '') ||
+    /^https?:\/\//i.test(streamingUrls?.subtitles_en ?? '');
   // Ordre d'affichage et de cycle clavier : FR d'abord, EN ensuite, et seulement ce qui existe.
   const availableSubtitles = useMemo(
     () => (['fr', 'en'] as const).filter(lang => (lang === 'fr' ? hasSubtitlesFr : hasSubtitlesEn)),
     [hasSubtitlesFr, hasSubtitlesEn]
   );
+
+  // Pistes envoyées au Chromecast. Le `<track>` local ne traverse pas le réseau :
+  // sans ça, le receiver ne reçoit que le MP4 et la TV n'a aucun sous-titre.
+  const castSubtitles = useMemo(
+    () => buildCastSubtitleTracks(streamingUrls),
+    [streamingUrls]
+  );
+  // Dernière piste appliquée côté receiver, pour ne pas renvoyer un
+  // `editTracksInfo` identique à chaque rendu.
+  const castSubtitleIdRef = useRef<number | null>(null);
 
   // Snap the selected audio track to a version that ACTUALLY exists for this rental. A film can be VF-only
   // (e.g. The Big Short) or VO-only; without this the player keeps the default 'vf' and getVideoUrl
@@ -193,6 +217,19 @@ export function VHSPlayer() {
       setSubtitleTrack(availableSubtitles[0] ?? 'off');
     }
   }, [streamingUrls, availableSubtitles, subtitleTrack]);
+
+  // Basculer les sous-titres sur la TV pendant le cast (touche T ou boutons du
+  // panneau Now Playing). Au démarrage, `activeTrackIds` a déjà été envoyé dans
+  // la requête de chargement : le ref évite un `editTracksInfo` redondant.
+  useEffect(() => {
+    if (playerState !== 'casting') return;
+    const nextId = activeSubtitleId(castSubtitles, subtitleTrack);
+    if (nextId === castSubtitleIdRef.current) return;
+    void setCastTextTrack(nextId).then(result => {
+      if (result.ok) castSubtitleIdRef.current = nextId;
+      else setRemoteError(result.error ?? 'Sous-titres indisponibles sur la TV.');
+    });
+  }, [playerState, subtitleTrack, castSubtitles, setCastTextTrack]);
 
   // Get current video URL based on selected track
   const getVideoUrl = useCallback(() => {
@@ -862,11 +899,14 @@ export function VHSPlayer() {
     // Fallback to rental.watchPosition if local video hasn't seeked yet (canplay
     // race when user clicks Cast before <video> reaches its resume position).
     const startTime = Math.max(video?.currentTime || 0, rental?.watchPosition || 0);
+    const castSubtitleId = activeSubtitleId(castSubtitles, subtitleTrack);
     const result = await castMedia({
       url: videoUrl,
       title: currentFilm?.title || 'Zone Club',
       currentTime: startTime,
       autoplay: true,
+      subtitles: castSubtitles,
+      activeSubtitleId: castSubtitleId,
     });
 
     if (!result.ok) {
@@ -879,6 +919,9 @@ export function VHSPlayer() {
 
     // Cast confirmed — switch to casting mode. Local already paused above
     // (and autoplay is gated by playerState below in the <video> element).
+    // Le receiver a déjà appliqué cette piste via `activeTrackIds` : on la
+    // mémorise pour que l'effet de bascule ne la renvoie pas.
+    castSubtitleIdRef.current = castSubtitleId;
     setPlayerState('casting');
     setActiveCastFilmId(currentPlayingFilm);
     castFilmIdRef.current = currentPlayingFilm ?? null;
@@ -890,7 +933,7 @@ export function VHSPlayer() {
         updateRentalProgress(currentPlayingFilm, progress, startTime).catch(() => {});
       }
     }
-  }, [videoUrl, castMedia, currentFilm?.title, openMirroringFallback, currentPlayingFilm, setActiveCastFilmId, rental?.watchPosition, updateRentalProgress]);
+  }, [videoUrl, castMedia, currentFilm?.title, openMirroringFallback, currentPlayingFilm, setActiveCastFilmId, rental?.watchPosition, updateRentalProgress, castSubtitles, subtitleTrack]);
 
   // Switch playback back to the phone without terminating the receiver
   // session via the user-facing Stop flow (which triggers the eject + rewind
@@ -1415,6 +1458,7 @@ export function VHSPlayer() {
         key={`${audioTrack}-${videoUrl}`}
         ref={videoRef}
         className={styles.video}
+        crossOrigin={hasRemoteSubtitles ? 'anonymous' : undefined}
         autoPlay={playerState !== 'casting' && playerState !== 'awaitingCast'}
         playsInline
         onPlay={() => {
@@ -1603,6 +1647,31 @@ export function VHSPlayer() {
               />
             </div>
           )}
+
+          {/* Sans ces boutons, changer de langue pendant le cast serait
+              impossible au doigt sur mobile (le clavier seul pilote `T`). */}
+          {castSubtitles.length > 0 && (
+            <div className={styles.nowPlayingSubtitleRow}>
+              {castSubtitles.map(track => {
+                const isActive = activeSubtitleId(castSubtitles, subtitleTrack) === track.id;
+                return (
+                  <button
+                    key={track.id}
+                    type="button"
+                    className={`${styles.nowPlayingSecondaryBtn} ${isActive ? styles.nowPlayingSubtitleBtnActive : ''}`}
+                    aria-pressed={isActive}
+                    onClick={() => handleSubtitleTrackChange(track.language)}
+                  >
+                    {track.language === 'fr' ? 'STFR' : 'STEN'}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {/* Les contrôles VHS (seul autre afficheur de `remoteError`) sont
+              démontés pendant le cast : sans ça, un échec de bascule de piste
+              resterait totalement silencieux. */}
+          {remoteError && <div className={styles.nowPlayingError}>{remoteError}</div>}
 
           <div className={styles.nowPlayingSecondary}>
             <button

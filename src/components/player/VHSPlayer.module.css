@@ -802,6 +802,26 @@
   background: linear-gradient(135deg, rgba(0, 255, 247, 0.4), rgba(0, 255, 136, 0.25));
 }
 
+.nowPlayingSubtitleRow {
+  display: flex;
+  gap: 10px;
+  margin-top: 18px;
+}
+.nowPlayingSubtitleBtnActive {
+  color: var(--color-neon-cyan);
+  border-color: var(--color-neon-cyan);
+  background: rgba(0, 255, 247, 0.12);
+  box-shadow: 0 0 10px rgba(0, 255, 247, 0.25);
+}
+.nowPlayingError {
+  margin-top: 12px;
+  max-width: 340px;
+  font-family: 'VT323', 'Courier New', monospace;
+  font-size: 0.9rem;
+  color: rgba(255, 150, 160, 0.95);
+  text-align: center;
+}
+
 .nowPlayingSecondary {
   display: flex;
   gap: 12px;

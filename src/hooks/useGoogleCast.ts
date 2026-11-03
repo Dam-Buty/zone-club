@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { CastSubtitleTrack } from '../utils/cast-subtitles';
 
 const GOOGLE_CAST_SDK_URL = 'https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1';
 
@@ -11,18 +12,43 @@ interface CastMediaMetadata {
   title?: string;
 }
 
+/** Piste texte side-loadée déclarée dans le MediaInfo (WebVTT). */
+interface CastTrack {
+  trackContentId: string;
+  trackContentType: string;
+  subtype: string;
+  name: string;
+  language: string;
+  customData: null;
+}
+
+interface CastEditTracksInfoRequest {
+  activeTrackIds: number[];
+}
+
 interface CastMediaInfo {
   streamType?: string;
   metadata?: CastMediaMetadata;
+  tracks?: CastTrack[];
 }
 
 interface CastLoadRequest {
   autoplay: boolean;
   currentTime: number;
+  activeTrackIds?: number[];
+}
+
+/** `chrome.cast.media.Media` — seule la bascule de piste texte nous intéresse. */
+interface CastMediaSession {
+  editTracksInfo: (
+    request: CastEditTracksInfoRequest,
+    onSuccess?: () => void,
+    onError?: (error: unknown) => void,
+  ) => Promise<void> | void;
 }
 
 interface CastSession {
-  loadMedia: (request: CastLoadRequest) => Promise<void>;
+  loadMedia: (request: CastLoadRequest) => Promise<CastMediaSession>;
   getCastDevice?: () => { friendlyName?: string };
 }
 
@@ -93,6 +119,14 @@ interface ChromeCastNamespace {
     StreamType: {
       BUFFERED: string;
     };
+    TrackType: {
+      TEXT: string;
+    };
+    TextTrackType: {
+      SUBTITLES: string;
+    };
+    Track: new (trackId: number, trackType: string) => CastTrack;
+    EditTracksInfoRequest: new (activeTrackIds: number[]) => CastEditTracksInfoRequest;
     MediaInfo: new (url: string, contentType: string) => CastMediaInfo;
     GenericMediaMetadata: new () => CastMediaMetadata;
     LoadRequest: new (mediaInfo: CastMediaInfo) => CastLoadRequest;
@@ -115,6 +149,10 @@ interface CastMediaInput {
   title: string;
   currentTime: number;
   autoplay: boolean;
+  /** Pistes WebVTT side-loadées. Vide = cast sans sous-titres, comme avant. */
+  subtitles?: CastSubtitleTrack[];
+  /** Piste à activer au chargement (`null` = sous-titres coupés). */
+  activeSubtitleId?: number | null;
 }
 
 interface CastResult {
@@ -222,6 +260,11 @@ export function useGoogleCast({ enabled, receiverApplicationId }: UseGoogleCastO
   const remotePlayerRef = useRef<RemotePlayer | null>(null);
   const remoteControllerRef = useRef<RemotePlayerController | null>(null);
 
+  // Session média du cast courant : permet de basculer la piste texte sans
+  // recharger le film. Le ref de piste active évite les `editTracksInfo` inutiles.
+  const castMediaRef = useRef<CastMediaSession | null>(null);
+  const activeCastTextTrackRef = useRef<number | null>(null);
+
   // Throttle ref for currentTime (fires ~1/s from Cast SDK)
   const remoteTimeRef = useRef(0);
   const throttleTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -281,6 +324,8 @@ export function useGoogleCast({ enabled, receiverApplicationId }: UseGoogleCastO
           setRemoteDuration(0);
           setRemoteCurrentTime(0);
           remoteTimeRef.current = 0;
+          castMediaRef.current = null;
+          activeCastTextTrackRef.current = null;
         }
       };
 
@@ -330,11 +375,20 @@ export function useGoogleCast({ enabled, receiverApplicationId }: UseGoogleCastO
       cleanupRemote?.();
       remotePlayerRef.current = null;
       remoteControllerRef.current = null;
+      castMediaRef.current = null;
+      activeCastTextTrackRef.current = null;
       if (throttleTimerRef.current) clearInterval(throttleTimerRef.current);
     };
   }, [enabled, receiverApplicationId]);
 
-  const castMedia = useCallback(async ({ url, title, currentTime, autoplay }: CastMediaInput): Promise<CastResult> => {
+  const castMedia = useCallback(async ({
+    url,
+    title,
+    currentTime,
+    autoplay,
+    subtitles = [],
+    activeSubtitleId = null,
+  }: CastMediaInput): Promise<CastResult> => {
     const globals = getCastGlobals();
     const cast = globals.cast;
     const chromeCast = globals.chrome?.cast;
@@ -362,16 +416,79 @@ export function useGoogleCast({ enabled, receiverApplicationId }: UseGoogleCastO
       metadata.title = title;
       mediaInfo.metadata = metadata;
 
+      // WebVTT side-loadé : le receiver par défaut ne gère que les pistes texte.
+      // Déclarer des tracks force aussi le receiver à charger le MP4 en CORS —
+      // le storage envoie `Access-Control-Allow-Origin: *` sur les deux.
+      if (subtitles.length > 0) {
+        mediaInfo.tracks = subtitles.map(({ id, url: trackUrl, language, label }) => {
+          const track = new chromeCast.media.Track(id, chromeCast.media.TrackType.TEXT);
+          track.trackContentId = trackUrl;
+          track.trackContentType = 'text/vtt';
+          track.subtype = chromeCast.media.TextTrackType.SUBTITLES;
+          track.name = label;
+          track.language = language;
+          track.customData = null;
+          return track;
+        });
+      }
+
       const request = new chromeCast.media.LoadRequest(mediaInfo);
       request.autoplay = autoplay;
       request.currentTime = Math.max(0, currentTime);
+      request.activeTrackIds = activeSubtitleId === null ? [] : [activeSubtitleId];
 
-      await session.loadMedia(request);
+      const media = await session.loadMedia(request);
+      castMediaRef.current = media ?? null;
+      activeCastTextTrackRef.current = activeSubtitleId;
       return { ok: true };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Impossible de caster la vidéo.';
       return { ok: false, error: message };
     }
+  }, []);
+
+  /**
+   * Bascule la piste texte du cast en cours, sans recharger le film.
+   * `null` coupe les sous-titres. No-op si la valeur demandée est déjà active.
+   */
+  const setCastTextTrack = useCallback((trackId: number | null): Promise<CastResult> => {
+    if (activeCastTextTrackRef.current === trackId) return Promise.resolve({ ok: true });
+
+    const media = castMediaRef.current;
+    const chromeCast = getCastGlobals().chrome?.cast;
+    if (!media || !chromeCast) {
+      return Promise.resolve({ ok: false, error: 'Aucun média Cast actif.' });
+    }
+
+    const request = new chromeCast.media.EditTracksInfoRequest(trackId === null ? [] : [trackId]);
+
+    // `chrome.cast.media.Media.editTracksInfo` est documenté avec des callbacks,
+    // mais la CAF renvoie aussi une promesse selon les versions : on accepte les deux.
+    return new Promise<CastResult>((resolve) => {
+      let settled = false;
+      const done = (result: CastResult) => {
+        if (settled) return;
+        settled = true;
+        if (result.ok) activeCastTextTrackRef.current = trackId;
+        resolve(result);
+      };
+
+      const onError = (error: unknown) => done({
+        ok: false,
+        error: error instanceof Error
+          ? error.message
+          : 'Impossible de changer les sous-titres sur la TV.',
+      });
+
+      try {
+        const maybePromise = media.editTracksInfo(request, () => done({ ok: true }), onError);
+        if (maybePromise && typeof maybePromise.then === 'function') {
+          maybePromise.then(() => done({ ok: true }), onError);
+        }
+      } catch (error) {
+        onError(error);
+      }
+    });
   }, []);
 
   // Remote controls — mutate RemotePlayer fields then call controller methods
@@ -381,6 +498,9 @@ export function useGoogleCast({ enabled, receiverApplicationId }: UseGoogleCastO
 
   const remoteStop = useCallback(() => {
     remoteControllerRef.current?.stop();
+    // Le média n'existe plus côté receiver : plus de piste texte à basculer.
+    castMediaRef.current = null;
+    activeCastTextTrackRef.current = null;
   }, []);
 
   const remoteSeek = useCallback((time: number) => {
@@ -409,6 +529,7 @@ export function useGoogleCast({ enabled, receiverApplicationId }: UseGoogleCastO
     isConnected: castState === 'CONNECTED',
     connectedDeviceName,
     castMedia,
+    setCastTextTrack,
     // Remote state
     remoteCurrentTime,
     remoteDuration,
