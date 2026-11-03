@@ -4,7 +4,7 @@ import { cookies } from 'next/headers';
 import { getUserFromSession } from '@/lib/session';
 import { AdminLogin } from './AdminLogin';
 import { AdminLogoutButton } from './AdminLogoutButton';
-import { AdminPageClient } from './AdminPageClient';
+import { AdminClientLoader } from './AdminClientLoader';
 import styles from './AdminPage.module.css';
 
 export const metadata: Metadata = {
@@ -41,5 +41,5 @@ export default async function AdminPage() {
         );
     }
 
-    return <AdminPageClient username={user.username} />;
+    return <AdminClientLoader username={user.username} />;
 }
