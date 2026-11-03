@@ -24,19 +24,23 @@ export function isDirectMediaUrl(value: string | null | undefined): value is str
     return !!value && /^(https?:\/\/|\/)/.test(value);
 }
 
-export async function createRentalSymlinks(
-    tmdbId: number,
-    filePaths: {
-        vf: string | null;
-        vo: string | null;
-        subtitles: {
-            fr: string | null;
-            en: string | null;
-        };
-    }
-): Promise<SymlinkPaths> {
-    const uuid = uuidv4();
+interface LinkableFiles {
+    vf: string | null;
+    vo: string | null;
+    subtitles: {
+        fr: string | null;
+        en: string | null;
+    };
+}
 
+/**
+ * Crée le dossier de liens et renvoie les chemins relatifs servis par lighttpd.
+ *
+ * `uuid` est fourni par l'appelant : aléatoire pour une location (l'URL est le
+ * secret), déterministe pour la prévisualisation admin (pas d'accumulation de
+ * dossiers à chaque essai).
+ */
+async function createSymlinks(uuid: string, filePaths: LinkableFiles): Promise<SymlinkPaths> {
     // Un média servi directement (URL de seed) n'a rien à lier : on le retire ici
     // plutôt que de garder un test par branche plus bas.
     const toLink = {
@@ -74,6 +78,7 @@ export async function createRentalSymlinks(
             throw new Error('Invalid VF file path');
         }
         const target = join(symlinkDir, 'film_vf.mp4');
+        await rm(target, { force: true });
         await symlink(source, target);
         result.vf = `${uuid}/film_vf.mp4`;
     }
@@ -84,6 +89,7 @@ export async function createRentalSymlinks(
             throw new Error('Invalid VO file path');
         }
         const target = join(symlinkDir, 'film_vo.mp4');
+        await rm(target, { force: true });
         await symlink(source, target);
         result.vo = `${uuid}/film_vo.mp4`;
     }
@@ -94,6 +100,7 @@ export async function createRentalSymlinks(
             throw new Error('Invalid subtitles file path');
         }
         const target = join(symlinkDir, 'subs_fr.vtt');
+        await rm(target, { force: true });
         await symlink(source, target);
         result.subtitles = `${uuid}/subs_fr.vtt`;
     }
@@ -104,11 +111,31 @@ export async function createRentalSymlinks(
             throw new Error('Invalid subtitles file path');
         }
         const target = join(symlinkDir, 'subs_en.vtt');
+        await rm(target, { force: true });
         await symlink(source, target);
         result.subtitles_en = `${uuid}/subs_en.vtt`;
     }
 
     return result;
+}
+
+/** Liens d'une location : l'UUID aléatoire est le secret d'accès à l'URL. */
+export function createRentalSymlinks(
+    _tmdbId: number,
+    filePaths: LinkableFiles,
+): Promise<SymlinkPaths> {
+    return createSymlinks(uuidv4(), filePaths);
+}
+
+/**
+ * Liens de la prévisualisation admin. Dossier déterministe (`preview-<filmId>`)
+ * pour qu'ouvrir dix fois le même film ne laisse pas dix dossiers orphelins.
+ */
+export function createPreviewSymlinks(
+    filmId: number,
+    filePaths: LinkableFiles,
+): Promise<SymlinkPaths> {
+    return createSymlinks(`preview-${filmId}`, filePaths);
 }
 
 export async function deleteRentalSymlinks(uuid: string): Promise<void> {
