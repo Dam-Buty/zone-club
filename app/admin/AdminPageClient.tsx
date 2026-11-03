@@ -85,6 +85,14 @@ export function AdminPageClient({ username }: AdminPageClientProps) {
         return () => { cancelled = true; };
     }, []);
 
+    // Si on quitte /admin alors qu'une preview est ouverte, ne pas laisser
+    // `isPlayerOpen` + `previewRental` dans le store global : le vidéoclub
+    // principal afficherait le player par-dessus sa propre scène.
+    useEffect(() => () => {
+        const state = useStore.getState();
+        if (state.previewRental) state.closePlayer();
+    }, []);
+
     const aisles = useMemo(
         () => Array.from(new Set(films.map(film => film.aisle ?? 'none'))).sort((a, b) => a.localeCompare(b, 'fr')),
         [films],

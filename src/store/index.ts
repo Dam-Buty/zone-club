@@ -728,14 +728,18 @@ export const useStore = create<VideoClubState>()(
       currentPlayingFilm: null,
       previewRental: null,
       previewFilm: null,
-      openPreviewPlayer: (film, rental) => set({
+      openPreviewPlayer: (film, rental) => set((state) => ({
         isPlayerOpen: true,
         currentPlayingFilm: film.id,
         previewFilm: film,
         previewRental: rental,
+        // Un cast de preview sur un AUTRE film ne doit pas être repris : le
+        // player auto-détecte `activeCastFilmId` et repasserait en télécommande
+        // sur l'ancien film. Même film = on garde la session en cours.
+        activeCastFilmId: state.activeCastFilmId === film.id ? state.activeCastFilmId : null,
         managerVisible: false,
         chatBackdropUrl: null,
-      }),
+      })),
       activeCastFilmId: null,
       setActiveCastFilmId: (filmId) => set({ activeCastFilmId: filmId }),
       // End cast — clears activeCastFilmId. Call this when the cast genuinely
