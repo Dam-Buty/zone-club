@@ -24,43 +24,16 @@ interface VHSControlsProps {
   hasVO: boolean;
   hasSubtitlesFr: boolean;
   hasSubtitlesEn: boolean;
-  onCast: () => void;
-  onAirPlay: () => void;
-  onMirroringHelp: () => void;
-  isCastReady: boolean;
-  hasCastDevices: boolean;
-  isCastConnected: boolean;
-  isCastConnecting: boolean;
-  isAirPlaySupported: boolean;
-  isAirPlayAvailable: boolean;
-  isAirPlayConnected: boolean;
-  remoteError: string | null;
-  // Casting remote state
-  isCasting: boolean;
-  remoteCastTime: number;
-  remoteCastDuration: number;
-  remoteCastPaused: boolean;
-  onRemotePlayOrPause: () => void;
-  onRemoteStop: () => void;
 }
 
-function formatTime(seconds: number): string {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = Math.floor(seconds % 60);
-  if (h > 0) {
-    return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-  }
-  return `${m}:${s.toString().padStart(2, '0')}`;
-}
-
-// VHS tape counter style (0000–9999)
-function formatTapeCounter(currentTime: number, duration: number): string {
-  if (duration <= 0) return '0000';
-  const ratio = currentTime / duration;
-  return String(Math.floor(ratio * 9999)).padStart(4, '0');
-}
-
+/**
+ * Barre de contrôle locale (lecture sur l'appareil, pas de cast).
+ *
+ * Disposition en deux coins, sans compteurs : le transport VCR occupe le coin
+ * bas-gauche, le volume puis les sélecteurs de version le coin bas-droit. Le
+ * cast / AirPlay / miroir et le retour au vidéoclub vivent dans le chrome haut
+ * de `VHSPlayer` — ils ne dépendent pas de la lecture locale.
+ */
 export function VHSControls({
   videoRef,
   playerState,
@@ -80,26 +53,7 @@ export function VHSControls({
   hasVO,
   hasSubtitlesFr,
   hasSubtitlesEn,
-  onCast,
-  onAirPlay,
-  onMirroringHelp,
-  isCastReady,
-  hasCastDevices,
-  isCastConnected,
-  isCastConnecting,
-  isAirPlaySupported,
-  isAirPlayAvailable,
-  isAirPlayConnected,
-  remoteError,
-  isCasting,
-  remoteCastTime,
-  remoteCastDuration,
-  remoteCastPaused,
-  onRemotePlayOrPause,
-  onRemoteStop,
 }: VHSControlsProps) {
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
 
@@ -107,35 +61,17 @@ export function VHSControls({
     const video = videoRef.current;
     if (!video) return;
 
-    const handleTimeUpdate = () => setCurrentTime(video.currentTime);
-    const handleDurationChange = () => setDuration(video.duration);
     const handleVolumeChange = () => {
       setVolume(video.volume);
       setIsMuted(video.muted);
     };
 
-    video.addEventListener('timeupdate', handleTimeUpdate);
-    video.addEventListener('durationchange', handleDurationChange);
     video.addEventListener('volumechange', handleVolumeChange);
 
-    return () => {
-      video.removeEventListener('timeupdate', handleTimeUpdate);
-      video.removeEventListener('durationchange', handleDurationChange);
-      video.removeEventListener('volumechange', handleVolumeChange);
-    };
+    return () => video.removeEventListener('volumechange', handleVolumeChange);
   }, [videoRef]);
 
-  // Use remote times when casting
-  const displayTime = isCasting ? remoteCastTime : currentTime;
-  const displayDuration = isCasting ? remoteCastDuration : duration;
-
   const togglePlay = useCallback(() => {
-    // Delegate to remote when casting
-    if (isCasting) {
-      onRemotePlayOrPause();
-      return;
-    }
-
     const video = videoRef.current;
     if (!video) return;
 
@@ -152,7 +88,7 @@ export function VHSControls({
       video.play();
       onStateChange('playing');
     }
-  }, [videoRef, playerState, onStateChange, onResumeFromRW, isCasting, onRemotePlayOrPause]);
+  }, [videoRef, playerState, onStateChange, onResumeFromRW]);
 
   const toggleMute = useCallback(() => {
     const video = videoRef.current;
@@ -177,7 +113,6 @@ export function VHSControls({
 
   // State indicator text
   const stateLabel = (() => {
-    if (playerState === 'casting') return isCasting && remoteCastPaused ? 'CAST PAUSE' : 'CAST';
     if (playerState === 'fastforwarding') return `FF x${ffSpeed}`;
     if (playerState === 'rewinding') return `REW x${ffSpeed}`;
     if (playerState === 'paused') return 'PAUSE';
@@ -187,38 +122,31 @@ export function VHSControls({
 
   return (
     <div className={styles.controls}>
-      {/* VCR transport buttons — inspired by Toshiba W602 layout */}
-      <div className={styles.vcrPanel}>
-        {/* Left: brand + tape counter */}
-        <div className={styles.vcrLeft}>
-          <div className={styles.tapeCounter}>
-            <span className={styles.tapeCounterLabel}>COUNTER</span>
-            <span className={styles.tapeCounterValue}>{formatTapeCounter(displayTime, displayDuration)}</span>
+      {/* ===== Bas gauche : état + transport VCR ===== */}
+      <div className={styles.transportBlock}>
+        {stateLabel && (
+          <div className={`${styles.stateIndicator} ${(playerState === 'fastforwarding' || playerState === 'rewinding') ? styles.stateFF : ''}`}>
+            {stateLabel}
           </div>
-          <div className={styles.timeDisplay}>
-            {formatTime(displayTime)} / {formatTime(displayDuration)}
-          </div>
-        </div>
-
-        {/* Center: VCR transport buttons */}
+        )}
         <div className={styles.vcrTransport}>
-          <button onClick={onRewindToStart} className={styles.vcrBtn} title="Rembobiner au début [R]" disabled={isCasting}>
+          <button onClick={onRewindToStart} className={styles.vcrBtn} title="Rembobiner au début [R]">
             <span className={styles.vcrIcon}>⏮</span>
             <span className={styles.vcrLabel}>REW</span>
           </button>
-          <button onClick={onRWCycle} className={`${styles.vcrBtn} ${playerState === 'rewinding' ? styles.vcrBtnActive : ''}`} title="Rembobiner [←]" disabled={isCasting}>
+          <button onClick={onRWCycle} className={`${styles.vcrBtn} ${playerState === 'rewinding' ? styles.vcrBtnActive : ''}`} title="Rembobiner [←]">
             <span className={styles.vcrIcon}>◀◀</span>
             <span className={styles.vcrLabel}>BACK</span>
           </button>
-          <button onClick={togglePlay} className={`${styles.vcrBtn} ${styles.vcrPlayBtn} ${(playerState === 'playing' || (isCasting && !remoteCastPaused)) ? styles.vcrBtnActive : ''}`} title="Lecture [Espace]">
+          <button onClick={togglePlay} className={`${styles.vcrBtn} ${styles.vcrPlayBtn} ${playerState === 'playing' ? styles.vcrBtnActive : ''}`} title="Lecture [Espace]">
             <span className={styles.vcrIcon}>▶</span>
             <span className={styles.vcrLabel}>PLAY</span>
           </button>
-          <button onClick={onFFCycle} className={`${styles.vcrBtn} ${playerState === 'fastforwarding' ? styles.vcrBtnActive : ''}`} title="Avance rapide [→]" disabled={isCasting}>
+          <button onClick={onFFCycle} className={`${styles.vcrBtn} ${playerState === 'fastforwarding' ? styles.vcrBtnActive : ''}`} title="Avance rapide [→]">
             <span className={styles.vcrIcon}>▶▶</span>
             <span className={styles.vcrLabel}>FF</span>
           </button>
-          <button onClick={isCasting ? onRemoteStop : onStop} className={styles.vcrBtn} title="Stop [S]">
+          <button onClick={onStop} className={styles.vcrBtn} title="Stop [S]">
             <span className={styles.vcrIcon} style={{ fontSize: '1.4rem' }}>■</span>
             <span className={styles.vcrLabel}>STOP</span>
           </button>
@@ -227,126 +155,84 @@ export function VHSControls({
             <span className={styles.vcrLabel}>EJECT</span>
           </button>
         </div>
+      </div>
 
-        {/* Right: state + volume + options */}
-        <div className={styles.vcrRight}>
-          {/* State indicator */}
-          {stateLabel && (
-            <div className={`${styles.stateIndicator} ${(playerState === 'fastforwarding' || playerState === 'rewinding') ? styles.stateFF : ''}`}>
-              {stateLabel}
+      {/* ===== Bas droite : sélecteurs de version puis volume ===== */}
+      <div className={styles.optionsBlock}>
+        {/* Track selector */}
+        <div className={styles.trackControls}>
+          {(hasVF || hasVO) && (
+            <div className={styles.trackSelector}>
+              {/* Unavailable version: greyed + a clear "indisponible" label instead of a dead disabled
+                  button (a disabled button swallows the tap with no feedback on mobile). onClick is
+                  guarded so an unavailable version can't be selected. */}
+              <button
+                onClick={() => hasVF && onAudioTrackChange('vf')}
+                className={`${styles.trackBtn} ${audioTrack === 'vf' ? styles.trackActive : ''}`}
+                style={!hasVF ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
+                aria-disabled={!hasVF}
+                title={hasVF ? 'Version Française [V]' : 'VF indisponible pour ce film'}
+              >
+                VF
+              </button>
+              <button
+                onClick={() => hasVO && onAudioTrackChange('vo')}
+                className={`${styles.trackBtn} ${audioTrack === 'vo' ? styles.trackActive : ''}`}
+                style={!hasVO ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
+                aria-disabled={!hasVO}
+                title={hasVO ? 'Version Originale [V]' : 'VO indisponible pour ce film'}
+              >
+                VO
+              </button>
+              {hasVF !== hasVO && (
+                <span style={{ fontSize: '0.62rem', opacity: 0.7, alignSelf: 'center', marginLeft: 6, letterSpacing: '0.3px', whiteSpace: 'nowrap' }}>
+                  {hasVF ? 'VO' : 'VF'} indisponible
+                </span>
+              )}
             </div>
           )}
-
-          {/* Track selector */}
-          <div className={styles.trackControls}>
-            {(hasVF || hasVO) && (
-              <div className={styles.trackSelector}>
-                {/* Unavailable version: greyed + a clear "indisponible" label instead of a dead disabled
-                    button (a disabled button swallows the tap with no feedback on mobile). onClick is
-                    guarded so an unavailable version can't be selected. */}
-                <button
-                  onClick={() => hasVF && onAudioTrackChange('vf')}
-                  className={`${styles.trackBtn} ${audioTrack === 'vf' ? styles.trackActive : ''}`}
-                  style={!hasVF ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
-                  aria-disabled={!hasVF}
-                  title={hasVF ? 'Version Française [V]' : 'VF indisponible pour ce film'}
-                >
-                  VF
-                </button>
-                <button
-                  onClick={() => hasVO && onAudioTrackChange('vo')}
-                  className={`${styles.trackBtn} ${audioTrack === 'vo' ? styles.trackActive : ''}`}
-                  style={!hasVO ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
-                  aria-disabled={!hasVO}
-                  title={hasVO ? 'Version Originale [V]' : 'VO indisponible pour ce film'}
-                >
-                  VO
-                </button>
-                {hasVF !== hasVO && (
-                  <span style={{ fontSize: '0.62rem', opacity: 0.7, alignSelf: 'center', marginLeft: 6, letterSpacing: '0.3px', whiteSpace: 'nowrap' }}>
-                    {hasVF ? 'VO' : 'VF'} indisponible
-                  </span>
-                )}
-              </div>
-            )}
-            {/* Une langue absente n'a pas de bouton du tout : contrairement à VF/VO, l'absence de
-                sous-titres n'a rien à expliquer à l'utilisateur — il n'a pas payé pour eux. */}
-            {hasSubtitlesFr && (
-              <button
-                onClick={() => onSubtitleTrackChange('fr')}
-                className={`${styles.trackBtn} ${subtitleTrack === 'fr' ? styles.trackActive : ''}`}
-                title="Sous-titres français [T]"
-              >
-                STFR
-              </button>
-            )}
-            {hasSubtitlesEn && (
-              <button
-                onClick={() => onSubtitleTrackChange('en')}
-                className={`${styles.trackBtn} ${subtitleTrack === 'en' ? styles.trackActive : ''}`}
-                title="Sous-titres anglais [T]"
-              >
-                STEN
-              </button>
-            )}
-          </div>
-
-          {/* Volume */}
-          <div className={styles.volumeGroup}>
-            <button onClick={toggleMute} className={styles.vcrSmallBtn} title={isMuted ? 'Activer son' : 'Couper son [M]'}>
-              {isMuted ? '🔇' : '🔊'}
+          {/* Une langue absente n'a pas de bouton du tout : contrairement à VF/VO, l'absence de
+              sous-titres n'a rien à expliquer à l'utilisateur — il n'a pas payé pour eux. */}
+          {hasSubtitlesFr && (
+            <button
+              onClick={() => onSubtitleTrackChange('fr')}
+              className={`${styles.trackBtn} ${styles.trackBtnAlone} ${subtitleTrack === 'fr' ? styles.trackActive : ''}`}
+              title="Sous-titres français [T]"
+            >
+              STFR
             </button>
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.1"
-              value={isMuted ? 0 : volume}
-              onChange={handleVolumeChange}
-              className={styles.volumeSlider}
-              aria-label="Volume"
-            />
-          </div>
+          )}
+          {hasSubtitlesEn && (
+            <button
+              onClick={() => onSubtitleTrackChange('en')}
+              className={`${styles.trackBtn} ${styles.trackBtnAlone} ${subtitleTrack === 'en' ? styles.trackActive : ''}`}
+              title="Sous-titres anglais [T]"
+            >
+              STEN
+            </button>
+          )}
+        </div>
 
+        {/* Volume */}
+        <div className={styles.volumeGroup}>
+          <button onClick={toggleMute} className={styles.vcrSmallBtn} title={isMuted ? 'Activer son' : 'Couper son [M]'}>
+            {isMuted ? '🔇' : '🔊'}
+          </button>
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.1"
+            value={isMuted ? 0 : volume}
+            onChange={handleVolumeChange}
+            className={styles.volumeSlider}
+            aria-label="Volume"
+          />
           <button onClick={toggleFullscreen} className={styles.vcrSmallBtn} title="Plein écran [F]">
             ⛶
           </button>
-
-          <div className={styles.remoteControls}>
-            <button
-              onClick={onCast}
-              disabled={!isCastReady && !isCastConnected}
-              className={`${styles.remoteBtn} ${isCastConnected ? styles.remoteBtnActive : ''}`}
-              title={
-                isCastConnected
-                  ? 'Casting actif'
-                  : !isCastReady
-                    ? 'Google Cast en cours de chargement…'
-                    : hasCastDevices
-                      ? 'Google Cast'
-                      : 'Aucun appareil Cast sur le réseau'
-              }
-              style={!isCastReady && !isCastConnected ? { opacity: 0.5, cursor: 'wait' } : undefined}
-            >
-              {isCastConnected ? 'CAST ON' : isCastConnecting ? 'CAST…' : !isCastReady ? 'CAST…' : hasCastDevices ? 'CAST' : 'CAST ?'}
-            </button>
-            <button
-              onClick={onAirPlay}
-              className={`${styles.remoteBtn} ${isAirPlayConnected ? styles.remoteBtnActive : ''}`}
-              title={isAirPlayConnected ? 'AirPlay actif' : isAirPlaySupported ? 'AirPlay' : 'AirPlay indisponible'}
-            >
-              {isAirPlayConnected ? 'AIRPLAY ON' : isAirPlayAvailable ? 'AIRPLAY' : 'AIRPLAY ?'}
-            </button>
-            <button onClick={onMirroringHelp} className={styles.remoteBtn} title="Mode miroir (fallback)">
-              MIROIR
-            </button>
-          </div>
-          <button onClick={onEject} className={styles.backToStoreBtn} title="Retourner dans le vidéoclub">
-            ← RETOUR VIDÉOCLUB
-          </button>
         </div>
       </div>
-      {remoteError && <div className={styles.remoteError}>{remoteError}</div>}
     </div>
   );
 }

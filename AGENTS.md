@@ -415,7 +415,15 @@ des sous-titres coupés à la main. Côté `<video>`, une seule `<track>` est mo
 l'attribut `default` d'une `<track>` insérée après le parse n'est pas honoré de façon fiable — d'où
 l'effet qui force `track.mode` explicitement (`addtrack` inclus, la piste pouvant arriver après le rendu).
 
-Le Cast ne transporte **pas** les sous-titres : le receiver reçoit l'URL du MP4, rien d'autre.
+**Sous-titres en Cast** — les `<track>` du `<video>` local ne traversent pas le réseau. Les WebVTT
+sont donc **side-loadés** dans le `MediaInfo` (`mediaInfo.tracks`, `text/vtt`, IDs stables fr=1/en=2)
+et la langue active part dans `request.activeTrackIds`. Pendant le cast, un changement de piste passe
+par `media.editTracksInfo(...)` sans recharger le film (boutons STFR/STEN du panneau Now Playing +
+touche `T`). `buildCastSubtitleTracks()` (`src/utils/cast-subtitles.ts`) n'accepte que les URLs
+absolues : un chemin `/seed-media/...` n'est pas joignable par le Chromecast, et déclarer des tracks
+impose le CORS sur le MP4 comme sur le VTT (le storage envoie `Access-Control-Allow-Origin: *` sur
+les deux). Le receiver par défaut ne gère que les pistes **texte**, une seule active à la fois. AirPlay
+n'est pas couvert : `webkitShowPlaybackTargetPicker` envoie l'URL seule.
 
 **Pattern central** : `activeCastFilmId` **persiste à travers `closePlayer()`**. La session Cast vit
 sur le receiver indépendamment de l'overlay : on peut fermer le lecteur, marcher dans les rayons, le

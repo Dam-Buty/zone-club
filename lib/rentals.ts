@@ -85,7 +85,7 @@ function mediaUrl(path: string | null, symlinkUuid: string, filename: string): s
  * getUserActiveRentals et enrichRental en tenaient chacun une copie littérale du
  * même calcul — deux endroits à corriger pour toute évolution du mode de service.
  */
-function buildStreamingUrls(film: StreamableFilm, symlinkUuid: string): RentalWithFilm['streaming_urls'] {
+export function buildStreamingUrls(film: StreamableFilm, symlinkUuid: string): RentalWithFilm['streaming_urls'] {
     if (FORCED_RENTAL_VIDEO_URL) {
         return { vf: FORCED_RENTAL_VIDEO_URL, vo: FORCED_RENTAL_VIDEO_URL, subtitles: null, subtitles_en: null };
     }

@@ -15,6 +15,7 @@
     "migrate": "npx tsx --env-file=.env scripts/migrate-media-reset.ts",
     "refresh": "npx tsx --env-file=.env scripts/refresh-films.ts",
     "report": "npx tsx scripts/collection-report.ts",
+    "user:reset": "npx tsx scripts/reset-user.ts",
     "test:phase": "node --test \"tests/**/*.test.mjs\"",
     "test:phase:full": "npm run lint && npm run test:phase && npm run build",
     "docker:build": "docker compose build app",

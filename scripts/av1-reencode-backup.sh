@@ -70,6 +70,12 @@ CQ="${AV1_CQ:-34}"
 PRESET="${AV1_PRESET:-p5}"
 AUDIO_BITRATE="${AUDIO_BITRATE:-160k}"
 
+# Disjoncteur anti-Spark-injoignable : si autant de fichiers échouent d'affilée
+# avec un code 255 (connexion SSH impossible = Spark éteint/redémarrage), on
+# arrête le run au lieu de brûler toute la file en échecs. Les autres échecs
+# (GPU OOM 187, tonemapping 244) ne comptent pas : ils sont transitoires.
+ABORT_AFTER="${ABORT_AFTER:-5}"
+
 # --- Options ---
 
 ROOT="/mnt/backup/zone-club"
@@ -241,6 +247,7 @@ encode_one() {
 
     # Déjà en AV1 : rien à gagner, et on perdrait une génération de qualité.
     if [[ "$codec" == "av1" ]]; then
+        echo 0 > "$STATE_DIR/ssh_fails"
         increment skipped
         log_activity "SKIP $title (déjà en AV1)"
         printf '%s\tSKIP\t%s\t%s\t%s\tdéjà en AV1\n' \
@@ -329,6 +336,7 @@ rc=\$?; if [ \$rc -eq 0 ]; then cat \"\$t\"; rc=\$?; fi; rm -f \"\$t\"; exit \$r
                     local pct=$(( (out_size - src_size) * 100 / src_size ))
                     [[ $pct -ge 0 ]] && delta="+${pct}%" || delta="${pct}%"
                 fi
+                echo 0 > "$STATE_DIR/ssh_fails"
                 increment processed
                 log_activity "OK $title ($(human "$src_size")→$(human "$out_size")${delta:+ $delta})"
                 printf '%s\tOK\t%s\t%s\t%s\t%s\n' \
@@ -357,6 +365,20 @@ rc=\$?; if [ \$rc -eq 0 ]; then cat \"\$t\"; rc=\$?; fi; rm -f \"\$t\"; exit \$r
             echo ""
         } >> "$LOG_FILE"
         increment failed
+        if [[ "$rc" -eq 255 ]]; then
+            # 255 = connexion SSH impossible (Spark éteint / redémarrage). On compte
+            # les échecs d'affilée ; au-delà du seuil, on pose un marqueur d'arrêt
+            # que le dashboard relève et traduit en arrêt du run.
+            increment ssh_fails
+            local nsf; nsf=$(cat "$STATE_DIR/ssh_fails" 2>/dev/null)
+            [[ "$nsf" =~ ^[0-9]+$ ]] || nsf=0
+            if [[ "$nsf" -ge "$ABORT_AFTER" ]]; then
+                touch "$STATE_DIR/abort"
+                log_activity "ABORT Spark injoignable (${nsf} échecs SSH)"
+            fi
+        else
+            echo 0 > "$STATE_DIR/ssh_fails"
+        fi
         log_activity "FAIL $title (code:$rc)"
         printf '%s\tFAIL\t%s\t%s\t-\tcode:%s\n' \
             "$(date '+%F %T')" "$title" "$src_size" "$rc" >> "$LOG_FILE"
@@ -367,7 +389,7 @@ rc=\$?; if [ \$rc -eq 0 ]; then cat \"\$t\"; rc=\$?; fi; rm -f \"\$t\"; exit \$r
 }
 
 export -f encode_one probe_local needs_software_decode build_video_args increment log_activity human
-export SSH_OPTS_STR SPARK_HOST CQ PRESET AUDIO_BITRATE SDR_TAGS MAX_H MAX_W LOG_FILE STATE_DIR LOCK_DIR
+export SSH_OPTS_STR SPARK_HOST CQ PRESET AUDIO_BITRATE SDR_TAGS MAX_H MAX_W LOG_FILE STATE_DIR LOCK_DIR ABORT_AFTER
 
 # --- Vérifications initiales ---
 
@@ -506,6 +528,7 @@ STATE_DIR=$(mktemp -d)
 echo 0 > "$STATE_DIR/processed"
 echo 0 > "$STATE_DIR/failed"
 echo 0 > "$STATE_DIR/skipped"
+echo 0 > "$STATE_DIR/ssh_fails"
 mkdir "$STATE_DIR/active" "$STATE_DIR/log" "$STATE_DIR/progress"
 LOCK_DIR="$STATE_DIR/lock"
 
@@ -592,6 +615,28 @@ if [[ $HAS_CURSES -eq 1 ]]; then
 fi
 
 main() {
+    # Disjoncteur : Spark injoignable → arrêt du run (les fichiers restants seront
+    # retraités au prochain lancement, puisqu'ils ne sont pas supprimés).
+    if [[ -f "$STATE_DIR/abort" ]]; then
+        clean_env
+        {
+            printf '\033[2J\033[H'
+            echo ""
+            echo "------------------------------------------------"
+            echo "  Spark injoignable (connexions SSH en échec) — arrêt du run."
+            echo "  Les fichiers non traités seront repris au prochain lancement."
+            echo "  Journal : $LOG_FILE"
+            echo "------------------------------------------------"
+        } > /dev/tty 2>&1
+        if [[ -n "${XARGS_PID:-}" ]]; then
+            kill -TERM -"$XARGS_PID" 2>/dev/null
+            sleep 0.5
+            kill -KILL -"$XARGS_PID" 2>/dev/null
+        fi
+        rm -rf "$STATE_DIR"
+        exit 1
+    fi
+
     local processed failed skipped done_count
     processed=$(cat "$STATE_DIR/processed" 2>/dev/null)
     failed=$(cat "$STATE_DIR/failed" 2>/dev/null)
@@ -701,6 +746,19 @@ main() {
 # Affichage de repli quand simple_curses.sh n'est pas à côté du script.
 plain_loop() {
     while true; do
+        if [[ -f "$STATE_DIR/abort" ]]; then
+            echo ""
+            echo "Spark injoignable (connexions SSH en échec) — arrêt du run."
+            echo "Les fichiers non traités seront repris au prochain lancement."
+            if [[ -n "${XARGS_PID:-}" ]]; then
+                kill -TERM -"$XARGS_PID" 2>/dev/null
+                sleep 0.5
+                kill -KILL -"$XARGS_PID" 2>/dev/null
+            fi
+            rm -rf "$STATE_DIR"
+            exit 1
+        fi
+
         local processed failed skipped done_count
         processed=$(cat "$STATE_DIR/processed" 2>/dev/null)
         failed=$(cat "$STATE_DIR/failed" 2>/dev/null)

@@ -8,6 +8,7 @@ import type { PlayerState } from '../../types';
 import { useGoogleCast, preloadCastSdk } from '../../hooks/useGoogleCast';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { useBackGuard } from '../../hooks/useBackGuard';
+import { buildCastSubtitleTracks, activeSubtitleId } from '../../utils/cast-subtitles';
 import styles from './VHSPlayer.module.css';
 
 const MIN_CONTENT_LENGTH = 500;
@@ -139,6 +140,7 @@ export function VHSPlayer() {
     remoteSeek,
     remoteSetVolume,
     getRemoteCurrentTime,
+    setCastTextTrack,
   } = useGoogleCast({
     enabled: isPlayerOpen,
     receiverApplicationId: process.env.NEXT_PUBLIC_GOOGLE_CAST_APP_ID,
@@ -155,20 +157,46 @@ export function VHSPlayer() {
   const rental = currentPlayingFilm ? getRental(currentPlayingFilm) : null;
   const streamingUrls = rental?.streamingUrls;
 
-  // Get film title for display
+  // Get film title for display. La page admin ouvre un film qui n'est pas
+  // forcément dans le cache d'un rayon : `previewFilm` est alors la seule source.
+  const previewFilm = useStore(state => state.previewFilm);
   const allFilms = Object.values(films).flat();
-  const currentFilm = allFilms.find(f => f.id === currentPlayingFilm);
+  const currentFilm = previewFilm?.id === currentPlayingFilm
+    ? previewFilm
+    : allFilms.find(f => f.id === currentPlayingFilm);
 
   // Determine available tracks
   const hasVF = !!streamingUrls?.vf;
   const hasVO = !!streamingUrls?.vo;
   const hasSubtitlesFr = !!streamingUrls?.subtitles;
   const hasSubtitlesEn = !!streamingUrls?.subtitles_en;
+
+  // Un <track> distant (sous-domaine storage) n'est chargé que si l'élément
+  // <video> est en mode CORS : le navigateur refuse la piste sans l'attribut
+  // `crossOrigin`, et il le fait silencieusement (le bouton STFR paraît actif,
+  // aucun texte n'apparaît). On le déduit des URLs de sous-titres — pas de la
+  // piste sélectionnée, pour ne pas changer l'attribut en cours de lecture. Le
+  // seed sert ses sous-titres en same-origin et archive.org ne renvoie pas
+  // `Access-Control-Allow-Origin` sur sa réponse finale : forcer crossOrigin
+  // casserait la vidéo de seed.
+  const hasRemoteSubtitles =
+    /^https?:\/\//i.test(streamingUrls?.subtitles ?? '') ||
+    /^https?:\/\//i.test(streamingUrls?.subtitles_en ?? '');
   // Ordre d'affichage et de cycle clavier : FR d'abord, EN ensuite, et seulement ce qui existe.
   const availableSubtitles = useMemo(
     () => (['fr', 'en'] as const).filter(lang => (lang === 'fr' ? hasSubtitlesFr : hasSubtitlesEn)),
     [hasSubtitlesFr, hasSubtitlesEn]
   );
+
+  // Pistes envoyées au Chromecast. Le `<track>` local ne traverse pas le réseau :
+  // sans ça, le receiver ne reçoit que le MP4 et la TV n'a aucun sous-titre.
+  const castSubtitles = useMemo(
+    () => buildCastSubtitleTracks(streamingUrls),
+    [streamingUrls]
+  );
+  // Dernière piste appliquée côté receiver, pour ne pas renvoyer un
+  // `editTracksInfo` identique à chaque rendu.
+  const castSubtitleIdRef = useRef<number | null>(null);
 
   // Snap the selected audio track to a version that ACTUALLY exists for this rental. A film can be VF-only
   // (e.g. The Big Short) or VO-only; without this the player keeps the default 'vf' and getVideoUrl
@@ -189,6 +217,19 @@ export function VHSPlayer() {
       setSubtitleTrack(availableSubtitles[0] ?? 'off');
     }
   }, [streamingUrls, availableSubtitles, subtitleTrack]);
+
+  // Basculer les sous-titres sur la TV pendant le cast (touche T ou boutons du
+  // panneau Now Playing). Au démarrage, `activeTrackIds` a déjà été envoyé dans
+  // la requête de chargement : le ref évite un `editTracksInfo` redondant.
+  useEffect(() => {
+    if (playerState !== 'casting') return;
+    const nextId = activeSubtitleId(castSubtitles, subtitleTrack);
+    if (nextId === castSubtitleIdRef.current) return;
+    void setCastTextTrack(nextId).then(result => {
+      if (result.ok) castSubtitleIdRef.current = nextId;
+      else setRemoteError(result.error ?? 'Sous-titres indisponibles sur la TV.');
+    });
+  }, [playerState, subtitleTrack, castSubtitles, setCastTextTrack]);
 
   // Get current video URL based on selected track
   const getVideoUrl = useCallback(() => {
@@ -858,11 +899,14 @@ export function VHSPlayer() {
     // Fallback to rental.watchPosition if local video hasn't seeked yet (canplay
     // race when user clicks Cast before <video> reaches its resume position).
     const startTime = Math.max(video?.currentTime || 0, rental?.watchPosition || 0);
+    const castSubtitleId = activeSubtitleId(castSubtitles, subtitleTrack);
     const result = await castMedia({
       url: videoUrl,
       title: currentFilm?.title || 'Zone Club',
       currentTime: startTime,
       autoplay: true,
+      subtitles: castSubtitles,
+      activeSubtitleId: castSubtitleId,
     });
 
     if (!result.ok) {
@@ -875,6 +919,9 @@ export function VHSPlayer() {
 
     // Cast confirmed — switch to casting mode. Local already paused above
     // (and autoplay is gated by playerState below in the <video> element).
+    // Le receiver a déjà appliqué cette piste via `activeTrackIds` : on la
+    // mémorise pour que l'effet de bascule ne la renvoie pas.
+    castSubtitleIdRef.current = castSubtitleId;
     setPlayerState('casting');
     setActiveCastFilmId(currentPlayingFilm);
     castFilmIdRef.current = currentPlayingFilm ?? null;
@@ -886,7 +933,7 @@ export function VHSPlayer() {
         updateRentalProgress(currentPlayingFilm, progress, startTime).catch(() => {});
       }
     }
-  }, [videoUrl, castMedia, currentFilm?.title, openMirroringFallback, currentPlayingFilm, setActiveCastFilmId, rental?.watchPosition, updateRentalProgress]);
+  }, [videoUrl, castMedia, currentFilm?.title, openMirroringFallback, currentPlayingFilm, setActiveCastFilmId, rental?.watchPosition, updateRentalProgress, castSubtitles, subtitleTrack]);
 
   // Switch playback back to the phone without terminating the receiver
   // session via the user-facing Stop flow (which triggers the eject + rewind
@@ -1386,18 +1433,73 @@ export function VHSPlayer() {
 
   return (
     <div className={styles.player} style={!overlayVisible && rewindPhase === 'none' ? { cursor: 'none' } : undefined}>
-      {/* Film title header */}
-      {currentFilm && (
+      {/* Chrome haut en trois colonnes : retour au vidéoclub à gauche, titre
+          (avec le timer de location) au centre, cast / AirPlay / miroir empilés
+          à droite. Masqué pendant le cast et l'attente de connexion : le
+          panneau Now Playing occupe alors tout l'écran et porte ses propres
+          actions. */}
+      {playerState !== 'casting' && playerState !== 'awaitingCast' && (
         <div className={styles.header} style={{
           opacity: overlayVisible ? 1 : 0,
           transition: 'opacity 0.4s',
           pointerEvents: overlayVisible ? 'auto' : 'none',
         }}>
-          <span className={styles.filmTitle}>{currentFilm.title}</span>
-          <span className={styles.trackIndicator}>
-            {audioTrack.toUpperCase()}
-            {subtitleTrack !== 'off' && ` + ${SUBTITLE_LABELS[subtitleTrack].button}`}
-          </span>
+          <div className={styles.headerLeft}>
+            <button
+              type="button"
+              className={styles.backToStoreBtn}
+              onClick={handleEject}
+              title="Retourner dans le vidéoclub [Échap]"
+            >
+              <span aria-hidden="true">←</span> RETOUR VIDÉOCLUB
+            </button>
+          </div>
+
+          <div className={styles.headerCenter}>
+            {currentFilm && <span className={styles.filmTitle}>{currentFilm.title}</span>}
+            <div className={styles.rentalTimer}>
+              <RentalTimer expiresAt={rental.expiresAt} />
+            </div>
+          </div>
+
+          <div className={styles.headerRight}>
+            <div className={styles.castStack}>
+              <button
+                type="button"
+                onClick={handleCastCurrentVideo}
+                className={`${styles.castStackBtn} ${isCastConnected ? styles.castStackBtnActive : ''}`}
+                title={
+                  isCastConnected
+                    ? 'Casting actif'
+                    : !isCastReady
+                      ? 'Google Cast en cours de chargement…'
+                      : hasCastDevices
+                        ? 'Google Cast'
+                        : 'Aucun appareil Cast sur le réseau'
+                }
+                style={!isCastReady && !isCastConnected ? { opacity: 0.5, cursor: 'wait' } : undefined}
+              >
+                {isCastConnected ? 'CAST ON' : castState === 'CONNECTING' || !isCastReady ? 'CAST…' : hasCastDevices ? 'CAST' : 'CAST ?'}
+              </button>
+              <button
+                type="button"
+                onClick={handleAirPlayPicker}
+                className={`${styles.castStackBtn} ${isAirPlayConnected ? styles.castStackBtnActive : ''}`}
+                title={isAirPlayConnected ? 'AirPlay actif' : isAirPlaySupported ? 'AirPlay' : 'AirPlay indisponible'}
+              >
+                {isAirPlayConnected ? 'AIRPLAY ON' : isAirPlayAvailable ? 'AIRPLAY' : 'AIRPLAY ?'}
+              </button>
+              <button
+                type="button"
+                onClick={() => openMirroringFallback('generic')}
+                className={styles.castStackBtn}
+                title="Mode miroir (fallback)"
+              >
+                MIROIR
+              </button>
+            </div>
+            {remoteError && <div className={styles.castError}>{remoteError}</div>}
+          </div>
         </div>
       )}
 
@@ -1411,6 +1513,7 @@ export function VHSPlayer() {
         key={`${audioTrack}-${videoUrl}`}
         ref={videoRef}
         className={styles.video}
+        crossOrigin={hasRemoteSubtitles ? 'anonymous' : undefined}
         autoPlay={playerState !== 'casting' && playerState !== 'awaitingCast'}
         playsInline
         onPlay={() => {
@@ -1600,6 +1703,31 @@ export function VHSPlayer() {
             </div>
           )}
 
+          {/* Sans ces boutons, changer de langue pendant le cast serait
+              impossible au doigt sur mobile (le clavier seul pilote `T`). */}
+          {castSubtitles.length > 0 && (
+            <div className={styles.nowPlayingSubtitleRow}>
+              {castSubtitles.map(track => {
+                const isActive = activeSubtitleId(castSubtitles, subtitleTrack) === track.id;
+                return (
+                  <button
+                    key={track.id}
+                    type="button"
+                    className={`${styles.nowPlayingSecondaryBtn} ${isActive ? styles.nowPlayingSubtitleBtnActive : ''}`}
+                    aria-pressed={isActive}
+                    onClick={() => handleSubtitleTrackChange(track.language)}
+                  >
+                    {track.language === 'fr' ? 'STFR' : 'STEN'}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {/* Les contrôles VHS (seul autre afficheur de `remoteError`) sont
+              démontés pendant le cast : sans ça, un échec de bascule de piste
+              resterait totalement silencieux. */}
+          {remoteError && <div className={styles.nowPlayingError}>{remoteError}</div>}
+
           <div className={styles.nowPlayingSecondary}>
             <button
               type="button"
@@ -1618,14 +1746,6 @@ export function VHSPlayer() {
           </div>
         </div>
       )}
-
-      <div className={styles.rentalTimer} style={{
-        opacity: overlayVisible ? 1 : 0,
-        transition: 'opacity 0.4s',
-        pointerEvents: overlayVisible ? 'auto' : 'none',
-      }}>
-        <RentalTimer expiresAt={rental.expiresAt} />
-      </div>
 
       {showMobileRemotePrompt && rewindPhase === 'none' && playerState !== 'casting' && playerState !== 'awaitingCast' && (
         <div className={styles.mobileRemotePrompt}>
@@ -1932,23 +2052,6 @@ export function VHSPlayer() {
           hasVO={hasVO}
           hasSubtitlesFr={hasSubtitlesFr}
           hasSubtitlesEn={hasSubtitlesEn}
-          onCast={handleCastCurrentVideo}
-          onAirPlay={handleAirPlayPicker}
-          onMirroringHelp={() => openMirroringFallback('generic')}
-          isCastReady={isCastReady}
-          hasCastDevices={hasCastDevices}
-          isCastConnected={isCastConnected}
-          isCastConnecting={castState === 'CONNECTING'}
-          isAirPlaySupported={isAirPlaySupported}
-          isAirPlayAvailable={isAirPlayAvailable}
-          isAirPlayConnected={isAirPlayConnected}
-          remoteError={remoteError}
-          isCasting={false /* casting renders the Now Playing panel above; VHSControls is local-only here */}
-          remoteCastTime={remoteCastTime}
-          remoteCastDuration={remoteCastDuration}
-          remoteCastPaused={remoteCastPaused}
-          onRemotePlayOrPause={remotePlayOrPause}
-          onRemoteStop={handleStop}
         />
         </div>
       )}
