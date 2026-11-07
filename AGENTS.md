@@ -305,6 +305,14 @@ Chien de garde : si le `.m3u8` n'a pas été touché depuis 30 s, SIGKILL. Au re
 est **recalculée depuis l'horloge** — un crash ne met pas la chaîne en retard, il fait sauter le
 passage manqué.
 
+**Incrustation** : le titre du film et l'horloge sont brûlés dans l'image (`src/overlay.ts`). Le flux
+étant déjà réencodé, ça ne coûte qu'un filtre (+3 % CPU, +0,5 % de bande passante) — mais ça verrouille
+le réencodage. Le concat demuxer ne transporte aucune métadonnée par fichier, donc la synchronisation
+passe par un fichier `sendcmd` généré en même temps que la liste concat : une commande
+`drawtext reinit` par film **et par passage** (sinon le titre se figerait après 31 jours), horodatée sur
+la timeline ffmpeg. L'horloge est une expression `%{eif}` réévaluée chaque frame : zéro I/O, zéro
+couplage à l'horloge système, et elle repart de zéro à chaque film.
+
 ⚠️ `cinema-stream` ouvre la DB **en écriture** (il écrit `duration_sec`). Le bot Discord l'ouvre en
 lecture seule et **dépend de ce cache** — sans `cinema-stream` démarré au moins une fois, le bot ne
 voit aucun film.
@@ -720,6 +728,16 @@ plafonnent à 19 Mo/s. D'où la passe ffmpeg unique pour audio + sous-titres.
 **Process ffmpeg orphelins** — sur échec de l'encodage distant, les jobs latéraux doivent être tués
 via `AbortSignal` (destruction du pipe → SIGTERM → SIGKILL après 5 s). Six tentatives sans ça = douze
 ffmpeg vivants.
+
+**`sendcmd` n'accepte qu'un `key=value` par commande** — et coupe l'argument aux espaces. Pour
+réinitialiser plusieurs options d'un filtre d'un coup, il faut quoter **tout** l'argument :
+`reinit 'text=Jurassic Park:fontsize=38'`. Sans les quotes simples, la commande est rejetée au parsing
+(« extraneous data ») et le `reinit` ne s'applique jamais, sans erreur visible côté image. Piège
+identique pour les valeurs : `:` → `\:`, `%` → `%%`, toute virgule d'expression → `\,`.
+
+**`drawbox` n'évalue pas ses expressions par frame** (ffmpeg 5.1) — `w='t*80'` est calculé une seule
+fois à l'init, donc une barre de progression animée est impossible sans `reinit` répétés. Une horloge
+`drawtext` avec `%{eif}` marche, elle, à chaque frame.
 
 ## Skills
 
