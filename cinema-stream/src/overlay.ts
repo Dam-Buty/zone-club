@@ -2,12 +2,14 @@ import type { PlaylistFilm, PlaylistState } from "./playlist.ts";
 import { formatDuration } from "./format.ts";
 
 /**
- * Nombre de boucles de playlist inscrites dans la liste concat : sert à
- * simuler une diffusion infinie sans logique de bouclage. L'incrustation est
- * générée sur exactement les mêmes passages, sinon le titre se figerait après
- * la première boucle (~31 jours).
+ * Passages couverts par le fichier sendcmd. Volontairement plus court que la
+ * liste concat (50 passages) : `sendcmd` garde chaque commande en mémoire —
+ * mesuré ~14 Ko de RSS par cue, soit +267 Mo pour 50 passages. Trois passages
+ * couvrent ~93 jours de diffusion continue, et le fichier est régénéré à
+ * chaque respawn (déploiement, chien de garde, crash) : au pire le titre se
+ * fige très loin dans la troisième boucle.
  */
-export const REPEAT_PASSES = 50;
+export const OVERLAY_PASSES = 3;
 
 const OVERLAY_MAX_TITLE = 62;
 
@@ -66,7 +68,7 @@ export function buildOverlayCommands(
   state: PlaylistState,
   startIndex: number,
   startOffset: number,
-  passes: number = REPEAT_PASSES,
+  passes: number = OVERLAY_PASSES,
 ): string {
   const n = state.films.length;
   const lines: string[] = [];

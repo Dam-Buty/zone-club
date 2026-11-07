@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  OVERLAY_PASSES,
   buildOverlayCommands,
   clockExpr,
   escapeDrawtext,
@@ -32,6 +33,15 @@ test('une commande reinit par film et par passage', () => {
   assert.equal(lines.length, 6);
   assert.ok(lines.every((l) => l.includes('[enter] drawtext@ov reinit')));
   assert.ok(lines.every((l) => l.endsWith("fontsize=38';")));
+});
+
+test('le fichier sendcmd est borné en passages (coût mémoire)', () => {
+  // sendcmd garde chaque commande en RSS (~14 Ko mesurés par cue) : couvrir les
+  // 50 passages de la liste concat coûtait +267 Mo pour un titre qui ne se
+  // figerait qu'au bout de 5 ans d'uptime continu.
+  const s = state([film('A', 10), film('B', 10)]);
+  assert.equal(OVERLAY_PASSES, 3);
+  assert.equal(buildOverlayCommands(s, 0, 0).trimEnd().split('\n').length, 6);
 });
 
 test("le premier film démarre à l'offset courant, les suivants à leur frontière", () => {
