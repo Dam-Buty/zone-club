@@ -309,9 +309,11 @@ passage manqué.
 étant déjà réencodé, ça ne coûte qu'un filtre (+3 % CPU, +0,5 % de bande passante) — mais ça verrouille
 le réencodage. Le concat demuxer ne transporte aucune métadonnée par fichier, donc la synchronisation
 passe par un fichier `sendcmd` généré en même temps que la liste concat : une commande
-`drawtext reinit` par film **et par passage** (sinon le titre se figerait après 31 jours), horodatée sur
-la timeline ffmpeg. L'horloge est une expression `%{eif}` réévaluée chaque frame : zéro I/O, zéro
-couplage à l'horloge système, et elle repart de zéro à chaque film.
+`drawtext reinit` par film, horodatée sur la timeline ffmpeg. L'horloge est une expression `%{eif}`
+réévaluée chaque frame : zéro I/O, zéro couplage à l'horloge système, et elle repart de zéro à chaque
+film. Seuls **3 passages** sont générés (et non les 50 de la liste concat) : `sendcmd` garde chaque
+commande en mémoire (~14 Ko de RSS par cue, +267 Mo pour 50 passages), et 3 passages couvrent ~93 jours
+d'uptime continu — le fichier est de toute façon régénéré à chaque respawn.
 
 ⚠️ `cinema-stream` ouvre la DB **en écriture** (il écrit `duration_sec`). Le bot Discord l'ouvre en
 lecture seule et **dépend de ce cache** — sans `cinema-stream` démarré au moins une fois, le bot ne
