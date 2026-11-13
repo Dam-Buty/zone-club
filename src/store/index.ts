@@ -296,6 +296,13 @@ export interface VideoClubState {
 
   // Loading screen
   isSceneReady: boolean;
+  /**
+   * La scène intérieure MONTÉE a fini son préchauffage (shaders compilés, jaquettes chargées).
+   * Distinct de `isSceneReady` : la scène peut être préchauffée, cachée, pendant que le
+   * visiteur est encore devant la devanture. `isSceneReady` reste « ce que voit le visiteur
+   * est prêt » — toujours vrai à l'extérieur, égal à `interiorWarm` à l'intérieur.
+   */
+  interiorWarm: boolean;
   setSceneReady: (ready: boolean) => void;
 
   // Weekly bonus
@@ -621,7 +628,7 @@ export const useStore = create<VideoClubState>()(
       currentScene: 'exterior',
       currentAisle: 'nouveautes',
       selectedFilmId: null,
-      setScene: (scene) => set({ currentScene: scene, isSceneReady: scene !== 'interior' }),
+      setScene: (scene) => set((s) => ({ currentScene: scene, isSceneReady: scene !== 'interior' || s.interiorWarm })),
       setAisle: (aisle) => set({ currentAisle: aisle }),
       selectFilm: (filmId) => {
         if (filmId !== null) {
@@ -984,7 +991,13 @@ export const useStore = create<VideoClubState>()(
 
       // Loading screen
       isSceneReady: false,
-      setSceneReady: (ready) => set({ isSceneReady: ready }),
+      interiorWarm: false,
+      // Appelé par le préchauffage de la scène intérieure (InteriorScene), qu'elle soit affichée
+      // ou encore cachée derrière la devanture.
+      setSceneReady: (ready) => set((s) => ({
+        interiorWarm: ready,
+        isSceneReady: s.currentScene === 'interior' ? ready : s.isSceneReady,
+      })),
 
       // Weekly bonus
       weeklyBonusStatus: null,

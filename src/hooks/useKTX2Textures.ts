@@ -102,15 +102,24 @@ export function useKTX2Textures(
     })
   }, [textures, repeatX, repeatY, canUseKTX2])
 
-  const textureArray = Array.isArray(textures) ? textures : [textures]
-  const result: Record<string, THREE.Texture> = {
-    map: textureArray[0],
-    normalMap: textureArray[1],
-    roughnessMap: textureArray[2],
-  }
-  if (hasAO && textureArray[3]) {
-    result.aoMap = textureArray[3]
-  }
-
-  return result
+  // ⚠️ L'objet rendu doit garder la MÊME identité d'un rendu à l'autre.
+  //
+  // Les consommateurs le mettent en dépendance de leurs `useMemo` (WallShelf, IslandShelf :
+  // clones de textures + matériau). Quand ce hook rendait un littéral neuf à chaque rendu, le
+  // moindre re-rendu de Aisle faisait recloner les textures de bois et recréer le matériau des
+  // 12 rayonnages — donc recompiler leurs pipelines. Mesuré sur main (Mac M4, cache chaud) :
+  // 59 meshes à matériau neuf à CHAQUE ouverture de cassette, ~40 pipelines recréés à
+  // l'ouverture et ~20 à la fermeture, 270 à 770 ms d'à-coups à chaque fois.
+  return useMemo(() => {
+    const textureArray = Array.isArray(textures) ? textures : [textures]
+    const result: Record<string, THREE.Texture> = {
+      map: textureArray[0],
+      normalMap: textureArray[1],
+      roughnessMap: textureArray[2],
+    }
+    if (hasAO && textureArray[3]) {
+      result.aoMap = textureArray[3]
+    }
+    return result
+  }, [textures, hasAO])
 }

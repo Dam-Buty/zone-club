@@ -123,6 +123,58 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
         ? () => passForWarmup.compileAsync!(renderer)
         : null
 
+    // Même chose pour UN objet à la fois, dans le même contexte que la passe : c'est ce qui
+    // permet au préchauffage de compiler par petits lots pendant que le visiteur est devant la
+    // devanture, sans accaparer le processus GPU. Reprend ce que fait `PassNode.compileAsync`
+    // (cible, MRT, nœud de contexte), avec `renderer.compileAsync(objet, caméra, scène)`.
+    // Ces membres sont internes à three : s'ils changent de nom, on rend null et le
+    // préchauffage retombe sur la compilation d'un bloc.
+    const passInternals = scenePassForWarmup as unknown as {
+      renderTarget?: { samples: number }
+      options?: { samples?: number }
+      setSize?: (w: number, h: number) => void
+      _mrt?: unknown
+      contextNode?: unknown
+      _getContextNode?: (r: unknown) => unknown
+    } | null
+    const rendererInternals = renderer as unknown as {
+      samples: number
+      contextNode: unknown
+      getRenderTarget: () => unknown
+      setRenderTarget: (t: unknown) => void
+      getMRT: () => unknown
+      setMRT: (m: unknown) => void
+      getDrawingBufferSize: (v: THREE.Vector2) => THREE.Vector2
+      compileAsync: (object: THREE.Object3D, camera: THREE.Camera, targetScene: THREE.Scene) => Promise<void>
+    }
+    const canCompileObject = !!passInternals && !!passInternals.renderTarget && typeof passInternals.setSize === 'function'
+      && typeof rendererInternals.getMRT === 'function' && typeof rendererInternals.setMRT === 'function'
+    const drawingBufferSize = new THREE.Vector2()
+    ;(window as unknown as { __scenePassCompileObject?: ((o: THREE.Object3D) => Promise<void>) | null }).__scenePassCompileObject =
+      canCompileObject
+        ? async (object: THREE.Object3D) => {
+            const pass = passInternals!
+            const previousTarget = rendererInternals.getRenderTarget()
+            const previousMRT = rendererInternals.getMRT()
+            const previousContext = rendererInternals.contextNode
+            pass.renderTarget!.samples = pass.options?.samples === undefined ? rendererInternals.samples : pass.options.samples
+            rendererInternals.getDrawingBufferSize(drawingBufferSize)
+            pass.setSize!(drawingBufferSize.width, drawingBufferSize.height)
+            rendererInternals.setRenderTarget(pass.renderTarget)
+            rendererInternals.setMRT(pass._mrt ?? null)
+            if (pass.contextNode != null && typeof pass._getContextNode === 'function') {
+              rendererInternals.contextNode = pass._getContextNode(renderer)
+            }
+            try {
+              await rendererInternals.compileAsync(object, camera, scene)
+            } finally {
+              rendererInternals.setRenderTarget(previousTarget)
+              rendererInternals.setMRT(previousMRT)
+              rendererInternals.contextNode = previousContext
+            }
+          }
+        : null
+
     return () => {
       postProcessing.dispose()
       postProcessingRef.current = null
@@ -130,6 +182,7 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
       bloomStrengthRef.current = null
       ;(window as unknown as { __postProcessing?: THREE.PostProcessing | null }).__postProcessing = null
       ;(window as unknown as { __scenePassCompile?: (() => Promise<void>) | null }).__scenePassCompile = null
+      ;(window as unknown as { __scenePassCompileObject?: unknown }).__scenePassCompileObject = null
     }
     // Ces deux valeurs passent par des refs : les mettre en deps reconstruirait toute la chaîne de
     // post-processing à chaque ouverture de K7, ce que les refs existent justement pour éviter.
@@ -155,12 +208,16 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
     const pp = postProcessingRef.current
     if (!pp) return
 
-    // Tant que la scène n'est pas prête, l'écran de chargement couvre le canevas : on ne rend
-    // rien. Chaque image rendue ici compilait EN SYNCHRONE les matériaux qui venaient d'être
-    // montés (83 pipelines à la file en production), ce qui affamait aussi le chargement des
-    // jaquettes, cadencé par image. Le préchauffage (InteriorScene) compile tout d'un coup en
-    // asynchrone, puis rend lui-même ses images de contrôle par `__postProcessing.render()`.
-    if (!useStore.getState().isSceneReady) return
+    // Tant que la scène n'est pas préchauffée, l'écran de chargement (ou la devanture) couvre
+    // le canevas : on ne rend rien. Chaque image rendue ici compilait EN SYNCHRONE les matériaux
+    // qui venaient d'être montés (83 pipelines à la file en production), ce qui affamait aussi
+    // le chargement des jaquettes, cadencé par image. Le préchauffage (InteriorScene) compile
+    // tout d'un coup en asynchrone, puis rend lui-même ses images de contrôle par
+    // `__postProcessing.render()`.
+    // Et une scène préchauffée mais encore cachée derrière la devanture ne se rend pas non
+    // plus : le GPU reste à la vitrine.
+    const scene0 = useStore.getState()
+    if (!scene0.interiorWarm || scene0.currentScene !== 'interior') return
 
     // Lerp the post uniforms every tick (cheap; keeps transitions smooth even when
     // the render itself is throttled, since transitions force the ACTIVE budget below).
