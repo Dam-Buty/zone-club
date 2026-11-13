@@ -1019,13 +1019,38 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
           // 36 rejets au chargement et `renderer._callDepth === 20` au repos au lieu de -1 (sa valeur
           // initiale, retrouvée une fois les appels sérialisés).
           //
-          // On ne lance donc un appel que si le précédent est terminé, en faisant tourner
-          // l'orientation d'une passe à l'autre. Le balayage `pp.render()` des 4 orientations,
-          // lui, reste synchrone et complet : c'est lui qui compile dans le bon contexte de cible.
-          let compileInFlight = false
-          let compileTurn = 0
-          // Dernier `compileAsync` lancé : le préchauffage l'attend avant de se déclarer terminé.
+          // Un seul appel est donc lancé, AVANT tout rendu, et attendu : `precompile()` ci-dessous.
+          // Le balayage `pp.render()` des 4 orientations ne sert plus que de filet — il crée en
+          // synchrone ce que la précompilation aurait manqué (passes de post-traitement, ombres).
           let compilePromise: Promise<unknown> = Promise.resolve()
+
+          // Précompilation : tous les pipelines de la scène, en asynchrone, dans le contexte de la
+          // passe de post-traitement, toutes orientations confondues (frustum neutralisé le temps
+          // de l'appel — `compileAsync` projette la scène comme un rendu, il élaguerait le hors-champ).
+          // Rien n'a encore été rendu à ce stade : PostProcessingEffects ne rend pas avant
+          // « scène prête ». C'est ce qui permet au processus GPU de compiler en parallèle.
+          const precompile = (): Promise<void> => {
+            const compile = (window as unknown as { __scenePassCompile?: (() => Promise<void>) | null }).__scenePassCompile
+            if (typeof compile !== 'function') return Promise.resolve()
+            const restoreList: THREE.Mesh[] = []
+            state.scene.traverse((obj) => {
+              const m = obj as THREE.Mesh
+              if (m.isMesh && m.frustumCulled) {
+                restoreList.push(m)
+                m.frustumCulled = false
+              }
+            })
+            const t0 = performance.now()
+            return Promise.resolve()
+              .then(() => compile())
+              .catch((e: unknown) => {
+                console.warn('[warmup] précompilation en échec — repli sur la compilation au rendu', e)
+              })
+              .finally(() => {
+                for (const m of restoreList) m.frustumCulled = true
+                console.warn(`[WARMUP-PRECOMPILE] ${(performance.now() - t0).toFixed(0)}ms`)
+              })
+          }
 
           const runWarmup = (): boolean => {
             // 1. Disable frustum culling on every mesh → projectObject pushes ALL to
@@ -1052,25 +1077,10 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
               // 4 yaw directions, 1 pitch (horizontal). Each pass is 4 ops, but
               // multi-pass coverage (4 passes × 4 angles = 16 total) catches
               // late-mounted GLBs across the plateau detection window.
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              const renderer = state.gl as any
               for (let i = 0; i < 4; i++) {
                 tmpEuler.set(0, (i * Math.PI) / 2, 0)
                 state.camera.quaternion.setFromEuler(tmpEuler)
                 state.camera.updateMatrixWorld(true)
-                if (
-                  !compileInFlight &&
-                  i === compileTurn % 4 &&
-                  typeof renderer?.compileAsync === 'function'
-                ) {
-                  compileInFlight = true
-                  compileTurn++
-                  compilePromise = Promise.resolve(renderer.compileAsync(state.scene, state.camera))
-                    .catch((e: unknown) => {
-                      console.warn('[warmup] compileAsync a échoué — repli sur la compilation au rendu', e)
-                    })
-                    .finally(() => { compileInFlight = false })
-                }
                 pp.render()
               }
               return true
@@ -1082,33 +1092,40 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
           }
 
           const tryReady = () => {
-            // Hard timeout safety net — never block the user forever.
-            if (performance.now() - startTime > HARD_TIMEOUT_MS) {
-              finish()
-              return
-            }
-            const { films } = useStore.getState()
-            if (Object.values(films).flat().length === 0) {
-              requestAnimationFrame(tryReady)
-              return
-            }
-            let meshCount = 0
-            state.scene.traverse((obj) => {
-              if ((obj as THREE.Mesh).isMesh) meshCount++
-            })
-            if (meshCount < MIN_MESH_COUNT) {
-              requestAnimationFrame(tryReady)
-              return
-            }
-            const pp = (window as unknown as { __posterProgress?: { total: number; loaded: number } }).__posterProgress
-            if (pp && pp.total > 0 && pp.loaded < pp.total) {
-              requestAnimationFrame(tryReady)
-              return
-            }
             // Wait for PostProcessing instance to be ready before warmup.
             if (!(window as unknown as { __postProcessing?: unknown }).__postProcessing) {
+              // Hard timeout safety net — never block the user forever.
+              if (performance.now() - startTime > HARD_TIMEOUT_MS) {
+                finish()
+                return
+              }
               requestAnimationFrame(tryReady)
               return
+            }
+            // Passé le plafond, on n'attend plus ni le catalogue, ni les meshes, ni les jaquettes —
+            // mais on préchauffe quand même. Plus rien n'étant rendu avant « scène prête », lever
+            // l'écran sans préchauffage reporterait toute la compilation sur les premières images
+            // visibles. Le préchauffage a son propre plafond (MAX_TOTAL_MS).
+            const pastHardTimeout = performance.now() - startTime > HARD_TIMEOUT_MS
+            if (!pastHardTimeout) {
+              const { films } = useStore.getState()
+              if (Object.values(films).flat().length === 0) {
+                requestAnimationFrame(tryReady)
+                return
+              }
+              let meshCount = 0
+              state.scene.traverse((obj) => {
+                if ((obj as THREE.Mesh).isMesh) meshCount++
+              })
+              if (meshCount < MIN_MESH_COUNT) {
+                requestAnimationFrame(tryReady)
+                return
+              }
+              const pp = (window as unknown as { __posterProgress?: { total: number; loaded: number } }).__posterProgress
+              if (pp && pp.total > 0 && pp.loaded < pp.total) {
+                requestAnimationFrame(tryReady)
+                return
+              }
             }
             // Pipeline-count plateau detection. Robust against any cache /
             // timing combination: keep warming up until N consecutive iterations
@@ -1183,7 +1200,11 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
               }
               setTimeout(warmupLoop, POLL_INTERVAL_MS)
             }
-            warmupLoop()
+            // D'abord la précompilation asynchrone, attendue (bornée par le plafond du
+            // préchauffage) ; ensuite seulement les rendus de contrôle.
+            compilePromise = precompile()
+            const precompileCapped = new Promise<void>((resolve) => { setTimeout(resolve, MAX_TOTAL_MS) })
+            void Promise.race([compilePromise, precompileCapped]).then(warmupLoop)
           }
           requestAnimationFrame(tryReady)
         }}
