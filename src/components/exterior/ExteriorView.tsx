@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback, Suspense, lazy } from 'react'
 import { ExteriorScene } from './scene/ExteriorScene';
 import { useIdleDetection } from '../../hooks/useIdleDetection';
 import { useIsMobile } from '../../hooks/useIsMobile';
+import { releaseInteriorPreload } from '../../utils/interior-preload-gate';
 import styles from './ExteriorView.module.css';
 
 // Lazy load the video component (desktop only)
@@ -135,6 +136,11 @@ export function ExteriorView({ onEnter }: ExteriorViewProps) {
     return () => { cancelled = true; };
   }, [isMobile]);
 
+  // La devanture est à l'écran : les préchargements de l'intérieur peuvent partir.
+  useEffect(() => {
+    if (isStorefrontShown) releaseInteriorPreload();
+  }, [isStorefrontShown]);
+
   // Garde-fou : ne jamais rester bloqué sur le noir.
   useEffect(() => {
     if (isStorefrontShown) return;
@@ -227,16 +233,19 @@ export function ExteriorView({ onEnter }: ExteriorViewProps) {
         </button>
       </div>
 
-      {/* Idle Video - Lazy loaded with Suspense */}
-      <Suspense fallback={null}>
-        <IdleVideo
-          src="/videoclubvideo.mp4"
-          isPlaying={isVideoPlaying}
-          onVideoReady={handleVideoReady}
-          onVideoEnd={handleVideoEnd}
-          onUserInteraction={handleVideoInteraction}
-        />
-      </Suspense>
+      {/* Idle Video - Lazy loaded with Suspense. Montée après la devanture : sa vidéo est en
+          preload="auto" et n'a rien à faire devant les images de la vitrine. */}
+      {isStorefrontShown && (
+        <Suspense fallback={null}>
+          <IdleVideo
+            src="/videoclubvideo.mp4"
+            isPlaying={isVideoPlaying}
+            onVideoReady={handleVideoReady}
+            onVideoEnd={handleVideoEnd}
+            onUserInteraction={handleVideoInteraction}
+          />
+        </Suspense>
+      )}
 
       {/* Rideau noir, levé en fondu quand la devanture est affichée */}
       <div className={`${styles.curtain} ${isStorefrontShown ? styles.curtainOpen : ''}`} aria-hidden="true" />

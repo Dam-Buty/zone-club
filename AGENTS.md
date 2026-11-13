@@ -69,7 +69,7 @@ d'un container arrêté ne bouge pas).
 ```
 app/
 ├── page.tsx                 # Dynamic import de src/App (ssr: false)
-├── layout.tsx               # Root layout — preload HDR / GLB / KTX2 dès le parse HTML
+├── layout.tsx               # Root layout — précharge les seules images de la devanture (l'intérieur attend qu'elle soit affichée)
 └── api/                     # 40 routes App Router (table complète plus bas)
 proxy.ts                     # CSRF Origin/Referer sur /api/* non-GET, bypass x-api-key (ex-middleware.ts)
 instrumentation.ts           # Boot : cleanup scheduler, Radarr poller, recoverMediaPipeline, Langfuse

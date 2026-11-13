@@ -34,34 +34,10 @@ export default function RootLayout({
                 <link rel="preload" as="image" href="/storefront.jpeg" crossOrigin="anonymous" fetchPriority="high" media="(pointer: fine) and (min-width: 769px), (pointer: none) and (min-width: 769px)" />
                 <link rel="preload" as="image" href="/storefront-mask.png" crossOrigin="anonymous" fetchPriority="high" media="(pointer: fine) and (min-width: 769px), (pointer: none) and (min-width: 769px)" />
                 <link rel="preload" as="image" href="/storefront-mobile.webp" type="image/webp" fetchPriority="high" media="(pointer: coarse), (max-width: 768px)" />
-                {/* Preload critical assets for interior scene (start download before JS requests them) */}
-                <link rel="preload" href="/textures/env/indoor_night.hdr" as="fetch" crossOrigin="anonymous" />
-                <link rel="preload" href="/models/vhs_cassette_tape.glb" as="fetch" crossOrigin="anonymous" />
-                <link rel="preload" href="/models/shelf.glb" as="fetch" crossOrigin="anonymous" />
-                <link rel="preload" href="/basis/basis_transcoder.wasm" as="fetch" crossOrigin="anonymous" />
-                {/* Preload PBR textures (wall + wood) — downloaded at HTML parse time instead of component mount */}
-                <link rel="preload" href="/textures/wall/color.ktx2" as="fetch" crossOrigin="anonymous" />
-                <link rel="preload" href="/textures/wall/normal.ktx2" as="fetch" crossOrigin="anonymous" />
-                <link rel="preload" href="/textures/wall/roughness.ktx2" as="fetch" crossOrigin="anonymous" />
-                <link rel="preload" href="/textures/wall/ao.ktx2" as="fetch" crossOrigin="anonymous" />
-                <link rel="preload" href="/textures/wood/color.ktx2" as="fetch" crossOrigin="anonymous" />
-                <link rel="preload" href="/textures/wood/normal.ktx2" as="fetch" crossOrigin="anonymous" />
-                <link rel="preload" href="/textures/wood/roughness.ktx2" as="fetch" crossOrigin="anonymous" />
-                {/* Preload PBR textures — storefront + floor (visible on scene load) */}
-                <link rel="preload" href="/textures/storefront/color.ktx2" as="fetch" crossOrigin="anonymous" />
-                <link rel="preload" href="/textures/storefront/normal.ktx2" as="fetch" crossOrigin="anonymous" />
-                <link rel="preload" href="/textures/storefront/roughness.ktx2" as="fetch" crossOrigin="anonymous" />
-                <link rel="preload" href="/textures/storefront/ao.ktx2" as="fetch" crossOrigin="anonymous" />
-                <link rel="preload" href="/textures/floor/color.ktx2" as="fetch" crossOrigin="anonymous" />
-                <link rel="preload" href="/textures/floor/normal.ktx2" as="fetch" crossOrigin="anonymous" />
-                <link rel="preload" href="/textures/floor/roughness.ktx2" as="fetch" crossOrigin="anonymous" />
-                {/* Prefetch GLB models — low priority, downloaded when bandwidth is free (K7s load first) */}
-                <link rel="prefetch" href="/models/board.glb" />
-                <link rel="prefetch" href="/models/leather_couch.glb" />
-                <link rel="prefetch" href="/models/crt_tv.glb" />
-                <link rel="prefetch" href="/models/rick.glb" />
-                <link rel="prefetch" href="/models/fire_extinguisher.glb" />
-                <link rel="prefetch" href="/models/minitel_1982-france.glb" />
+                {/* Pas de préchargement de l'intérieur ici : HDR, KTX2 et GLB (plus de 20 Mo) partaient
+                    au parse du HTML, devant le code de la devanture. Ils partent maintenant quand elle
+                    est affichée — src/utils/interior-preload-gate.ts, asset-preload.ts et les
+                    useGLTF.preload des modules de l'intérieur. */}
             </head>
             <body>{children}</body>
         </html>
