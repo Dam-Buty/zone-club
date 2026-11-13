@@ -136,9 +136,12 @@ function start(): void {
     const first = args[0];
     if (typeof first === 'string' && first.startsWith('[WARMUP')) {
       const ms = Number((first.match(/(\d+)ms/) || [])[1]);
+      // Seuls les messages de FIN de préchauffage donnent sa durée. Les autres `[WARMUP…]`
+      // (étapes intermédiaires, comme la précompilation par petits lots derrière la devanture)
+      // portent aussi un « …ms » : les prendre pour la durée totale fausserait la ligne.
       if (Number.isFinite(ms)) {
         if (first.startsWith('[WARMUP-PRECOMPILE')) run.precompile_ms = ms;
-        else run.warmup_ms = ms;
+        else if (first.startsWith('[WARMUP-PIPE-STABLE') || first.startsWith('[WARMUP-MAX')) run.warmup_ms = ms;
       }
       if (first.startsWith('[WARMUP-MAX')) warmupMax = true;
     }

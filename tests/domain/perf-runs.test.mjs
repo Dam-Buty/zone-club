@@ -85,6 +85,13 @@ test('perf: la mesure part par étapes, jamais au départ de la page', () => {
   assert.match(lib, /WHERE client_perf_runs\.outcome NOT IN \('ready', 'warmup_max'\)/, 'une passe prête ne redescend pas');
 });
 
+test('perf: seule la fin du préchauffage donne sa durée', () => {
+  // Un message intermédiaire `[WARMUP-…] … 18016ms` ne doit pas écraser warmup_ms.
+  const beacon = readText(path.join(ROOT, 'src/utils/perf-beacon.ts'));
+  assert.match(beacon, /startsWith\('\[WARMUP-PIPE-STABLE'\) \|\| first\.startsWith\('\[WARMUP-MAX'\)\) run\.warmup_ms = ms/);
+  assert.doesNotMatch(beacon, /else run\.warmup_ms = ms/, 'plus de repli « tout autre message = durée totale »');
+});
+
 test('perf: chaque colonne insérée existe dans le schéma', () => {
   const lib = readText(path.join(ROOT, 'lib/perf-runs.ts'));
   const block = lib.slice(lib.indexOf('const COLUMNS = ['), lib.indexOf('] as const'));
