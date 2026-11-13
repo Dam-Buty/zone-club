@@ -1112,17 +1112,57 @@ export function InteriorScene({ onCassetteClick, prewarm = false }: InteriorScen
             }
           }
 
-          const tryReady = () => {
-            // Sur desktop, la compilation des shaders attend que le visiteur soit entré.
-            // Derrière la devanture, tout le reste se prépare (device GPU, modèles, textures,
-            // jaquettes), mais pas elle : la devanture desktop est une scène WebGL animée, et le
-            // processus GPU occupé à compiler ne la sert plus — mesuré à froid : 7,6 s d'images
-            // figées cumulées, dont un gel de 2,6 s. Sur mobile la devanture est une image fixe :
-            // rien à faire saccader, on compile tout de suite.
-            if (prewarmRef.current && !isMobileRef.current) {
-              requestAnimationFrame(tryReady)
-              return
+          // Précompilation « douce », pour le desktop tant que le visiteur est devant la devanture.
+          //
+          // La devanture desktop est une scène WebGL animée. Lancer toute la compilation d'un
+          // bloc derrière elle la fige : le processus GPU, occupé, ne sert plus son animation
+          // (mesuré à froid : 7,6 s d'images figées cumulées, dont un gel de 2,6 s). On compile
+          // donc un objet à la fois, en rendant la main entre deux, et on s'arrête dès que le
+          // visiteur entre — la compilation d'un bloc prend alors le relais pour ce qui reste,
+          // derrière l'écran de chargement. Ce qui est déjà compilé est servi par le cache.
+          let gentlePromise: Promise<unknown> | null = null
+          const gentlePrecompile = async (): Promise<void> => {
+            const compileObject = (window as unknown as { __scenePassCompileObject?: ((o: THREE.Object3D) => Promise<void>) | null }).__scenePassCompileObject
+            if (typeof compileObject !== 'function') return
+            const nextFrame = () => new Promise<void>((resolve) => { requestAnimationFrame(() => resolve()) })
+            const isShown = (o: THREE.Object3D) => {
+              for (let n: THREE.Object3D | null = o; n; n = n.parent) if (!n.visible) return false
+              return true
             }
+            const renderables: THREE.Object3D[] = []
+            state.scene.traverse((obj) => {
+              const o = obj as THREE.Object3D & { isMesh?: boolean; isPoints?: boolean; isLine?: boolean; isSprite?: boolean }
+              if ((o.isMesh || o.isPoints || o.isLine || o.isSprite) && isShown(o)) renderables.push(o)
+            })
+            const t0 = performance.now()
+            let done = 0
+            // On ne rend la main à la devanture que lorsqu'on lui a réellement pris du temps : la
+            // plupart des objets partagent un pipeline déjà compilé et se règlent en moins d'une
+            // milliseconde. Céder une image après chacun des ~500 objets faisait durer l'ensemble
+            // 25 s pour rien.
+            const SLICE_MS = 8
+            let sliceStart = performance.now()
+            for (const o of renderables) {
+              if (!prewarmRef.current) break
+              const culled = o.frustumCulled
+              o.frustumCulled = false
+              try {
+                await compileObject(o)
+                done++
+              } catch (e) {
+                console.warn('[warmup] précompilation douce : objet ignoré', e)
+              } finally {
+                o.frustumCulled = culled
+              }
+              if (performance.now() - sliceStart > SLICE_MS) {
+                await nextFrame()
+                sliceStart = performance.now()
+              }
+            }
+            console.warn(`[WARMUP-GENTLE] ${done}/${renderables.length} objets ${(performance.now() - t0).toFixed(0)}ms`)
+          }
+
+          const tryReady = () => {
             // Wait for PostProcessing instance to be ready before warmup.
             if (!(window as unknown as { __postProcessing?: unknown }).__postProcessing) {
               // Hard timeout safety net — never block the user forever.
@@ -1157,6 +1197,15 @@ export function InteriorScene({ onCassetteClick, prewarm = false }: InteriorScen
                 requestAnimationFrame(tryReady)
                 return
               }
+            }
+            // Desktop, visiteur encore devant la devanture : précompilation douce, puis on attend
+            // qu'il entre. Les rendus de contrôle (qui compilent en synchrone les passes de
+            // post-traitement) restent pour après l'entrée, derrière l'écran de chargement.
+            // Sur mobile la devanture est une image fixe : on enchaîne tout de suite.
+            if (prewarmRef.current && !isMobileRef.current) {
+              if (gentlePromise === null) gentlePromise = gentlePrecompile()
+              requestAnimationFrame(tryReady)
+              return
             }
             // Pipeline-count plateau detection. Robust against any cache /
             // timing combination: keep warming up until N consecutive iterations
@@ -1233,7 +1282,9 @@ export function InteriorScene({ onCassetteClick, prewarm = false }: InteriorScen
             }
             // D'abord la précompilation asynchrone, attendue (bornée par le plafond du
             // préchauffage) ; ensuite seulement les rendus de contrôle.
-            compilePromise = precompile()
+            // `compileAsync` n'est pas réentrant : si la précompilation douce a un objet en cours,
+            // on attend qu'il se termine (elle s'arrête d'elle-même, le visiteur étant entré).
+            compilePromise = (gentlePromise ?? Promise.resolve()).then(() => precompile())
             const precompileCapped = new Promise<void>((resolve) => { setTimeout(resolve, MAX_TOTAL_MS) })
             void Promise.race([compilePromise, precompileCapped]).then(warmupLoop)
           }

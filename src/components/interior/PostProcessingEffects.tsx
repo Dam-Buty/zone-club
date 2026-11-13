@@ -123,6 +123,58 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
         ? () => passForWarmup.compileAsync!(renderer)
         : null
 
+    // Même chose pour UN objet à la fois, dans le même contexte que la passe : c'est ce qui
+    // permet au préchauffage de compiler par petits lots pendant que le visiteur est devant la
+    // devanture, sans accaparer le processus GPU. Reprend ce que fait `PassNode.compileAsync`
+    // (cible, MRT, nœud de contexte), avec `renderer.compileAsync(objet, caméra, scène)`.
+    // Ces membres sont internes à three : s'ils changent de nom, on rend null et le
+    // préchauffage retombe sur la compilation d'un bloc.
+    const passInternals = scenePassForWarmup as unknown as {
+      renderTarget?: { samples: number }
+      options?: { samples?: number }
+      setSize?: (w: number, h: number) => void
+      _mrt?: unknown
+      contextNode?: unknown
+      _getContextNode?: (r: unknown) => unknown
+    } | null
+    const rendererInternals = renderer as unknown as {
+      samples: number
+      contextNode: unknown
+      getRenderTarget: () => unknown
+      setRenderTarget: (t: unknown) => void
+      getMRT: () => unknown
+      setMRT: (m: unknown) => void
+      getDrawingBufferSize: (v: THREE.Vector2) => THREE.Vector2
+      compileAsync: (object: THREE.Object3D, camera: THREE.Camera, targetScene: THREE.Scene) => Promise<void>
+    }
+    const canCompileObject = !!passInternals && !!passInternals.renderTarget && typeof passInternals.setSize === 'function'
+      && typeof rendererInternals.getMRT === 'function' && typeof rendererInternals.setMRT === 'function'
+    const drawingBufferSize = new THREE.Vector2()
+    ;(window as unknown as { __scenePassCompileObject?: ((o: THREE.Object3D) => Promise<void>) | null }).__scenePassCompileObject =
+      canCompileObject
+        ? async (object: THREE.Object3D) => {
+            const pass = passInternals!
+            const previousTarget = rendererInternals.getRenderTarget()
+            const previousMRT = rendererInternals.getMRT()
+            const previousContext = rendererInternals.contextNode
+            pass.renderTarget!.samples = pass.options?.samples === undefined ? rendererInternals.samples : pass.options.samples
+            rendererInternals.getDrawingBufferSize(drawingBufferSize)
+            pass.setSize!(drawingBufferSize.width, drawingBufferSize.height)
+            rendererInternals.setRenderTarget(pass.renderTarget)
+            rendererInternals.setMRT(pass._mrt ?? null)
+            if (pass.contextNode != null && typeof pass._getContextNode === 'function') {
+              rendererInternals.contextNode = pass._getContextNode(renderer)
+            }
+            try {
+              await rendererInternals.compileAsync(object, camera, scene)
+            } finally {
+              rendererInternals.setRenderTarget(previousTarget)
+              rendererInternals.setMRT(previousMRT)
+              rendererInternals.contextNode = previousContext
+            }
+          }
+        : null
+
     return () => {
       postProcessing.dispose()
       postProcessingRef.current = null
@@ -130,6 +182,7 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
       bloomStrengthRef.current = null
       ;(window as unknown as { __postProcessing?: THREE.PostProcessing | null }).__postProcessing = null
       ;(window as unknown as { __scenePassCompile?: (() => Promise<void>) | null }).__scenePassCompile = null
+      ;(window as unknown as { __scenePassCompileObject?: unknown }).__scenePassCompileObject = null
     }
     // Ces deux valeurs passent par des refs : les mettre en deps reconstruirait toute la chaîne de
     // post-processing à chaque ouverture de K7, ce que les refs existent justement pour éviter.
