@@ -12,7 +12,7 @@ deux services Node autonomes.
 ## Stack
 
 - **Framework** : Next.js 16 App Router + React 19.2, `output: 'standalone'` — build en `--webpack` (cf. `next.config.ts`)
-- **3D** : Three.js 0.184 via React Three Fiber — WebGPU + TSL à l'intérieur, WebGL nu à l'extérieur
+- **3D** : Three.js 0.187 via React Three Fiber — WebGPU + TSL à l'intérieur, WebGL nu à l'extérieur
 - **État** : Zustand 5 avec persistance localStorage
 - **Styles** : Tailwind CSS v4 + CSS Modules
 - **DB** : SQLite via `better-sqlite3` (server-side only), migrations idempotentes au boot

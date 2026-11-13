@@ -1,4 +1,4 @@
-// Copie locale de three/examples/jsm/loaders/TTFLoader.js (three r186, licence MIT).
+// Copie locale de three/examples/jsm/loaders/TTFLoader.js (three r187, licence MIT).
 // r185 a sorti opentype.js du paquet au profit d'un import CDN (three PR #33798), que webpack
 // refuse : `next build` échoue sur UnhandledSchemeError. Seule la ligne d'import diffère de
 // l'amont. Poids client inchangé — r184 embarquait déjà opentype.
@@ -59,6 +59,8 @@ class TTFLoader extends Loader {
 		const scope = this;
 
 		const loader = new FileLoader( this.manager );
+		loader.setPriority( this.priority );
+		loader.setCache( this.cache );
 		loader.setPath( this.path );
 		loader.setResponseType( 'arraybuffer' );
 		loader.setRequestHeader( this.requestHeader );
