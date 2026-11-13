@@ -40,6 +40,8 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
 
   useEffect(() => {
     const postProcessing = new THREE.PostProcessing(renderer as unknown as THREE.WebGPURenderer)
+    // La passe de scène, gardée pour le préchauffage (voir __scenePassCompile plus bas).
+    let scenePassForWarmup: ReturnType<typeof pass> | null = null
 
     // Vignette — shared between mobile and desktop
     const applyVignette = (input: ReturnType<typeof pass>) => {
@@ -55,6 +57,7 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
     if (isMobile) {
       // ===== MOBILE PIPELINE: Scene → Bloom → Vignette → FXAA =====
       const scenePass = pass(scene, camera)
+      scenePassForWarmup = scenePass
       const scenePassColor = scenePass.getTextureNode('output')
 
       // Bloom with high threshold (0.5) — only emissive neon tubes trigger
@@ -73,6 +76,7 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
 
       // 1. Scene pass (no MRT — SSGI disabled)
       const scenePass = pass(scene, camera)
+      scenePassForWarmup = scenePass
       const scenePassColor = scenePass.getTextureNode('output')
 
       // SSGI disabled — too expensive (~3× frame time)
@@ -108,6 +112,16 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
     // for the default RT in compileAsync are useless here, the actual render uses
     // PassNode's render target which has a different format.
     ;(window as unknown as { __postProcessing?: THREE.PostProcessing }).__postProcessing = postProcessing
+    // Compilation ASYNCHRONE de tous les pipelines de la scène, dans le contexte exact de la passe
+    // (cible HalfFloat) : `PassNode.compileAsync` existe pour ça depuis three r187. Les pipelines
+    // sont créés par `createRenderPipelineAsync`, donc compilés en parallèle par le processus GPU,
+    // au lieu d'être créés un par un en synchrone par le premier rendu. Mesuré en rejouant les
+    // 105 pipelines de l'entrée, cache de shaders froid : 5 090 ms en parallèle contre 13 939 ms.
+    const passForWarmup = scenePassForWarmup as unknown as { compileAsync?: (r: unknown) => Promise<void> } | null
+    ;(window as unknown as { __scenePassCompile?: (() => Promise<void>) | null }).__scenePassCompile =
+      passForWarmup && typeof passForWarmup.compileAsync === 'function'
+        ? () => passForWarmup.compileAsync!(renderer)
+        : null
 
     return () => {
       postProcessing.dispose()
@@ -115,6 +129,7 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
       bokehRef.current = null
       bloomStrengthRef.current = null
       ;(window as unknown as { __postProcessing?: THREE.PostProcessing | null }).__postProcessing = null
+      ;(window as unknown as { __scenePassCompile?: (() => Promise<void>) | null }).__scenePassCompile = null
     }
     // Ces deux valeurs passent par des refs : les mettre en deps reconstruirait toute la chaîne de
     // post-processing à chaque ouverture de K7, ce que les refs existent justement pour éviter.
@@ -139,6 +154,13 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
 
     const pp = postProcessingRef.current
     if (!pp) return
+
+    // Tant que la scène n'est pas prête, l'écran de chargement couvre le canevas : on ne rend
+    // rien. Chaque image rendue ici compilait EN SYNCHRONE les matériaux qui venaient d'être
+    // montés (83 pipelines à la file en production), ce qui affamait aussi le chargement des
+    // jaquettes, cadencé par image. Le préchauffage (InteriorScene) compile tout d'un coup en
+    // asynchrone, puis rend lui-même ses images de contrôle par `__postProcessing.render()`.
+    if (!useStore.getState().isSceneReady) return
 
     // Lerp the post uniforms every tick (cheap; keeps transitions smooth even when
     // the render itself is throttled, since transitions force the ACTIVE budget below).
