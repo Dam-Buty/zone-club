@@ -1,7 +1,8 @@
 import { useEffect, useState, useCallback, useRef, lazy, Suspense } from 'react';
 import { useStore } from './store';
 import { preloadPosterImage } from './utils/CassetteTextureArray';
-import './utils/asset-preload'; // Side-effect import: kicks off HDR/KTX2/wasm prefetch into HTTP cache
+import './utils/asset-preload'; // Side-effect import: registers the HDR/KTX2/wasm prefetch (starts once the storefront is shown)
+import { afterStorefront, releaseInteriorPreload } from './utils/interior-preload-gate';
 import api, { apiFilmToFilm } from './api';
 import type { AisleType, Film } from './types';
 import './utils/perf-beacon'; // Side-effect import: mesure de terrain de l'entrée dans la boutique (POST /api/perf)
@@ -19,7 +20,13 @@ declare global {
 
 // Lazy-load WebGPU-dependent components so they don't crash browsers without support
 const ExteriorView = lazy(() => import('./components/exterior/ExteriorView').then(m => ({ default: m.ExteriorView })));
-const _interiorImport = import('./components/interior/InteriorScene');
+// Le chunk de l'intérieur (three WebGPU + toute la scène) et les useGLTF.preload de ses
+// modules ne partent qu'une fois la devanture affichée — voir interior-preload-gate.ts.
+const _interiorImport = new Promise<typeof import('./components/interior/InteriorScene')>((resolve, reject) => {
+  afterStorefront(() => {
+    import('./components/interior/InteriorScene').then(resolve, reject);
+  });
+});
 const InteriorScene = lazy(() => _interiorImport.then(m => ({ default: m.InteriorScene })));
 
 // Heavy overlays — none render on the initial entry screen, so we keep them
@@ -33,8 +40,8 @@ const VHSPlayer = lazy(() => import('./components/player/VHSPlayer').then(m => (
 const ActiveCastIndicator = lazy(() => import('./components/player/ActiveCastIndicator').then(m => ({ default: m.ActiveCastIndicator })));
 const MinitelOverlay = lazy(() => import('./components/minitel/MinitelOverlay').then(m => ({ default: m.MinitelOverlay })));
 
-// Eagerly preload heavy interior assets (HDR, PBR textures, GLBs) while user is on exterior/onboarding.
-// These fire HTTP requests immediately — by the time the user enters, assets are in browser cache.
+// Preload heavy interior assets (HDR, PBR textures, GLBs) while user is on exterior/onboarding.
+// These fire HTTP requests as soon as the interior chunk is in — by the time the user enters, assets are in browser cache.
 _interiorImport.then(() => {
   // Module loaded — useGLTF.preload calls inside submodules (VHSCaseViewer, Manager3D) are now active.
   // Preload additional assets that drei hooks will request on mount:
@@ -74,18 +81,21 @@ const _prefetchPromise: Promise<PrefetchResult[]> = Promise.all(
   })
 );
 
-// As soon as API data arrives, preload all poster images into the shared cache.
-// preloadPosterImage() stores each Image in a Map<url, Promise<HTMLImageElement>>
+// As soon as API data arrives AND the storefront is shown, preload all poster images into
+// the shared cache. preloadPosterImage() stores each Image in a Map<url, Promise<HTMLImageElement>>
 // so CassetteTextureArray.loadPosterIntoLayer() gets them instantly (~0ms).
+// The API calls themselves stay ungated: 13 small requests, nothing the storefront waits for.
 _prefetchPromise.then((results) => {
-  for (const result of results) {
-    if (!result) continue;
-    for (const film of result.films) {
-      if (film.poster_path) {
-        preloadPosterImage(`/api/poster/w185${film.poster_path}`);
+  afterStorefront(() => {
+    for (const result of results) {
+      if (!result) continue;
+      for (const film of result.films) {
+        if (film.poster_path) {
+          preloadPosterImage(`/api/poster/w185${film.poster_path}`);
+        }
       }
     }
-  }
+  });
 });
 
 function detectBrowser(): string {
@@ -359,7 +369,10 @@ function App() {
   useEffect(() => {
     if ('serviceWorker' in navigator) {
       if (process.env.NODE_ENV === 'production') {
-        navigator.serviceWorker.register('/sw.js').catch(() => {});
+        // À l'installation, le service worker précharge les assets 3D : lui aussi attend la devanture.
+        afterStorefront(() => {
+          navigator.serviceWorker.register('/sw.js').catch(() => {});
+        });
       } else {
         // Dev mode: unregister any stale SW to prevent cached old JS bundles
         navigator.serviceWorker.getRegistrations().then(regs => {
@@ -391,6 +404,12 @@ function App() {
     if (currentScene === 'interior') {
       import('./hooks/useGoogleCast').then(m => m.preloadCastSdk()).catch(() => {});
     }
+  }, [currentScene]);
+  // Filet de sécurité : entrer dans la boutique ouvre la vanne des préchargements de
+  // l'intérieur, au cas où l'on arriverait ici sans être passé par la devanture (lien
+  // « castEnded » d'une notification). Idempotent.
+  useEffect(() => {
+    if (currentScene === 'interior') releaseInteriorPreload();
   }, [currentScene]);
   useEffect(() => {
     if (isSceneReady) {

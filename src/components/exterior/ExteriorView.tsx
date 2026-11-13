@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback, Suspense, lazy } from 'react'
 import { ExteriorScene } from './scene/ExteriorScene';
 import { useIdleDetection } from '../../hooks/useIdleDetection';
 import { useIsMobile } from '../../hooks/useIsMobile';
+import { releaseInteriorPreload } from '../../utils/interior-preload-gate';
 import styles from './ExteriorView.module.css';
 
 // Lazy load the video component (desktop only)
@@ -10,6 +11,9 @@ const IdleVideo = lazy(() =>
 );
 
 const IDLE_TIMEOUT = 10000; // 10 seconds
+// Au-delà, on lève le rideau même sans devanture : une image qui n'arrive jamais ne doit pas
+// interdire l'entrée dans la boutique.
+const CURTAIN_MAX_WAIT_MS = 10000;
 const TARGET_ASPECT_RATIO = 5632 / 3072; // ~1.833
 
 interface ExteriorViewProps {
@@ -22,6 +26,14 @@ export function ExteriorView({ onEnter }: ExteriorViewProps) {
   const sceneRef = useRef<ExteriorScene | null>(null);
   const [isHoveringDoor, setIsHoveringDoor] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
+
+  // Rideau noir : l'indicateur PUSH et le bouton sont du HTML, ils s'affichent tout de suite,
+  // alors que la devanture attend ses images. On les garde derrière un noir plein tant que la
+  // devanture n'est pas à l'écran. Mémorisé par mode : passer de mobile à desktop referme le rideau.
+  const mode = isMobile ? 'mobile' : 'desktop';
+  const [storefrontShownFor, setStorefrontShownFor] = useState<'mobile' | 'desktop' | null>(null);
+  const isStorefrontShown = storefrontShownFor === mode;
+  const mobileImageRef = useRef<HTMLImageElement>(null);
 
   // Content area dimensions (for hotspot positioning) — desktop only
   const [contentArea, setContentArea] = useState({ width: '100%', height: '100%', top: '0', left: '0' });
@@ -97,7 +109,7 @@ export function ExteriorView({ onEnter }: ExteriorViewProps) {
     if (!containerRef.current) return;
 
     // Create the exterior scene
-    sceneRef.current = new ExteriorScene(containerRef.current);
+    sceneRef.current = new ExteriorScene(containerRef.current, () => setStorefrontShownFor('desktop'));
 
     // Calculate initial content area
     updateContentArea();
@@ -112,7 +124,33 @@ export function ExteriorView({ onEnter }: ExteriorViewProps) {
     };
   }, [isMobile, updateContentArea]);
 
+  // Mobile : la devanture est une <img>. decode() couvre les deux cas — image déjà en cache
+  // (l'événement load est passé avant le montage) et image encore en route.
+  useEffect(() => {
+    if (!isMobile) return;
+    const img = mobileImageRef.current;
+    if (!img) return;
+    let cancelled = false;
+    const show = () => { if (!cancelled) setStorefrontShownFor('mobile'); };
+    img.decode().then(show, show);
+    return () => { cancelled = true; };
+  }, [isMobile]);
+
+  // La devanture est à l'écran : les préchargements de l'intérieur peuvent partir.
+  useEffect(() => {
+    if (isStorefrontShown) releaseInteriorPreload();
+  }, [isStorefrontShown]);
+
+  // Garde-fou : ne jamais rester bloqué sur le noir.
+  useEffect(() => {
+    if (isStorefrontShown) return;
+    const timer = setTimeout(() => setStorefrontShownFor(mode), CURTAIN_MAX_WAIT_MS);
+    return () => clearTimeout(timer);
+  }, [isStorefrontShown, mode]);
+
   const handleEnterClick = () => {
+    // Le bouton existe déjà sous le rideau (clavier, lecteur d'écran) : pas d'entrée à l'aveugle.
+    if (!isStorefrontShown) return;
     setIsTransitioning(true);
     // Fade out then trigger scene change
     setTimeout(() => {
@@ -129,6 +167,7 @@ export function ExteriorView({ onEnter }: ExteriorViewProps) {
           <picture>
             <source srcSet="/storefront-mobile.webp" type="image/webp" />
             <img
+              ref={mobileImageRef}
               src="/storefront-mobile.jpeg"
               alt="Zone Club - Vidéoclub"
               className={styles.mobileImage}
@@ -150,6 +189,9 @@ export function ExteriorView({ onEnter }: ExteriorViewProps) {
         >
           <span className={styles.mobileEnterText}>Appuyez pour entrer</span>
         </button>
+
+        {/* Rideau noir, levé en fondu quand la devanture est affichée */}
+        <div className={`${styles.curtain} ${isStorefrontShown ? styles.curtainOpen : ''}`} aria-hidden="true" />
 
         {/* Transition overlay */}
         {isTransitioning && <div className={styles.transitionOverlay} />}
@@ -191,16 +233,22 @@ export function ExteriorView({ onEnter }: ExteriorViewProps) {
         </button>
       </div>
 
-      {/* Idle Video - Lazy loaded with Suspense */}
-      <Suspense fallback={null}>
-        <IdleVideo
-          src="/videoclubvideo.mp4"
-          isPlaying={isVideoPlaying}
-          onVideoReady={handleVideoReady}
-          onVideoEnd={handleVideoEnd}
-          onUserInteraction={handleVideoInteraction}
-        />
-      </Suspense>
+      {/* Idle Video - Lazy loaded with Suspense. Montée après la devanture : sa vidéo est en
+          preload="auto" et n'a rien à faire devant les images de la vitrine. */}
+      {isStorefrontShown && (
+        <Suspense fallback={null}>
+          <IdleVideo
+            src="/videoclubvideo.mp4"
+            isPlaying={isVideoPlaying}
+            onVideoReady={handleVideoReady}
+            onVideoEnd={handleVideoEnd}
+            onUserInteraction={handleVideoInteraction}
+          />
+        </Suspense>
+      )}
+
+      {/* Rideau noir, levé en fondu quand la devanture est affichée */}
+      <div className={`${styles.curtain} ${isStorefrontShown ? styles.curtainOpen : ''}`} aria-hidden="true" />
 
       {/* Transition overlay */}
       {isTransitioning && <div className={styles.transitionOverlay} />}
