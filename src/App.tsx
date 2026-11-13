@@ -4,6 +4,7 @@ import { preloadPosterImage } from './utils/CassetteTextureArray';
 import './utils/asset-preload'; // Side-effect import: kicks off HDR/KTX2/wasm prefetch into HTTP cache
 import api, { apiFilmToFilm } from './api';
 import type { AisleType, Film } from './types';
+import './utils/perf-beacon'; // Side-effect import: mesure de terrain de l'entrée dans la boutique (POST /api/perf)
 
 // PWA: global ref for deferred install prompt
 declare global {

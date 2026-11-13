@@ -219,4 +219,54 @@ CREATE TABLE IF NOT EXISTS film_processing_runs (
     FOREIGN KEY (film_id) REFERENCES films(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_runs_film ON film_processing_runs(film_id);
+
+-- Mesures de terrain : une ligne par entrée dans la boutique, envoyée par le navigateur
+-- (src/utils/perf-beacon.ts → POST /api/perf). Anonyme : ni compte, ni IP, ni identifiant
+-- de visiteur. Sert à connaître les temps de chargement réels par appareil et par build.
+CREATE TABLE IF NOT EXISTS client_perf_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_key TEXT NOT NULL UNIQUE,    -- clé aléatoire par chargement de page (pas un identifiant de visiteur)
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    build TEXT NOT NULL,
+    three TEXT,
+    -- Dernier état atteint. La ligne est complétée d'étape en étape pendant que la page vit :
+    -- no_entry (devanture vue, pas entré) → abandoned (a cliqué, scène jamais prête) → ready.
+    -- warmup_max = prête mais plafond du préchauffage atteint ; no_webgpu = écran d'excuses.
+    outcome TEXT NOT NULL,
+    automated INTEGER NOT NULL DEFAULT 0,   -- navigator.webdriver : tests pilotés, à écarter
+    first_visit INTEGER NOT NULL DEFAULT 0, -- première entrée de ce navigateur avec ce build
+    is_mobile INTEGER NOT NULL DEFAULT 0,
+    -- jalons, en ms depuis le début de la navigation
+    exterior_ms INTEGER,             -- bouton d'entrée présent
+    storefront_ms INTEGER,           -- devanture affichée (rideau levé)
+    click_ms INTEGER,
+    -- durées, en ms
+    click_to_ready_ms INTEGER,
+    warmup_ms INTEGER,
+    precompile_ms INTEGER,
+    long_tasks_ms INTEGER,           -- tâches longues entre le clic et « scène prête »
+    post_gaps_ms INTEGER,            -- images figées (> 50 ms) cumulées dans les 10 s après
+    post_worst_gap_ms INTEGER,
+    post_fps REAL,
+    pipelines INTEGER,
+    posters INTEGER,
+    -- matériel
+    ua TEXT,
+    platform TEXT,
+    platform_version TEXT,
+    model TEXT,
+    gpu_vendor TEXT,
+    gpu_arch TEXT,
+    gpu_device TEXT,
+    gpu_desc TEXT,
+    cores INTEGER,
+    memory_gb REAL,
+    screen_w INTEGER,
+    screen_h INTEGER,
+    dpr REAL,
+    net_type TEXT,
+    net_downlink REAL
+);
+CREATE INDEX IF NOT EXISTS idx_perf_runs_created ON client_perf_runs(created_at);
 CREATE INDEX IF NOT EXISTS idx_runs_outcome ON film_processing_runs(outcome);

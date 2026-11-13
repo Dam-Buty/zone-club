@@ -181,6 +181,8 @@ Notes d'infra qui ont coûté cher :
 | `POST` | `/api/admin/films/[filmId]/download` \| `refresh` | admin | Lancer Radarr / rafraîchir métadonnées |
 | `GET` | `/api/admin/requests` · `PATCH /api/admin/requests/[id]` | admin | Commandes (approve/reject) |
 | `GET` | `/api/admin/stats` | admin | Stats globales |
+| `POST` | `/api/perf` | publique | Mesure de terrain d'une entrée dans la boutique (anonyme, `sendBeacon`) |
+| `GET` | `/api/admin/perf` | admin | Mesures agrégées par appareil et par build (`?days=`, `?recent=`, `?automated=1`) |
 
 Il n'y a **pas** de `DELETE /api/rentals/[filmId]` (utiliser `POST /return`), ni de
 `DELETE /api/reviews/[filmId]` (`PUT` à la place), ni de `DELETE /api/requests`.
@@ -189,7 +191,7 @@ Il n'y a **pas** de `DELETE /api/rentals/[filmId]` (utiliser `POST /return`), ni
 
 Tables : `users`, `films`, `genres`, `film_genres`, `rentals`, `reviews`, `film_requests`,
 `weekly_bonuses`, `return_requests`, `user_facts`, `board_notes`, `film_processing_runs`,
-`push_subscriptions`, `cast_sessions`.
+`push_subscriptions`, `cast_sessions`, `client_perf_runs`.
 
 Colonnes clés de `films` :
 
@@ -569,6 +571,35 @@ le `tmdb_id`), donc reproductible d'une machine à l'autre et stable d'un run au
 
 Relancer le seed sur une base existante **ne réécrit que les états média de seed** : un chemin de
 pipeline réel n'est jamais écrasé.
+
+## Mesures de terrain
+
+Un Mac de développement ne dit rien des téléphones : sur un Pixel 9a, l'entrée dans la boutique
+prend le même temps à chaque visite (le cache de shaders n'y joue presque pas), là où le Mac
+passe de ~18 s à ~5 s en visite de retour. `src/utils/perf-beacon.ts` chronomètre donc chaque
+entrée chez le visiteur et tient à jour **une ligne par chargement de page** via `POST /api/perf`
+(table `client_perf_runs`) : temps jusqu'à la devanture, du clic à « scène prête », durée du
+préchauffage, gels dans les 10 s qui suivent, GPU, modèle d'appareil quand le navigateur le
+donne, et le dernier état atteint (`no_entry` → `abandoned` → `ready` ; `warmup_max`, `no_webgpu`).
+
+- **Par étapes, page vivante** : la ligne est envoyée à la devanture, au clic, à « scène prête »
+  puis 10 s plus tard, et le serveur la met à jour (`ON CONFLICT(run_key)`). Un visiteur qui part
+  en route laisse sa ligne à la dernière étape atteinte. ⚠️ Ne pas « simplifier » en un envoi
+  unique au départ de la page (`pagehide`) : sous le contrôle du service worker, Chrome accepte
+  le `sendBeacon` et ne l'émet jamais (mesuré : 0 arrivé sur 5, contre 5 sur 5 sans service worker).
+
+- **Anonyme** : ni compte, ni IP, ni identifiant de visiteur. L'IP ne sert qu'au limiteur de
+  débit en mémoire ; `run_key` est tirée au hasard à chaque chargement de page et n'est stockée
+  nulle part côté navigateur.
+- **Découplé** : le module observe le DOM, le store et les messages `[WARMUP…]` du préchauffage
+  au lieu d'être appelé par l'application — il donne les mêmes chiffres sur toutes les versions.
+  Renommer ces messages ou l'`aria-label` du bouton d'entrée casse la mesure en silence.
+- `NEXT_PUBLIC_BUILD_ID` (posé par `next.config.ts` depuis `git rev-parse --short HEAD`)
+  étiquette chaque ligne : c'est ce qui permet de comparer deux déploiements.
+- Les passes pilotées (`navigator.webdriver`) sont marquées `automated = 1` et écartées des
+  agrégats par défaut. En développement, le module ne s'active qu'avec `?perf=1`.
+- Lecture : `GET /api/admin/perf` (médiane et 75e centile par appareil, build, mobile/desktop,
+  première visite/retour).
 
 ## Tests
 
