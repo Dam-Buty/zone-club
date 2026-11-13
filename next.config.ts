@@ -1,6 +1,20 @@
 import type { NextConfig } from 'next';
+import { execSync } from 'node:child_process';
+
+// Identifiant de build pour les mesures de terrain (src/utils/perf-beacon.ts) : sans lui on ne
+// peut pas comparer deux déploiements. Le build se fait sur la machine hôte, où git est là ;
+// à défaut (archive sans dépôt), les mesures partent étiquetées « inconnu ».
+function buildId(): string {
+  if (process.env.NEXT_PUBLIC_BUILD_ID) return process.env.NEXT_PUBLIC_BUILD_ID;
+  try {
+    return execSync('git rev-parse --short HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim() || 'inconnu';
+  } catch {
+    return 'inconnu';
+  }
+}
 
 const nextConfig: NextConfig = {
+  env: { NEXT_PUBLIC_BUILD_ID: buildId() },
   output: 'standalone',
   devIndicators: false,
   // better-sqlite3 et bcrypt : modules natifs, impossibles à bundler.
