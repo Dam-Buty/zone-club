@@ -160,7 +160,11 @@ function createWarmupCoverTexture(): THREE.CanvasTexture {
  * à travers les deux chaînes de post-traitement, ce qui fait compiler leurs shaders par le
  * pilote graphique.
  *
- * ⚠️ Ils sont DÉTRUITS dès que la scène est prête — les garder en vie casse le vrai boîtier.
+ * Le critère est `interiorWarm` (« la scène montée a fini son préchauffage »), pas
+ * `isSceneReady` : devant la devanture, `isSceneReady` est déjà vrai alors que la scène,
+ * montée cachée, n'a encore rien compilé — les boîtiers ne seraient jamais posés.
+ *
+ * ⚠️ Ils sont DÉTRUITS dès que la scène est préchauffée — les garder en vie casse le vrai boîtier.
  * three met en commun l'état de construction de deux matériaux dont le graphe de nœuds a la
  * même structure : le vrai boîtier héritait alors de la jaquette factice et de l'uniform de
  * fondu du boîtier de préchauffage, resté à zéro, et s'affichait gris, sans jaquette (constaté
@@ -168,7 +172,7 @@ function createWarmupCoverTexture(): THREE.CanvasTexture {
  * recrée ses pipelines, mais les shaders sont déjà dans le cache du pilote.
  */
 export function VHSCaseWarmup() {
-  const isSceneReady = useStore((state) => state.isSceneReady)
+  const isWarm = useStore((state) => state.interiorWarm)
   const { scene: glbScene } = useGLTF('/models/vhs_cassette_tape.glb', true)
 
   const { blankCase, coveredCase, cover } = useMemo(() => {
@@ -183,7 +187,7 @@ export function VHSCaseWarmup() {
     return { blankCase: blank.clonedScene, coveredCase: covered.clonedScene, cover }
   }, [glbScene])
 
-  // Libération : à l'instant où la scène est prête, et au démontage.
+  // Libération : à l'instant où la scène est préchauffée, et au démontage.
   useEffect(() => {
     const release = () => {
       ;(cover.userData.bumpMap as THREE.Texture | undefined)?.dispose()
@@ -194,14 +198,14 @@ export function VHSCaseWarmup() {
         })
       }
     }
-    if (isSceneReady) {
+    if (isWarm) {
       release()
       return
     }
     return release
-  }, [isSceneReady, blankCase, coveredCase, cover])
+  }, [isWarm, blankCase, coveredCase, cover])
 
-  if (isSceneReady) return null
+  if (isWarm) return null
 
   return (
     <group position={[0, -50, 0]} scale={0.01}>
