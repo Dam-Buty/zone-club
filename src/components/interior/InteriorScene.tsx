@@ -66,7 +66,7 @@ function computeDpr(isMobile: boolean): number {
   const dprBudget = Math.sqrt((MAX_RENDER_MPX * 1e6) / surfaceCss)
   return Math.max(1, Math.min(base, dprBudget))
 }
-import { VHSCaseViewer } from './VHSCaseViewer'
+import { VHSCaseViewer, VHSCaseWarmup } from './VHSCaseViewer'
 import { TVTerminal } from '../terminal/TVTerminal'
 import { AuthModal } from '../auth/AuthModal'
 import { SearchModal } from '../search/SearchModal'
@@ -177,6 +177,7 @@ const SceneContent = memo(function SceneContent({
         />
       )}
       <PostProcessingEffects isMobile={isMobile} />
+      <VHSCaseWarmup />
       <BenchmarkSampler
         enabled={benchmarkMode}
         isMobile={isMobile}
