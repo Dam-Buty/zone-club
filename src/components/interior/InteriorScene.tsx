@@ -1024,6 +1024,8 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
           // lui, reste synchrone et complet : c'est lui qui compile dans le bon contexte de cible.
           let compileInFlight = false
           let compileTurn = 0
+          // Dernier `compileAsync` lancé : le préchauffage l'attend avant de se déclarer terminé.
+          let compilePromise: Promise<unknown> = Promise.resolve()
 
           const runWarmup = (): boolean => {
             // 1. Disable frustum culling on every mesh → projectObject pushes ALL to
@@ -1063,7 +1065,7 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
                 ) {
                   compileInFlight = true
                   compileTurn++
-                  Promise.resolve(renderer.compileAsync(state.scene, state.camera))
+                  compilePromise = Promise.resolve(renderer.compileAsync(state.scene, state.camera))
                     .catch((e: unknown) => {
                       console.warn('[warmup] compileAsync a échoué — repli sur la compilation au rendu', e)
                     })
@@ -1132,9 +1134,46 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
                 lastCount = cur
               }
               const elapsed = performance.now() - _t0
+              // ⚠️ Le plateau du COMPTEUR ne prouve pas que la compilation est finie.
+              //
+              // `createRenderPipeline` rend la main tout de suite : le processus GPU compile en
+              // arrière-plan. Le compteur ne voit que les APPELS de création. Sur un cache de
+              // shaders froid (premier visiteur), three r187 attend ses pipelines asynchrones
+              // pendant ~10 s sans émettre de nouvel appel : le compteur reste donc immobile, le
+              // plateau se déclarait au bout de 1,7 s, l'écran de chargement se levait, et la
+              // boutique gelait 9,4 s d'un bloc une fois affichée (mesuré, profil et cache Metal
+              // vierges). Sur `main` (r186) le même travail durait 12,5 s mais restait caché
+              // derrière l'écran de chargement.
+              //
+              // Au plateau on attend donc, AVANT de lever l'écran de chargement : (1) le dernier
+              // `compileAsync` lancé — sa promesse ne se résout qu'une fois ses pipelines
+              // réellement compilés ; (2) la file du GPU vidée (`onSubmittedWorkDone`), ce qui
+              // couvre les pipelines créés en synchrone par le balayage `pp.render()`.
+              // La boucle ne tourne plus pendant cette attente : aucun nouveau `compileAsync`
+              // n'est donc lancé (tester `compileInFlight` ici ne marche pas — chaque passe en
+              // relance un, il est donc toujours vrai au moment du test).
               if (stableIters >= PIPE_STABLE_NEEDED) {
-                console.warn(`[WARMUP-PIPE-STABLE] count=${cur} ${elapsed.toFixed(0)}ms`)
-                finish()
+                const device = (state.gl as unknown as { backend?: { device?: GPUDevice } }).backend?.device
+                const settled = compilePromise
+                  .then(() => (device ? device.queue.onSubmittedWorkDone() : undefined))
+                  .catch(() => undefined)
+                // Garde-fou : ne jamais retenir le visiteur au-delà du plafond habituel.
+                const capped = new Promise<void>((resolve) => {
+                  setTimeout(resolve, Math.max(0, MAX_TOTAL_MS - elapsed))
+                })
+                void Promise.race([settled, capped]).then(() => {
+                  const after = getPipeCount()
+                  const total = performance.now() - _t0
+                  if (after !== cur && total < MAX_TOTAL_MS) {
+                    // De nouveaux pipelines sont apparus pendant l'attente : on repart.
+                    stableIters = 0
+                    lastCount = after
+                    setTimeout(warmupLoop, POLL_INTERVAL_MS)
+                    return
+                  }
+                  console.warn(`[WARMUP-PIPE-STABLE] count=${after} ${total.toFixed(0)}ms`)
+                  finish()
+                })
                 return
               }
               if (elapsed >= MAX_TOTAL_MS) {
