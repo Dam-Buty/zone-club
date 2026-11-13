@@ -155,12 +155,16 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
     const pp = postProcessingRef.current
     if (!pp) return
 
-    // Tant que la scène n'est pas prête, l'écran de chargement couvre le canevas : on ne rend
-    // rien. Chaque image rendue ici compilait EN SYNCHRONE les matériaux qui venaient d'être
-    // montés (83 pipelines à la file en production), ce qui affamait aussi le chargement des
-    // jaquettes, cadencé par image. Le préchauffage (InteriorScene) compile tout d'un coup en
-    // asynchrone, puis rend lui-même ses images de contrôle par `__postProcessing.render()`.
-    if (!useStore.getState().isSceneReady) return
+    // Tant que la scène n'est pas préchauffée, l'écran de chargement (ou la devanture) couvre
+    // le canevas : on ne rend rien. Chaque image rendue ici compilait EN SYNCHRONE les matériaux
+    // qui venaient d'être montés (83 pipelines à la file en production), ce qui affamait aussi
+    // le chargement des jaquettes, cadencé par image. Le préchauffage (InteriorScene) compile
+    // tout d'un coup en asynchrone, puis rend lui-même ses images de contrôle par
+    // `__postProcessing.render()`.
+    // Et une scène préchauffée mais encore cachée derrière la devanture ne se rend pas non
+    // plus : le GPU reste à la vitrine.
+    const scene0 = useStore.getState()
+    if (!scene0.interiorWarm || scene0.currentScene !== 'interior') return
 
     // Lerp the post uniforms every tick (cheap; keeps transitions smooth even when
     // the render itself is throttled, since transitions force the ACTIVE budget below).

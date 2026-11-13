@@ -125,6 +125,8 @@ extend(THREE as any)
 
 interface InteriorSceneProps {
   onCassetteClick?: (filmId: number) => void
+  /** Scène montée mais cachée derrière la devanture : préchauffage seul, sans interface. */
+  prewarm?: boolean
 }
 
 function LoadingFallback() {
@@ -145,6 +147,7 @@ const SceneContent = memo(function SceneContent({
   isMobile,
   mobileInputRef,
   benchmarkMode,
+  prewarm,
 }: {
   films: import('../../types').Film[]
   filmsByAisle: Record<import('../../types').AisleType, import('../../types').Film[]>
@@ -153,6 +156,7 @@ const SceneContent = memo(function SceneContent({
   isMobile: boolean
   mobileInputRef: React.MutableRefObject<MobileInput>
   benchmarkMode: boolean
+  prewarm: boolean
 }) {
   return (
     <>
@@ -163,11 +167,15 @@ const SceneContent = memo(function SceneContent({
       />
       <Lighting isMobile={isMobile} />
       <Aisle films={films} filmsByAisle={filmsByAisle} />
-      <Controls
-        onCassetteClick={onCassetteClick}
-        isMobile={isMobile}
-        mobileInputRef={mobileInputRef}
-      />
+      {/* Pas de contrôles tant que le visiteur est devant la devanture : ils écoutent le
+          clavier et la souris sur le document. Ils ne portent aucun matériau à préchauffer. */}
+      {!prewarm && (
+        <Controls
+          onCassetteClick={onCassetteClick}
+          isMobile={isMobile}
+          mobileInputRef={mobileInputRef}
+        />
+      )}
       <PostProcessingEffects isMobile={isMobile} />
       <BenchmarkSampler
         enabled={benchmarkMode}
@@ -752,10 +760,15 @@ function SettingsModals() {
   )
 }
 
-export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
+export function InteriorScene({ onCassetteClick, prewarm = false }: InteriorSceneProps) {
   const isMobile = useIsMobile()
   const mobileInputRef = useRef<MobileInput>(createMobileInput())
   const isMountedRef = useRef(true)
+  // Lus par le préchauffage, qui vit dans une fermeture créée une fois (onCreated du Canvas).
+  const prewarmRef = useRef(prewarm)
+  prewarmRef.current = prewarm
+  const isMobileRef = useRef(isMobile)
+  isMobileRef.current = isMobile
   const [gpuError, setGpuError] = useState<string | null>(null)
   const [isPortrait, setIsPortrait] = useState(() =>
     typeof window !== 'undefined' ? window.innerHeight > window.innerWidth : false
@@ -802,6 +815,8 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
   useEffect(() => {
     return () => {
       isMountedRef.current = false
+      // Le canevas disparaît avec ses pipelines : la scène n'est plus préchauffée.
+      useStore.getState().setSceneReady(false)
     }
   }, [])
 
@@ -815,11 +830,11 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
 
   // Auto-start tutorial after onboarding if not completed
   useEffect(() => {
-    if (isSceneReady && hasSeenOnboarding && !hasCompletedTutorial && tutorialStep === null) {
+    if (!prewarm && isSceneReady && hasSeenOnboarding && !hasCompletedTutorial && tutorialStep === null) {
       const timer = setTimeout(() => startTutorial(), 1500)
       return () => clearTimeout(timer)
     }
-  }, [isSceneReady, hasSeenOnboarding, hasCompletedTutorial, tutorialStep, startTutorial])
+  }, [prewarm, isSceneReady, hasSeenOnboarding, hasCompletedTutorial, tutorialStep, startTutorial])
 
   const allFilms = useMemo(() => {
     const seen = new Set<number>()
@@ -862,8 +877,14 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
     }
   }, [isMobile])
 
+  // Mode préchauffage : la scène est montée, cachée, pendant que le visiteur regarde la
+  // devanture — device GPU, modèles, jaquettes et compilation des shaders se font là. Rien
+  // d'autre ne doit exister : ni contrôles, ni interface, ni tutoriel.
   return (
-    <div style={{ position: 'fixed', inset: 0, touchAction: 'none' }}>
+    <div
+      aria-hidden={prewarm || undefined}
+      style={{ position: 'fixed', inset: 0, touchAction: 'none', visibility: prewarm ? 'hidden' : 'visible', pointerEvents: prewarm ? 'none' : undefined }}
+    >
       <Canvas
         // « shadows » nu vaut 'soft' chez R3F = PCFSoftShadowMap, SUPPRIMÉ en r186 (PR #33987),
         // et R3F l'applique APRÈS la fabrique gl. 'percentage' = PCFShadowMap.
@@ -1092,6 +1113,16 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
           }
 
           const tryReady = () => {
+            // Sur desktop, la compilation des shaders attend que le visiteur soit entré.
+            // Derrière la devanture, tout le reste se prépare (device GPU, modèles, textures,
+            // jaquettes), mais pas elle : la devanture desktop est une scène WebGL animée, et le
+            // processus GPU occupé à compiler ne la sert plus — mesuré à froid : 7,6 s d'images
+            // figées cumulées, dont un gel de 2,6 s. Sur mobile la devanture est une image fixe :
+            // rien à faire saccader, on compile tout de suite.
+            if (prewarmRef.current && !isMobileRef.current) {
+              requestAnimationFrame(tryReady)
+              return
+            }
             // Wait for PostProcessing instance to be ready before warmup.
             if (!(window as unknown as { __postProcessing?: unknown }).__postProcessing) {
               // Hard timeout safety net — never block the user forever.
@@ -1219,11 +1250,13 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
               isMobile={isMobile}
               mobileInputRef={mobileInputRef}
               benchmarkMode={benchmarkMode}
+              prewarm={prewarm}
             />
           </Suspense>
         </SceneErrorBoundary>
       </Canvas>
 
+      {!prewarm && (<>
       {gpuError && (
         <div
           style={{
@@ -1361,6 +1394,7 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
 
       {/* Onboarding — first launch only */}
       {!hasSeenOnboarding && <MobileOnboarding isMobile={isMobile} />}
+      </>)}
     </div>
   )
 }

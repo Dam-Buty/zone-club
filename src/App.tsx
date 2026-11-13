@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef, lazy, Suspense } from 'react';
+import { useEffect, useLayoutEffect, useState, useCallback, useRef, lazy, Suspense } from 'react';
 import { useStore } from './store';
 import { preloadPosterImage } from './utils/CassetteTextureArray';
 import './utils/asset-preload'; // Side-effect import: registers the HDR/KTX2/wasm prefetch (starts once the storefront is shown)
@@ -392,10 +392,18 @@ function App() {
   const [loadingDismissed, setLoadingDismissed] = useState(false);
   const [loaderCanFade, setLoaderCanFade] = useState(false);
   const loaderMountRef = useRef(0);
+  // Fondu depuis le noir quand on entre dans une scène déjà préchauffée.
+  const [entryFade, setEntryFade] = useState(false);
+  // Scène intérieure montée, cachée, pendant que le visiteur regarde la devanture.
+  const [interiorPrewarm, setInteriorPrewarm] = useState(false);
   useEffect(() => {
-    if (currentScene === 'interior' && loaderMountRef.current === 0) {
-      loaderMountRef.current = Date.now();
-    }
+    // La vanne s'ouvre quand la devanture est affichée ; on laisse encore son fondu
+    // d'apparition (0,8 s) se terminer avant de demander quoi que ce soit au GPU.
+    let timer = 0;
+    afterStorefront(() => { timer = window.setTimeout(() => setInteriorPrewarm(true), 800); });
+    return () => window.clearTimeout(timer);
+  }, []);
+  useEffect(() => {
     // Pre-load the Google Cast SDK as soon as the user enters the videoclub
     // so it is ready by the time they open the player. Previously the SDK
     // only started loading when VHSPlayer mounted (lazy import), which
@@ -411,18 +419,38 @@ function App() {
   useEffect(() => {
     if (currentScene === 'interior') releaseInteriorPreload();
   }, [currentScene]);
-  useEffect(() => {
-    if (isSceneReady) {
-      const elapsed = Date.now() - loaderMountRef.current;
-      const remaining = Math.max(0, 2000 - elapsed);
-      const t1 = setTimeout(() => setLoaderCanFade(true), remaining);
-      const t2 = setTimeout(() => setLoadingDismissed(true), remaining + 1400); // fade + buffer
-      return () => { clearTimeout(t1); clearTimeout(t2); };
-    } else {
+  // Écran de chargement. Trois cas à l'entrée dans la boutique :
+  //  - scène déjà préchauffée derrière la devanture → pas d'écran du tout, un fondu depuis le noir ;
+  //  - préchauffage encore en cours → l'écran s'affiche, 2 s au minimum, puis se fond ;
+  //  - retour à la devanture → tout est remis à zéro.
+  // useLayoutEffect : l'état doit être posé avant la première image de l'intérieur, sinon
+  // l'écran de chargement clignote une image sur une scène pourtant prête.
+  useLayoutEffect(() => {
+    if (currentScene !== 'interior') {
+      loaderMountRef.current = 0;
       setLoadingDismissed(false);
       setLoaderCanFade(false);
+      return;
     }
-  }, [isSceneReady]);
+    const justEntered = loaderMountRef.current === 0;
+    if (justEntered) loaderMountRef.current = Date.now();
+    if (!isSceneReady) {
+      setLoadingDismissed(false);
+      setLoaderCanFade(false);
+      return;
+    }
+    if (justEntered) {
+      setLoadingDismissed(true);
+      setEntryFade(true);
+      const t = setTimeout(() => setEntryFade(false), 700);
+      return () => clearTimeout(t);
+    }
+    const elapsed = Date.now() - loaderMountRef.current;
+    const remaining = Math.max(0, 2000 - elapsed);
+    const t1 = setTimeout(() => setLoaderCanFade(true), remaining);
+    const t2 = setTimeout(() => setLoadingDismissed(true), remaining + 1400); // fade + buffer
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [currentScene, isSceneReady]);
 
 
   // Restore auth session from cookie on mount + load board notes
@@ -533,22 +561,36 @@ function App() {
     return <WebGPUNotSupported />;
   }
 
-  // Exterior view
-  if (currentScene === 'exterior') {
-    return (
-      <Suspense fallback={null}>
-        <ExteriorView onEnter={handleEnterStore} />
-      </Suspense>
-    );
-  }
+  const isInterior = currentScene === 'interior';
 
-  // Interior view (3D scene) — VHSPlayer overlays on top, scene stays mounted
+  // La scène intérieure est montée dès que la devanture est affichée, cachée dessous, en
+  // mode préchauffage : device GPU, modèles, jaquettes et shaders se préparent pendant que le
+  // visiteur regarde la vitrine. À l'entrée, c'est le MÊME élément qui devient visible (même
+  // place dans l'arbre, donc pas de remontage) : le travail fait n'est pas refait.
   return (
     <>
       {/* 3D R3F + WebGPU Video Club Scene */}
-      <Suspense fallback={null}>
-        <InteriorScene onCassetteClick={handleFilmClick} />
-      </Suspense>
+      {(isInterior || interiorPrewarm) && (
+        <Suspense fallback={null}>
+          <InteriorScene onCassetteClick={handleFilmClick} prewarm={!isInterior} />
+        </Suspense>
+      )}
+
+      {/* Devanture — par-dessus la scène intérieure tant qu'on n'est pas entré */}
+      {!isInterior && (
+        <Suspense fallback={null}>
+          <ExteriorView onEnter={handleEnterStore} />
+        </Suspense>
+      )}
+
+      {isInterior && (<>
+      {/* Entrée dans une scène déjà préchauffée : fondu depuis le noir de la devanture */}
+      {entryFade && (
+        <>
+          <style>{`@keyframes entry-fade-out { from { opacity: 1 } to { opacity: 0 } }`}</style>
+          <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: '#000', pointerEvents: 'none', animation: 'entry-fade-out 0.6s ease forwards' }} />
+        </>
+      )}
 
       {/* FPS center reticule — visible only when pointer locked */}
       <Reticule />
@@ -655,6 +697,7 @@ function App() {
           onDismiss={dismissInstallPrompt}
         />
       )}
+      </>)}
     </>
   );
 }
