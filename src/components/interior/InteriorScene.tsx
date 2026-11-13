@@ -1008,6 +1008,23 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
             useStore.getState().setSceneReady(true)
           }
 
+          // ⚠️ three r187 — `compileAsync()` n'est plus réentrant.
+          //
+          // Depuis three PR #34816 (compilation des pipelines en parallèle), `compileAsync` garde
+          // son contexte dans un champ UNIQUE du renderer (`_precompilationState`), posé par
+          // `_beginPreCompile()` et remis à null par `_finishPreCompile()`. Deux appels qui se
+          // chevauchent se volent ce champ : le second `_finishPreCompile()` déstructure null
+          // (« Cannot destructure property 'useFrameBufferTarget' ») et, surtout, ne décrémente
+          // jamais `_callDepth`. Mesuré avec l'ancien code (4 appels non attendus par passe) :
+          // 36 rejets au chargement et `renderer._callDepth === 20` au repos au lieu de -1 (sa valeur
+          // initiale, retrouvée une fois les appels sérialisés).
+          //
+          // On ne lance donc un appel que si le précédent est terminé, en faisant tourner
+          // l'orientation d'une passe à l'autre. Le balayage `pp.render()` des 4 orientations,
+          // lui, reste synchrone et complet : c'est lui qui compile dans le bon contexte de cible.
+          let compileInFlight = false
+          let compileTurn = 0
+
           const runWarmup = (): boolean => {
             // 1. Disable frustum culling on every mesh → projectObject pushes ALL to
             //    the render list, so every pipeline variant gets compiled.
@@ -1039,8 +1056,18 @@ export function InteriorScene({ onCassetteClick }: InteriorSceneProps) {
                 tmpEuler.set(0, (i * Math.PI) / 2, 0)
                 state.camera.quaternion.setFromEuler(tmpEuler)
                 state.camera.updateMatrixWorld(true)
-                if (typeof renderer?.compileAsync === 'function') {
-                  void renderer.compileAsync(state.scene, state.camera)
+                if (
+                  !compileInFlight &&
+                  i === compileTurn % 4 &&
+                  typeof renderer?.compileAsync === 'function'
+                ) {
+                  compileInFlight = true
+                  compileTurn++
+                  Promise.resolve(renderer.compileAsync(state.scene, state.camera))
+                    .catch((e: unknown) => {
+                      console.warn('[warmup] compileAsync a échoué — repli sur la compilation au rendu', e)
+                    })
+                    .finally(() => { compileInFlight = false })
                 }
                 pp.render()
               }
