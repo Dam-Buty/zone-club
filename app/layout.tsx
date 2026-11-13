@@ -27,6 +27,13 @@ export default function RootLayout({
                 <link rel="preconnect" href="https://fonts.googleapis.com" />
                 <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
                 <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet" />
+                {/* La devanture est la première chose à l'écran : ses images partent avant les
+                    préchargements de l'intérieur. Les media reprennent useIsMobile (pointeur
+                    grossier OU largeur <= 768px = mobile). crossOrigin sur les deux images desktop :
+                    THREE.TextureLoader les demande en anonymous, sans ça le préchargement ne sert pas. */}
+                <link rel="preload" as="image" href="/storefront.jpeg" crossOrigin="anonymous" fetchPriority="high" media="(pointer: fine) and (min-width: 769px), (pointer: none) and (min-width: 769px)" />
+                <link rel="preload" as="image" href="/storefront-mask.png" crossOrigin="anonymous" fetchPriority="high" media="(pointer: fine) and (min-width: 769px), (pointer: none) and (min-width: 769px)" />
+                <link rel="preload" as="image" href="/storefront-mobile.webp" type="image/webp" fetchPriority="high" media="(pointer: coarse), (max-width: 768px)" />
                 {/* Preload critical assets for interior scene (start download before JS requests them) */}
                 <link rel="preload" href="/textures/env/indoor_night.hdr" as="fetch" crossOrigin="anonymous" />
                 <link rel="preload" href="/models/vhs_cassette_tape.glb" as="fetch" crossOrigin="anonymous" />

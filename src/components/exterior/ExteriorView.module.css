@@ -215,6 +215,24 @@
   50% { opacity: 1; }
 }
 
+/* ===== SHARED: rideau d'arrivée =====
+   Noir plein au-dessus de l'indicateur PUSH et du bouton tant que la devanture n'est pas
+   à l'écran, puis fondu. Sous le voile de sortie (z-index 10). */
+
+.curtain {
+  position: absolute;
+  inset: 0;
+  background: #000;
+  opacity: 1;
+  transition: opacity 0.8s ease;
+  z-index: 8;
+}
+
+.curtainOpen {
+  opacity: 0;
+  pointer-events: none;
+}
+
 /* ===== SHARED: transitions ===== */
 
 .fadeOut {

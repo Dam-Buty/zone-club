@@ -698,7 +698,14 @@ export class ExteriorScene {
   // Rain system (multiple layers for depth)
   private rainLayers: RainLayer[];
 
-  constructor(container: HTMLElement) {
+  // Devanture « affichée » = les deux images sont arrivées ET un rendu les a envoyées à l'écran.
+  // Tant que ce n'est pas le cas le quad est noir : la vue garde son rideau fermé.
+  private onStorefrontShown: (() => void) | null;
+  private texturesSettled = false;
+  private framesSinceSettled = 0;
+
+  constructor(container: HTMLElement, onStorefrontShown?: () => void) {
+    this.onStorefrontShown = onStorefrontShown ?? null;
     this.startTime = Date.now();
     this.bPhaseOffset = Math.random() * Math.PI * 2;
     this.nextVehicleTime = Date.now() + 2000;
@@ -724,11 +731,19 @@ export class ExteriorScene {
     // Load textures
     const textureLoader = new THREE.TextureLoader();
 
-    const storefrontTexture = textureLoader.load('/storefront.jpeg');
+    // Une image en échec compte comme « arrivée » : on préfère lever le rideau sur une
+    // devanture incomplète que laisser le visiteur devant un écran noir sans issue.
+    let pendingTextures = 2;
+    const onTextureSettled = () => {
+      pendingTextures -= 1;
+      if (pendingTextures === 0) this.texturesSettled = true;
+    };
+
+    const storefrontTexture = textureLoader.load('/storefront.jpeg', onTextureSettled, undefined, onTextureSettled);
     storefrontTexture.minFilter = THREE.LinearFilter;
     storefrontTexture.magFilter = THREE.LinearFilter;
 
-    const maskTexture = textureLoader.load('/storefront-mask.png');
+    const maskTexture = textureLoader.load('/storefront-mask.png', onTextureSettled, undefined, onTextureSettled);
     maskTexture.minFilter = THREE.LinearFilter;
     maskTexture.magFilter = THREE.LinearFilter;
 
@@ -855,9 +870,21 @@ export class ExteriorScene {
     }
 
     this.renderer.render(this.scene, this.camera);
+
+    // Le premier rendu après l'arrivée des images les téléverse sur le GPU ; on attend le
+    // suivant pour être sûr que l'image présentée est bien la devanture.
+    if (this.texturesSettled && this.onStorefrontShown) {
+      this.framesSinceSettled += 1;
+      if (this.framesSinceSettled >= 2) {
+        const notify = this.onStorefrontShown;
+        this.onStorefrontShown = null;
+        notify();
+      }
+    }
   };
 
   public dispose() {
+    this.onStorefrontShown = null;
     window.removeEventListener('resize', this.handleResize);
     cancelAnimationFrame(this.animationId);
     this.renderer.domElement.remove();
