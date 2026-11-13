@@ -21,6 +21,38 @@ Le service va :
 3. Lancer un ffmpeg long-running qui écrit le HLS dans `/media/public/symlinks/cinema-live/`
 4. lighttpd existant le sert automatiquement
 
+### Incrustation : titre + horloge
+
+Le flux est déjà réencodé (`libx264 veryfast`), donc le titre est incrusté dans
+l'image sans passe d'encodage supplémentaire — mesuré à **+3 % de CPU** et
+**+0,5 % de bande passante**.
+
+Le concat demuxer ne transporte aucune métadonnée par fichier : ffmpeg ne sait
+pas quel film il joue. La synchronisation passe donc par un fichier `sendcmd`
+généré en même temps que la liste concat (`buildOverlayCommands()` dans
+`src/overlay.ts`), avec une commande `drawtext reinit` par film, horodatée sur
+la timeline du process. L'horloge est une expression `%{eif}` réévaluée à chaque
+frame : aucun I/O, aucun couplage à l'horloge système, et elle repart de zéro à
+chaque film.
+
+Seuls **3 passages** de playlist sont couverts (et non les 50 de la liste
+concat) : `sendcmd` garde chaque commande en mémoire, ~14 Ko de RSS par cue —
+mesuré +267 Mo pour 50 passages contre +20 Mo pour 3. Trois passages couvrent
+~93 jours d'uptime continu, et le fichier est régénéré à chaque respawn.
+
+Format aligné sur le statut du bot Discord : `Titre (Année) — 1:23:45 / 2:06:00`.
+
+Pièges de l'échappement (trois niveaux : sendcmd → options du filtre →
+expansion drawtext) :
+- `:` doit être écrit `\:` (les titres en contiennent)
+- `%` doit être doublé (`%%`)
+- `sendcmd` n'accepte qu'un seul `key=value` par commande et coupe aux espaces :
+  pour réinitialiser plusieurs options, quoter **tout** l'argument
+  (`reinit 'text=…:fontsize=38'`)
+- la police (`fonts-dejavu-core`) est installée explicitement dans le Dockerfile
+
+`tests/media/cinema-overlay.test.mjs` fige le format des commandes.
+
 Vérifie que ça marche depuis ton navigateur :
 ```
 https://${STORAGE_SUBDOMAIN}.${DOMAIN}/cinema-live/live.m3u8

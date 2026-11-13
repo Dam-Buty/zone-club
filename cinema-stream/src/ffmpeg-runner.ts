@@ -4,7 +4,10 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { HLS_OUT_DIR } from "./config.ts";
 import { type PlaylistState, currentPosition } from "./playlist.ts";
+import { buildOverlayCommands, overlayFilter } from "./overlay.ts";
 
+// Passages dans la liste concat : simule une boucle infinie sans logique de
+// bouclage. L'incrustation, elle, n'en couvre que OVERLAY_PASSES (cf. overlay.ts).
 const REPEAT_PASSES = 50;
 const HLS_SEGMENT_SEC = 4;
 const HLS_LIST_SIZE = 6;
@@ -102,6 +105,17 @@ export class FfmpegSupervisor {
     const concat = buildConcatList(this.state, pos.index, pos.offsetSec);
     writeFileSync(concatPath, concat);
 
+    const overlayPath = join(tmpdir(), `cinema-overlay-${Date.now()}.txt`);
+    const overlay = buildOverlayCommands(this.state, pos.index, pos.offsetSec);
+    writeFileSync(overlayPath, overlay);
+    console.log(
+      `[ffmpeg] overlay: ${overlay.split("\n").length - 1} cues, ${(overlay.length / 1024).toFixed(0)} KiB`,
+    );
+
+    // `sendcmd` en tête de chaîne : il réinjecte les `reinit` dans le drawtext
+    // nommé (@ov) aux frontières de films, sans quitter le filtre vidéo.
+    const videoFilter = overlayFilter(overlayPath);
+
     const playlistPath = join(HLS_OUT_DIR, "live.m3u8");
 
     const args = [
@@ -115,6 +129,8 @@ export class FfmpegSupervisor {
       "0",
       "-i",
       concatPath,
+      "-vf",
+      videoFilter,
       "-c:v",
       "libx264",
       "-preset",
@@ -157,6 +173,9 @@ export class FfmpegSupervisor {
       this.proc = null;
       try {
         unlinkSync(concatPath);
+      } catch {}
+      try {
+        unlinkSync(overlayPath);
       } catch {}
       if (this.stopped) return;
       setTimeout(() => this.spawnFfmpeg(), RESTART_DELAY_MS);
