@@ -32,11 +32,12 @@ const SHARPEN_AMOUNT = 0.4
 export function PostProcessingEffects({ isMobile = false }: PostProcessingEffectsProps) {
   const { gl: renderer, scene, camera } = useThree()
   const postProcessingRef = useRef<THREE.PostProcessing | null>(null)
+  // Chaîne « K7 en main » (flou de profondeur) — desktop seulement, construite une fois.
+  const postProcessingOpenRef = useRef<THREE.PostProcessing | null>(null)
   const bokehRef = useRef<ReturnType<typeof uniform> | null>(null)
   const bloomStrengthRef = useRef<ReturnType<typeof uniform> | null>(null)
   const bloomBaseStrength = isMobile ? 0.12 : 0.18
   const isVHSCaseOpen = useStore(state => state.isVHSCaseOpen)
-  const dofTrigger = isMobile ? false : isVHSCaseOpen
 
   useEffect(() => {
     const postProcessing = new THREE.PostProcessing(renderer as unknown as THREE.WebGPURenderer)
@@ -72,7 +73,19 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
 
     } else {
       // ===== DESKTOP PIPELINE =====
-      // Scene MRT → SSGI (temporal) → Bloom → DoF → Vignette → FXAA
+      // Scene → Bloom → (DoF, K7 en main seulement) → Vignette → SMAA → sharpen
+      //
+      // ⚠️ DEUX chaînes, construites UNE fois, qui partagent la passe de scène et le bloom.
+      //
+      // Avant, le flou de profondeur n'était ajouté que quand une K7 était ouverte, et son
+      // déclencheur figurait dans les dépendances de cet effet : toute la chaîne était donc
+      // détruite et reconstruite à CHAQUE ouverture et à CHAQUE fermeture de cassette, et ses
+      // passes recompilées. Mesuré sur main (three r186, Mac M4, cache chaud), pour les seules
+      // passes de post-traitement : 20 pipelines à la première ouverture, 8 aux suivantes, 3 à
+      // chaque fermeture. (Le gros des à-coups venait d'ailleurs : les rayonnages recréaient
+      // leurs matériaux au même moment — voir useKTX2Textures.)
+      //
+      // On garde donc les deux graphes en vie et on choisit lequel rendre dans useFrame.
 
       // 1. Scene pass (no MRT — SSGI disabled)
       const scenePass = pass(scene, camera)
@@ -82,36 +95,56 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
       // SSGI disabled — too expensive (~3× frame time)
       // TODO: re-enable with lower settings or on high-end GPUs only
 
-      // 3. Bloom
-      const bloomStrength = uniform(isVHSCaseOpen ? 0.0 : bloomBaseStrength)
+      // 2. Bloom — force pilotée par un uniform (ramenée à 0 quand une K7 est ouverte)
+      const bloomStrength = uniform(bloomBaseStrength)
       bloomStrengthRef.current = bloomStrength
       const bloomPass = bloom(scenePassColor, 0.32, bloomStrength, 0.70)
       const withBloom = scenePassColor.add(bloomPass)
 
-      // 4. Conditional DoF — only when VHS case viewer is open
-      let postBloom = withBloom
-
-      if (isVHSCaseOpen) {
-        const scenePassViewZ = scenePass.getViewZNode()
-        const bokehScale = uniform(0)
-        bokehRef.current = bokehScale
-        postBloom = dof(withBloom, scenePassViewZ, 0.4725, 1.0, bokehScale)
-      }
-
-      // 5. Vignette + AA (SMAA, desktop) + final RCAS sharpen
-      const withVignette = applyVignette(postBloom)
+      // 3. Chaîne normale : Vignette → SMAA → RCAS sharpen
       // SMAA (sharper edge AA than FXAA — less overall blur). Desktop only; mobile
       // keeps FXAA for cost. Then a final RCAS sharpen for crispness, no extra VRAM.
-      const withAA = smaa(withVignette)
-      postProcessing.outputNode = sharpen(withAA, SHARPEN_AMOUNT)
+      postProcessing.outputNode = sharpen(smaa(applyVignette(withBloom)), SHARPEN_AMOUNT)
+
+      // 4. Chaîne « K7 en main » : la même, avec le flou de profondeur avant la vignette.
+      const scenePassViewZ = scenePass.getViewZNode()
+      const bokehScale = uniform(0)
+      bokehRef.current = bokehScale
+      const withDof = dof(withBloom, scenePassViewZ, 0.4725, 1.0, bokehScale)
+      const postProcessingOpen = new THREE.PostProcessing(renderer as unknown as THREE.WebGPURenderer)
+      postProcessingOpen.outputNode = sharpen(
+        smaa(applyVignette(withDof as unknown as ReturnType<typeof pass>)),
+        SHARPEN_AMOUNT,
+      )
+      postProcessingOpenRef.current = postProcessingOpen
     }
 
     postProcessingRef.current = postProcessing
-    // Expose for the scene-ready gate (InteriorScene) so it can warmup pipelines
-    // in the PostProcessing render-target context (HalfFloat) — pipelines compiled
-    // for the default RT in compileAsync are useless here, the actual render uses
-    // PassNode's render target which has a different format.
-    ;(window as unknown as { __postProcessing?: THREE.PostProcessing }).__postProcessing = postProcessing
+    // Exposé pour le préchauffage (InteriorScene), qui compile d'abord toute la scène en
+    // asynchrone (voir __scenePassCompile ci-dessous), puis appelle `render()` en boucle, tous
+    // meshes forcés visibles, jusqu'au plateau des pipelines.
+    //
+    // ⚠️ Tant que la scène n'est pas préchauffée, un appel sur deux rend la chaîne « K7 en main ».
+    // Les matériaux de la scène ont besoin de leurs propres pipelines quand ils sont rendus à
+    // travers elle : sans ça, la première ouverture de cassette en compilait une vingtaine en
+    // pleine boucle de rendu (mesuré : 21 pipelines, ~460 ms à chaud, ~2 s à froid, à l'étape 2
+    // de la visite guidée). La chaîne doit être rendue sur la scène COMPLÈTE : la rendre sur
+    // les premières images, scène encore vide, ne compile que ses propres passes.
+    // Le critère est `interiorWarm`, pas `isSceneReady` : devant la devanture `isSceneReady`
+    // est déjà vrai alors que la scène, montée cachée, n'a encore rien compilé.
+    let warmCalls = 0
+    const exposed = {
+      renderer: postProcessing.renderer,
+      render: () => {
+        const open = postProcessingOpenRef.current
+        if (open && !useStore.getState().interiorWarm && warmCalls++ % 2 === 1) {
+          open.render()
+        } else {
+          postProcessing.render()
+        }
+      },
+    }
+    ;(window as unknown as { __postProcessing?: typeof exposed }).__postProcessing = exposed
     // Compilation ASYNCHRONE de tous les pipelines de la scène, dans le contexte exact de la passe
     // (cible HalfFloat) : `PassNode.compileAsync` existe pour ça depuis three r187. Les pipelines
     // sont créés par `createRenderPipelineAsync`, donc compilés en parallèle par le processus GPU,
@@ -177,17 +210,19 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
 
     return () => {
       postProcessing.dispose()
+      postProcessingOpenRef.current?.dispose()
+      postProcessingOpenRef.current = null
       postProcessingRef.current = null
       bokehRef.current = null
       bloomStrengthRef.current = null
-      ;(window as unknown as { __postProcessing?: THREE.PostProcessing | null }).__postProcessing = null
+      ;(window as unknown as { __postProcessing?: unknown }).__postProcessing = null
       ;(window as unknown as { __scenePassCompile?: (() => Promise<void>) | null }).__scenePassCompile = null
       ;(window as unknown as { __scenePassCompileObject?: unknown }).__scenePassCompileObject = null
     }
-    // Ces deux valeurs passent par des refs : les mettre en deps reconstruirait toute la chaîne de
-    // post-processing à chaque ouverture de K7, ce que les refs existent justement pour éviter.
+    // `bloomBaseStrength` ne dépend que de `isMobile`. L'état « K7 ouverte » n'est PAS une
+    // dépendance : il ne fait que choisir la chaîne à rendre (voir useFrame).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [renderer, scene, camera, isMobile, dofTrigger])
+  }, [renderer, scene, camera, isMobile])
 
   const renderAccumRef = useRef(0)
   const isTerminalOpen = useStore(state => state.isTerminalOpen)
@@ -221,9 +256,15 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
 
     // Lerp the post uniforms every tick (cheap; keeps transitions smooth even when
     // the render itself is throttled, since transitions force the ACTIVE budget below).
-    if (isVHSCaseOpen && bokehRef.current) {
-      const target = 4.0
-      bokehRef.current.value += (target - bokehRef.current.value) * Math.min(delta * 8, 1)
+    if (bokehRef.current) {
+      if (isVHSCaseOpen) {
+        const target = 4.0
+        bokehRef.current.value += (target - bokehRef.current.value) * Math.min(delta * 8, 1)
+      } else {
+        // L'uniform survit désormais d'une ouverture à l'autre : on le remet à zéro à la
+        // fermeture pour que le flou reparte de rien à la prochaine cassette.
+        bokehRef.current.value = 0
+      }
     }
     if (bloomStrengthRef.current) {
       const bloomTarget = isVHSCaseOpen ? 0.0 : bloomBaseStrength
@@ -255,7 +296,12 @@ export function PostProcessingEffects({ isMobile = false }: PostProcessingEffect
     // — tab switch, GC pause — can't unleash a burst of catch-up renders.
     renderAccumRef.current = Math.min(renderAccumRef.current - interval, interval)
 
-    pp.render()
+    const ppOpen = postProcessingOpenRef.current
+    if (isVHSCaseOpen && ppOpen) {
+      ppOpen.render()
+    } else {
+      pp.render()
+    }
   }, 1)
 
   return null
