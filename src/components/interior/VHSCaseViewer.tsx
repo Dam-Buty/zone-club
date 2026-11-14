@@ -53,6 +53,168 @@ const TEXTURE_FADE_DURATION = 0.3 // seconds for cover artwork fade-in
 const SLIDE_DURATION = 1.5       // seconds for slide-in navigation animation
 const SLIDE_DISTANCE = 0.85      // world units — enough to start off-screen
 
+/**
+ * Clone le modèle du boîtier et relève les meshes qui portent la jaquette.
+ *
+ * Partagé entre le lecteur de boîtier et son préchauffage : les deux doivent produire
+ * exactement les mêmes matériaux, donc les mêmes shaders.
+ */
+function prepareCaseScene(glbScene: THREE.Object3D): { clonedScene: THREE.Object3D; meshesWithMap: THREE.Mesh[] } {
+  // Clone model and collect meshes that have a baseColor map (cover surfaces only)
+  // CRITICAL: clone materials explicitly — glbScene.clone(true) shares materials by reference.
+  // Without this, setting mat.map=null or colorNode on a shared material corrupts future instances.
+  const cloned = glbScene.clone(true)
+  const meshes: THREE.Mesh[] = []
+
+  cloned.traverse((child) => {
+    if (child instanceof THREE.Mesh) {
+      child.castShadow = false
+      child.receiveShadow = false
+      const origMat = child.material as THREE.MeshStandardMaterial
+      if (origMat) {
+        // Deep-clone material so original GLB materials stay pristine
+        const mat = origMat.clone()
+        child.material = mat
+        // Matte VHS cardboard — no IBL sampling (perf: PMREM cubemap per-fragment is expensive)
+        mat.roughness = 1.0
+        mat.metalness = 0
+        mat.envMap = null
+        mat.envMapIntensity = 0
+        // Kill clearcoat/sheen if GLB model has them
+        if ('clearcoat' in mat) (mat as TSLStandardMaterial).clearcoat = 0
+        if ('sheen' in mat) (mat as TSLStandardMaterial).sheen = 0
+        mat.color.copy(ALBEDO_COLOR)
+        if (mat.map) {
+          // Only include cover surfaces (1024×1024 atlas), not tape/reel meshes
+          const mapImg = mat.map.image as { width?: number; height?: number } | null
+          if (!mapImg || ((mapImg.width ?? 0) >= 512 && (mapImg.height ?? 0) >= 512)) {
+            meshes.push(child)
+            // Hide GLB original texture immediately to prevent upside-down flash
+            // (GLB atlas has different flipY than our generated cover texture)
+            mat.map = null
+          }
+        }
+      }
+    }
+  })
+
+  return { clonedScene: cloned, meshesWithMap: meshes }
+}
+
+/**
+ * Branche la jaquette sur les meshes du boîtier par un colorNode TSL, avec fondu.
+ * Rend l'uniform de fondu (0 = boîtier vierge, 1 = jaquette).
+ */
+function applyCoverNodes(meshesWithMap: THREE.Mesh[], tex: THREE.CanvasTexture): { value: number } {
+  const bumpTex = tex.userData.bumpMap as THREE.CanvasTexture | undefined
+  const texNode = texture(tex)
+  const albedoBase = float(1.0)
+  const normalizedHeight = tslClamp(positionLocal.x.add(1.0).div(2.0), 0.0, 1.0)
+  const correction = mix(float(1.03), float(0.97), normalizedHeight)
+  const correctedColor = texNode.mul(albedoBase).mul(correction)
+
+  const fadeU = uniform(0.0)
+  const blankColor = vec3(0.5, 0.5, 0.5)
+  const fadedColor = mix(blankColor, correctedColor, fadeU)
+
+  for (const mesh of meshesWithMap) {
+    const mat = mesh.material as THREE.MeshStandardMaterial
+    mat.map = null
+    ;(mat as TSLStandardMaterial).colorNode = fadedColor
+    if (bumpTex) {
+      ;(mat as TSLStandardMaterial).normalNode = bumpMap(texture(bumpTex), 1.2)
+    }
+    mat.needsUpdate = true
+  }
+  return fadeU as unknown as { value: number }
+}
+
+/** Jaquette factice 4×4, réglée comme une vraie (voir generateVHSCoverTexture). */
+function createWarmupCoverTexture(): THREE.CanvasTexture {
+  const blank = () => {
+    const c = document.createElement('canvas')
+    c.width = 4
+    c.height = 4
+    return c
+  }
+  const bump = new THREE.CanvasTexture(blank())
+  bump.flipY = false
+  bump.anisotropy = 16
+  const tex = new THREE.CanvasTexture(blank())
+  tex.colorSpace = THREE.SRGBColorSpace
+  tex.flipY = false
+  tex.anisotropy = 16
+  tex.userData.bumpMap = bump
+  return tex
+}
+
+/**
+ * Précompile les pipelines du boîtier pendant l'écran de chargement.
+ *
+ * Le boîtier n'existe dans la scène que lorsqu'une cassette est ouverte : ses shaders se
+ * compilaient donc à la première ouverture, en pleine boucle de rendu. Mesuré sur un cache de
+ * shaders froid (premier visiteur) : deux gels de 898 et 766 ms à l'étape 2 de la visite guidée.
+ *
+ * On pose donc, hors champ, deux boîtiers dans les deux états que le vrai traverse : vierge
+ * (avant l'arrivée de la jaquette) et jaquette appliquée. Le balayage de préchauffage les rend
+ * à travers les deux chaînes de post-traitement, ce qui fait compiler leurs shaders par le
+ * pilote graphique.
+ *
+ * Le critère est `interiorWarm` (« la scène montée a fini son préchauffage »), pas
+ * `isSceneReady` : devant la devanture, `isSceneReady` est déjà vrai alors que la scène,
+ * montée cachée, n'a encore rien compilé — les boîtiers ne seraient jamais posés.
+ *
+ * ⚠️ Ils sont DÉTRUITS dès que la scène est préchauffée — les garder en vie casse le vrai boîtier.
+ * three met en commun l'état de construction de deux matériaux dont le graphe de nœuds a la
+ * même structure : le vrai boîtier héritait alors de la jaquette factice et de l'uniform de
+ * fondu du boîtier de préchauffage, resté à zéro, et s'affichait gris, sans jaquette (constaté
+ * à la capture d'écran). Une fois détruits, le vrai boîtier construit son propre état ; il
+ * recrée ses pipelines, mais les shaders sont déjà dans le cache du pilote.
+ */
+export function VHSCaseWarmup() {
+  const isWarm = useStore((state) => state.interiorWarm)
+  const { scene: glbScene } = useGLTF('/models/vhs_cassette_tape.glb', true)
+
+  const { blankCase, coveredCase, cover } = useMemo(() => {
+    const blank = prepareCaseScene(glbScene)
+    const covered = prepareCaseScene(glbScene)
+    const cover = createWarmupCoverTexture()
+    applyCoverNodes(covered.meshesWithMap, cover)
+    for (const root of [blank.clonedScene, covered.clonedScene]) {
+      // Hors champ en permanence : sans ça ils seraient écartés par le test de visibilité.
+      root.traverse((child) => { child.frustumCulled = false })
+    }
+    return { blankCase: blank.clonedScene, coveredCase: covered.clonedScene, cover }
+  }, [glbScene])
+
+  // Libération : à l'instant où la scène est préchauffée, et au démontage.
+  useEffect(() => {
+    const release = () => {
+      ;(cover.userData.bumpMap as THREE.Texture | undefined)?.dispose()
+      cover.dispose()
+      for (const root of [blankCase, coveredCase]) {
+        root.traverse((child) => {
+          if (child instanceof THREE.Mesh) (child.material as THREE.Material).dispose()
+        })
+      }
+    }
+    if (isWarm) {
+      release()
+      return
+    }
+    return release
+  }, [isWarm, blankCase, coveredCase, cover])
+
+  if (isWarm) return null
+
+  return (
+    <group position={[0, -50, 0]} scale={0.01}>
+      <primitive object={blankCase} />
+      <primitive object={coveredCase} />
+    </group>
+  )
+}
+
 interface VHSCaseViewerProps {
   film: Film
 }
@@ -93,47 +255,7 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
   // Load the GLB
   const { scene: glbScene } = useGLTF('/models/vhs_cassette_tape.glb', true)
 
-  // Clone model and collect meshes that have a baseColor map (cover surfaces only)
-  // CRITICAL: clone materials explicitly — glbScene.clone(true) shares materials by reference.
-  // Without this, setting mat.map=null or colorNode on a shared material corrupts future instances.
-  const { clonedScene, meshesWithMap } = useMemo(() => {
-    const cloned = glbScene.clone(true)
-    const meshes: THREE.Mesh[] = []
-
-    cloned.traverse((child) => {
-      if (child instanceof THREE.Mesh) {
-        child.castShadow = false
-        child.receiveShadow = false
-        const origMat = child.material as THREE.MeshStandardMaterial
-        if (origMat) {
-          // Deep-clone material so original GLB materials stay pristine
-          const mat = origMat.clone()
-          child.material = mat
-          // Matte VHS cardboard — no IBL sampling (perf: PMREM cubemap per-fragment is expensive)
-          mat.roughness = 1.0
-          mat.metalness = 0
-          mat.envMap = null
-          mat.envMapIntensity = 0
-          // Kill clearcoat/sheen if GLB model has them
-          if ('clearcoat' in mat) (mat as TSLStandardMaterial).clearcoat = 0
-          if ('sheen' in mat) (mat as TSLStandardMaterial).sheen = 0
-          mat.color.copy(ALBEDO_COLOR)
-          if (mat.map) {
-            // Only include cover surfaces (1024×1024 atlas), not tape/reel meshes
-            const mapImg = mat.map.image as { width?: number; height?: number } | null
-            if (!mapImg || ((mapImg.width ?? 0) >= 512 && (mapImg.height ?? 0) >= 512)) {
-              meshes.push(child)
-              // Hide GLB original texture immediately to prevent upside-down flash
-              // (GLB atlas has different flipY than our generated cover texture)
-              mat.map = null
-            }
-          }
-        }
-      }
-    })
-
-    return { clonedScene: cloned, meshesWithMap: meshes }
-  }, [glbScene])
+  const { clonedScene, meshesWithMap } = useMemo(() => prepareCaseScene(glbScene), [glbScene])
 
   // Signal VHS case is open + save camera pitch + dim scene overhead lights
   useEffect(() => {
@@ -207,28 +329,7 @@ export function VHSCaseViewer({ film }: VHSCaseViewerProps) {
 
     // Helper: apply texture to GLB meshes via TSL colorNode (called once for pass 1)
     const applyTexture = (tex: THREE.CanvasTexture) => {
-      const bumpTex = tex.userData.bumpMap as THREE.CanvasTexture | undefined
-      const texNode = texture(tex)
-      const albedoBase = float(1.0)
-      const normalizedHeight = tslClamp(positionLocal.x.add(1.0).div(2.0), 0.0, 1.0)
-      const correction = mix(float(1.03), float(0.97), normalizedHeight)
-      const correctedColor = texNode.mul(albedoBase).mul(correction)
-
-      const fadeU = uniform(0.0)
-      fadeUniformRef.current = fadeU
-      const blankColor = vec3(0.5, 0.5, 0.5)
-      const fadedColor = mix(blankColor, correctedColor, fadeU)
-
-      for (const mesh of meshesWithMap) {
-        const mat = mesh.material as THREE.MeshStandardMaterial
-        mat.map = null
-        ;(mat as TSLStandardMaterial).colorNode = fadedColor
-        if (bumpTex) {
-          ;(mat as TSLStandardMaterial).normalNode = bumpMap(texture(bumpTex), 1.2)
-        }
-        mat.needsUpdate = true
-      }
-
+      fadeUniformRef.current = applyCoverNodes(meshesWithMap, tex)
       coverTextureRef.current = tex
       textureReadyRef.current = true
     }
