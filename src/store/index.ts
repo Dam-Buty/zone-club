@@ -4,6 +4,7 @@ import type { Film, Rental, AisleType, SceneType, MemberLevel, AuthUser, LocalUs
 import api, { apiFilmToFilm, type ApiRentalWithFilm, type ApiFilm, type ReviewWithUser, type ApiReturnRequest, type WeeklyBonusStatus, type ApiBoardNote, type BoardCapacity } from '../api';
 import { preloadPosterImage } from '../utils/CassetteTextureArray';
 import { fetchVHSCoverData } from '../utils/VHSCoverGenerator';
+import { parseServerDate } from '../utils/server-date';
 import { createManagerSlice } from './slices/manager';
 import { createTutorialSlice, TUTORIAL_WAYPOINTS } from './slices/tutorial';
 
@@ -23,13 +24,14 @@ function calculateLevel(totalRentals: number): MemberLevel {
 function apiRentalToRental(apiRental: ApiRentalWithFilm): Rental {
   return {
     filmId: apiRental.film_id,
-    rentedAt: new Date(apiRental.rented_at).getTime(),
-    expiresAt: new Date(apiRental.expires_at).getTime(),
+    // Dates du serveur : UTC sans fuseau — parseServerDate, jamais new Date() (heure locale).
+    rentedAt: parseServerDate(apiRental.rented_at),
+    expiresAt: parseServerDate(apiRental.expires_at),
     videoUrl: apiRental.streaming_urls.vf || apiRental.streaming_urls.vo || '',
     streamingUrls: apiRental.streaming_urls,
     watchProgress: apiRental.watch_progress ?? 0,
     watchPosition: apiRental.watch_position ?? 0,
-    watchCompletedAt: apiRental.watch_completed_at ? new Date(apiRental.watch_completed_at).getTime() : null,
+    watchCompletedAt: apiRental.watch_completed_at ? parseServerDate(apiRental.watch_completed_at) : null,
     extensionUsed: !!apiRental.extension_used,
     rewindClaimed: !!apiRental.rewind_claimed,
     viewingMode: (apiRental.viewing_mode as 'sur_place') ?? null,
@@ -417,7 +419,7 @@ export const useStore = create<VideoClubState>()(
         try {
           const data = await api.me.get();
           // SQLite stores naive-UTC datetimes ("YYYY-MM-DD HH:MM:SS"); normalise to ISO-UTC before parsing.
-          const toMs = (s: string | null | undefined) => (s ? Date.parse(s.replace(' ', 'T') + 'Z') : NaN);
+          const toMs = parseServerDate;
           set({
             isAuthenticated: true,
             authUser: data.user,
