@@ -39,6 +39,8 @@ const BoardOverlay = lazy(() => import('./components/board/BoardOverlay'));
 const VHSPlayer = lazy(() => import('./components/player/VHSPlayer').then(m => ({ default: m.VHSPlayer })));
 const ActiveCastIndicator = lazy(() => import('./components/player/ActiveCastIndicator').then(m => ({ default: m.ActiveCastIndicator })));
 const MinitelOverlay = lazy(() => import('./components/minitel/MinitelOverlay').then(m => ({ default: m.MinitelOverlay })));
+// Borne de location : du DOM pur, aucun rendu 3D — son chunk ne part qu'à l'ouverture de la borne.
+const KioskView = lazy(() => import('./components/kiosk/KioskView').then(m => ({ default: m.KioskView })));
 
 // Preload heavy interior assets (HDR, PBR textures, GLBs) while user is on exterior/onboarding.
 // These fire HTTP requests as soon as the interior chunk is in — by the time the user enters, assets are in browser cache.
@@ -97,75 +99,6 @@ _prefetchPromise.then((results) => {
     }
   });
 });
-
-function detectBrowser(): string {
-  const ua = navigator.userAgent;
-  if (ua.includes('Firefox')) return 'firefox';
-  if (ua.includes('Safari') && !ua.includes('Chrome')) return 'safari';
-  if (ua.includes('Chrome')) return 'chrome';
-  return 'other';
-}
-
-function WebGPUNotSupported() {
-  const browser = detectBrowser();
-  return (
-    <div style={{
-      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-      height: '100vh', backgroundColor: '#0a0a0a', color: '#ff2d95',
-      fontFamily: 'Orbitron, sans-serif', textAlign: 'center', padding: '2rem',
-    }}>
-      <h1 style={{ fontSize: '2rem', textShadow: '0 0 20px #ff2d95', marginBottom: '1rem' }}>
-        WebGPU non disponible
-      </h1>
-      <p style={{ color: '#ccc', fontFamily: 'sans-serif', maxWidth: '560px', lineHeight: 1.7, marginBottom: '1.5rem' }}>
-        Ce vidéoclub utilise WebGPU pour le rendu 3D.
-      </p>
-      <div style={{
-        color: '#aaa', fontFamily: 'sans-serif', maxWidth: '560px', lineHeight: 1.8,
-        textAlign: 'left', fontSize: '0.9rem',
-      }}>
-        {browser === 'chrome' && (
-          <>
-            <p style={{ color: '#00e5ff', fontWeight: 'bold', marginBottom: '0.5rem' }}>Chrome / Edge</p>
-            <p>WebGPU est actif par defaut depuis Chrome 113. Verifiez que l'acceleration materielle est activee :</p>
-            <p style={{ color: '#888', fontSize: '0.85rem', margin: '0.3rem 0' }}>
-              Parametres &gt; Systeme &gt; Utiliser l'acceleration materielle
-            </p>
-          </>
-        )}
-        {browser === 'firefox' && (
-          <>
-            <p style={{ color: '#ff9100', fontWeight: 'bold', marginBottom: '0.5rem' }}>Firefox</p>
-            <p>WebGPU n'est pas actif par defaut sur Firefox. Pour l'activer :</p>
-            <ol style={{ paddingLeft: '1.5rem', margin: '0.5rem 0', color: '#ccc' }}>
-              <li>Tapez <code style={{ color: '#00e5ff', background: 'rgba(0,229,255,0.1)', padding: '2px 6px', borderRadius: 3 }}>about:config</code> dans la barre d'adresse</li>
-              <li>Cherchez <code style={{ color: '#00e5ff', background: 'rgba(0,229,255,0.1)', padding: '2px 6px', borderRadius: 3 }}>dom.webgpu.enabled</code></li>
-              <li>Passez la valeur a <strong style={{ color: '#00ff00' }}>true</strong></li>
-              <li>Redemarrez Firefox</li>
-            </ol>
-          </>
-        )}
-        {browser === 'safari' && (
-          <>
-            <p style={{ color: '#007aff', fontWeight: 'bold', marginBottom: '0.5rem' }}>Safari</p>
-            <p>WebGPU est disponible depuis Safari 17. Verifiez :</p>
-            <ol style={{ paddingLeft: '1.5rem', margin: '0.5rem 0', color: '#ccc' }}>
-              <li>Menu Developpeur &gt; Fonctionnalites experimentales</li>
-              <li>Activez <strong>WebGPU</strong></li>
-              <li>Rechargez la page</li>
-            </ol>
-            <p style={{ color: '#888', fontSize: '0.85rem' }}>
-              (Si le menu Developpeur n'apparait pas : Preferences &gt; Avance &gt; Afficher le menu Developpeur)
-            </p>
-          </>
-        )}
-        {browser === 'other' && (
-          <p>Utilisez Chrome 113+, Edge 113+, ou Safari 17+ pour acceder au videoclub.</p>
-        )}
-      </div>
-    </div>
-  );
-}
 
 const LOADING_TIPS = [
   'Louez de vrais films et regardez-les sur votre smartphone',
@@ -344,13 +277,14 @@ function Reticule() {
 }
 
 function App() {
-  // WebGPU support flag — captured once at first render. We do the early
-  // return AFTER all hooks (rules-of-hooks) so hook order is identical
-  // regardless of WebGPU support. `navigator.gpu` is stable for a session.
-  const [webgpuSupported] = useState(() => typeof navigator !== 'undefined' && !!navigator.gpu);
+  // WebGPU support flag — captured once at first render (`navigator.gpu` is stable for a
+  // session). Sans WebGPU le site reste ouvert : la devanture s'affiche, la borne loue et lit
+  // les films ; seule la porte du vidéoclub 3D est fermée (elle explique pourquoi).
+  const [webgpuSupported] = useState(() => hasWebGPU());
 
   // Individual selectors to avoid re-rendering on unrelated store changes (e.g. targetedFilm, pointerLock)
   const currentScene = useStore(state => state.currentScene);
+  const interiorWarm = useStore(state => state.interiorWarm);
   const setScene = useStore(state => state.setScene);
   const selectedFilmId = useStore(state => state.selectedFilmId);
   const selectFilm = useStore(state => state.selectFilm);
@@ -409,7 +343,8 @@ function App() {
     // only started loading when VHSPlayer mounted (lazy import), which
     // created a 1-2 s race window where clicking the Cast button silently
     // hit the !isReady branch. Idempotent + module-level promise.
-    if (currentScene === 'interior') {
+    // La borne ouvre le même lecteur : même préchargement.
+    if (currentScene === 'interior' || currentScene === 'kiosk') {
       import('./hooks/useGoogleCast').then(m => m.preloadCastSdk()).catch(() => {});
     }
   }, [currentScene]);
@@ -476,10 +411,17 @@ function App() {
     // Don't override if user is being deep-linked into interior (cast notification).
     if (new URLSearchParams(window.location.search).has('castEnded')) return;
 
-    if (useStore.getState().currentScene === 'interior') {
+    // Vaut pour la borne comme pour l'intérieur : un chargement frais repart de la devanture.
+    if (useStore.getState().currentScene !== 'exterior') {
       setScene('exterior');
     }
   }, [setScene]);
+
+  // Sans WebGPU, l'intérieur est inatteignable : une scène 'interior' restaurée (onglet rouvert
+  // après un changement de navigateur ou de réglage) ramène à la devanture.
+  useEffect(() => {
+    if (!webgpuSupported && currentScene === 'interior') setScene('exterior');
+  }, [webgpuSupported, currentScene, setScene]);
 
   // ===== Deep link: ?castEnded=filmId (from push notification) =====
   useEffect(() => {
@@ -495,13 +437,14 @@ function App() {
     const filmId = parseInt(castEndedFilmId, 10);
     if (isNaN(filmId)) return;
 
-    // Ensure we're in interior scene and open the player for this film
-    setScene('interior');
+    // Ensure we're in interior scene and open the player for this film.
+    // Sans WebGPU, c'est la borne qui porte le lecteur.
+    setScene(webgpuSupported ? 'interior' : 'kiosk');
     // Delay slightly to let scene mount
     setTimeout(() => {
       openPlayer(filmId);
     }, 500);
-  }, [setScene, openPlayer]);
+  }, [setScene, openPlayer, webgpuSupported]);
 
   // Block native browser zoom (Ctrl+scroll on desktop, pinch on mobile fallback)
   useEffect(() => {
@@ -555,36 +498,53 @@ function App() {
     setTimeout(() => setScene('interior'), 100);
   }, [setScene]);
 
-  // WebGPU support gate — runs AFTER all hooks so hook order stays stable
-  // regardless of whether the browser supports WebGPU.
-  if (!webgpuSupported) {
-    return <WebGPUNotSupported />;
-  }
-
   const isInterior = currentScene === 'interior';
+  const isKiosk = currentScene === 'kiosk';
 
   // La scène intérieure est montée dès que la devanture est affichée, cachée dessous, en
   // mode préchauffage : device GPU, modèles, jaquettes et shaders se préparent pendant que le
   // visiteur regarde la vitrine. À l'entrée, c'est le MÊME élément qui devient visible (même
   // place dans l'arbre, donc pas de remontage) : le travail fait n'est pas refait.
+  //
+  // Pendant la borne, rien de 3D ne tourne. Scène déjà prête (`interiorWarm`) : elle reste
+  // montée, rendu gelé (`suspended`), et l'entrée par la porte reste immédiate. Scène encore
+  // en préparation : elle est démontée, et sa préparation repart du début au retour devant la
+  // devanture. Sans WebGPU, elle n'est jamais montée.
+  const mountInterior = webgpuSupported && (isInterior || (interiorPrewarm && (!isKiosk || interiorWarm)));
+
   return (
     <>
       {/* 3D R3F + WebGPU Video Club Scene */}
-      {(isInterior || interiorPrewarm) && (
+      {mountInterior && (
         <Suspense fallback={null}>
-          <InteriorScene onCassetteClick={handleFilmClick} prewarm={!isInterior} />
+          <InteriorScene onCassetteClick={handleFilmClick} prewarm={!isInterior} suspended={isKiosk} />
         </Suspense>
       )}
 
       {/* Devanture — par-dessus la scène intérieure tant qu'on n'est pas entré */}
-      {!isInterior && (
+      {currentScene === 'exterior' && (
         <Suspense fallback={null}>
           <ExteriorView
             onEnter={handleEnterStore}
             onOpenKiosk={() => setScene('kiosk')}
-            canEnter={hasWebGPU()}
+            canEnter={webgpuSupported}
           />
         </Suspense>
+      )}
+
+      {/* Borne de location — du DOM pur, avec le même lecteur et le même suivi de Cast que le
+          vidéoclub. Deux Suspense : le premier chargement du lecteur (paresseux) ne doit pas
+          masquer la borne le temps que son chunk arrive. */}
+      {isKiosk && (
+        <>
+          <Suspense fallback={null}>
+            <KioskView />
+          </Suspense>
+          <Suspense fallback={null}>
+            {isPlayerOpen && <VHSPlayer />}
+            <ActiveCastIndicator />
+          </Suspense>
+        </>
       )}
 
       {isInterior && (<>

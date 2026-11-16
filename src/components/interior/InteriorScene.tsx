@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu'
-import { Canvas, extend, type ThreeToJSXElements } from '@react-three/fiber'
+import { Canvas, extend, _roots, type ThreeToJSXElements } from '@react-three/fiber'
 import { Suspense, useEffect, useMemo, useCallback, useRef, useState, memo, Component, type ReactNode, lazy } from 'react'
 import { RectAreaLightTexturesLib } from 'three/addons/lights/RectAreaLightTexturesLib.js'
 import { useStore } from '../../store'
@@ -26,6 +26,7 @@ import { useBackGuard } from '../../hooks/useBackGuard'
 import { preloadCastSdk } from '../../hooks/useGoogleCast'
 import { createMobileInput } from '../../types/mobile'
 import type { MobileInput } from '../../types/mobile'
+import { releaseRendererAfterUnmount } from './release-renderer'
 
 // Lazy loading du composant Aisle (contient tous les modèles 3D)
 const Aisle = lazy(() => import('./Aisle').then(module => ({ default: module.Aisle })))
@@ -127,6 +128,8 @@ interface InteriorSceneProps {
   onCassetteClick?: (filmId: number) => void
   /** Scène montée mais cachée derrière la devanture : préchauffage seul, sans interface. */
   prewarm?: boolean
+  /** Borne ouverte sur une scène déjà prête : elle reste en mémoire, mais plus aucune image n'est rendue. */
+  suspended?: boolean
 }
 
 function LoadingFallback() {
@@ -761,10 +764,12 @@ function SettingsModals() {
   )
 }
 
-export function InteriorScene({ onCassetteClick, prewarm = false }: InteriorSceneProps) {
+export function InteriorScene({ onCassetteClick, prewarm = false, suspended = false }: InteriorSceneProps) {
   const isMobile = useIsMobile()
   const mobileInputRef = useRef<MobileInput>(createMobileInput())
   const isMountedRef = useRef(true)
+  // Le renderer de CETTE scène, pour le libérer à son démontage (R3F ne le fait pas).
+  const rendererRef = useRef<THREE.WebGPURenderer | null>(null)
   // Lus par le préchauffage, qui vit dans une fermeture créée une fois (onCreated du Canvas).
   const prewarmRef = useRef(prewarm)
   prewarmRef.current = prewarm
@@ -814,10 +819,25 @@ export function InteriorScene({ onCassetteClick, prewarm = false }: InteriorScen
   }, [isSitting])
 
   useEffect(() => {
+    // Remis à vrai à chaque passage : en dev, StrictMode rejoue cet effet (pose, retrait, pose)
+    // et la ref restait à faux pour toute la vie de la scène.
+    isMountedRef.current = true
     return () => {
       isMountedRef.current = false
       // Le canevas disparaît avec ses pipelines : la scène n'est plus préchauffée.
       useStore.getState().setSceneReady(false)
+      // Scène abandonnée (borne ouverte en plein préchauffage) : sa boucle de préchauffage
+      // s'arrête d'elle-même (isMountedRef), et son renderer est libéré une fois que R3F a
+      // fini son propre nettoyage — boucle interne de three arrêtée, device GPU détruit.
+      const renderer = rendererRef.current
+      if (renderer) {
+        const canvas = renderer.domElement
+        releaseRendererAfterUnmount({
+          renderer: { dispose: () => renderer.dispose() },
+          isRootGone: () => !_roots.has(canvas),
+          isMountedAgain: () => isMountedRef.current,
+        })
+      }
     }
   }, [])
 
@@ -891,6 +911,9 @@ export function InteriorScene({ onCassetteClick, prewarm = false }: InteriorScen
         // et R3F l'applique APRÈS la fabrique gl. 'percentage' = PCFShadowMap.
         shadows="percentage"
         dpr={dpr}
+        // Borne ouverte : la boucle de R3F s'arrête, donc ni useFrame ni rendu. Elle repart
+        // d'elle-même au retour à la devanture ou à l'entrée.
+        frameloop={suspended ? 'never' : 'always'}
         gl={(async (props: THREE.WebGPURendererParameters) => {
 
 
@@ -903,6 +926,14 @@ export function InteriorScene({ onCassetteClick, prewarm = false }: InteriorScen
           })
 
           await renderer.init()
+
+          rendererRef.current = renderer
+          if (!isMountedRef.current) {
+            // Scène démontée pendant l'initialisation : personne ne libérerait ce renderer.
+            rendererRef.current = null
+            void renderer.dispose().catch(() => {})
+            return renderer
+          }
 
           // Device-level guards for runtime resilience (device lost / uncaptured errors).
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -921,6 +952,8 @@ export function InteriorScene({ onCassetteClick, prewarm = false }: InteriorScen
             }
 
             device.lost.then((info) => {
+              // Scène démontée : le device est détruit exprès (libération du renderer), ce n'est pas une panne.
+              if (info.reason === 'destroyed' && !isMountedRef.current) return
               console.error('[Canvas] GPU device lost:', info.reason, info.message)
               if (isMountedRef.current) {
                 setGpuError(`Le périphérique GPU a été perdu (${info.reason}). Recharge la page pour réinitialiser WebGPU.`)
@@ -1024,8 +1057,11 @@ export function InteriorScene({ onCassetteClick, prewarm = false }: InteriorScen
           const startTime = performance.now()
           let resolved = false
 
+          // Une scène démontée ne doit plus rien faire : ni tourner, ni compiler, ni surtout se
+          // déclarer prête (la boutique croirait préchauffée une scène qui n'existe plus). Chaque
+          // étape de la boucle vérifie donc `isMountedRef` avant de continuer.
           const finish = () => {
-            if (resolved) return
+            if (resolved || !isMountedRef.current) return
             resolved = true
             useStore.getState().setSceneReady(true)
           }
@@ -1144,7 +1180,7 @@ export function InteriorScene({ onCassetteClick, prewarm = false }: InteriorScen
             const SLICE_MS = 8
             let sliceStart = performance.now()
             for (const o of renderables) {
-              if (!prewarmRef.current) break
+              if (!prewarmRef.current || !isMountedRef.current) break
               const culled = o.frustumCulled
               o.frustumCulled = false
               try {
@@ -1164,6 +1200,7 @@ export function InteriorScene({ onCassetteClick, prewarm = false }: InteriorScen
           }
 
           const tryReady = () => {
+            if (!isMountedRef.current) return
             // Wait for PostProcessing instance to be ready before warmup.
             if (!(window as unknown as { __postProcessing?: unknown }).__postProcessing) {
               // Hard timeout safety net — never block the user forever.
@@ -1223,6 +1260,7 @@ export function InteriorScene({ onCassetteClick, prewarm = false }: InteriorScen
             let stableIters = 0
             let lastCount = getPipeCount()
             const warmupLoop = () => {
+              if (!isMountedRef.current) return
               try { runWarmup() } catch { /* shader warmup may throw on partial setup */ }
               const cur = getPipeCount()
               if (cur === lastCount) {
