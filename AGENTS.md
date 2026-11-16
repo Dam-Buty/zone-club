@@ -505,8 +505,18 @@ Règles à ne pas casser — chacune a son test dans `tests/domain/kiosk-*.test.
   est animée, en pourcentages d'un porteur de 96 pixels physiques pour retomber sur des cellules
   entières. C'est une
   simulation des défauts VISIBLES : quantifier réellement les jaquettes demanderait un filtre ou
-  un canvas, exclus ici. Typographie : Barlow Condensed (la plus proche de la DIN
-  condensée de la référence, chargée par l'import de polices de `src/index.css`). L'enseigne « LOCATION 24/7 » est un
+  un canvas, exclus ici. **Typographie, mesurée sur la photo de référence** (passe de design demandée par Rusmir le
+  16/11) : une famille en deux largeurs — Sofia Sans Extra Condensed pour les libellés (onglets,
+  boutons, titres), Sofia Sans Condensed pour ce qui se lit —, Inter pour les petites étiquettes
+  de la fiche, Marker Felt puis Caveat Brush pour les valeurs au feutre ; toutes chargées par
+  l'import de `src/index.css`. Sur la photo les libellés sont dans une DIN très étroite : à
+  hauteur d'x égale, Barlow Condensed (utilisée avant) était 40 % trop large, d'où des libellés
+  qui touchaient les bords de leurs cases. Règles à tenir : un libellé garde de la marge dans sa
+  case (les corps sont calculés sur la largeur réelle des mots) ; le titre prend le plus grand
+  corps qui tient (`titleScale()`, largeur estimée par `titleWidthEm()`) ; ni abréviation ni
+  point médian dans un libellé — le bouton d'action dit l'action, le prix est à part
+  (`actionLabel()`) ; ombre de texte courte et nette, jamais de halo ; l'onglet actif ne déborde
+  pas sur ses voisins ; aucun glyphe tiré d'une police de secours (les triangles sont dessinés). L'enseigne « LOCATION 24/7 » est un
   néon **rendu** (`public/kiosk/neon-location-247.webp`), sur le modèle de l'enseigne VIDEOCLUB
   de la devanture telle qu'elle est sur `public/exterior.jpeg` : lettres **en contour** d'une
   grotesque géométrique grasse, tube fin au cœur rose presque blanc, halo violet — pas Orbitron,

@@ -56,6 +56,12 @@
 >   aussi ». **[R]** Corrigé **[C]** : grille au pas le plus serré que l'écran permet, traits à
 >   peine marqués, plus de bandes de couleur ; fourmillement ramené à un cran de 6 bits. Tout
 >   réglage de texture se juge désormais sur un écran non dense.
+> - **§ 6, typographie.** « Il faut faire passer un designer sur la partie typographie […] la
+>   partie recherche et louer n'est pas au niveau, le bouton Nouveautés chevauche Action, ce
+>   n'est pas une interface travaillée. » **[R]** Passe faite **[C]** : police des libellés
+>   changée après mesure sur la photo (Sofia Sans Extra Condensed), corps recalculés pour que
+>   chaque libellé tienne dans sa case, onglet actif sans débordement, bouton d'action en deux
+>   parties (l'action, puis le prix en toutes lettres), titre au plus grand corps qui tient.
 > - **Tarif** : l'affichage suit ce que le serveur facture. **Dates du serveur** : lues en UTC.
 >   Les deux validés. **[R]**
 > - **§ 5, bouton provisoire sur mobile** : il part tel quel, on ajustera en voyant la version
