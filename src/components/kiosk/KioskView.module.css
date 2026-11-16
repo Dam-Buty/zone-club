@@ -276,7 +276,8 @@
      l'éclat du réverbère. */
   background: #000 url(/kiosk/glass-reflection.webp) center top / cover no-repeat;
   mix-blend-mode: screen;
-  opacity: 0.55;
+  /* Discret : le reflet doit se deviner sur les zones sombres, pas concurrencer l'affichage. */
+  opacity: 0.3;
 }
 
 /* Les unités cqw d'un conteneur se résolvent sur son ANCÊTRE : le fond et tout le contenu sont
