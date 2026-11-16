@@ -125,3 +125,24 @@ test('BORNE: la recherche ignore la casse et les accents, exact d\'abord', () =>
   assert.deepEqual(searchFilms(films, 'évade').map(x => x.id), [2, 1]);
   assert.deepEqual(searchFilms(films, '   '), []);
 });
+
+// I2 (relecture finale) — annuler la connexion pendant qu'elle est en cours ne doit pas louer le
+// film : la connexion aboutit après coup et rappelait l'action mise en attente.
+test('BORNE: annuler la connexion oublie l\'action qui l\'avait demandée', () => {
+  let rented = 0;
+  const pending = K.createPendingAction();
+  pending.set(() => { rented++; });
+  pending.cancel();
+  pending.take()?.();
+  assert.equal(rented, 0, 'une connexion annulée ne doit pas déclencher la location');
+});
+test('BORNE: l\'action en attente n\'est reprise qu\'une fois, et la dernière demandée gagne', () => {
+  let a = 0; let b = 0;
+  const pending = K.createPendingAction();
+  pending.set(() => { a++; });
+  pending.set(() => { b++; });
+  pending.take()?.();
+  pending.take()?.();
+  assert.deepEqual([a, b], [0, 1]);
+  assert.equal(pending.take(), undefined);
+});

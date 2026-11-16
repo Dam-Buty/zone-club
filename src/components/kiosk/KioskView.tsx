@@ -8,7 +8,7 @@ import { KioskAuth } from './KioskAuth';
 import { KioskBrowse } from './KioskBrowse';
 import { KioskNotice, type KioskNoticeSpec } from './KioskNotice';
 import { KioskSearch } from './KioskSearch';
-import { allFilms, catalogState, creditsLabel, filmsForTab, firstNonEmptyTab, type KioskTab } from './kiosk-logic';
+import { allFilms, catalogState, createPendingAction, creditsLabel, filmsForTab, firstNonEmptyTab, type KioskTab } from './kiosk-logic';
 import styles from './KioskView.module.css';
 
 // Borne de location : seconde façon de louer, sans aucun rendu 3D. Cette coque porte le corps
@@ -145,20 +145,29 @@ export function KioskView() {
   // `then` est ce que le visiteur voulait faire quand la connexion s'est imposée (louer) : on le
   // reprend une fois connecté. Une phrase de récupération pas encore confirmée garde le panneau
   // ouvert, quoi qu'il arrive : elle ne se retrouve nulle part ailleurs.
-  const [auth, setAuth] = useState<{ then?: () => void } | null>(null);
+  const [authOpen, setAuthOpen] = useState(false);
+  // L'action en attente vit hors du rendu : une connexion annulée pendant qu'elle était en cours
+  // aboutit après coup et rappelle un `finishAuth` d'un rendu passé — il ne doit plus rien trouver.
+  const [pendingAction] = useState(createPendingAction);
   const pendingPhrase = useStore((state) => state.recoveryPhrase);
-  const authVisible = auth !== null || pendingPhrase !== null;
+  const authVisible = authOpen || pendingPhrase !== null;
 
-  const requestAuth = useCallback((then?: () => void) => setAuth({ then }), []);
-  const cancelAuth = useCallback(() => setAuth(null), []);
-  const finishAuth = () => {
-    const then = auth?.then;
-    setAuth(null);
+  const requestAuth = useCallback((then?: () => void) => {
+    pendingAction.set(then);
+    setAuthOpen(true);
+  }, [pendingAction]);
+  const cancelAuth = useCallback(() => {
+    pendingAction.cancel();
+    setAuthOpen(false);
+  }, [pendingAction]);
+  const finishAuth = useCallback(() => {
+    const then = pendingAction.take();
+    setAuthOpen(false);
     then?.();
-  };
+  }, [pendingAction]);
   // Le geste retour ferme d'abord la connexion, puis la borne (dernière garde posée, première
   // servie). Pas de garde sur l'écran de la phrase : un retour arrière ne doit pas la faire perdre.
-  useBackGuard(auth !== null && pendingPhrase === null, cancelAuth);
+  useBackGuard(authOpen && pendingPhrase === null, cancelAuth);
 
   const openAccount = () => {
     if (authVisible) return;

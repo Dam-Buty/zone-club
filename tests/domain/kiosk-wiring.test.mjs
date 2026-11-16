@@ -119,3 +119,73 @@ test('BORNE: la boucle de préchauffage s\'arrête avec la scène', () => {
   assert.match(src, /isMountedRef\.current = true/, 'l\'effet de montage remet la ref à vrai (StrictMode la laissait à faux)');
   assert.ok(src.includes('releaseRendererAfterUnmount('), 'le démontage libère le renderer');
 });
+
+// ===== Relecture finale du 16/11/2026 =====
+
+// I1 — Scène démontée PENDANT l'initialisation de son renderer. R3F n'annule pas sa configuration
+// au démontage : si la fabrique `gl` lui rend le renderer, il termine `configure()` et monte toute
+// la scène dans la racine qu'il vient de démonter, qui n'est jamais retirée (constat du relecteur,
+// reproduit avec le R3F du dépôt). Le test rejoue la séquence avec le vrai R3F, sans navigateur.
+test('BORNE: une scène démontée pendant l\'initialisation du renderer n\'est jamais montée', async () => {
+  globalThis.requestAnimationFrame ??= (cb) => setTimeout(() => cb(performance.now()), 16);
+  globalThis.cancelAnimationFrame ??= (id) => clearTimeout(id);
+  const React = (await import('react')).default;
+  const { createRoot, unmountComponentAtNode, _roots, useFrame } = await import('@react-three/fiber');
+  const { abandonRendererDuringInit } = await import('../../src/components/interior/release-renderer.ts');
+  const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  const canvas = { style: {}, addEventListener() {}, removeEventListener() {}, width: 300, height: 150, parentElement: null };
+  const counters = { mounts: 0, frames: 0, disposed: 0 };
+  function Child() {
+    React.useEffect(() => { counters.mounts++; }, []);
+    useFrame(() => { counters.frames++; });
+    return null;
+  }
+  const renderer = { render() {}, setPixelRatio() {}, setSize() {}, shadowMap: {}, domElement: canvas, dispose() { counters.disposed++; } };
+  let mounted = true;
+  let resolveInit;
+  const root = createRoot(canvas);
+  void (async () => {
+    await root.configure({
+      // Même forme que la fabrique d'InteriorScene : init asynchrone, puis la garde de démontage.
+      gl: async () => {
+        await new Promise((resolve) => { resolveInit = resolve; });
+        if (!mounted) return abandonRendererDuringInit({ renderer, forgetRoot: () => { _roots.delete(canvas); } });
+        return renderer;
+      },
+      size: { width: 300, height: 150, top: 0, left: 0 },
+      frameloop: 'always',
+    });
+    root.render(React.createElement(Child));
+  })();
+
+  await delay(50);
+  mounted = false;                 // la borne s'ouvre : la scène est démontée…
+  unmountComponentAtNode(canvas);
+  await delay(100);
+  resolveInit();                   // …puis l'initialisation du renderer se termine
+  await delay(900);                // au-delà des 500 ms du nettoyage différé de R3F
+
+  assert.equal(counters.mounts, 0, 'la scène ne doit pas être montée dans la racine démontée');
+  assert.equal(counters.frames, 0, 'aucune image ne doit tourner');
+  assert.equal(counters.disposed, 1, 'le renderer orphelin est libéré');
+  assert.equal(_roots.has(canvas), false, 'la racine R3F est retirée');
+});
+test('BORNE: InteriorScene ne rend pas à R3F le renderer d\'une scène déjà démontée', () => {
+  const src = readText(path.join(ROOT, 'src/components/interior/InteriorScene.tsx'));
+  const start = src.indexOf('await renderer.init()');
+  assert.ok(start > 0);
+  const branch = src.slice(start, start + 900);
+  assert.match(branch, /abandonRendererDuringInit(<[^>]*>)?\(/, 'la branche « démontée pendant l\'init » passe par abandonRendererDuringInit');
+});
+
+// D12 — La phrase de récupération reste en mémoire jusqu'à ce que le visiteur confirme l'avoir
+// notée ; une déconnexion doit donc l'effacer, sinon la personne suivante sur le même appareil
+// la verrait à l'ouverture de la borne.
+test('BORNE: la déconnexion efface une phrase de récupération restée en mémoire', () => {
+  const src = readText(path.join(ROOT, 'src/store/index.ts'));
+  const start = src.indexOf('logout: async () => {');
+  assert.ok(start > 0, 'logout introuvable dans le magasin');
+  const body = src.slice(start, src.indexOf('clearAuthError:', start));
+  assert.match(body, /recoveryPhrase: null/, 'logout doit remettre recoveryPhrase à null');
+});

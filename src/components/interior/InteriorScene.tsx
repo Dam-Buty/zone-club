@@ -26,7 +26,7 @@ import { useBackGuard } from '../../hooks/useBackGuard'
 import { preloadCastSdk } from '../../hooks/useGoogleCast'
 import { createMobileInput } from '../../types/mobile'
 import type { MobileInput } from '../../types/mobile'
-import { releaseRendererAfterUnmount } from './release-renderer'
+import { abandonRendererDuringInit, releaseRendererAfterUnmount } from './release-renderer'
 
 // Lazy loading du composant Aisle (contient tous les modèles 3D)
 const Aisle = lazy(() => import('./Aisle').then(module => ({ default: module.Aisle })))
@@ -929,10 +929,14 @@ export function InteriorScene({ onCassetteClick, prewarm = false, suspended = fa
 
           rendererRef.current = renderer
           if (!isMountedRef.current) {
-            // Scène démontée pendant l'initialisation : personne ne libérerait ce renderer.
+            // Scène démontée pendant l'initialisation : le renderer est libéré et n'est PAS rendu
+            // à R3F, qui sinon monterait la scène dans la racine démontée (voir release-renderer.ts).
             rendererRef.current = null
-            void renderer.dispose().catch(() => {})
-            return renderer
+            const canvas = renderer.domElement
+            return abandonRendererDuringInit<THREE.WebGPURenderer>({
+              renderer: { dispose: () => renderer.dispose() },
+              forgetRoot: () => { _roots.delete(canvas) },
+            })
           }
 
           // Device-level guards for runtime resilience (device lost / uncaptured errors).

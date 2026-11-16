@@ -403,6 +403,9 @@ export const useStore = create<VideoClubState>()(
         set({
           isAuthenticated: false,
           authUser: null,
+          // Une phrase de récupération pas encore confirmée ne doit pas survivre à la session :
+          // la personne suivante sur le même appareil la verrait à l'ouverture de la borne.
+          recoveryPhrase: null,
           rentals: [],
           rentalHistory: [],
           userReviews: [],

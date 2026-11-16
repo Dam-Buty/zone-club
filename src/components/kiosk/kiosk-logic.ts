@@ -184,6 +184,32 @@ export function formatUntil(expiresAt: number, timeZone?: string): string {
 
 // ===== Connexion =====
 
+/**
+ * Ce que le visiteur voulait faire quand la connexion s'est imposée (louer). Annuler la
+ * connexion l'oublie ; la reprendre le consomme, une seule fois. Sans cela, une connexion
+ * annulée pendant qu'elle était en cours aboutissait après coup et louait quand même le film.
+ */
+export function createPendingAction(): {
+  set: (action?: () => void) => void;
+  cancel: () => void;
+  take: () => (() => void) | undefined;
+} {
+  let pending: (() => void) | undefined;
+  return {
+    set(action) {
+      pending = action;
+    },
+    cancel() {
+      pending = undefined;
+    },
+    take() {
+      const action = pending;
+      pending = undefined;
+      return action;
+    },
+  };
+}
+
 export type KioskAuthMode = 'login' | 'register' | 'recover';
 
 /** Premier refus du formulaire, ou `null` s'il peut partir. */
