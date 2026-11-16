@@ -136,7 +136,7 @@ export interface PersonDetail {
 }
 
 // Scene types
-export type SceneType = 'exterior' | 'interior';
+export type SceneType = 'exterior' | 'interior' | 'kiosk';
 
 // Player types
 export type PlayerState = 'playing' | 'paused' | 'seeking' | 'rewinding' | 'fastforwarding' | 'casting' | 'awaitingCast';

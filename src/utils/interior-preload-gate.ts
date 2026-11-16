@@ -9,8 +9,18 @@
 // (ExteriorView appelle releaseInteriorPreload). Rien n'est perdu : ils tournent pendant que
 // le visiteur regarde la vitrine, comme avant.
 
+//
+// Sans WebGPU, la vanne ne s'ouvre jamais : le vidéoclub 3D est inaccessible à ces appareils,
+// qui louent par la borne. Ni le chunk 3D, ni ses assets, ni le service worker (dont
+// l'installation précharge ces mêmes assets) ne doivent leur être envoyés.
+
 let released = false;
 const waiting: Array<() => void> = [];
+
+/** Vrai si le navigateur expose WebGPU. Relu à chaque appel : `navigator.gpu` ne change pas en cours de session. */
+export function hasWebGPU(): boolean {
+  return typeof navigator !== 'undefined' && !!navigator.gpu;
+}
 
 /** Exécute `task` dès que la devanture est affichée (tout de suite si c'est déjà le cas). */
 export function afterStorefront(task: () => void): void {
@@ -18,9 +28,13 @@ export function afterStorefront(task: () => void): void {
   else waiting.push(task);
 }
 
-/** Ouvre la vanne. Idempotent ; appelé à l'affichage de la devanture et, par sécurité, à l'entrée. */
+/**
+ * Ouvre la vanne. Idempotent ; appelé à l'affichage de la devanture et, par sécurité, à l'entrée.
+ * Ne fait rien sans WebGPU.
+ */
 export function releaseInteriorPreload(): void {
   if (released) return;
+  if (!hasWebGPU()) return;
   released = true;
   for (const task of waiting.splice(0)) {
     try {
