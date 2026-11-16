@@ -19,6 +19,7 @@ import {
   hidesKioskInLandscape,
   kioskBackAction,
   lcdDevicePixel,
+  lcdPitchInDevicePixels,
   type KioskTab,
 } from './kiosk-logic';
 import states from './KioskStates.module.css';
@@ -70,17 +71,31 @@ function usePhoneLandscape(): boolean {
 }
 
 /**
- * Taille d'un pixel physique de l'écran, en px CSS : la trame de la dalle s'y cale. Suivie quand
- * la densité change (zoom du navigateur, fenêtre glissée sur un autre écran).
+ * Densité de l'écran sur lequel la fenêtre se trouve. La grille de la dalle s'y cale ; elle est
+ * suivie quand elle change — zoom du navigateur, ou fenêtre glissée d'un écran dense vers un
+ * écran qui ne l'est pas (ce cas ne déclenche pas toujours `resize`, d'où la requête média).
  */
-function useDevicePixel(): string {
-  const [value, setValue] = useState(() => lcdDevicePixel(typeof window === 'undefined' ? undefined : window.devicePixelRatio));
+function useScreenDensity(): number | undefined {
+  const [ratio, setRatio] = useState(() => (typeof window === 'undefined' ? undefined : window.devicePixelRatio));
   useEffect(() => {
-    const update = () => setValue(lcdDevicePixel(window.devicePixelRatio));
-    window.addEventListener('resize', update);
-    return () => window.removeEventListener('resize', update);
+    let query: MediaQueryList | null = null;
+    const watch = () => {
+      query?.removeEventListener('change', onChange);
+      query = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+      query.addEventListener('change', onChange);
+    };
+    function onChange() {
+      setRatio(window.devicePixelRatio);
+      watch();
+    }
+    watch();
+    window.addEventListener('resize', onChange);
+    return () => {
+      window.removeEventListener('resize', onChange);
+      query?.removeEventListener('change', onChange);
+    };
   }, []);
-  return value;
+  return ratio;
 }
 
 /**
@@ -132,7 +147,7 @@ export function KioskView() {
   const closePlayer = useStore((state) => state.closePlayer);
   const credits = useCredits();
   const phoneLandscape = usePhoneLandscape();
-  const devicePixel = useDevicePixel();
+  const density = useScreenDensity();
 
   const [mode, setMode] = useState<'browse' | 'search'>('browse');
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -332,7 +347,8 @@ export function KioskView() {
     <>
     <div className={`${styles.root} ${hidden ? states.rootHidden : ''}`} inert={isPlayerOpen || hidden}>
       <div className={styles.sign} aria-hidden="true">
-        <span className={styles.neonTxt}>Location 24/7</span>
+        {/* Décor : l'enseigne est une image rendue (voir .neonImg). Son conteneur est masqué aux lecteurs d'écran. */}
+        <img className={styles.neonImg} src="/kiosk/neon-location-247.webp" alt="" width={1345} height={302} decoding="async" draggable={false} />
       </div>
 
       <div className={styles.body}>
@@ -340,7 +356,7 @@ export function KioskView() {
 
         <div className={styles.column}>
           <div className={styles.bezel}>
-            <div className={styles.ks} style={{ '--k-dpx': devicePixel } as CSSProperties}>
+            <div className={styles.ks} style={{ '--k-dpx': lcdDevicePixel(density), '--k-lcd-n': lcdPitchInDevicePixels(density) } as CSSProperties}>
               <div className={styles.screen} data-mode={mode}>
                 <div className={styles.kTop} inert={overlay !== null}>
                   <div className={styles.kLogo}>

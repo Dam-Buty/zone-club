@@ -52,25 +52,31 @@
 }
 
 .sign {
+  position: relative;
   flex: none;
   height: 50px;
-  display: flex;
-  align-items: center;
+  width: 100%;
 }
 
-/* Même typographie que l'enseigne VIDEOCLUB de la devanture : Orbitron, en tube de néon
-   (lettres évidées, contour clair, halo violet). */
-.neonTxt {
-  font-family: "Orbitron", "Avenir Next", "Helvetica Neue", Arial, sans-serif;
-  font-weight: 900;
-  font-size: min(27px, 6.9vw);
-  line-height: 1;
-  letter-spacing: 0.07em;
-  white-space: nowrap;
-  text-transform: uppercase;
-  color: rgba(246, 232, 255, 0.1);
-  -webkit-text-stroke: 1.3px #ecd6ff;
-  text-shadow: 0 0 5px #d9a8ff, 0 0 12px #b56bff, 0 0 26px #8b3dff, 0 0 48px #6a1bff;
+/* L'enseigne « LOCATION 24/7 » : un néon RENDU (public/kiosk/neon-location-247.webp), sur le
+   modèle de l'enseigne VIDEOCLUB de la devanture — lettres en contour, tube fin au cœur rose
+   presque blanc, halo violet. Un texte avec des ombres portées ne passe pas pour un néon : le
+   tube, son halo et la saturation du cœur sont calculés en lumière, hors ligne. L'image porte
+   son halo en marge : elle déborde donc de sa case, centrée, sans peser sur la mise en page.
+   --neon-letters est la largeur des lettres seules. */
+.neonImg {
+  --neon-letters: min(86vw, 344px);
+
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: calc(var(--neon-letters) * 1.1850);
+  max-width: none;
+  height: auto;
+  aspect-ratio: 1345 / 302;
+  translate: -50% -50%;
+  pointer-events: none;
+  user-select: none;
 }
 
 .body {
@@ -278,7 +284,7 @@
   background: #000 url(/kiosk/glass-reflection.webp) center top / cover no-repeat;
   mix-blend-mode: screen;
   /* Discret : le reflet doit se deviner sur les zones sombres, pas concurrencer l'affichage. */
-  opacity: 0.27;
+  opacity: 0.22;
 }
 
 /* Les unités cqw d'un conteneur se résolvent sur son ANCÊTRE : le fond et tout le contenu sont
@@ -293,14 +299,16 @@
   --k-font: "Barlow Condensed", "DIN Condensed", "Roboto Condensed", sans-serif-condensed, "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
 
   /* Boutons : plats, bordure claire, angles à peine arrondis, et la trame verticale de la
-     référence — très fine : un trait d'un pixel physique tous les quatre. */
+     référence — un trait d'un pixel physique tous les quatre, à peine marqué (--k-trame) : sur un
+     écran non dense un trait plus appuyé quadrille le bouton. */
+  --k-trame: 0.04;
   --k-radius: 0.9cqw;
   --k-skin-orange:
-    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.1) 0 var(--k-dpx, 1px), rgba(255, 255, 255, 0) var(--k-dpx, 1px) calc(var(--k-dpx, 1px) * 4)),
+    repeating-linear-gradient(90deg, rgb(255 255 255 / var(--k-trame)) 0 var(--k-dpx, 1px), rgb(255 255 255 / 0) var(--k-dpx, 1px) calc(var(--k-dpx, 1px) * 4)),
     linear-gradient(180deg, #ffbb5c 0%, #f39226 22%, #e0700d 56%, #d46306 80%, #e67c18 100%);
   --k-edge-orange: #ffd493;
   --k-skin-teal:
-    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.08) 0 var(--k-dpx, 1px), rgba(255, 255, 255, 0) var(--k-dpx, 1px) calc(var(--k-dpx, 1px) * 4)),
+    repeating-linear-gradient(90deg, rgb(255 255 255 / var(--k-trame)) 0 var(--k-dpx, 1px), rgb(255 255 255 / 0) var(--k-dpx, 1px) calc(var(--k-dpx, 1px) * 4)),
     linear-gradient(180deg, #6cc8e4 0%, #3da8ce 22%, #2590bd 56%, #1d81ad 80%, #2c96c0 100%);
   --k-edge-teal: #a5eaff;
   /* Satiné des onglets : le reflet d'un aplat peint sur métal, sans brillance franche. */
@@ -310,51 +318,52 @@
   /* Les clairs d'une dalle photographiée bavent un peu : halo léger autour du texte clair. */
   --k-glow: 0 0 0.8cqw rgba(205, 228, 255, 0.2);
   --k-text-shadow: 0 0.15cqw 0.4cqw rgba(0, 20, 60, 0.55), 0 0 0.8cqw rgba(255, 255, 255, 0.14);
-  /* Trame de la dalle : trois sous-pixels par pixel, un interligne sombre. Elle est dessinée en
-     pixels PHYSIQUES de l'écran (--k-dpx, posée par KioskView) : un pixel de dalle = trois pixels
-     physiques, soit la trame la plus fine que l'écran puisse montrer, sans moirage même à densité
-     fractionnaire. Sur un écran dense les traits, plus fins, sont un peu plus marqués. */
-  --k-lcd-gain: 1;
-  --k-lcd-rgb: repeating-linear-gradient(
-    90deg,
-    rgb(255 70 70 / calc(0.03 * var(--k-lcd-gain))) 0 var(--k-dpx, 1px),
-    rgb(70 255 100 / calc(0.024 * var(--k-lcd-gain))) var(--k-dpx, 1px) calc(var(--k-dpx, 1px) * 2),
-    rgb(80 120 255 / calc(0.034 * var(--k-lcd-gain))) calc(var(--k-dpx, 1px) * 2) calc(var(--k-dpx, 1px) * 3)
-  );
-  --k-lcd-rows: repeating-linear-gradient(
-    0deg,
-    rgb(0 0 10 / calc(0.085 * var(--k-lcd-gain))) 0 var(--k-dpx, 1px),
-    rgb(0 0 0 / 0) var(--k-dpx, 1px) calc(var(--k-dpx, 1px) * 3)
-  );
+  /* Grille de la dalle : la matrice noire entre les pixels, dans les deux sens — un trait d'UN
+     pixel physique (--k-dpx), répété tous les --k-lcd-n pixels physiques ; les deux valeurs sont
+     posées par KioskView d'après la densité de l'écran. Elle est aussi serrée que l'écran le
+     permet (un pixel sur deux sur un écran non dense) et à peine marquée : un grain de dalle,
+     pas un relief. Ni lignes de balayage — c'est le défaut d'un tube cathodique, pas d'un LCD —
+     ni bandes de couleur. À JUGER SUR UN ÉCRAN NON DENSE : c'est là qu'elle se voit le plus. */
+  --k-lcd-line-h: 0.03;
+  --k-lcd-line-v: 0.022;
+  --k-lcd-pitch: calc(var(--k-dpx, 1px) * var(--k-lcd-n, 2));
+  --k-lcd-cols: repeating-linear-gradient(90deg, rgb(0 0 12 / var(--k-lcd-line-v)) 0 var(--k-dpx, 1px), rgb(0 0 12 / 0) var(--k-dpx, 1px) var(--k-lcd-pitch));
+  --k-lcd-rows: repeating-linear-gradient(0deg, rgb(0 0 12 / var(--k-lcd-line-h)) 0 var(--k-dpx, 1px), rgb(0 0 12 / 0) var(--k-dpx, 1px) var(--k-lcd-pitch));
+  /* Hachure de la fiche blanche (voir .kSlate) et opacité du fourmillement (voir .kFrc). */
+  --k-hatch: 0.028;
+  --k-frc-opacity: 0.5;
   /* Cadres : cyan métallisé, éclairé par le haut. */
   --k-frame: #63cdf0;
   --k-frame-hi: #bdeeff;
   --k-frame-lo: #3b8fb9;
-  /* Fond de l'écran : le dégradé bleu, quantifié sur 6 bits par couleur (64 niveaux) comme le
-     sortait une dalle TN — d'où ses bandes. Liste produite par un script (elle va de #3a8fe0 au
-     centre à #05123f au bord, en passant par #1757b4 à 34 % et #0a2c78 à 64 %) ; partagée avec
-     les panneaux de KioskPanels.module.css. */
+  /* Fond de l'écran, comme sur la référence : un bleu vif derrière la fiche, qui tombe au NOIR
+     vers les bords et le bas (de #2a84ea au centre à #01040d). Il est quantifié sur 6 bits par
+     couleur (64 niveaux) comme le sortait une dalle TN — d'où ses bandes. Liste produite par un
+     script ; partagée avec les panneaux de KioskPanels.module.css. */
   --k-bg-stops:
-    #398edf 0% 2%, #398adf 2% 2.75%, #398adb 2.75% 3.25%, #358adb 3.25% 4.5%,
-    #3586db 4.5% 5.75%, #3586d7 5.75% 7%, #3582d7 7% 7.25%, #3182d7 7.25% 9%,
-    #3182d2 9% 9.5%, #317dd2 9.5% 11.25%, #2d7dd2 11.25% 11.75%, #2d79d2 11.75% 12%,
-    #2d79ce 12% 14.25%, #2d75ce 14.25% 15%, #2875ce 15% 15.25%, #2875ca 15.25% 16.75%,
-    #2871ca 16.75% 18.25%, #2871c6 18.25% 19%, #2471c6 19% 19.25%, #246dc6 19.25% 21.5%,
-    #246dc2 21.5% 21.75%, #2469c2 21.75% 23%, #2069c2 23% 24.25%, #2065c2 24.25% 24.5%,
-    #2065be 24.5% 26.5%, #2061be 26.5% 26.75%, #1c61be 26.75% 27.75%, #1c61ba 27.75% 29%,
-    #1c5dba 29% 30.75%, #185db6 30.75% 31.5%, #1859b6 31.5% 34%, #1855b2 34% 35.75%,
-    #1455b2 35.75% 36%, #1455ae 36% 36.75%, #1451ae 36.75% 38%, #1451aa 38% 39.75%,
-    #144daa 39.75% 40%, #144da6 40% 42%, #144da2 42% 42.5%, #1449a2 42.5% 44%,
-    #14499e 44% 45%, #10499e 45% 45.25%, #10459e 45.25% 46%, #10459a 46% 48%,
-    #104196 48% 50.25%, #104192 50.25% 51%, #103d92 51% 52.25%, #103d8e 52.25% 53.75%,
-    #10398e 53.75% 54.25%, #10398a 54.25% 54.5%, #0c398a 54.5% 56.25%, #0c3986 56.25% 56.5%,
-    #0c3586 56.5% 58.25%, #0c3582 58.25% 59.5%, #0c3182 59.5% 60.25%, #0c317d 60.25% 62.25%,
-    #0c2d79 62.25% 63.75%, #082d79 63.75% 64.5%, #082d75 64.5% 66%, #082875 66% 67%,
-    #082871 67% 69.5%, #08286d 69.5% 71.75%, #08246d 71.75% 72%, #082469 72% 74.5%,
-    #082465 74.5% 77.25%, #082061 77.25% 79.75%, #08205d 79.75% 82.25%, #082059 82.25% 83%,
-    #081c59 83% 84.75%, #081c55 84.75% 87.5%, #081c51 87.5% 88.5%, #081851 88.5% 90%,
-    #08184d 90% 92.25%, #04184d 92.25% 92.5%, #041849 92.5% 94%, #041449 94% 95%,
-    #041445 95% 97.5%, #041441 97.5% 99.75%, #041041 99.75% 100%;
+    #2886eb 0% 0.25%, #2882eb 0.25% 1%, #2882e7 1% 3%, #287de7 3% 4%,
+    #287de3 4% 5%, #247de3 5% 5.75%, #2479e3 5.75% 6.75%, #2479df 6.75% 8.5%,
+    #2475df 8.5% 9.75%, #2475db 9.75% 10.5%, #2075db 10.5% 11%, #2071db 11% 12.75%,
+    #2071d7 12.75% 13.75%, #206dd7 13.75% 15.75%, #206dd2 15.75% 16%, #1c6dd2 16% 16.5%,
+    #1c69d2 16.5% 18.75%, #1c69ce 18.75% 19.25%, #1c65ce 19.25% 21.5%, #1865ce 21.5% 21.75%,
+    #1865ca 21.75% 22%, #1861ca 22% 23.5%, #1861c6 23.5% 24.5%, #185dc6 24.5% 25.25%,
+    #185dc2 25.25% 27%, #1859be 27% 28.25%, #1459be 28.25% 28.75%, #1459ba 28.75% 29.75%,
+    #1455ba 29.75% 30.5%, #1455b6 30.5% 32.25%, #1451b2 32.25% 34%, #1451ae 34% 34.75%,
+    #104dae 34.75% 35.5%, #104daa 35.5% 37.25%, #104da6 37.25% 37.5%, #1049a6 37.5% 39%,
+    #1049a2 39% 40%, #1045a2 40% 40.75%, #10459e 40.75% 41.5%, #0c459e 41.5% 42.5%,
+    #0c419a 42.5% 44.25%, #0c4196 44.25% 45.25%, #0c3d96 45.25% 45.75%, #0c3d92 45.75% 47%,
+    #0c3d8e 47% 47.75%, #0c398e 47.75% 48.25%, #0c398a 48.25% 49.75%, #0c3986 49.75% 50.5%,
+    #0c3586 50.5% 50.75%, #083586 50.75% 51%, #083582 51% 52.25%, #08357d 52.25% 53.25%,
+    #08317d 53.25% 53.5%, #083179 53.5% 55%, #083175 55% 55.75%, #082d75 55.75% 56.25%,
+    #082d71 56.25% 57.5%, #082d6d 57.5% 58.5%, #08286d 58.5% 58.75%, #082869 58.75% 60%,
+    #082865 60% 61%, #082465 61% 61.5%, #082461 61.5% 62.75%, #04245d 62.75% 63.75%,
+    #04205d 63.75% 64%, #042059 64% 65.25%, #042055 65.25% 66.5%, #041c55 66.5% 66.75%,
+    #041c51 66.75% 68.25%, #041c4d 68.25% 69.5%, #041c49 69.5% 70.25%, #041849 70.25% 71%,
+    #041845 71% 72.5%, #041841 72.5% 73.75%, #04143d 73.75% 75.25%, #041439 75.25% 76.75%,
+    #041435 76.75% 77.5%, #041035 77.5% 78.25%, #041031 78.25% 79.5%, #04102d 79.5% 81%,
+    #041028 81% 81.25%, #040c28 81.25% 82.5%, #040c24 82.5% 83.75%, #000c20 83.75% 86%,
+    #000820 86% 86.75%, #00081c 86.75% 89.75%, #000818 89.75% 93%, #000814 93% 95.25%,
+    #000414 95.25% 96%, #000410 96% 99%, #00040c 99% 100%;
 
   /* Mise en page verticale (écran haut). */
   --k-tab-h: 9.75cqw;
@@ -389,7 +398,7 @@
   text-shadow: var(--k-glow);
   background:
     linear-gradient(90deg, transparent 0 22%, rgba(150, 212, 255, 0.16) 50%, transparent 78%) 0 11.4cqw / 100% 0.4cqw no-repeat,
-    radial-gradient(118% 60% at 56% 32%, var(--k-bg-stops));
+    radial-gradient(86% 47% at 58% 30%, var(--k-bg-stops));
 }
 
 @media (min-width: 769px) and (pointer: fine) {
@@ -416,11 +425,15 @@
   }
 }
 
-/* Écran dense : traits de trame plus fins, donc un peu plus marqués. Placé après la règle de base
-   de .screen, qui sinon l'emporterait. */
+/* Écran dense : les traits de la grille y sont deux à trois fois plus fins, donc un peu plus
+   marqués pour rester perceptibles. Placé après la règle de base de .screen, qui sinon
+   l'emporterait. */
 @media (min-resolution: 1.5dppx) {
   .screen {
-    --k-lcd-gain: 1.8;
+    --k-lcd-line-h: 0.06;
+    --k-lcd-line-v: 0.045;
+    --k-trame: 0.07;
+    --k-hatch: 0.045;
   }
 }
 
@@ -436,7 +449,7 @@
    - le gamma d'une TN dérive avec l'angle vertical : vue de face, le haut de l'image est plus
      dense et plus sombre, le bas plus pâle ;
    - le tube du bas fuit le long du bord ;
-   - la trame des sous-pixels et son interligne.
+   - la grille des pixels, très fine.
 
    Le tout par simple transparence — un filtre ferait la même chose en plus exact, mais il est
    exclu sous kiosk/ (voir l'en-tête). */
@@ -447,19 +460,19 @@
   z-index: 8;
   pointer-events: none;
   background:
-    var(--k-lcd-rgb),
+    var(--k-lcd-cols),
     var(--k-lcd-rows),
-    linear-gradient(0deg, rgba(190, 212, 255, 0.16) 0%, rgba(190, 212, 255, 0.05) 5%, rgba(190, 212, 255, 0) 14%),
+    linear-gradient(0deg, rgba(190, 212, 255, 0.1) 0%, rgba(190, 212, 255, 0.03) 5%, rgba(190, 212, 255, 0) 12%),
     linear-gradient(
       180deg,
-      rgba(0, 5, 30, 0.2) 0%,
-      rgba(0, 5, 30, 0.07) 22%,
+      rgba(0, 5, 30, 0.18) 0%,
+      rgba(0, 5, 30, 0.06) 22%,
       rgba(0, 5, 30, 0) 45%,
-      rgba(168, 186, 228, 0) 55%,
-      rgba(168, 186, 228, 0.07) 80%,
-      rgba(168, 186, 228, 0.12) 100%
+      rgba(168, 186, 228, 0) 60%,
+      rgba(168, 186, 228, 0.035) 82%,
+      rgba(168, 186, 228, 0.06) 100%
     ),
-    linear-gradient(rgba(92, 108, 150, 0.12), rgba(92, 108, 150, 0.12));
+    linear-gradient(rgba(92, 108, 150, 0.1), rgba(92, 108, 150, 0.1));
 }
 
 /* ----- le bord de la dalle -----
@@ -483,42 +496,59 @@
 }
 
 /* ----- le fourmillement (FRC) -----
-   Une dalle 6 bits simulait les niveaux qui lui manquaient en faisant clignoter chaque pixel
-   entre deux niveaux voisins : de près, les aplats sombres et les dégradés fourmillent. Deux
-   semis de cellules un cran plus claires ou plus sombres, à l'échelle du pixel de dalle (trois
-   pixels physiques), se relaient douze fois par seconde. Seule leur opacité est animée : le
-   compositeur s'en charge, rien n'est redessiné. Sous la trame et sous la bande noire du bord. */
+   Une dalle 6 bits simulait les niveaux qui lui manquaient en faisant clignoter chaque sous-pixel
+   entre deux niveaux voisins. Cela ne se voit que de près, sur les aplats sombres : l'amplitude
+   est donc celle d'UN cran de 6 bits (4 niveaux sur 255), pas davantage. Un semis d'une cellule
+   par pixel physique couvre l'écran et saute de place trente fois par seconde, sur seize
+   positions. Seule une translation est animée — le compositeur s'en charge, rien n'est redessiné.
+
+   .kFrc est le « porteur » : un carré de 96 pixels physiques, dont les déplacements (en
+   pourcentages de son propre côté) tombent donc toujours sur un nombre entier de cellules. Le
+   semis, lui, déborde du porteur pour couvrir tout l'écran quelle que soit sa position. Sous la
+   grille et sous la bande noire du bord. */
 .kFrc {
   position: absolute;
-  inset: 0;
+  left: 0;
+  top: 0;
   z-index: 7;
+  width: calc(var(--k-dpx, 1px) * 96);
+  height: calc(var(--k-dpx, 1px) * 96);
   pointer-events: none;
+  will-change: transform;
+  animation: kFrcWalk 0.5333s step-end infinite;
 }
 
-.kFrc::before,
-.kFrc::after {
+.kFrc::before {
   content: "";
   position: absolute;
-  inset: 0;
-  background: url(/kiosk/lcd-frc.png) 0 0 / calc(var(--k-dpx, 1px) * 288) calc(var(--k-dpx, 1px) * 288);
+  left: 0;
+  top: 0;
+  width: calc(100cqw + var(--k-dpx, 1px) * 96);
+  height: calc(200cqw + var(--k-dpx, 1px) * 96);
+  background: url(/kiosk/lcd-frc.png) 0 0 / calc(var(--k-dpx, 1px) * 128) calc(var(--k-dpx, 1px) * 128);
   image-rendering: pixelated;
-  will-change: opacity;
-  animation: kFrcRelay 0.16s step-end infinite;
+  opacity: var(--k-frc-opacity);
 }
 
-.kFrc::after {
-  background-position: calc(var(--k-dpx, 1px) * -141) calc(var(--k-dpx, 1px) * -87);
-  animation-delay: -0.08s;
-}
-
-@keyframes kFrcRelay {
-  0% {
-    opacity: 1;
-  }
-
-  50% {
-    opacity: 0;
-  }
+/* Seize positions, sans ordre apparent ; chaque pas est un multiple de 6,25 % du porteur, soit
+   six cellules. */
+@keyframes kFrcWalk {
+  0% { transform: translate(0, 0); }
+  6.25% { transform: translate(-56.25%, -31.25%); }
+  12.5% { transform: translate(-18.75%, -81.25%); }
+  18.75% { transform: translate(-87.5%, -12.5%); }
+  25% { transform: translate(-31.25%, -62.5%); }
+  31.25% { transform: translate(-75%, -93.75%); }
+  37.5% { transform: translate(-6.25%, -43.75%); }
+  43.75% { transform: translate(-62.5%, -6.25%); }
+  50% { transform: translate(-43.75%, -75%); }
+  56.25% { transform: translate(-93.75%, -37.5%); }
+  62.5% { transform: translate(-12.5%, -18.75%); }
+  68.75% { transform: translate(-68.75%, -56.25%); }
+  75% { transform: translate(-25%, -100%); }
+  81.25% { transform: translate(-81.25%, -68.75%); }
+  87.5% { transform: translate(-37.5%, -25%); }
+  93.75% { transform: translate(-100%, -50%); }
 }
 
 /* Remise à zéro des boutons, sans poids : chaque bouton s'habille d'une seule classe, dans

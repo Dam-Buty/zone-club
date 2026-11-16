@@ -302,3 +302,14 @@ export function lcdDevicePixel(devicePixelRatio: number | undefined): string {
   if (typeof devicePixelRatio !== 'number' || !Number.isFinite(devicePixelRatio) || devicePixelRatio <= 0) return '1px';
   return `${parseFloat((1 / devicePixelRatio).toFixed(6))}px`;
 }
+
+/**
+ * Pas de la grille de la dalle, en pixels PHYSIQUES de l'écran : aussi serré que l'écran le permet.
+ * Sur un écran non dense on ne peut pas dessiner plus fin qu'un trait d'un pixel tous les deux
+ * pixels ; sur un écran dense le pas reste voisin d'un pixel CSS et demi, pour que la grille ait
+ * la même finesse apparente partout.
+ */
+export function lcdPitchInDevicePixels(devicePixelRatio: number | undefined): number {
+  if (typeof devicePixelRatio !== 'number' || !Number.isFinite(devicePixelRatio) || devicePixelRatio <= 0) return 2;
+  return Math.max(2, Math.round(devicePixelRatio * 1.5));
+}

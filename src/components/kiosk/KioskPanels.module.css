@@ -48,7 +48,7 @@
   z-index: 4;
   overflow-y: auto;
   padding: 2cqw 6cqw 8cqw;
-  background: radial-gradient(118% 60% at 56% 24%, var(--k-bg-stops));
+  background: radial-gradient(86% 47% at 56% 24%, var(--k-bg-stops));
 }
 
 .kAuthBack {
@@ -181,7 +181,7 @@
   display: flex;
   flex-direction: column;
   padding: 2cqw 6cqw 4cqw;
-  background: radial-gradient(118% 60% at 56% 24%, var(--k-bg-stops));
+  background: radial-gradient(86% 47% at 56% 24%, var(--k-bg-stops));
 }
 
 .kSearchPane .kAuthBack {

@@ -206,3 +206,18 @@ test('BORNE: la trame de la dalle se cale sur un pixel physique, quelle que soit
 test('BORNE: sans densité lisible, la trame retombe sur le pixel CSS', () => {
   for (const bad of [0, -2, NaN, Infinity, undefined]) assert.equal(K.lcdDevicePixel(bad), '1px');
 });
+
+// ===== Grille de la dalle : aussi serrée que l'écran le permet =====
+test('BORNE: la grille de la dalle est aussi serrée que l\'écran le permet', () => {
+  // Écran non dense : un pixel physique sur deux, on ne peut pas dessiner plus fin.
+  assert.equal(K.lcdPitchInDevicePixels(1), 2);
+  // Écrans denses : le pas reste voisin d'un pixel CSS et demi.
+  assert.equal(K.lcdPitchInDevicePixels(2), 3);
+  assert.equal(K.lcdPitchInDevicePixels(2.625), 4);
+  assert.equal(K.lcdPitchInDevicePixels(3), 5);
+  // Zoom arrière du navigateur : jamais moins de deux pixels physiques.
+  assert.equal(K.lcdPitchInDevicePixels(0.75), 2);
+});
+test('BORNE: sans densité lisible, la grille prend le pas le plus serré', () => {
+  for (const bad of [0, -2, NaN, Infinity, undefined]) assert.equal(K.lcdPitchInDevicePixels(bad), 2);
+});
