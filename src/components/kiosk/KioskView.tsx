@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useStore, useCredits } from '../../store';
 import { useBackGuard } from '../../hooks/useBackGuard';
+import api from '../../api';
 import type { Film } from '../../types';
+import { KioskAction, type KioskFilmDetail } from './KioskAction';
 import { KioskAuth } from './KioskAuth';
 import { KioskBrowse } from './KioskBrowse';
 import { KioskNotice, type KioskNoticeSpec } from './KioskNotice';
@@ -89,6 +91,38 @@ export function KioskView() {
     const chosen = selectedId === null ? undefined : allFilms(films).find((f) => f.id === selectedId);
     return chosen ?? filmsForTab(films, firstNonEmptyTab(films), 'rayon')[0] ?? null;
   }, [films, selectedId]);
+
+  // ----- Détail du film affiché : versions jouables et copies restantes -----
+  // La réponse porte l'identifiant du film demandé : celle d'un film qu'on ne regarde déjà plus
+  // est ignorée. En cas d'échec le détail reste inconnu (version « — », stock non vérifié).
+  const [detail, setDetail] = useState<{ filmId: number; data: KioskFilmDetail } | null>(null);
+  const displayedId = displayed?.id ?? null;
+  const displayedTmdbId = displayed?.tmdb_id ?? null;
+  useEffect(() => {
+    if (displayedId === null || displayedTmdbId === null) return;
+    let cancelled = false;
+    api.films.getById(displayedTmdbId).then(
+      (film) => {
+        if (cancelled) return;
+        setDetail({
+          filmId: displayedId,
+          data: {
+            vf: !!film.has_vf,
+            vo: !!film.has_vo,
+            copiesLeft: film.rental_status.available_copies,
+            earliestReturn: film.rental_status.earliest_return ?? null,
+          },
+        });
+      },
+      () => {
+        // Détail indisponible : la fiche reste utilisable, le serveur tranchera à la location.
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [displayedId, displayedTmdbId]);
+  const currentDetail = detail !== null && detail.filmId === displayedId ? detail.data : null;
 
   const closeNotice = useCallback(() => setNotice(null), []);
 
@@ -179,10 +213,12 @@ export function KioskView() {
                   {catalog === 'ready' && (
                     <KioskBrowse
                       selectedId={displayed?.id ?? null}
-                      versions={null}
+                      versions={currentDetail ? { vf: currentDetail.vf, vo: currentDetail.vo } : null}
                       onSelect={(film) => setSelectedId(film.id)}
                       onSearch={() => setMode('search')}
-                      actionSlot={() => null}
+                      actionSlot={(film) => (
+                        <KioskAction film={film} detail={currentDetail} onNotice={setNotice} onRequestAuth={requestAuth} />
+                      )}
                     />
                   )}
                 </div>

@@ -113,3 +113,7 @@ test('BORNE: « crédit » s\'accorde — 0 et 1 au singulier', () => {
   assert.equal(K.creditsLabel(2), '2 crédits');
   assert.equal(K.creditsLabel(15), '15 crédits');
 });
+test('BORNE: échéance d\'une location, en français', () => {
+  const expiresAt = Date.UTC(2026, 10, 19, 17, 42); // 19/11/2026 18:42 à Paris
+  assert.equal(K.formatUntil(expiresAt, 'Europe/Paris'), '19 novembre à 18:42');
+});

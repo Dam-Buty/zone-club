@@ -171,6 +171,17 @@ export async function rentFlow(
   }
 }
 
+/** « 19 novembre à 18:42 » — l'échéance d'une location. `timeZone` ne sert qu'aux tests. */
+export function formatUntil(expiresAt: number, timeZone?: string): string {
+  return new Date(expiresAt).toLocaleString('fr-FR', {
+    day: 'numeric',
+    month: 'long',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone,
+  });
+}
+
 // ===== Connexion =====
 
 export type KioskAuthMode = 'login' | 'register' | 'recover';
