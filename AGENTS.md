@@ -476,7 +476,7 @@ Règles à ne pas casser — chacune a son test dans `tests/domain/kiosk-*.test.
   de Rusmir : la photographie « 01_iMOZI_interface_2007 ». Facture : onglets collés dans un cadre,
   boutons plats à trame et fine bordure claire, satiné légèrement métallique, libellés d'action en
   bas-de-casse, angles à peine arrondis. Deux couches recouvrent le contenu de l'écran
-  (`KioskView.module.css`) : la **dalle** (`.screen::before` — trame des sous-pixels, rétroéclairage
+  (`KioskView.module.css`) : la **dalle** (`.screen::before` — grille des pixels, rétroéclairage
   inégal, noirs relevés ; `.screen::after` — sa bande noire et l'ombre du cadre) et la **vitre**
   (`.ks::after` — le reflet de la rue). Ce qui fait « verre » et non « plastique » : un reflet
   **net**, qui **n'ajoute que de la lumière**, et rien d'autre — ni grain, ni voile, ni liseré, ni
@@ -488,17 +488,29 @@ Règles à ne pas casser — chacune a son test dans `tests/domain/kiosk-*.test.
   calques numérotés de l'écran passent par-dessus le reflet. Les trames (dalle, boutons, hachure
   de la fiche) sont dessinées en **pixels physiques** (`--k-dpx`, posée par `KioskView` d'après
   `lcdDevicePixel()`) : un pas fixe en px CSS fait du moirage à densité fractionnaire (2,625 sur
-  le Pixel 9a). **Colorimétrie d'une dalle TN de 2007** (demande de Rusmir : contraste et couleurs
+  le Pixel 9a). La **grille de la dalle** est la matrice noire entre les pixels, dans les deux
+  sens : un trait d'un pixel physique tous les `--k-lcd-n` (`lcdPitchInDevicePixels()` : deux
+  sur un écran non dense), à peine marqué — ni interligne appuyé, ni bandes de couleur. **Elle se
+  juge sur un écran NON dense** (le 60 Hz de Rusmir) : le 16/11 une trame à trois pixels y donnait
+  des stries horizontales et un quadrillage des boutons — un rendu de tube cathodique, pas de
+  LCD — que les captures Retina ne montraient pas. **Colorimétrie d'une dalle TN de 2007** (demande de Rusmir : contraste et couleurs
   limités, 6 bits + FRC, noirs délavés) — tout ce que l'écran affiche, jaquettes comprises, passe
   par `.screen::before` : un voile gris bleuté (noirs relevés et bleutés, blancs froids, couleurs
   moins pures), le haut plus dense et le bas plus pâle (dérive du gamma avec l'angle vertical), la
-  fuite du tube du bas. Le dégradé de fond est quantifié sur 6 bits (`--k-bg-stops`, liste
-  produite par script) et `.kFrc` fait fourmiller l'image : deux semis
-  (`public/kiosk/lcd-frc.png`) qui se relaient, seule leur opacité est animée. C'est une
+  fuite du tube du bas. Le fond de l'écran est celui de la référence — un bleu vif derrière la
+  fiche qui tombe au **noir** vers les bords, pas un aplat bleu ; les cadres ne sont pas remplis
+  de bleu. Ce dégradé est quantifié sur 6 bits (`--k-bg-stops`, liste produite par script) et
+  `.kFrc` fait fourmiller l'image : un semis (`public/kiosk/lcd-frc.png`, une cellule par pixel
+  physique, amplitude d'UN cran de 6 bits) qui saute de place trente fois par seconde — seule une translation
+  est animée, en pourcentages d'un porteur de 96 pixels physiques pour retomber sur des cellules
+  entières. C'est une
   simulation des défauts VISIBLES : quantifier réellement les jaquettes demanderait un filtre ou
   un canvas, exclus ici. Typographie : Barlow Condensed (la plus proche de la DIN
-  condensée de la référence, chargée par l'import de polices de `src/index.css`) ; l'enseigne
-  « LOCATION 24/7 » reprend l'Orbitron de l'enseigne VIDEOCLUB. Trois feuilles — `KioskView`
+  condensée de la référence, chargée par l'import de polices de `src/index.css`). L'enseigne « LOCATION 24/7 » est un
+  néon **rendu** (`public/kiosk/neon-location-247.webp`), sur le modèle de l'enseigne VIDEOCLUB
+  de la devanture telle qu'elle est sur `public/exterior.jpeg` : lettres **en contour** d'une
+  grotesque géométrique grasse, tube fin au cœur rose presque blanc, halo violet — pas Orbitron,
+  et pas un texte avec des ombres portées, qui ne passe pas pour un néon. Trois feuilles — `KioskView`
   (corps, écran, dalle, vitre), `KioskBrowse` (rayons, fiche, bande), `KioskPanels` (connexion,
   recherche, messages) — partagent les variables `--k-*` posées sur l'écran. L'écran est en
   **5:9 sur téléphone** et en **2:3 sur PC** : les hauteurs passent par ces variables.

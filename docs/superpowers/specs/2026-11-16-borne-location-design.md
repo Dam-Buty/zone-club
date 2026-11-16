@@ -41,6 +41,21 @@
 >   tout l'écran, la dérive verticale du gamma, un dégradé de fond en paliers de 6 bits et un
 >   fourmillement animé — sans filtre, donc une simulation des défauts visibles et non une vraie
 >   quantification des jaquettes.
+> - **§ 6, corrections du 16/11 au soir.** Trois reproches de Rusmir, fondés **[R]** : le fond de
+>   l'écran était « entièrement bleu » alors que la référence montre un dégradé du bleu au noir ;
+>   le fourmillement ne devait pas être « grossier » ; l'enseigne « LOCATION 24/7 » n'était qu'une
+>   « vieille police néon » alors qu'il faut « un rendu néon réaliste ». Corrigé **[C]** : fond
+>   bleu → noir, cadres non remplis ; semis fin déplacé vingt-cinq fois par seconde ; enseigne
+>   rendue hors ligne sur le modèle de l'enseigne VIDEOCLUB de la devanture (lettres en contour).
+>   Le corps de la borne — fente, vitrines — reste, lui, provisoire jusqu'au rendu Blender du
+>   lot 3.
+> - **§ 6, grille de la dalle.** Vue par Rusmir sur son écran 60 Hz non dense : « des stries
+>   ridicules qui ne correspondent absolument pas à un rendu LCD », puis « la grille a une sorte
+>   de relief exagéré […] l'écart entre les pixels est trop important […] augmente la densité,
+>   réduis l'épaisseur de la grille sur le fond blanc ; le fourmillement est trop important
+>   aussi ». **[R]** Corrigé **[C]** : grille au pas le plus serré que l'écran permet, traits à
+>   peine marqués, plus de bandes de couleur ; fourmillement ramené à un cran de 6 bits. Tout
+>   réglage de texture se juge désormais sur un écran non dense.
 > - **Tarif** : l'affichage suit ce que le serveur facture. **Dates du serveur** : lues en UTC.
 >   Les deux validés. **[R]**
 > - **§ 5, bouton provisoire sur mobile** : il part tel quel, on ajustera en voyant la version
