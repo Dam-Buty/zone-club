@@ -82,17 +82,8 @@ test('BORNE: un double appui ne lance qu\'une location', async () => {
 test('BORNE: un refus du serveur remonte son message et libère le verrou', async () => {
   const lock = { busy: false };
   const res = await K.rentFlow({ rent: async () => { throw new Error('Non authentifié'); }, setMode: async () => {} }, lock);
-  assert.deepEqual(res, { status: 'error', message: 'Non authentifié' });
+  assert.deepEqual(res, { status: 'error', message: 'Non authentifié', httpStatus: null });
   assert.equal(lock.busy, false);
-});
-test('BORNE: le formulaire de connexion dit ce qui manque au lieu d\'échouer en silence', () => {
-  const ok = { username: 'ana', password: 'secret', confirm: 'secret', phrase: 'un deux trois' };
-  assert.equal(K.authFormError('login', { ...ok, confirm: '', phrase: '' }), null);
-  assert.equal(K.authFormError('login', { ...ok, username: '  ' }), 'Saisissez votre pseudo.');
-  assert.equal(K.authFormError('login', { ...ok, password: '' }), 'Saisissez votre mot de passe.');
-  assert.equal(K.authFormError('register', { ...ok, confirm: 'autre' }), 'Les deux mots de passe ne sont pas identiques.');
-  assert.equal(K.authFormError('recover', { ...ok, phrase: '' }), 'Saisissez votre phrase de récupération.');
-  assert.equal(K.authFormError('recover', ok), null);
 });
 test('BORNE: un échec du mode de visionnage ne fait pas échouer la location', async () => {
   const res = await K.rentFlow({ rent: async () => {}, setMode: async () => { throw new Error('x'); } }, { busy: false });
@@ -145,4 +136,45 @@ test('BORNE: l\'action en attente n\'est reprise qu\'une fois, et la dernière d
   pending.take()?.();
   assert.deepEqual([a, b], [0, 1]);
   assert.equal(pending.take(), undefined);
+});
+
+// ===== Retours de Rusmir du 16/11/2026, après la relecture =====
+
+test('BORNE: un refus de location garde le code du serveur ; « Se reconnecter » ne vaut que pour une session expirée', async () => {
+  const refuse = (status, message) => K.rentFlow({ rent: async () => { throw Object.assign(new Error(message), status === null ? {} : { status }); }, setMode: async () => {} }, { busy: false });
+  const expired = await refuse(401, 'Non authentifié');
+  assert.deepEqual(expired, { status: 'error', message: 'Non authentifié', httpStatus: 401 });
+  assert.equal(K.offersRelogin(expired), true);
+  assert.equal(K.offersRelogin(await refuse(400, 'Crédits insuffisants')), false, 'un refus de crédits ou de stock ne propose pas de se reconnecter');
+  assert.equal(K.offersRelogin(await refuse(null, 'Failed to fetch')), false, 'une panne de réseau non plus');
+  assert.equal(K.offersRelogin({ status: 'ok' }), false);
+});
+test('BORNE: le catalogue est dit indisponible dès que son chargement a échoué, sans attendre 8 s', () => {
+  assert.equal(K.catalogState(0, 500, false), 'loading');
+  assert.equal(K.catalogState(0, 500, true), 'unavailable');
+  assert.equal(K.catalogState(3, 500, true), 'ready', 'des films sont là : le catalogue est prêt');
+  assert.equal(K.catalogState(0, K.CATALOG_WAIT_MS, false), 'unavailable', 'le plafond de 8 s reste le filet');
+});
+test('BORNE: le geste retour agit dans la borne et ne la quitte jamais', () => {
+  const base = { playerOpen: false, noticeOpen: false, noticeClosable: true, authOpen: false, phrasePending: false, searchOpen: false };
+  assert.equal(K.kioskBackAction(base), 'none', 'à la racine : rien, seul « quitter » sort');
+  assert.equal(K.kioskBackAction({ ...base, searchOpen: true }), 'close-search');
+  assert.equal(K.kioskBackAction({ ...base, searchOpen: true, authOpen: true }), 'cancel-auth', 'la connexion est au-dessus de la recherche');
+  assert.equal(K.kioskBackAction({ ...base, authOpen: true, phrasePending: true }), 'none', 'la phrase de récupération ne se ferme pas d\'un geste');
+  assert.equal(K.kioskBackAction({ ...base, searchOpen: true, noticeOpen: true }), 'close-notice', 'le message est au-dessus de tout');
+  assert.equal(K.kioskBackAction({ ...base, noticeOpen: true, noticeClosable: false }), 'none', '« Catalogue indisponible » ne se ferme pas d\'un geste');
+  assert.equal(K.kioskBackAction({ ...base, noticeOpen: true, searchOpen: true, playerOpen: true }), 'close-player', 'le lecteur d\'abord');
+  // Table complète : aucune combinaison ne fait sortir de la borne.
+  const allowed = new Set(['none', 'close-player', 'close-notice', 'cancel-auth', 'close-search']);
+  for (let bits = 0; bits < 64; bits++) {
+    const s2 = { playerOpen: !!(bits & 1), noticeOpen: !!(bits & 2), noticeClosable: !!(bits & 4), authOpen: !!(bits & 8), phrasePending: !!(bits & 16), searchOpen: !!(bits & 32) };
+    assert.ok(allowed.has(K.kioskBackAction(s2)), JSON.stringify(s2));
+  }
+});
+test('BORNE: sur un téléphone en paysage, la borne ne s\'affiche pas', () => {
+  const phone = { coarsePointer: true, landscape: true, shortSide: 390 };
+  assert.equal(K.hidesKioskInLandscape(phone), true);
+  assert.equal(K.hidesKioskInLandscape({ ...phone, landscape: false }), false, 'à la verticale, la borne s\'affiche');
+  assert.equal(K.hidesKioskInLandscape({ ...phone, coarsePointer: false }), false, 'une fenêtre de PC basse n\'est pas un téléphone');
+  assert.equal(K.hidesKioskInLandscape({ ...phone, shortSide: 768 }), false, 'une tablette a la hauteur qu\'il faut');
 });

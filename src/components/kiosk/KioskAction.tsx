@@ -3,7 +3,7 @@ import { useStore, useCredits } from '../../store';
 import { RENTAL_COSTS, type Film } from '../../types';
 import { getRentalTier } from '../../utils/rental-tier';
 import type { KioskNoticeSpec } from './KioskNotice';
-import { creditsLabel, formatUntil, rentAction, rentFlow, type RentAction } from './kiosk-logic';
+import { creditsLabel, formatUntil, offersRelogin, rentAction, rentFlow, type RentAction } from './kiosk-logic';
 import styles from './KioskView.module.css';
 
 // Le bouton d'action de la fiche. Il ne se grise jamais : quand il ne peut pas louer, il le dit
@@ -110,21 +110,23 @@ export function KioskAction({ film, detail, onNotice, onRequestAuth }: KioskActi
     setRentingId((current) => (current === film.id ? null : current));
 
     if (result.status === 'error') {
-      // Le refus du serveur est montré tel quel. « Se reconnecter » couvre la session expirée :
-      // le magasin croit le visiteur connecté, le serveur non.
+      // Le refus du serveur est montré tel quel. « Se reconnecter » n'est proposé que pour une
+      // session expirée (401 : le magasin croit le visiteur connecté, le serveur non) — pas pour
+      // un refus de stock ou de crédits, que se reconnecter ne changerait pas.
+      const relogin = {
+        label: 'Se reconnecter',
+        onPress: () => {
+          close();
+          onRequestAuth(() => {
+            void press();
+          });
+        },
+      };
       onNotice({
         title: 'Location impossible',
         body: result.message,
         primary: { label: 'Fermer', onPress: close },
-        secondary: {
-          label: 'Se reconnecter',
-          onPress: () => {
-            close();
-            onRequestAuth(() => {
-              void press();
-            });
-          },
-        },
+        ...(offersRelogin(result) ? { secondary: relogin } : {}),
       });
       return;
     }

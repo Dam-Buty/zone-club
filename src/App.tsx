@@ -1,8 +1,8 @@
-import { useEffect, useLayoutEffect, useState, useCallback, useRef, lazy, Suspense } from 'react';
+import { Component, useEffect, useLayoutEffect, useState, useCallback, useRef, lazy, Suspense, type ReactNode } from 'react';
 import { useStore } from './store';
 import { preloadPosterImage } from './utils/CassetteTextureArray';
 import './utils/asset-preload'; // Side-effect import: registers the HDR/KTX2/wasm prefetch (starts once the storefront is shown)
-import { afterStorefront, hasWebGPU, releaseInteriorPreload } from './utils/interior-preload-gate';
+import { afterStorefront, hasWebGPU, pauseInteriorPreload, releaseInteriorPreload, shouldMountInterior, whileStorefront } from './utils/interior-preload-gate';
 import api, { apiFilmToFilm } from './api';
 import type { AisleType, Film } from './types';
 import './utils/perf-beacon'; // Side-effect import: mesure de terrain de l'entrée dans la boutique (POST /api/perf)
@@ -39,14 +39,24 @@ const BoardOverlay = lazy(() => import('./components/board/BoardOverlay'));
 const VHSPlayer = lazy(() => import('./components/player/VHSPlayer').then(m => ({ default: m.VHSPlayer })));
 const ActiveCastIndicator = lazy(() => import('./components/player/ActiveCastIndicator').then(m => ({ default: m.ActiveCastIndicator })));
 const MinitelOverlay = lazy(() => import('./components/minitel/MinitelOverlay').then(m => ({ default: m.MinitelOverlay })));
-// Borne de location : du DOM pur, aucun rendu 3D — son chunk ne part qu'à l'ouverture de la borne.
-const KioskView = lazy(() => import('./components/kiosk/KioskView').then(m => ({ default: m.KioskView })));
+// Borne de location : du DOM pur, aucun rendu 3D. Son code est demandé dès que la devanture est
+// affichée (preloadKiosk), AVANT les fichiers du vidéoclub 3D : demandé seulement à l'appui, il
+// attendait derrière eux — 14,3 s d'écran noir mesurées à 20 Mbit/s le 16/11/2026.
+const loadKiosk = () => import('./components/kiosk/KioskView');
+const preloadKiosk = () => { void loadKiosk().catch(() => {}); };
+// Un premier échec (réseau) est retenté une fois : webpack redemande un chunk resté en échec.
+const KioskView = lazy(() => loadKiosk().catch(() => loadKiosk()).then(m => ({ default: m.KioskView })));
 
 // Preload heavy interior assets (HDR, PBR textures, GLBs) while user is on exterior/onboarding.
 // These fire HTTP requests as soon as the interior chunk is in — by the time the user enters, assets are in browser cache.
 _interiorImport.then(() => {
   // Module loaded — useGLTF.preload calls inside submodules (VHSCaseViewer, Manager3D) are now active.
-  // Preload additional assets that drei hooks will request on mount:
+  // Preload additional assets that drei hooks will request on mount.
+  //
+  // Des fetch() interruptibles, plus des <link rel="prefetch"> : un lien posé dans le <head> ne
+  // se coupe pas, et ces téléchargements continuaient pendant la borne (mesuré le 16/11/2026).
+  // whileStorefront leur passe le signal coupé à l'ouverture de la borne et les relance au
+  // retour devant la devanture ; si le chunk arrive pendant la borne, ils attendent ce retour.
   const preloadUrls = [
     '/textures/env/indoor_night.hdr',
     '/textures/wall/color.jpg', '/textures/wall/normal.jpg', '/textures/wall/roughness.jpg', '/textures/wall/ao.jpg',
@@ -56,12 +66,13 @@ _interiorImport.then(() => {
     '/textures/wall/color.ktx2', '/textures/wall/normal.ktx2', '/textures/wall/roughness.ktx2', '/textures/wall/ao.ktx2',
     '/textures/wood/color.ktx2', '/textures/wood/normal.ktx2', '/textures/wood/roughness.ktx2',
   ];
-  for (const url of preloadUrls) {
-    const link = document.createElement('link');
-    link.rel = 'prefetch';
-    link.href = url;
-    document.head.appendChild(link);
-  }
+  whileStorefront((signal) => {
+    for (const url of preloadUrls) {
+      fetch(url, { cache: 'force-cache', priority: 'low', signal } as RequestInit).catch(() => {
+        // Coupé par la borne, ou en échec : le composant qui en a besoin le redemandera.
+      });
+    }
+  });
 });
 
 // ===== MODULE-LEVEL PREFETCH =====
@@ -251,6 +262,57 @@ function PWAInstallToast({ onInstall, onDismiss }: { onInstall: () => void; onDi
   );
 }
 
+// ===== Borne : ouverture et panne =====
+// Même fond que la borne (KioskView.module.css, .root) : le passage de l'un à l'autre ne se voit pas.
+const KIOSK_BACKDROP = 'linear-gradient(180deg, #23213a 0%, #191827 40%, #14131f 100%)';
+const kioskPanelStyle = {
+  position: 'fixed', inset: 0, zIndex: 1, display: 'flex', flexDirection: 'column',
+  alignItems: 'center', justifyContent: 'center', gap: 18, padding: 24, textAlign: 'center',
+  background: KIOSK_BACKDROP, color: '#d6ecff',
+  fontFamily: '"Avenir Next Condensed", "Roboto Condensed", "Arial Narrow", "Helvetica Neue", Arial, sans-serif',
+  fontSize: 20, fontWeight: 600,
+} as const;
+const kioskPanelButtonStyle = {
+  padding: '12px 20px', border: '2px solid #4fc3e8', borderRadius: 8, background: '#0f6895',
+  color: '#fff', font: 'inherit', fontSize: 17, cursor: 'pointer',
+} as const;
+
+/** Affiché le temps que le code de la borne arrive (connexion lente), à la place d'un écran noir. */
+function KioskOpening() {
+  return <div role="status" style={kioskPanelStyle}>Ouverture de la borne…</div>;
+}
+
+/**
+ * Une panne de la borne (code introuvable hors connexion, erreur de rendu) ne doit pas faire
+ * tomber toute l'application sur un écran noir : elle est dite, avec deux sorties.
+ */
+class KioskBoundary extends Component<{ onLeave: () => void; children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  componentDidCatch(error: unknown) {
+    console.error('[borne] ouverture ou rendu en échec', error);
+  }
+  render() {
+    if (!this.state.failed) return this.props.children;
+    return (
+      <div role="alert" style={kioskPanelStyle}>
+        <span>La borne n&apos;a pas pu s&apos;ouvrir.</span>
+        <span style={{ fontSize: 16, fontWeight: 500 }}>Vérifiez votre connexion, puis rechargez la page.</span>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', justifyContent: 'center' }}>
+          <button type="button" style={kioskPanelButtonStyle} onClick={() => window.location.reload()}>
+            Recharger la page
+          </button>
+          <button type="button" style={kioskPanelButtonStyle} onClick={this.props.onLeave}>
+            Retour à la devanture
+          </button>
+        </div>
+      </div>
+    );
+  }
+}
+
 function Reticule() {
   const [locked, setLocked] = useState(false);
   useEffect(() => {
@@ -284,7 +346,6 @@ function App() {
 
   // Individual selectors to avoid re-rendering on unrelated store changes (e.g. targetedFilm, pointerLock)
   const currentScene = useStore(state => state.currentScene);
-  const interiorWarm = useStore(state => state.interiorWarm);
   const setScene = useStore(state => state.setScene);
   const selectedFilmId = useStore(state => state.selectedFilmId);
   const selectFilm = useStore(state => state.selectFilm);
@@ -333,10 +394,19 @@ function App() {
   useEffect(() => {
     // La vanne s'ouvre quand la devanture est affichée ; on laisse encore son fondu
     // d'apparition (0,8 s) se terminer avant de demander quoi que ce soit au GPU.
+    // Vaut aussi au RETOUR de la borne : la vanne s'est refermée à son ouverture, et la scène
+    // 3D ne se remonte qu'une fois la devanture de nouveau à l'écran — pas dans le même rendu.
+    if (currentScene !== 'exterior') return;
+    let cancelled = false;
     let timer = 0;
-    afterStorefront(() => { timer = window.setTimeout(() => setInteriorPrewarm(true), 800); });
-    return () => window.clearTimeout(timer);
-  }, []);
+    afterStorefront(() => {
+      if (!cancelled) timer = window.setTimeout(() => setInteriorPrewarm(true), 800);
+    });
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [currentScene]);
   useEffect(() => {
     // Pre-load the Google Cast SDK as soon as the user enters the videoclub
     // so it is ready by the time they open the player. Previously the SDK
@@ -498,6 +568,17 @@ function App() {
     setTimeout(() => setScene('interior'), 100);
   }, [setScene]);
 
+  // Dès l'appui sur la borne, plus rien du vidéoclub 3D ne consomme : les téléchargements en
+  // cours sont coupés (la vanne se referme) et la scène est démontée, son GPU libéré — qu'elle
+  // ait été prête ou encore en préparation. Tout repart quand la devanture est de nouveau
+  // affichée ; un temps de chargement à la porte, après un passage par la borne, est accepté.
+  const openKiosk = useCallback(() => {
+    pauseInteriorPreload();
+    setInteriorPrewarm(false);
+    setScene('kiosk');
+  }, [setScene]);
+  const leaveKiosk = useCallback(() => setScene('exterior'), [setScene]);
+
   const isInterior = currentScene === 'interior';
   const isKiosk = currentScene === 'kiosk';
 
@@ -506,18 +587,16 @@ function App() {
   // visiteur regarde la vitrine. À l'entrée, c'est le MÊME élément qui devient visible (même
   // place dans l'arbre, donc pas de remontage) : le travail fait n'est pas refait.
   //
-  // Pendant la borne, rien de 3D ne tourne. Scène déjà prête (`interiorWarm`) : elle reste
-  // montée, rendu gelé (`suspended`), et l'entrée par la porte reste immédiate. Scène encore
-  // en préparation : elle est démontée, et sa préparation repart du début au retour devant la
-  // devanture. Sans WebGPU, elle n'est jamais montée.
-  const mountInterior = webgpuSupported && (isInterior || (interiorPrewarm && (!isKiosk || interiorWarm)));
+  // Pendant la borne, rien de 3D n'existe : la scène est démontée (shouldMountInterior), prête
+  // ou non. Sans WebGPU, elle n'est jamais montée.
+  const mountInterior = shouldMountInterior({ webgpu: webgpuSupported, scene: currentScene, prewarmOpen: interiorPrewarm });
 
   return (
     <>
       {/* 3D R3F + WebGPU Video Club Scene */}
       {mountInterior && (
         <Suspense fallback={null}>
-          <InteriorScene onCassetteClick={handleFilmClick} prewarm={!isInterior} suspended={isKiosk} />
+          <InteriorScene onCassetteClick={handleFilmClick} prewarm={!isInterior} />
         </Suspense>
       )}
 
@@ -526,7 +605,8 @@ function App() {
         <Suspense fallback={null}>
           <ExteriorView
             onEnter={handleEnterStore}
-            onOpenKiosk={() => setScene('kiosk')}
+            onOpenKiosk={openKiosk}
+            onShown={preloadKiosk}
             canEnter={webgpuSupported}
           />
         </Suspense>
@@ -536,15 +616,16 @@ function App() {
           vidéoclub. Deux Suspense : le premier chargement du lecteur (paresseux) ne doit pas
           masquer la borne le temps que son chunk arrive. */}
       {isKiosk && (
-        <>
-          <Suspense fallback={null}>
+        <KioskBoundary onLeave={leaveKiosk}>
+          {/* Jamais d'écran noir : tant que le code de la borne n'est pas là, son fond l'est. */}
+          <Suspense fallback={<KioskOpening />}>
             <KioskView />
           </Suspense>
           <Suspense fallback={null}>
             {isPlayerOpen && <VHSPlayer />}
             <ActiveCastIndicator />
           </Suspense>
-        </>
+        </KioskBoundary>
       )}
 
       {isInterior && (<>

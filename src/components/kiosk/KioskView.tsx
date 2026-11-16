@@ -8,7 +8,18 @@ import { KioskAuth } from './KioskAuth';
 import { KioskBrowse } from './KioskBrowse';
 import { KioskNotice, type KioskNoticeSpec } from './KioskNotice';
 import { KioskSearch } from './KioskSearch';
-import { allFilms, catalogState, createPendingAction, creditsLabel, filmsForTab, firstNonEmptyTab, type KioskTab } from './kiosk-logic';
+import {
+  allFilms,
+  catalogState,
+  createPendingAction,
+  creditsLabel,
+  filmsForTab,
+  firstNonEmptyTab,
+  hidesKioskInLandscape,
+  kioskBackAction,
+  type KioskTab,
+} from './kiosk-logic';
+import states from './KioskStates.module.css';
 import styles from './KioskView.module.css';
 
 // Borne de location : seconde façon de louer, sans aucun rendu 3D. Cette coque porte le corps
@@ -28,6 +39,49 @@ function useArmedAfterMount(): boolean {
     return () => cancelAnimationFrame(id);
   }, []);
   return armed;
+}
+
+/** Téléphone tenu en paysage ? Lu sur l'ÉCRAN, pas sur la fenêtre (le clavier virtuel la rétrécit). */
+function readPhoneLandscape(): boolean {
+  if (typeof window === 'undefined') return false;
+  const type = window.screen?.orientation?.type;
+  return hidesKioskInLandscape({
+    coarsePointer: window.matchMedia('(pointer: coarse)').matches,
+    landscape: type ? type.startsWith('landscape') : window.matchMedia('(orientation: landscape)').matches,
+    shortSide: Math.min(window.screen.width, window.screen.height),
+  });
+}
+
+function usePhoneLandscape(): boolean {
+  const [value, setValue] = useState(readPhoneLandscape);
+  useEffect(() => {
+    const update = () => setValue(readPhoneLandscape());
+    const orientation = window.screen?.orientation;
+    window.addEventListener('resize', update);
+    orientation?.addEventListener?.('change', update);
+    return () => {
+      window.removeEventListener('resize', update);
+      orientation?.removeEventListener?.('change', update);
+    };
+  }, []);
+  return value;
+}
+
+/**
+ * Sur un téléphone, le paysage est réservé au film : à la place de la borne, une invitation à
+ * redresser l'appareil. Elle garde une sortie, pour ne jamais laisser le visiteur sans issue.
+ */
+function KioskRotate({ onQuit }: { onQuit: () => void }) {
+  return (
+    <div className={states.rotate} role="status">
+      <div className={states.rotatePhone} aria-hidden="true" />
+      <p className={states.rotateTitle}>Tournez votre téléphone</p>
+      <p className={states.rotateText}>La borne s&apos;utilise à la verticale. Le paysage est réservé aux films.</p>
+      <button type="button" className={states.rotateQuit} onClick={onQuit}>
+        Quitter la borne
+      </button>
+    </div>
+  );
 }
 
 // Tranches de K7 des vitrines : teintes tirées d'une suite fixe, identiques d'un affichage à l'autre.
@@ -58,35 +112,52 @@ export function KioskView() {
   const isAuthenticated = useStore((state) => state.isAuthenticated);
   const authUser = useStore((state) => state.authUser);
   const logout = useStore((state) => state.logout);
+  const isPlayerOpen = useStore((state) => state.isPlayerOpen);
+  const closePlayer = useStore((state) => state.closePlayer);
   const credits = useCredits();
+  const phoneLandscape = usePhoneLandscape();
 
   const [mode, setMode] = useState<'browse' | 'search'>('browse');
   const [selectedId, setSelectedId] = useState<number | null>(null);
   // Un seul message à la fois dans l'écran.
   const [notice, setNotice] = useState<KioskNoticeSpec | null>(null);
 
+  // « quitter » est la SEULE sortie de la borne (avec ses deux relais : « Quitter » du message
+  // « Catalogue indisponible » et de l'invitation à redresser le téléphone).
   const quit = useCallback(() => setScene('exterior'), [setScene]);
-  const guardArmed = useArmedAfterMount();
-  useBackGuard(guardArmed, quit);
 
   // ----- Catalogue : jamais un écran vide -----
   const catalogue = useMemo(() => allFilms(films), [films]);
   const total = catalogue.length;
   const [waitStart, setWaitStart] = useState(() => Date.now());
   const [now, setNow] = useState(() => Date.now());
+  // Le chargement a répondu sans rien rapporter : inutile de faire patienter 8 s.
+  const [loadFailed, setLoadFailed] = useState(false);
   useEffect(() => {
     if (total > 0) return;
     const id = window.setInterval(() => setNow(Date.now()), 500);
     return () => window.clearInterval(id);
   }, [total, waitStart]);
-  const catalog = catalogState(total, now - waitStart);
+  const catalog = catalogState(total, now - waitStart, loadFailed);
+
+  const requestCatalog = useCallback(() => {
+    void loadFilmsFromApi().finally(() => {
+      setLoadFailed(allFilms(useStore.getState().films).length === 0);
+    });
+  }, [loadFilmsFromApi]);
+  // La borne ne s'en remet pas au préchargement fait au chargement de la page : si le catalogue
+  // manque à son ouverture (préchargement en échec, ou pas encore arrivé), elle le demande.
+  useEffect(() => {
+    if (allFilms(useStore.getState().films).length === 0) requestCatalog();
+  }, [requestCatalog]);
 
   const retryCatalog = useCallback(() => {
     const t = Date.now();
     setWaitStart(t);
     setNow(t);
-    void loadFilmsFromApi();
-  }, [loadFilmsFromApi]);
+    setLoadFailed(false);
+    requestCatalog();
+  }, [requestCatalog]);
 
   // Film affiché : celui qu'on a choisi, sinon le premier de Nouveautés (ou du premier rayon garni).
   const displayed = useMemo<Film | null>(() => {
@@ -104,8 +175,6 @@ export function KioskView() {
     setBrowse((current) => ({ key: current.key + 1, tab: film.aisle ?? 'tous' }));
     setMode('browse');
   };
-  // Le geste retour ferme la recherche avant de quitter la borne.
-  useBackGuard(mode === 'search', closeSearch);
 
   // ----- Détail du film affiché : versions jouables et copies restantes -----
   // La réponse porte l'identifiant du film demandé : celle d'un film qu'on ne regarde déjà plus
@@ -165,10 +234,6 @@ export function KioskView() {
     setAuthOpen(false);
     then?.();
   }, [pendingAction]);
-  // Le geste retour ferme d'abord la connexion, puis la borne (dernière garde posée, première
-  // servie). Pas de garde sur l'écran de la phrase : un retour arrière ne doit pas la faire perdre.
-  useBackGuard(authOpen && pendingPhrase === null, cancelAuth);
-
   const openAccount = () => {
     if (authVisible) return;
     if (!isAuthenticated || !authUser) {
@@ -201,8 +266,52 @@ export function KioskView() {
         }
       : notice;
 
+  // ----- Geste retour : il agit DANS la borne, il ne la quitte jamais -----
+  // Une seule garde pour toute la borne, reposée dès qu'elle a servi : le geste (ou le bouton
+  // retour du navigateur) ferme ce qui est ouvert, du plus haut au plus bas (kioskBackAction) ;
+  // à la racine il ne fait rien, sinon rappeler où est la sortie. Le lecteur, lui, porte sa
+  // propre garde, posée au-dessus de celle-ci.
+  // Compteur plutôt que booléen : chaque geste relance les deux secondes du rappel.
+  const [quitHintTick, setQuitHintTick] = useState(0);
+  const quitHint = quitHintTick > 0;
+  useEffect(() => {
+    if (quitHintTick === 0) return;
+    const id = window.setTimeout(() => setQuitHintTick(0), 2200);
+    return () => window.clearTimeout(id);
+  }, [quitHintTick]);
+
+  const onBack = () => {
+    setTrapArmed(false);
+    const action = kioskBackAction({
+      playerOpen: isPlayerOpen,
+      noticeOpen: overlay !== null,
+      noticeClosable: catalog !== 'unavailable',
+      authOpen,
+      phrasePending: pendingPhrase !== null,
+      searchOpen: mode === 'search',
+    });
+    if (action === 'close-player') closePlayer();
+    else if (action === 'close-notice') closeNotice();
+    else if (action === 'cancel-auth') cancelAuth();
+    else if (action === 'close-search') closeSearch();
+    else if (overlay === null && !authVisible) setQuitHintTick((tick) => tick + 1);
+  };
+  const guardArmed = useArmedAfterMount();
+  const [trapArmed, setTrapArmed] = useState(true);
+  useBackGuard(guardArmed && trapArmed, onBack);
+  useEffect(() => {
+    if (trapArmed) return;
+    const id = window.setTimeout(() => setTrapArmed(true), 0);
+    return () => window.clearTimeout(id);
+  }, [trapArmed]);
+
+  // Téléphone en paysage : la borne s'efface (elle garde son état) devant l'invitation à
+  // redresser l'appareil. Sous le lecteur, elle est inerte : ni focus clavier, ni appui.
+  const hidden = phoneLandscape;
+
   return (
-    <div className={styles.root}>
+    <>
+    <div className={`${styles.root} ${hidden ? states.rootHidden : ''}`} inert={isPlayerOpen || hidden}>
       <div className={styles.sign} aria-hidden="true">
         <span className={styles.neonTxt}>Location 24/7</span>
       </div>
@@ -222,9 +331,12 @@ export function KioskView() {
                     <button type="button" className={styles.kNavBtn} onClick={openAccount}>
                       compte
                     </button>
-                    <button type="button" className={styles.kNavBtn} onClick={quit}>
+                    <button type="button" className={`${styles.kNavBtn} ${quitHint ? styles.kNavHint : ''}`} onClick={quit}>
                       quitter<span className={styles.kNavTri} aria-hidden="true">◀</span>
                     </button>
+                    <span className={states.srOnly} role="status">
+                      {quitHint ? 'Pour sortir de la borne, utilisez le bouton quitter.' : ''}
+                    </span>
                   </div>
                 </div>
 
@@ -269,5 +381,7 @@ export function KioskView() {
         </div>
       </div>
     </div>
+    {hidden && !isPlayerOpen && <KioskRotate onQuit={quit} />}
+    </>
   );
 }

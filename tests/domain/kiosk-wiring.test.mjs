@@ -43,7 +43,6 @@ test('BORNE: App n\'arrête plus tout le site quand WebGPU manque', () => {
   const src = readText(path.join(ROOT, 'src/App.tsx'));
   assert.ok(!/return\s*<WebGPUNotSupported/.test(src), 'plus de retour anticipé sur l\'écran d\'excuses');
   assert.ok(src.includes("'kiosk'"), 'App connaît la scène kiosk');
-  assert.ok(/suspended=\{/.test(src), 'la scène intérieure reçoit suspended');
 });
 test('BORNE: l\'interface de la borne reste du DOM pur', () => {
   const dir = path.join(ROOT, 'src/components/kiosk');
@@ -188,4 +187,100 @@ test('BORNE: la déconnexion efface une phrase de récupération restée en mém
   assert.ok(start > 0, 'logout introuvable dans le magasin');
   const body = src.slice(start, src.indexOf('clearAuthError:', start));
   assert.match(body, /recoveryPhrase: null/, 'logout doit remettre recoveryPhrase à null');
+});
+
+// ===== Retours de Rusmir du 16/11/2026, après la relecture =====
+
+// « Dès que le clic est fait sur la borne on doit libérer le GPU et les chargements côté
+// vidéoclub. » La scène n'est donc plus jamais gardée gelée derrière la borne : prête ou non,
+// elle est démontée (son renderer libéré, voir plus haut), et ne revient qu'une fois la
+// devanture de nouveau affichée.
+test('BORNE: dès l\'appui sur la borne, la scène 3D est démontée — prête ou non', async () => {
+  const { shouldMountInterior } = await import('../../src/utils/interior-preload-gate.ts');
+  const T = true; const F = false;
+  // [WebGPU, scène, devanture affichée depuis 0,8 s] → scène 3D montée ?
+  const table = [
+    [T, 'interior', F, T], [T, 'interior', T, T],
+    [T, 'exterior', F, F], [T, 'exterior', T, T],
+    [T, 'kiosk', F, F], [T, 'kiosk', T, F],
+    [F, 'interior', T, F], [F, 'exterior', T, F], [F, 'kiosk', T, F],
+  ];
+  for (const [webgpu, scene, prewarmOpen, expected] of table) {
+    assert.equal(shouldMountInterior({ webgpu, scene, prewarmOpen }), expected, JSON.stringify({ webgpu, scene, prewarmOpen }));
+  }
+});
+test('BORNE: App applique cette règle et ne garde plus de scène gelée', () => {
+  const app = readText(path.join(ROOT, 'src/App.tsx'));
+  assert.ok(app.includes('shouldMountInterior('), 'la règle de montage est la fonction testée');
+  assert.ok(!app.includes('suspended='), 'plus de scène gelée derrière la borne');
+  const scene = readText(path.join(ROOT, 'src/components/interior/InteriorScene.tsx'));
+  assert.ok(!scene.includes('suspended'), 'InteriorScene n\'a plus de mode gelé');
+});
+test('BORNE: l\'appui sur la borne coupe les téléchargements 3D, le retour devant la devanture les relance', async () => {
+  setGpu({});
+  const gate = await import('../../src/utils/interior-preload-gate.ts?scenario=pause');
+  const signals = []; let oneShot = 0; let later = 0;
+  gate.whileStorefront((signal) => { signals.push(signal); });
+  gate.afterStorefront(() => { oneShot++; });
+  assert.equal(signals.length, 0, 'rien ne part avant la devanture');
+  gate.releaseInteriorPreload();
+  assert.equal(signals.length, 1);
+  assert.equal(oneShot, 1);
+  assert.equal(signals[0].aborted, false);
+
+  gate.pauseInteriorPreload();                     // la borne s'ouvre
+  assert.equal(signals[0].aborted, true, 'les téléchargements en cours sont interrompus');
+  gate.afterStorefront(() => { later++; });
+  gate.whileStorefront((signal) => { signals.push(signal); });
+  assert.equal(later, 0, 'pendant la borne, rien ne part');
+  assert.equal(signals.length, 1, 'pendant la borne, rien ne part');
+
+  gate.releaseInteriorPreload();                   // la devanture est de nouveau affichée
+  assert.equal(signals.length, 3, 'les téléchargements interruptibles repartent, avec un signal neuf');
+  assert.equal(signals[1].aborted, false);
+  assert.equal(later, 1, 'ce qui attendait la devanture part');
+  assert.equal(oneShot, 1, 'une tâche unique ne repart pas');
+  gate.releaseInteriorPreload();
+  assert.equal(signals.length, 3, 'rouvrir une vanne ouverte ne relance rien');
+});
+test('BORNE: les préchargements 3D sont interruptibles et la borne les interrompt', () => {
+  const preload = readText(path.join(ROOT, 'src/utils/asset-preload.ts'));
+  assert.ok(preload.includes('whileStorefront('), 'asset-preload s\'inscrit comme téléchargement interruptible');
+  assert.match(preload, /signal/, 'chaque fetch reçoit le signal d\'interruption');
+  const app = readText(path.join(ROOT, 'src/App.tsx'));
+  assert.ok(app.includes('pauseInteriorPreload('), 'App coupe les préchargements à l\'ouverture de la borne');
+});
+// Mesuré le 16/11/2026 sur le build de production, débit limité à 20 Mbit/s : l'écran de la borne
+// mettait 14,3 s à s'afficher après l'appui (son code n'était demandé qu'à l'appui, derrière les
+// fichiers 3D), sur un écran noir.
+test('BORNE: pas d\'écran noir à l\'ouverture — code préchargé, repli aux couleurs de la borne, panne rattrapée', () => {
+  const app = readText(path.join(ROOT, 'src/App.tsx'));
+  assert.ok(app.includes('preloadKiosk'), 'le code de la borne est demandé dès que la devanture est affichée');
+  assert.ok(!/<Suspense fallback=\{null\}>\s*<KioskView/.test(app), 'le Suspense de la borne a un repli visible');
+  assert.ok(app.includes('KioskBoundary'), 'un chargement en échec ne fait pas tomber l\'application');
+  const exterior = readText(path.join(ROOT, 'src/components/exterior/ExteriorView.tsx'));
+  assert.ok(exterior.includes('onShown'), 'la devanture signale qu\'elle est affichée');
+});
+test('BORNE: pendant la transition de la porte, le bouton de la borne ne répond plus', () => {
+  const src = readText(path.join(ROOT, 'src/components/exterior/ExteriorView.tsx'));
+  const start = src.indexOf('const openKiosk = ');
+  assert.ok(start > 0, 'openKiosk introuvable dans ExteriorView');
+  assert.match(src.slice(start, start + 260), /isTransitioning/, 'un appui pendant la transition est ignoré');
+  assert.ok(!/onClick=\{onOpenKiosk\}/.test(src), 'le bouton ne court-circuite pas cette garde');
+});
+test('BORNE: une seule garde du geste retour, qui ne quitte jamais la borne', () => {
+  const src = readText(path.join(ROOT, 'src/components/kiosk/KioskView.tsx'));
+  assert.ok(src.includes('kioskBackAction('), 'le geste retour suit la table testée');
+  assert.equal((src.match(/useBackGuard\(/g) || []).length, 1, 'une seule garde pour toute la borne');
+  assert.ok(!/useBackGuard\([^)]*quit/.test(src), 'le geste retour ne quitte pas la borne');
+  assert.match(src, /inert=\{[^}]*isPlayerOpen/, 'la borne est inerte sous le lecteur');
+});
+test('BORNE: la borne lance elle-même le chargement du catalogue quand il manque', () => {
+  const src = readText(path.join(ROOT, 'src/components/kiosk/KioskView.tsx'));
+  assert.match(src, /catalogState\(total, [^)]*loadFailed\)/, 'un chargement en échec est dit tout de suite');
+});
+test('BORNE: en paysage sur téléphone, la borne laisse la place à une invitation à redresser l\'appareil', () => {
+  const src = readText(path.join(ROOT, 'src/components/kiosk/KioskView.tsx'));
+  assert.ok(src.includes('hidesKioskInLandscape('), 'la décision est la fonction testée');
+  assert.ok(src.includes('KioskRotate'), 'l\'invitation est affichée à la place de la borne');
 });

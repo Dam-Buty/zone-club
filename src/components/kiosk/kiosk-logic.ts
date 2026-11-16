@@ -1,5 +1,6 @@
 // Logique pure de la borne de location : onglets, listes, tris, libellés, décision du bouton
-// d'action, déroulé d'une location, validation du formulaire de connexion.
+// d'action, déroulé d'une location, geste retour, orientation. La validation des formulaires
+// de compte est partagée avec le vidéoclub : src/utils/account-rules.ts.
 //
 // Imports de type uniquement : ce module est chargé tel quel par Node dans les tests
 // (tests/domain/kiosk-logic.test.mjs), un import de valeur sans extension casserait.
@@ -83,9 +84,13 @@ export function firstNonEmptyTab(films: Record<AisleType, Film[]>): KioskTab {
 
 export const CATALOG_WAIT_MS = 8000;
 
-/** Jamais un écran vide : on charge, puis on dit que le catalogue est indisponible. */
-export function catalogState(total: number, waitedMs: number): 'ready' | 'loading' | 'unavailable' {
+/**
+ * Jamais un écran vide : on charge, puis on dit que le catalogue est indisponible — tout de
+ * suite si le chargement a répondu sans rien rapporter (`loadFailed`), au bout de 8 s sinon.
+ */
+export function catalogState(total: number, waitedMs: number, loadFailed = false): 'ready' | 'loading' | 'unavailable' {
   if (total > 0) return 'ready';
+  if (loadFailed) return 'unavailable';
   return waitedMs < CATALOG_WAIT_MS ? 'loading' : 'unavailable';
 }
 
@@ -146,6 +151,16 @@ export function rentAction(i: {
   return 'rent';
 }
 
+export type RentFlowResult =
+  | { status: 'ok' }
+  | { status: 'busy' }
+  | { status: 'error'; message: string; httpStatus: number | null };
+
+/** « Se reconnecter » n'a de sens que si le serveur ne reconnaît plus la session (401). */
+export function offersRelogin(result: RentFlowResult): boolean {
+  return result.status === 'error' && result.httpStatus === 401;
+}
+
 /**
  * Déroulé d'une location. Le verrou rend le second appui sans effet tant que le premier n'a
  * pas répondu ; un échec du mode de visionnage n'annule pas une location déjà enregistrée.
@@ -153,7 +168,7 @@ export function rentAction(i: {
 export async function rentFlow(
   deps: { rent: () => Promise<unknown>; setMode: () => Promise<unknown> },
   lock: { busy: boolean },
-): Promise<{ status: 'ok' } | { status: 'busy' } | { status: 'error'; message: string }> {
+): Promise<RentFlowResult> {
   if (lock.busy) return { status: 'busy' };
   lock.busy = true;
   try {
@@ -165,7 +180,13 @@ export async function rentFlow(
     }
     return { status: 'ok' };
   } catch (error) {
-    return { status: 'error', message: error instanceof Error ? error.message : 'Erreur inconnue' };
+    // Le code HTTP du refus (ApiError.status) est gardé : lui seul dit si la session a expiré.
+    const status = (error as { status?: unknown } | null)?.status;
+    return {
+      status: 'error',
+      message: error instanceof Error ? error.message : 'Erreur inconnue',
+      httpStatus: typeof status === 'number' ? status : null,
+    };
   } finally {
     lock.busy = false;
   }
@@ -210,16 +231,45 @@ export function createPendingAction(): {
   };
 }
 
-export type KioskAuthMode = 'login' | 'register' | 'recover';
+export type { AccountFormMode as KioskAuthMode } from '../../utils/account-rules';
 
-/** Premier refus du formulaire, ou `null` s'il peut partir. */
-export function authFormError(
-  mode: KioskAuthMode,
-  f: { username: string; password: string; confirm: string; phrase: string },
-): string | null {
-  if (!f.username.trim()) return 'Saisissez votre pseudo.';
-  if (!f.password) return 'Saisissez votre mot de passe.';
-  if (mode === 'recover' && !f.phrase.trim()) return 'Saisissez votre phrase de récupération.';
-  if (mode !== 'login' && f.confirm !== f.password) return 'Les deux mots de passe ne sont pas identiques.';
-  return null;
+// ===== Geste retour =====
+
+export type KioskBackAction = 'none' | 'close-player' | 'close-notice' | 'cancel-auth' | 'close-search';
+
+/**
+ * Ce que fait le geste retour (ou le bouton retour du navigateur) dans la borne : il ferme ce
+ * qui est ouvert au-dessus des rayons, du plus haut au plus bas. À la racine il ne fait rien —
+ * on ne sort de la borne que par « quitter ». Ne se ferment pas d'un geste : la phrase de
+ * récupération (elle ne se retrouve nulle part ailleurs) et un message sans fermeture
+ * (« Catalogue indisponible », qui porte ses propres boutons).
+ */
+export function kioskBackAction(s: {
+  playerOpen: boolean;
+  noticeOpen: boolean;
+  noticeClosable: boolean;
+  authOpen: boolean;
+  phrasePending: boolean;
+  searchOpen: boolean;
+}): KioskBackAction {
+  if (s.playerOpen) return 'close-player';
+  if (s.noticeOpen) return s.noticeClosable ? 'close-notice' : 'none';
+  if (s.phrasePending) return 'none';
+  if (s.authOpen) return 'cancel-auth';
+  if (s.searchOpen) return 'close-search';
+  return 'none';
+}
+
+// ===== Orientation =====
+
+/** Petit côté de l'écran en dessous duquel un appareil tactile est tenu pour un téléphone. */
+export const PHONE_SHORT_SIDE_MAX = 540;
+
+/**
+ * Sur un téléphone, le paysage est réservé au film : la borne (un écran vertical) ne s'y affiche
+ * pas, elle demande de redresser l'appareil. `shortSide` est le petit côté de l'ÉCRAN, pas de la
+ * fenêtre : le clavier virtuel, qui rétrécit la fenêtre, ne doit pas passer pour une rotation.
+ */
+export function hidesKioskInLandscape(i: { coarsePointer: boolean; landscape: boolean; shortSide: number }): boolean {
+  return i.coarsePointer && i.landscape && i.shortSide <= PHONE_SHORT_SIDE_MAX;
 }

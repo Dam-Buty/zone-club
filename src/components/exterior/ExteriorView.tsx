@@ -18,9 +18,11 @@ interface ExteriorViewProps {
   onOpenKiosk: () => void;
   /** Faux quand le vidéoclub 3D ne peut pas s'ouvrir sur cet appareil (pas de WebGPU). */
   canEnter: boolean;
+  /** La devanture est à l'écran (appelé à chaque affichage, avec ou sans WebGPU). */
+  onShown?: () => void;
 }
 
-export function ExteriorView({ onEnter, onOpenKiosk, canEnter }: ExteriorViewProps) {
+export function ExteriorView({ onEnter, onOpenKiosk, canEnter, onShown }: ExteriorViewProps) {
   const isMobile = useIsMobile();
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<ExteriorScene | null>(null);
@@ -116,10 +118,15 @@ export function ExteriorView({ onEnter, onOpenKiosk, canEnter }: ExteriorViewPro
     return () => { cancelled = true; };
   }, [isStatic]);
 
-  // La devanture est à l'écran : les préchargements de l'intérieur peuvent partir.
+  // La devanture est à l'écran : le code de la borne est demandé d'abord (onShown), puis les
+  // préchargements de l'intérieur peuvent partir — ou repartir, au retour de la borne.
+  // `onShown` est une fonction stable (définie au niveau du module dans App) : l'effet ne
+  // repart qu'à un nouvel affichage de la devanture.
   useEffect(() => {
-    if (isStorefrontShown) releaseInteriorPreload();
-  }, [isStorefrontShown]);
+    if (!isStorefrontShown) return;
+    onShown?.();
+    releaseInteriorPreload();
+  }, [isStorefrontShown, onShown]);
 
   // Garde-fou : ne jamais rester bloqué sur le noir.
   useEffect(() => {
@@ -145,12 +152,19 @@ export function ExteriorView({ onEnter, onOpenKiosk, canEnter }: ExteriorViewPro
 
   const closeDoorNotice = useCallback(() => setIsDoorBlocked(false), []);
 
+  // Porte poussée : la transition vers le vidéoclub est partie, la borne ne s'ouvre plus (elle
+  // s'ouvrait, puis le visiteur était emmené à l'intérieur 0,7 s plus tard).
+  const openKiosk = () => {
+    if (isTransitioning) return;
+    onOpenKiosk();
+  };
+
   // Bouton provisoire de la borne : il n'apparaît qu'une fois la devanture à l'écran.
   const kioskButton = (className: string) => isStorefrontShown && (
     <button
       type="button"
       className={className}
-      onClick={onOpenKiosk}
+      onClick={openKiosk}
       aria-label="Ouvrir la borne de location"
     >
       <span className={styles.kioskButtonTitle}>BORNE 24/7</span>

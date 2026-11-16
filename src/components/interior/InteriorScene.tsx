@@ -128,8 +128,6 @@ interface InteriorSceneProps {
   onCassetteClick?: (filmId: number) => void
   /** Scène montée mais cachée derrière la devanture : préchauffage seul, sans interface. */
   prewarm?: boolean
-  /** Borne ouverte sur une scène déjà prête : elle reste en mémoire, mais plus aucune image n'est rendue. */
-  suspended?: boolean
 }
 
 function LoadingFallback() {
@@ -764,7 +762,7 @@ function SettingsModals() {
   )
 }
 
-export function InteriorScene({ onCassetteClick, prewarm = false, suspended = false }: InteriorSceneProps) {
+export function InteriorScene({ onCassetteClick, prewarm = false }: InteriorSceneProps) {
   const isMobile = useIsMobile()
   const mobileInputRef = useRef<MobileInput>(createMobileInput())
   const isMountedRef = useRef(true)
@@ -826,9 +824,10 @@ export function InteriorScene({ onCassetteClick, prewarm = false, suspended = fa
       isMountedRef.current = false
       // Le canevas disparaît avec ses pipelines : la scène n'est plus préchauffée.
       useStore.getState().setSceneReady(false)
-      // Scène abandonnée (borne ouverte en plein préchauffage) : sa boucle de préchauffage
-      // s'arrête d'elle-même (isMountedRef), et son renderer est libéré une fois que R3F a
-      // fini son propre nettoyage — boucle interne de three arrêtée, device GPU détruit.
+      // Scène démontée (la borne s'ouvre — que la scène ait été prête ou encore en
+      // préparation) : sa boucle de préchauffage s'arrête d'elle-même (isMountedRef), et son
+      // renderer est libéré une fois que R3F a fini son propre nettoyage — boucle interne de
+      // three arrêtée, device GPU détruit.
       const renderer = rendererRef.current
       if (renderer) {
         const canvas = renderer.domElement
@@ -911,9 +910,6 @@ export function InteriorScene({ onCassetteClick, prewarm = false, suspended = fa
         // et R3F l'applique APRÈS la fabrique gl. 'percentage' = PCFShadowMap.
         shadows="percentage"
         dpr={dpr}
-        // Borne ouverte : la boucle de R3F s'arrête, donc ni useFrame ni rendu. Elle repart
-        // d'elle-même au retour à la devanture ou à l'entrée.
-        frameloop={suspended ? 'never' : 'always'}
         gl={(async (props: THREE.WebGPURendererParameters) => {
 
 

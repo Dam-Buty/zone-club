@@ -323,6 +323,12 @@
   color: #59d36a;
 }
 
+/* Le geste retour ne quitte pas la borne : « quitter » s'éclaire deux secondes pour le rappeler. */
+.screen .kNavHint {
+  color: #ffb347;
+  text-shadow: 0 0 1.6cqw #ff8a1f;
+}
+
 /* ----- volet de contenu (rayons, recherche, connexion) ----- */
 
 .kPane {
