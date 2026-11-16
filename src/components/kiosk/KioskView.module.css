@@ -11,8 +11,9 @@
 
    L'objectif est photoréaliste : on ne doit pas avoir l'impression d'une page web, mais d'une
    dalle LCD de 2007 derrière sa vitre, sur un trottoir, la nuit. Deux couches recouvrent donc le
-   contenu : la DALLE (trame des sous-pixels, rétroéclairage inégal, noirs relevés) puis la VITRE
-   (le reflet de la rue, tiré d'une photo, qui ne fait qu'ajouter de la lumière).
+   contenu : la DALLE — une TN de 2007, éclairée par des tubes : trame des sous-pixels, contraste
+   et couleurs limités, 6 bits par couleur et leur fourmillement — puis la VITRE (le reflet de la
+   rue, tiré d'une photo, qui ne fait qu'ajouter de la lumière).
 
    Contraintes tenues partout : du DOM et du CSS seulement — aucun flou d'arrière-plan, aucun
    filtre, aucune surface de dessin (le diagnostic du 14/11/2026 a montré que ces effets font
@@ -277,7 +278,7 @@
   background: #000 url(/kiosk/glass-reflection.webp) center top / cover no-repeat;
   mix-blend-mode: screen;
   /* Discret : le reflet doit se deviner sur les zones sombres, pas concurrencer l'affichage. */
-  opacity: 0.3;
+  opacity: 0.27;
 }
 
 /* Les unités cqw d'un conteneur se résolvent sur son ANCÊTRE : le fond et tout le contenu sont
@@ -329,6 +330,31 @@
   --k-frame: #63cdf0;
   --k-frame-hi: #bdeeff;
   --k-frame-lo: #3b8fb9;
+  /* Fond de l'écran : le dégradé bleu, quantifié sur 6 bits par couleur (64 niveaux) comme le
+     sortait une dalle TN — d'où ses bandes. Liste produite par un script (elle va de #3a8fe0 au
+     centre à #05123f au bord, en passant par #1757b4 à 34 % et #0a2c78 à 64 %) ; partagée avec
+     les panneaux de KioskPanels.module.css. */
+  --k-bg-stops:
+    #398edf 0% 2%, #398adf 2% 2.75%, #398adb 2.75% 3.25%, #358adb 3.25% 4.5%,
+    #3586db 4.5% 5.75%, #3586d7 5.75% 7%, #3582d7 7% 7.25%, #3182d7 7.25% 9%,
+    #3182d2 9% 9.5%, #317dd2 9.5% 11.25%, #2d7dd2 11.25% 11.75%, #2d79d2 11.75% 12%,
+    #2d79ce 12% 14.25%, #2d75ce 14.25% 15%, #2875ce 15% 15.25%, #2875ca 15.25% 16.75%,
+    #2871ca 16.75% 18.25%, #2871c6 18.25% 19%, #2471c6 19% 19.25%, #246dc6 19.25% 21.5%,
+    #246dc2 21.5% 21.75%, #2469c2 21.75% 23%, #2069c2 23% 24.25%, #2065c2 24.25% 24.5%,
+    #2065be 24.5% 26.5%, #2061be 26.5% 26.75%, #1c61be 26.75% 27.75%, #1c61ba 27.75% 29%,
+    #1c5dba 29% 30.75%, #185db6 30.75% 31.5%, #1859b6 31.5% 34%, #1855b2 34% 35.75%,
+    #1455b2 35.75% 36%, #1455ae 36% 36.75%, #1451ae 36.75% 38%, #1451aa 38% 39.75%,
+    #144daa 39.75% 40%, #144da6 40% 42%, #144da2 42% 42.5%, #1449a2 42.5% 44%,
+    #14499e 44% 45%, #10499e 45% 45.25%, #10459e 45.25% 46%, #10459a 46% 48%,
+    #104196 48% 50.25%, #104192 50.25% 51%, #103d92 51% 52.25%, #103d8e 52.25% 53.75%,
+    #10398e 53.75% 54.25%, #10398a 54.25% 54.5%, #0c398a 54.5% 56.25%, #0c3986 56.25% 56.5%,
+    #0c3586 56.5% 58.25%, #0c3582 58.25% 59.5%, #0c3182 59.5% 60.25%, #0c317d 60.25% 62.25%,
+    #0c2d79 62.25% 63.75%, #082d79 63.75% 64.5%, #082d75 64.5% 66%, #082875 66% 67%,
+    #082871 67% 69.5%, #08286d 69.5% 71.75%, #08246d 71.75% 72%, #082469 72% 74.5%,
+    #082465 74.5% 77.25%, #082061 77.25% 79.75%, #08205d 79.75% 82.25%, #082059 82.25% 83%,
+    #081c59 83% 84.75%, #081c55 84.75% 87.5%, #081c51 87.5% 88.5%, #081851 88.5% 90%,
+    #08184d 90% 92.25%, #04184d 92.25% 92.5%, #041849 92.5% 94%, #041449 94% 95%,
+    #041445 95% 97.5%, #041441 97.5% 99.75%, #041041 99.75% 100%;
 
   /* Mise en page verticale (écran haut). */
   --k-tab-h: 9.75cqw;
@@ -363,7 +389,7 @@
   text-shadow: var(--k-glow);
   background:
     linear-gradient(90deg, transparent 0 22%, rgba(150, 212, 255, 0.16) 50%, transparent 78%) 0 11.4cqw / 100% 0.4cqw no-repeat,
-    radial-gradient(118% 60% at 56% 32%, #3a8fe0 0%, #1757b4 34%, #0a2c78 64%, #05123f 100%);
+    radial-gradient(118% 60% at 56% 32%, var(--k-bg-stops));
 }
 
 @media (min-width: 769px) and (pointer: fine) {
@@ -399,11 +425,21 @@
 }
 
 /* ----- la dalle LCD -----
-   Par-dessus le contenu, sous la vitre, sans capter les appuis. Ce qui trahit une dalle de 2007 :
-   la trame des sous-pixels et son interligne, un rétroéclairage à tubes qui fuit le long du bas
-   et laisse le haut plus dense, un centre un peu plus clair, des noirs jamais tout à fait noirs.
-   Pas de grain : un grain aléatoire est la signature d'un film antireflet mat, pas d'une dalle
-   vue à travers du verre. */
+   Par-dessus le contenu, sous la vitre, sans capter les appuis. Une dalle TN de 2007, éclairée
+   par des tubes fluorescents, ne savait pas afficher ce qu'affiche un écran d'aujourd'hui ; tout
+   ce que l'écran montre — interface et jaquettes — passe donc par ses limites :
+
+   - contraste et couleurs limités : tout est ramené vers un gris bleuté. Les noirs ne descendent
+     plus jusqu'au noir (relevés, bleutés), les blancs sont froids, les couleurs moins pures. La
+     bande noire du bord, elle, n'est pas éclairée : elle reste plus noire que le « noir » de
+     l'image, comme sur une vraie dalle ;
+   - le gamma d'une TN dérive avec l'angle vertical : vue de face, le haut de l'image est plus
+     dense et plus sombre, le bas plus pâle ;
+   - le tube du bas fuit le long du bord ;
+   - la trame des sous-pixels et son interligne.
+
+   Le tout par simple transparence — un filtre ferait la même chose en plus exact, mais il est
+   exclu sous kiosk/ (voir l'en-tête). */
 .screen::before {
   content: "";
   position: absolute;
@@ -413,9 +449,17 @@
   background:
     var(--k-lcd-rgb),
     var(--k-lcd-rows),
-    linear-gradient(0deg, rgba(196, 218, 255, 0.12) 0%, rgba(196, 218, 255, 0.04) 5%, rgba(196, 218, 255, 0) 13%),
-    linear-gradient(180deg, rgba(0, 6, 40, 0.16) 0%, rgba(0, 6, 40, 0.03) 24%, rgba(0, 6, 40, 0) 60%),
-    linear-gradient(rgba(124, 152, 206, 0.035), rgba(124, 152, 206, 0.035));
+    linear-gradient(0deg, rgba(190, 212, 255, 0.16) 0%, rgba(190, 212, 255, 0.05) 5%, rgba(190, 212, 255, 0) 14%),
+    linear-gradient(
+      180deg,
+      rgba(0, 5, 30, 0.2) 0%,
+      rgba(0, 5, 30, 0.07) 22%,
+      rgba(0, 5, 30, 0) 45%,
+      rgba(168, 186, 228, 0) 55%,
+      rgba(168, 186, 228, 0.07) 80%,
+      rgba(168, 186, 228, 0.12) 100%
+    ),
+    linear-gradient(rgba(92, 108, 150, 0.12), rgba(92, 108, 150, 0.12));
 }
 
 /* ----- le bord de la dalle -----
@@ -436,6 +480,45 @@
     inset 1.6cqw 0 1.5cqw -0.4cqw rgba(0, 0, 8, 0.4),
     inset -1.6cqw 0 1.5cqw -0.4cqw rgba(0, 0, 8, 0.4),
     inset 0 -1.5cqw 1.5cqw -0.4cqw rgba(0, 0, 8, 0.35);
+}
+
+/* ----- le fourmillement (FRC) -----
+   Une dalle 6 bits simulait les niveaux qui lui manquaient en faisant clignoter chaque pixel
+   entre deux niveaux voisins : de près, les aplats sombres et les dégradés fourmillent. Deux
+   semis de cellules un cran plus claires ou plus sombres, à l'échelle du pixel de dalle (trois
+   pixels physiques), se relaient douze fois par seconde. Seule leur opacité est animée : le
+   compositeur s'en charge, rien n'est redessiné. Sous la trame et sous la bande noire du bord. */
+.kFrc {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  pointer-events: none;
+}
+
+.kFrc::before,
+.kFrc::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: url(/kiosk/lcd-frc.png) 0 0 / calc(var(--k-dpx, 1px) * 288) calc(var(--k-dpx, 1px) * 288);
+  image-rendering: pixelated;
+  will-change: opacity;
+  animation: kFrcRelay 0.16s step-end infinite;
+}
+
+.kFrc::after {
+  background-position: calc(var(--k-dpx, 1px) * -141) calc(var(--k-dpx, 1px) * -87);
+  animation-delay: -0.08s;
+}
+
+@keyframes kFrcRelay {
+  0% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0;
+  }
 }
 
 /* Remise à zéro des boutons, sans poids : chaque bouton s'habille d'une seule classe, dans

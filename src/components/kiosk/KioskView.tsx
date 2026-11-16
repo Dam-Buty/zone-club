@@ -400,6 +400,9 @@ export function KioskView() {
                 {authVisible && <KioskAuth onDone={finishAuth} onCancel={cancelAuth} />}
 
                 {overlay && <KioskNotice {...overlay} />}
+
+                {/* Fourmillement de la dalle (FRC) : décor, au-dessus de tout ce que l'écran affiche. */}
+                <div className={styles.kFrc} aria-hidden="true" />
               </div>
             </div>
           </div>
