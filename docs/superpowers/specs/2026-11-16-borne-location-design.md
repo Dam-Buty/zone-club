@@ -29,8 +29,11 @@
 >   vraie transparence de vitre (pas un effet dessiné), léger côté métallique des couleurs, petits
 >   défauts de contraste et de saturation ; on ne doit pas avoir l'impression d'être devant une
 >   page web. **[R]** Moyen retenu **[C]** : un reflet tiré d'une photo de la rue et une couche
->   « dalle », composés par simple transparence (la contrainte « ni filtre ni flou d'arrière-plan »
->   est maintenue).
+>   « dalle ». Révisé le soir même, après son retour « ça ressemble plus à du plastique qu'à du
+>   verre » et « le rendu des pixels est trop grossier, augmenter la densité par 2 » **[R]** : le
+>   reflet est net et composé en addition de lumière (`mix-blend-mode: screen`, seul mode de
+>   fusion de la borne) ; ni grain ni voile ; les trames sont dessinées en pixels physiques de
+>   l'écran. La contrainte « ni filtre ni flou d'arrière-plan » est maintenue. **[C]**
 > - **Tarif** : l'affichage suit ce que le serveur facture. **Dates du serveur** : lues en UTC.
 >   Les deux validés. **[R]**
 > - **§ 5, bouton provisoire sur mobile** : il part tel quel, on ajustera en voyant la version

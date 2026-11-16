@@ -476,12 +476,19 @@ Règles à ne pas casser — chacune a son test dans `tests/domain/kiosk-*.test.
   de Rusmir : la photographie « 01_iMOZI_interface_2007 ». Facture : onglets collés dans un cadre,
   boutons plats à trame et fine bordure claire, satiné légèrement métallique, libellés d'action en
   bas-de-casse, angles à peine arrondis. Deux couches recouvrent le contenu de l'écran
-  (`KioskView.module.css`) : la **dalle** (`::before` — trame des sous-pixels, grain, rétroéclairage
-  inégal, noirs relevés) et la **vitre** (`::after` — le reflet de la rue). Le reflet est une
-  **photo** (`public/kiosk/glass-reflection.webp`, tirée de `public/exterior.jpeg` : recadrée,
-  inversée, floutée, transparente hors des lumières), pas un dégradé dessiné ; le grain est
-  `public/kiosk/lcd-grain.png`. Tout est composé par simple transparence : ni filtre, ni flou
-  d'arrière-plan, ni mode de fusion. Typographie : Barlow Condensed (la plus proche de la DIN
+  (`KioskView.module.css`) : la **dalle** (`.screen::before` — trame des sous-pixels, rétroéclairage
+  inégal, noirs relevés ; `.screen::after` — sa bande noire et l'ombre du cadre) et la **vitre**
+  (`.ks::after` — le reflet de la rue). Ce qui fait « verre » et non « plastique » : un reflet
+  **net**, qui **n'ajoute que de la lumière**, et rien d'autre — ni grain, ni voile, ni liseré, ni
+  assombrissement en dôme (tous essayés le 16/11, tous lus comme un film plastique). Le reflet est
+  une **photo** (`public/kiosk/glass-reflection.webp`, tirée de `public/exterior.jpeg` : recadrée,
+  inversée, réduite à ses sources vives, flou d'objectif court, sur fond noir), composée en
+  `mix-blend-mode: screen` — le **seul** mode de fusion de la borne ; ni filtre, ni flou
+  d'arrière-plan. `.screen` a son propre contexte d'empilement (`z-index: 0`) : sans lui les
+  calques numérotés de l'écran passent par-dessus le reflet. Les trames (dalle, boutons, hachure
+  de la fiche) sont dessinées en **pixels physiques** (`--k-dpx`, posée par `KioskView` d'après
+  `lcdDevicePixel()`) : un pas fixe en px CSS fait du moirage à densité fractionnaire (2,625 sur
+  le Pixel 9a). Typographie : Barlow Condensed (la plus proche de la DIN
   condensée de la référence, chargée par l'import de polices de `src/index.css`) ; l'enseigne
   « LOCATION 24/7 » reprend l'Orbitron de l'enseigne VIDEOCLUB. Trois feuilles — `KioskView`
   (corps, écran, dalle, vitre), `KioskBrowse` (rayons, fiche, bande), `KioskPanels` (connexion,
