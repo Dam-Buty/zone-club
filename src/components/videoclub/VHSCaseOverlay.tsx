@@ -9,26 +9,18 @@ import {
   RENTAL_COSTS,
   RENTAL_DURATIONS,
   type Film,
-  type RentalTier,
   type CreditPerson,
   type DetailedCredits,
   type PersonDetail,
 } from "../../types";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { useBackGuard } from "../../hooks/useBackGuard";
+import { getRentalTier } from "../../utils/rental-tier";
 
 interface VHSCaseOverlayProps {
   film: Film | null;
   isOpen: boolean;
   onClose: () => void;
-}
-
-function getRentalTier(film: Film): RentalTier {
-  const year = new Date(film.release_date).getFullYear();
-  const currentYear = new Date().getFullYear();
-  if (currentYear - year <= 1) return "nouveaute";
-  if (currentYear - year >= 20) return "classique";
-  return "standard";
 }
 
 function formatDuration(ms: number): string {
