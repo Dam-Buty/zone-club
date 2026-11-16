@@ -488,7 +488,15 @@ Règles à ne pas casser — chacune a son test dans `tests/domain/kiosk-*.test.
   calques numérotés de l'écran passent par-dessus le reflet. Les trames (dalle, boutons, hachure
   de la fiche) sont dessinées en **pixels physiques** (`--k-dpx`, posée par `KioskView` d'après
   `lcdDevicePixel()`) : un pas fixe en px CSS fait du moirage à densité fractionnaire (2,625 sur
-  le Pixel 9a). Typographie : Barlow Condensed (la plus proche de la DIN
+  le Pixel 9a). **Colorimétrie d'une dalle TN de 2007** (demande de Rusmir : contraste et couleurs
+  limités, 6 bits + FRC, noirs délavés) — tout ce que l'écran affiche, jaquettes comprises, passe
+  par `.screen::before` : un voile gris bleuté (noirs relevés et bleutés, blancs froids, couleurs
+  moins pures), le haut plus dense et le bas plus pâle (dérive du gamma avec l'angle vertical), la
+  fuite du tube du bas. Le dégradé de fond est quantifié sur 6 bits (`--k-bg-stops`, liste
+  produite par script) et `.kFrc` fait fourmiller l'image : deux semis
+  (`public/kiosk/lcd-frc.png`) qui se relaient, seule leur opacité est animée. C'est une
+  simulation des défauts VISIBLES : quantifier réellement les jaquettes demanderait un filtre ou
+  un canvas, exclus ici. Typographie : Barlow Condensed (la plus proche de la DIN
   condensée de la référence, chargée par l'import de polices de `src/index.css`) ; l'enseigne
   « LOCATION 24/7 » reprend l'Orbitron de l'enseigne VIDEOCLUB. Trois feuilles — `KioskView`
   (corps, écran, dalle, vitre), `KioskBrowse` (rayons, fiche, bande), `KioskPanels` (connexion,

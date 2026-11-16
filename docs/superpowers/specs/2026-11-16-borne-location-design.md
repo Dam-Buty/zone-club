@@ -34,6 +34,13 @@
 >   reflet est net et composé en addition de lumière (`mix-blend-mode: screen`, seul mode de
 >   fusion de la borne) ; ni grain ni voile ; les trames sont dessinées en pixels physiques de
 >   l'écran. La contrainte « ni filtre ni flou d'arrière-plan » est maintenue. **[C]**
+> - **§ 6, colorimétrie.** « On veut limiter la capacité de contraste et de couleurs à ce qu'un
+>   écran LCD offrait en 2007 » : dalle TN éclairée par des tubes, 6 bits par couleur et FRC (d'où
+>   un fourmillement visible dans les dégradés et les aplats sombres), contraste natif faible,
+>   noirs délavés, grisâtres ou bleutés. **[R]** Moyen retenu **[C]** : un voile gris bleuté sur
+>   tout l'écran, la dérive verticale du gamma, un dégradé de fond en paliers de 6 bits et un
+>   fourmillement animé — sans filtre, donc une simulation des défauts visibles et non une vraie
+>   quantification des jaquettes.
 > - **Tarif** : l'affichage suit ce que le serveur facture. **Dates du serveur** : lues en UTC.
 >   Les deux validés. **[R]**
 > - **§ 5, bouton provisoire sur mobile** : il part tel quel, on ajustera en voyant la version
