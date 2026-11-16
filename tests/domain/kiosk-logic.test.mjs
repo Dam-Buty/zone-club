@@ -193,3 +193,16 @@ test('BORNE: sans générique connu, la fiche n\'affiche pas de ligne vide', () 
   assert.equal(K.creditsLine(null, undefined), null);
   assert.equal(K.creditsLine(['', '  '], ['']), null);
 });
+
+// ===== Trame de la dalle : calée sur les pixels physiques de l'écran =====
+test('BORNE: la trame de la dalle se cale sur un pixel physique, quelle que soit la densité', () => {
+  assert.equal(K.lcdDevicePixel(1), '1px');
+  assert.equal(K.lcdDevicePixel(2), '0.5px');
+  // Pixel 9a : densité fractionnaire. Trois pas de trame doivent tomber sur trois pixels physiques
+  // à mieux qu'un centième près sur toute la largeur de l'écran (~1000 px), sinon moirage.
+  const step = parseFloat(K.lcdDevicePixel(2.625));
+  assert.ok(Math.abs(step * 2.625 - 1) * 1000 < 0.01, `pas de ${step}px`);
+});
+test('BORNE: sans densité lisible, la trame retombe sur le pixel CSS', () => {
+  for (const bad of [0, -2, NaN, Infinity, undefined]) assert.equal(K.lcdDevicePixel(bad), '1px');
+});

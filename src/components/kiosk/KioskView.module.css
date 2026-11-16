@@ -11,14 +11,16 @@
 
    L'objectif est photoréaliste : on ne doit pas avoir l'impression d'une page web, mais d'une
    dalle LCD de 2007 derrière sa vitre, sur un trottoir, la nuit. Deux couches recouvrent donc le
-   contenu : la DALLE (trame des sous-pixels, rétroéclairage inégal, noirs relevés, grain) puis la
-   VITRE (le reflet de la rue, tiré d'une photo, en transparence).
+   contenu : la DALLE (trame des sous-pixels, rétroéclairage inégal, noirs relevés) puis la VITRE
+   (le reflet de la rue, tiré d'une photo, qui ne fait qu'ajouter de la lumière).
 
    Contraintes tenues partout : du DOM et du CSS seulement — aucun flou d'arrière-plan, aucun
    filtre, aucune surface de dessin (le diagnostic du 14/11/2026 a montré que ces effets font
    compiler des shaders au navigateur et gèlent l'affichage à leur première apparition). Les
-   effets sont donc faits d'images préparées d'avance (public/kiosk/) et de dégradés, composés
-   par simple transparence.
+   effets sont faits d'images préparées d'avance (public/kiosk/) et de dégradés. Une seule
+   couche utilise un mode de fusion : le reflet de la vitre, en « écran », parce qu'un reflet
+   AJOUTE de la lumière — c'est ce qui le fait disparaître sur les zones claires au lieu de les
+   ternir, et ce qui distingue une vitre d'un film plastique.
 
    Tout ce qui est DANS l'écran se mesure en cqw (centièmes de la largeur de l'écran de la
    borne) : l'interface garde ses proportions quelle que soit la taille de l'écran. */
@@ -86,25 +88,25 @@
   gap: 14px;
 }
 
-/* Cadre de l'écran : plastique noir satiné d'un moniteur de borne. La lumière vient d'en haut
-   (l'enseigne) : arête supérieure éclairée, flancs qui s'assombrissent, lèvre intérieure contre la
-   vitre. Le grain de la dalle sert aussi au plastique. */
+/* Cadre de l'écran : le plastique noir satiné d'un moniteur de borne, LISSE (un grain le faisait
+   passer pour du caoutchouc). La lumière vient d'en haut — l'enseigne violette — et n'accroche
+   que l'arête supérieure ; les flancs s'assombrissent. */
 .bezel {
   flex: none;
   padding: 13px;
   background:
-    url(/kiosk/lcd-grain.png) 0 0 / 96px 96px,
-    linear-gradient(180deg, #34343c 0%, #17171c 7%, #0b0b0f 45%, #060609 100%);
-  border-radius: 13px;
+    linear-gradient(180deg, rgba(190, 150, 255, 0.2) 0, rgba(190, 150, 255, 0) 8px),
+    linear-gradient(180deg, #2a2a31 0%, #141418 5%, #0a0a0d 38%, #050507 100%);
+  border-radius: 12px;
   box-shadow:
     0 0 0 1px #000,
     0 0 0 3px #2b2a3d,
     0 14px 34px rgba(0, 0, 0, 0.7),
     0 0 30px rgba(60, 110, 255, 0.28),
-    inset 0 1.5px 0 rgba(255, 255, 255, 0.22),
-    inset 0 -2px 3px rgba(0, 0, 0, 0.9),
-    inset 2px 0 2px rgba(255, 255, 255, 0.04),
-    inset -2px 0 2px rgba(0, 0, 0, 0.6);
+    inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    inset 0 -3px 4px rgba(0, 0, 0, 0.9),
+    inset 1px 0 0 rgba(255, 255, 255, 0.07),
+    inset -1px 0 0 rgba(0, 0, 0, 0.7);
 }
 
 .slot {
@@ -252,8 +254,29 @@
   width: var(--ks-w);
   aspect-ratio: var(--ks-ratio);
   overflow: hidden;
-  border-radius: 3px;
-  box-shadow: 0 0 0 1px #000, 0 0 0 2px rgba(255, 255, 255, 0.07);
+  border-radius: 2px;
+  /* La vitre est en retrait dans le cadre : la lèvre du haut est dans l'ombre, celle du bas
+     prend la lumière. */
+  box-shadow: 0 0 0 1px #000, 0 -1px 0 2px rgba(0, 0, 0, 0.9), 0 1px 0 2px rgba(255, 255, 255, 0.16);
+}
+
+/* ----- la vitre : le reflet -----
+   Une photo (public/kiosk/glass-reflection.webp), pas un dessin : la rue du site, de nuit, vue
+   en miroir, réduite à ses sources vives, avec le flou d'objectif d'un décor lointain quand on
+   fait le point sur l'écran, et le réverbère en source ponctuelle. Elle est sur fond noir et
+   composée en « écran » : elle n'ajoute que de la lumière. Portée par le conteneur (pas d'unités
+   cqw ici : elles se résoudraient sur un ancêtre). */
+.ks::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  /* Calée en haut : sur l'écran 2:3 du PC c'est le bas de l'image (noir) qui est rogné, pas
+     l'éclat du réverbère. */
+  background: #000 url(/kiosk/glass-reflection.webp) center top / cover no-repeat;
+  mix-blend-mode: screen;
+  opacity: 0.55;
 }
 
 /* Les unités cqw d'un conteneur se résolvent sur son ANCÊTRE : le fond et tout le contenu sont
@@ -267,14 +290,15 @@
      site), puis la DIN du système, puis une condensée de repli. */
   --k-font: "Barlow Condensed", "DIN Condensed", "Roboto Condensed", sans-serif-condensed, "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
 
-  /* Boutons : plats, trame verticale fine, bordure claire, angles à peine arrondis. */
+  /* Boutons : plats, bordure claire, angles à peine arrondis, et la trame verticale de la
+     référence — très fine : un trait d'un pixel physique tous les quatre. */
   --k-radius: 0.9cqw;
   --k-skin-orange:
-    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.08) 0 0.2cqw, rgba(255, 255, 255, 0) 0.2cqw 0.8cqw),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.1) 0 var(--k-dpx, 1px), rgba(255, 255, 255, 0) var(--k-dpx, 1px) calc(var(--k-dpx, 1px) * 4)),
     linear-gradient(180deg, #ffbb5c 0%, #f39226 22%, #e0700d 56%, #d46306 80%, #e67c18 100%);
   --k-edge-orange: #ffd493;
   --k-skin-teal:
-    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.06) 0 0.2cqw, rgba(255, 255, 255, 0) 0.2cqw 0.8cqw),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.08) 0 var(--k-dpx, 1px), rgba(255, 255, 255, 0) var(--k-dpx, 1px) calc(var(--k-dpx, 1px) * 4)),
     linear-gradient(180deg, #6cc8e4 0%, #3da8ce 22%, #2590bd 56%, #1d81ad 80%, #2c96c0 100%);
   --k-edge-teal: #a5eaff;
   /* Satiné des onglets : le reflet d'un aplat peint sur métal, sans brillance franche. */
@@ -282,8 +306,24 @@
   /* Biseau : filet clair en haut, filet sombre en bas. */
   --k-bevel: inset 0 0.3cqw 0 rgba(255, 255, 255, 0.34), inset 0 -0.3cqw 0 rgba(0, 18, 48, 0.4);
   /* Les clairs d'une dalle photographiée bavent un peu : halo léger autour du texte clair. */
-  --k-glow: 0 0 1cqw rgba(205, 228, 255, 0.34);
-  --k-text-shadow: 0 0.15cqw 0.4cqw rgba(0, 20, 60, 0.55), 0 0 1cqw rgba(255, 255, 255, 0.24);
+  --k-glow: 0 0 0.8cqw rgba(205, 228, 255, 0.2);
+  --k-text-shadow: 0 0.15cqw 0.4cqw rgba(0, 20, 60, 0.55), 0 0 0.8cqw rgba(255, 255, 255, 0.14);
+  /* Trame de la dalle : trois sous-pixels par pixel, un interligne sombre. Elle est dessinée en
+     pixels PHYSIQUES de l'écran (--k-dpx, posée par KioskView) : un pixel de dalle = trois pixels
+     physiques, soit la trame la plus fine que l'écran puisse montrer, sans moirage même à densité
+     fractionnaire. Sur un écran dense les traits, plus fins, sont un peu plus marqués. */
+  --k-lcd-gain: 1;
+  --k-lcd-rgb: repeating-linear-gradient(
+    90deg,
+    rgb(255 70 70 / calc(0.03 * var(--k-lcd-gain))) 0 var(--k-dpx, 1px),
+    rgb(70 255 100 / calc(0.024 * var(--k-lcd-gain))) var(--k-dpx, 1px) calc(var(--k-dpx, 1px) * 2),
+    rgb(80 120 255 / calc(0.034 * var(--k-lcd-gain))) calc(var(--k-dpx, 1px) * 2) calc(var(--k-dpx, 1px) * 3)
+  );
+  --k-lcd-rows: repeating-linear-gradient(
+    0deg,
+    rgb(0 0 10 / calc(0.085 * var(--k-lcd-gain))) 0 var(--k-dpx, 1px),
+    rgb(0 0 0 / 0) var(--k-dpx, 1px) calc(var(--k-dpx, 1px) * 3)
+  );
   /* Cadres : cyan métallisé, éclairé par le haut. */
   --k-frame: #63cdf0;
   --k-frame-hi: #bdeeff;
@@ -312,6 +352,10 @@
 
   position: absolute;
   inset: 0;
+  /* Contexte d'empilement propre : tout ce que l'écran affiche — panneaux, messages, trame, bord
+     de la dalle — reste SOUS le reflet de la vitre, porté par le conteneur. Sans cela les calques
+     numérotés de l'écran passaient par-dessus le reflet. */
+  z-index: 0;
   overflow: hidden;
   font-family: var(--k-font);
   color: #f4f9ff;
@@ -345,11 +389,20 @@
   }
 }
 
+/* Écran dense : traits de trame plus fins, donc un peu plus marqués. Placé après la règle de base
+   de .screen, qui sinon l'emporterait. */
+@media (min-resolution: 1.5dppx) {
+  .screen {
+    --k-lcd-gain: 1.8;
+  }
+}
+
 /* ----- la dalle LCD -----
    Par-dessus le contenu, sous la vitre, sans capter les appuis. Ce qui trahit une dalle de 2007 :
-   la trame des sous-pixels (bandes rouge, verte, bleue, et l'interligne sombre), le grain du
-   tramage, un rétroéclairage à tubes qui fuit le long du bas et laisse le haut plus dense, un
-   centre un peu plus clair, et des noirs qui ne sont jamais noirs (voile bleuté). */
+   la trame des sous-pixels et son interligne, un rétroéclairage à tubes qui fuit le long du bas
+   et laisse le haut plus dense, un centre un peu plus clair, des noirs jamais tout à fait noirs.
+   Pas de grain : un grain aléatoire est la signature d'un film antireflet mat, pas d'une dalle
+   vue à travers du verre. */
 .screen::before {
   content: "";
   position: absolute;
@@ -357,21 +410,18 @@
   z-index: 8;
   pointer-events: none;
   background:
-    repeating-linear-gradient(90deg, rgba(255, 70, 70, 0.05) 0 1px, rgba(70, 255, 100, 0.038) 1px 2px, rgba(80, 120, 255, 0.055) 2px 3px),
-    repeating-linear-gradient(0deg, rgba(0, 0, 10, 0.12) 0 1px, rgba(0, 0, 0, 0) 1px 3px),
-    url(/kiosk/lcd-grain.png) 0 0 / 96px 96px,
-    linear-gradient(0deg, rgba(196, 218, 255, 0.2) 0%, rgba(196, 218, 255, 0.07) 5%, rgba(196, 218, 255, 0) 15%),
-    linear-gradient(180deg, rgba(0, 6, 40, 0.24) 0%, rgba(0, 6, 40, 0.05) 28%, rgba(150, 178, 226, 0.05) 72%, rgba(156, 184, 232, 0.1) 100%),
-    radial-gradient(62% 46% at 50% 46%, rgba(170, 205, 255, 0.07) 0%, rgba(170, 205, 255, 0) 72%),
-    linear-gradient(rgba(124, 152, 206, 0.075), rgba(124, 152, 206, 0.075));
+    var(--k-lcd-rgb),
+    var(--k-lcd-rows),
+    linear-gradient(0deg, rgba(196, 218, 255, 0.12) 0%, rgba(196, 218, 255, 0.04) 5%, rgba(196, 218, 255, 0) 13%),
+    linear-gradient(180deg, rgba(0, 6, 40, 0.16) 0%, rgba(0, 6, 40, 0.03) 24%, rgba(0, 6, 40, 0) 60%),
+    linear-gradient(rgba(124, 152, 206, 0.035), rgba(124, 152, 206, 0.035));
 }
 
-/* ----- la vitre -----
-   Par-dessus tout, sans capter les appuis. Le reflet est une photo (public/kiosk/
-   glass-reflection.webp) : la rue du site, de nuit, vue en miroir et hors foyer, transparente
-   partout où il n'y a pas de lumière, plus présente vers les bords qu'au centre (angle rasant).
-   S'y ajoutent la lueur violette de l'enseigne juste au-dessus, l'assombrissement des bords et
-   l'ombre que le cadre porte sur la dalle. Aucun mode de fusion : simple transparence. */
+/* ----- le bord de la dalle -----
+   Le verre est plan, clair, et son arête est cachée sous le cadre : ni liseré, ni voile, ni
+   assombrissement en dôme. Ce qu'on voit au bord, c'est la dalle elle-même : sa bande noire
+   (l'image ne va jamais jusqu'au cadre) et l'ombre courte que le cadre, en avant, porte sur elle
+   — plus longue en haut, d'où vient la lumière. */
 .screen::after {
   content: "";
   position: absolute;
@@ -379,15 +429,12 @@
   z-index: 9;
   pointer-events: none;
   border-radius: inherit;
-  background:
-    url(/kiosk/glass-reflection.webp) center / cover no-repeat,
-    radial-gradient(74% 12% at 50% 0%, rgba(196, 140, 255, 0.24) 0%, rgba(196, 140, 255, 0) 100%),
-    radial-gradient(138% 106% at 50% 47%, rgba(0, 0, 0, 0) 58%, rgba(0, 3, 22, 0.58) 100%);
   box-shadow:
-    inset 0 0 0 0.2cqw rgba(160, 205, 255, 0.14),
-    inset 0 0.5cqw 0 rgba(255, 255, 255, 0.16),
-    inset 0 1.6cqw 3cqw rgba(0, 0, 12, 0.75),
-    inset 0 0 5cqw rgba(0, 0, 20, 0.4);
+    inset 0 0 0 0.7cqw #030305,
+    inset 0 2.6cqw 1.8cqw -0.4cqw rgba(0, 0, 8, 0.7),
+    inset 1.6cqw 0 1.5cqw -0.4cqw rgba(0, 0, 8, 0.4),
+    inset -1.6cqw 0 1.5cqw -0.4cqw rgba(0, 0, 8, 0.4),
+    inset 0 -1.5cqw 1.5cqw -0.4cqw rgba(0, 0, 8, 0.35);
 }
 
 /* Remise à zéro des boutons, sans poids : chaque bouton s'habille d'une seule classe, dans

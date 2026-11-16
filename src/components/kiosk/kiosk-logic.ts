@@ -289,3 +289,16 @@ export const PHONE_SHORT_SIDE_MAX = 540;
 export function hidesKioskInLandscape(i: { coarsePointer: boolean; landscape: boolean; shortSide: number }): boolean {
   return i.coarsePointer && i.landscape && i.shortSide <= PHONE_SHORT_SIDE_MAX;
 }
+
+// ===== Trame de la dalle =====
+
+/**
+ * Taille d'un pixel PHYSIQUE de l'écran, en px CSS. La trame de la dalle (sous-pixels, interligne)
+ * est dessinée dans cette unité : un pas qui ne tombe pas sur un nombre entier de pixels physiques
+ * bat avec la grille de l'écran et fait du moirage — c'est le cas d'un pas fixe en px CSS sur un
+ * téléphone à densité fractionnaire (2,625 sur le Pixel 9a).
+ */
+export function lcdDevicePixel(devicePixelRatio: number | undefined): string {
+  if (typeof devicePixelRatio !== 'number' || !Number.isFinite(devicePixelRatio) || devicePixelRatio <= 0) return '1px';
+  return `${parseFloat((1 / devicePixelRatio).toFixed(6))}px`;
+}

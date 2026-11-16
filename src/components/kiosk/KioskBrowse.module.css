@@ -85,7 +85,8 @@
   box-shadow: 0 0.5cqw 1.1cqw rgba(0, 0, 0, 0.4);
 }
 
-/* L'ardoise : blanche, finement hachurée, coins du bas arrondis. */
+/* L'ardoise : blanche, coins du bas arrondis, et la hachure en biais de la référence — très
+   fine (quatre pixels physiques de pas), à bords doux pour ne pas crénelé. */
 .kSlate {
   position: absolute;
   left: 0;
@@ -95,7 +96,13 @@
   overflow: hidden;
   border-radius: 0 0 2cqw 2cqw;
   background:
-    repeating-linear-gradient(135deg, rgba(20, 40, 80, 0.035) 0 0.2cqw, rgba(255, 255, 255, 0) 0.2cqw 0.8cqw),
+    repeating-linear-gradient(
+      135deg,
+      rgba(20, 40, 80, 0.06) 0,
+      rgba(20, 40, 80, 0) calc(var(--k-dpx, 1px) * 1.5),
+      rgba(20, 40, 80, 0) calc(var(--k-dpx, 1px) * 2.5),
+      rgba(20, 40, 80, 0.06) calc(var(--k-dpx, 1px) * 4)
+    ),
     linear-gradient(180deg, #f8fbff 0%, #eef3f8 60%, #e4ebf2 100%);
   box-shadow: 0 1.2cqw 3cqw rgba(0, 0, 20, 0.55), 0 0 3cqw rgba(204, 224, 255, 0.34);
 }

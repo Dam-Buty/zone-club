@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { useStore, useCredits } from '../../store';
 import { useBackGuard } from '../../hooks/useBackGuard';
 import api from '../../api';
@@ -18,6 +18,7 @@ import {
   firstNonEmptyTab,
   hidesKioskInLandscape,
   kioskBackAction,
+  lcdDevicePixel,
   type KioskTab,
 } from './kiosk-logic';
 import states from './KioskStates.module.css';
@@ -64,6 +65,20 @@ function usePhoneLandscape(): boolean {
       window.removeEventListener('resize', update);
       orientation?.removeEventListener?.('change', update);
     };
+  }, []);
+  return value;
+}
+
+/**
+ * Taille d'un pixel physique de l'écran, en px CSS : la trame de la dalle s'y cale. Suivie quand
+ * la densité change (zoom du navigateur, fenêtre glissée sur un autre écran).
+ */
+function useDevicePixel(): string {
+  const [value, setValue] = useState(() => lcdDevicePixel(typeof window === 'undefined' ? undefined : window.devicePixelRatio));
+  useEffect(() => {
+    const update = () => setValue(lcdDevicePixel(window.devicePixelRatio));
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
   }, []);
   return value;
 }
@@ -117,6 +132,7 @@ export function KioskView() {
   const closePlayer = useStore((state) => state.closePlayer);
   const credits = useCredits();
   const phoneLandscape = usePhoneLandscape();
+  const devicePixel = useDevicePixel();
 
   const [mode, setMode] = useState<'browse' | 'search'>('browse');
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -324,7 +340,7 @@ export function KioskView() {
 
         <div className={styles.column}>
           <div className={styles.bezel}>
-            <div className={styles.ks}>
+            <div className={styles.ks} style={{ '--k-dpx': devicePixel } as CSSProperties}>
               <div className={styles.screen} data-mode={mode}>
                 <div className={styles.kTop} inert={overlay !== null}>
                   <div className={styles.kLogo}>
