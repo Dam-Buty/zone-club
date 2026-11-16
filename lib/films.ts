@@ -2,6 +2,7 @@ import { db } from './db';
 import { fetchFullMovieData } from './tmdb';
 import { addMovie as addToRadarr } from './radarr';
 import { type RentalTier } from '../src/types';
+import { getRentalTier } from '../src/utils/rental-tier';
 
 export interface Film {
     id: number;
@@ -157,10 +158,9 @@ export function autoAssignAisle(genres: { id: number }[], releaseYear?: number |
     return null
 }
 
+/** Palier facturé. La règle vit dans src/utils/rental-tier.ts, partagée avec ce que le client affiche. */
 export function getFilmTier(film: Film): RentalTier {
-    if (film.is_nouveaute) return 'nouveaute';
-    if (film.aisle === 'classiques') return 'classique';
-    return 'standard';
+    return getRentalTier(film);
 }
 
 export async function addFilmFromTmdb(tmdbId: number): Promise<Film> {

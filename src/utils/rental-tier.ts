@@ -1,12 +1,16 @@
-// Palier tarifaire d'un film, partagé par la fiche du vidéoclub et par la borne.
+// Palier tarifaire d'un film — LA règle, pour le serveur qui facture (lib/films.ts la délègue
+// ici) comme pour la fiche du vidéoclub et la borne qui affichent le prix.
+//
+// Elle a existé en deux exemplaires qui ont divergé : le serveur facturait d'après le marquage
+// « nouveauté » et le rayon Classiques, le client affichait d'après l'année de sortie. Un film
+// de 2017 marqué nouveauté s'affichait à 1 crédit et en coûtait 2. Une seule fonction, donc.
+//
 // Imports de type uniquement : ce module est aussi chargé tel quel par Node dans les tests.
-import type { Film, RentalTier } from '../types';
+import type { RentalTier } from '../types';
 
-/** 1 an ou moins → nouveauté ; 20 ans ou plus → classique ; sinon standard. */
-export function getRentalTier(film: Pick<Film, 'release_date'>, now: Date = new Date()): RentalTier {
-  const year = new Date(film.release_date).getFullYear();
-  const currentYear = now.getFullYear();
-  if (currentYear - year <= 1) return 'nouveaute';
-  if (currentYear - year >= 20) return 'classique';
+/** Nouveauté signalée → `'nouveaute'` ; sinon rayon Classiques → `'classique'` ; sinon `'standard'`. */
+export function getRentalTier(film: { is_nouveaute?: boolean | number | null; aisle?: string | null }): RentalTier {
+  if (film.is_nouveaute) return 'nouveaute';
+  if (film.aisle === 'classiques') return 'classique';
   return 'standard';
 }
