@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useStore, useCredits } from '../../store';
 import { useBackGuard } from '../../hooks/useBackGuard';
 import type { Film } from '../../types';
+import { KioskAuth } from './KioskAuth';
 import { KioskBrowse } from './KioskBrowse';
 import { KioskNotice, type KioskNoticeSpec } from './KioskNotice';
 import { allFilms, catalogState, creditsLabel, filmsForTab, firstNonEmptyTab } from './kiosk-logic';
@@ -91,9 +92,31 @@ export function KioskView() {
 
   const closeNotice = useCallback(() => setNotice(null), []);
 
+  // ----- Connexion de la borne -----
+  // `then` est ce que le visiteur voulait faire quand la connexion s'est imposée (louer) : on le
+  // reprend une fois connecté. Une phrase de récupération pas encore confirmée garde le panneau
+  // ouvert, quoi qu'il arrive : elle ne se retrouve nulle part ailleurs.
+  const [auth, setAuth] = useState<{ then?: () => void } | null>(null);
+  const pendingPhrase = useStore((state) => state.recoveryPhrase);
+  const authVisible = auth !== null || pendingPhrase !== null;
+
+  const requestAuth = useCallback((then?: () => void) => setAuth({ then }), []);
+  const cancelAuth = useCallback(() => setAuth(null), []);
+  const finishAuth = () => {
+    const then = auth?.then;
+    setAuth(null);
+    then?.();
+  };
+  // Le geste retour ferme d'abord la connexion, puis la borne (dernière garde posée, première
+  // servie). Pas de garde sur l'écran de la phrase : un retour arrière ne doit pas la faire perdre.
+  useBackGuard(auth !== null && pendingPhrase === null, cancelAuth);
+
   const openAccount = () => {
-    // Visiteur non connecté : la connexion de la borne (tâche suivante).
-    if (!isAuthenticated || !authUser) return;
+    if (authVisible) return;
+    if (!isAuthenticated || !authUser) {
+      requestAuth();
+      return;
+    }
     setNotice({
       title: 'Compte',
       body: `${authUser.username} — ${creditsLabel(credits)}`,
@@ -147,7 +170,7 @@ export function KioskView() {
                   </div>
                 </div>
 
-                <div className={styles.kPane} inert={overlay !== null}>
+                <div className={styles.kPane} inert={overlay !== null || authVisible}>
                   {catalog === 'loading' && (
                     <p className={styles.kMessage} role="status">
                       Chargement du catalogue…
@@ -163,6 +186,8 @@ export function KioskView() {
                     />
                   )}
                 </div>
+
+                {authVisible && <KioskAuth onDone={finishAuth} onCancel={cancelAuth} />}
 
                 {overlay && <KioskNotice {...overlay} />}
               </div>

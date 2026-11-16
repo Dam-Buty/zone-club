@@ -650,6 +650,151 @@
   color: #bfe3ff;
 }
 
+/* ----- connexion, inscription, récupération -----
+   Le panneau occupe l'écran sous la barre du haut. Il défile si la hauteur manque (clavier
+   virtuel ouvert), pour que le champ en cours de saisie reste atteignable. */
+
+.kAuth {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 11cqw;
+  bottom: 0;
+  z-index: 4;
+  overflow-y: auto;
+  padding: 2cqw 6cqw 8cqw;
+  background: radial-gradient(120% 70% at 62% 24%, #2a86e6 0%, #0e49ad 38%, #06206a 68%, #020b33 100%);
+}
+
+.screen .kAuthBack {
+  padding: 1.4cqw 3cqw;
+  font-size: 4cqw;
+  font-weight: 600;
+  color: #dff5ff;
+  border-radius: 1.2cqw;
+  background: #1c7fb0;
+}
+
+.kAuthTitle {
+  margin-top: 4cqw;
+  font-size: 7.4cqw;
+  font-weight: 700;
+  line-height: 1.1;
+  color: #ffb347;
+}
+
+.kField {
+  display: block;
+  margin-top: 3.4cqw;
+}
+
+.kFieldLabel {
+  display: block;
+  font-size: 3.8cqw;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: #bfe3ff;
+}
+
+/* 16 px au minimum : en dessous, iOS zoome sur le champ à la prise de focus. La sélection de
+   texte, coupée sur toute la borne, est rétablie ici — sans elle certains navigateurs refusent
+   la saisie. */
+.kInput {
+  display: block;
+  width: 100%;
+  height: 12cqw;
+  min-height: 40px;
+  margin-top: 1cqw;
+  padding: 0 3cqw;
+  font: inherit;
+  font-size: max(16px, 5cqw);
+  color: #fff;
+  background: #041a52;
+  border: 0.5cqw solid #4fc3e8;
+  border-radius: 1.4cqw;
+  outline: none;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.kInput:focus {
+  border-color: #ffd9a0;
+  box-shadow: 0 0 0 0.5cqw rgba(255, 179, 71, 0.35);
+}
+
+/* Refus du formulaire ou du serveur : ambre, pas rouge. */
+.kAuthError {
+  margin-top: 3.4cqw;
+  padding: 2.2cqw 3cqw;
+  font-size: 4.2cqw;
+  line-height: 1.25;
+  color: #ffe3b0;
+  background: rgba(2, 8, 40, 0.6);
+  border-left: 1cqw solid #ff9d2e;
+  border-radius: 0.8cqw;
+}
+
+.screen .kAuthSubmit {
+  display: block;
+  width: 100%;
+  min-height: 12.5cqw;
+  margin-top: 4.4cqw;
+  padding: 1.4cqw 3cqw;
+  font-size: 5.8cqw;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #fff;
+  border: 0.4cqw solid #ffd9a0;
+  border-radius: 1.4cqw;
+  background: linear-gradient(180deg, #ffa53d 0%, #f37a12 50%, #d95e00 52%, #ee7a14 100%);
+  box-shadow: inset 0 0.4cqw 0 rgba(255, 255, 255, 0.4), inset 0 -0.5cqw 0 rgba(0, 0, 0, 0.25), 0 0.8cqw 2cqw rgba(0, 0, 20, 0.5);
+}
+
+.kAuthLinks {
+  margin-top: 4.4cqw;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2.4cqw;
+}
+
+.screen .kAuthLink {
+  flex: 1 1 auto;
+  min-height: 10cqw;
+  padding: 1.2cqw 3cqw;
+  font-size: 4.4cqw;
+  font-weight: 600;
+  color: #fff;
+  border: 0.4cqw solid #9ee6ff;
+  border-radius: 1.4cqw;
+  background: linear-gradient(180deg, #48c0e6 0%, #1f8fc0 50%, #127aa9 52%, #1c88b6 100%);
+  box-shadow: inset 0 0.4cqw 0 rgba(255, 255, 255, 0.4), inset 0 -0.5cqw 0 rgba(0, 0, 0, 0.25);
+}
+
+.kAuthPhrase {
+  display: block;
+  margin-top: 5cqw;
+  padding: 5cqw 3cqw;
+  text-align: center;
+  overflow-wrap: anywhere;
+  font-family: "Courier New", Courier, monospace;
+  font-size: 6.4cqw;
+  font-weight: 700;
+  line-height: 1.25;
+  color: #fff;
+  background: #041a52;
+  border: 0.5cqw solid #ffd9a0;
+  border-radius: 1.4cqw;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.kAuthText {
+  margin: 4cqw 0;
+  font-size: 4.3cqw;
+  line-height: 1.3;
+  color: #e3f1ff;
+}
+
 /* ----- message dans l'écran ----- */
 
 .kNoticeScrim {
