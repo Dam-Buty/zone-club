@@ -525,6 +525,16 @@ Règles à ne pas casser — chacune a son test dans `tests/domain/kiosk-*.test.
   recherche, messages) — partagent les variables `--k-*` posées sur l'écran. L'écran est en
   **5:9 sur téléphone** et en **2:3 sur PC** : les hauteurs passent par ces variables.
   Le corps de la borne (fente, vitrines) reste schématique jusqu'au lot 3 (rendu Blender).
+- **La garde du geste retour est testée, et son retrait d'entrée est différé.** `useBackGuard`
+  délègue à `src/hooks/back-guard-stack.ts` (sans React ni `window` ; tests
+  `tests/domain/back-guard.test.mjs`). Une garde refermée par l'interface laisse une entrée
+  d'historique « orpheline », retirée à la tâche suivante ; une garde ouverte entre-temps la
+  reprend au lieu d'en poser une. Ne pas revenir à un `history.back()` immédiat dans le nettoyage
+  d'un effet : il est asynchrone, et suivi d'un `pushState` dans la même tâche il décale
+  l'historique d'une entrée. C'est ce que provoque React en développement, qui rejoue l'effet d'un
+  composant à son montage : après la fermeture du lecteur ouvert depuis la borne, le geste retour
+  suivant sortait du site (tracé et corrigé le 17/11/2026 ; le build de production n'était pas
+  touché, mais c'est en développement que la borne se regarde).
 - **L'appui sur la borne libère le vidéoclub 3D.** La scène intérieure est démontée, prête ou non
   (`shouldMountInterior`), son renderer libéré (`interior/release-renderer.ts` — R3F ne libère pas un
   `WebGPURenderer`), et la vanne des préchargements se referme : les `fetch` inscrits par
