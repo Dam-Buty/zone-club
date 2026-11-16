@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 import { recoverAccount } from '@/lib/auth';
 import { createSessionToken } from '@/lib/session';
 import { checkRateLimit, getRateLimitKey } from '@/lib/rate-limit';
+import { passwordRuleError } from '@/src/utils/account-rules';
 
 export async function POST(request: NextRequest) {
     const rateLimitKey = getRateLimitKey(request, 'recover');
@@ -20,8 +21,11 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Tous les champs sont requis' }, { status: 400 });
     }
 
-    if (newPassword.length < 8) {
-        return NextResponse.json({ error: 'Le mot de passe doit faire au moins 8 caractères' }, { status: 400 });
+    // Même règle qu'à l'inscription (src/utils/account-rules.ts) : la récupération n'exigeait que
+    // 8 caractères et laissait poser un mot de passe que l'inscription aurait refusé.
+    const ruleError = passwordRuleError(String(newPassword));
+    if (ruleError) {
+        return NextResponse.json({ error: ruleError }, { status: 400 });
     }
 
     const result = await recoverAccount(username, recoveryPhrase, newPassword);

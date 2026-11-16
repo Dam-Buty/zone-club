@@ -22,35 +22,42 @@ import { readText } from '../helpers/repo.mjs';
 const ROOT = process.cwd();
 
 // ===== S-10: Password Complexity =====
+// Depuis le 16/11/2026 la règle vit dans src/utils/account-rules.ts : une seule définition pour
+// les routes d'inscription et de récupération et pour les deux formulaires (elle existait en
+// trois exemplaires qui avaient divergé). Son COMPORTEMENT est testé dans
+// tests/domain/account-rules.test.mjs ; ces gardes vérifient que la règle existe toujours et que
+// la route d'inscription l'applique, avec un refus 400.
+const ACCOUNT_RULES = 'src/utils/account-rules.ts';
 
 test('S-10: register route must check for lowercase letter', () => {
-  const source = readText(path.join(ROOT, 'app/api/auth/register/route.ts'));
+  const source = readText(path.join(ROOT, ACCOUNT_RULES));
   assert.ok(
     source.includes('[a-z]'),
-    'Register must validate at least one lowercase letter'
+    'Password rule must validate at least one lowercase letter'
   );
 });
 
 test('S-10: register route must check for uppercase letter', () => {
-  const source = readText(path.join(ROOT, 'app/api/auth/register/route.ts'));
+  const source = readText(path.join(ROOT, ACCOUNT_RULES));
   assert.ok(
     source.includes('[A-Z]'),
-    'Register must validate at least one uppercase letter'
+    'Password rule must validate at least one uppercase letter'
   );
 });
 
 test('S-10: register route must check for digit', () => {
-  const source = readText(path.join(ROOT, 'app/api/auth/register/route.ts'));
+  const source = readText(path.join(ROOT, ACCOUNT_RULES));
   assert.ok(
     source.includes('[0-9]'),
-    'Register must validate at least one digit'
+    'Password rule must validate at least one digit'
   );
 });
 
 test('S-10: password complexity check must return 400 on failure', () => {
   const source = readText(path.join(ROOT, 'app/api/auth/register/route.ts'));
-  // Find the complexity check block and verify it returns 400
-  const complexityIdx = source.indexOf('[a-z]');
+  // The route must apply the shared password rule and return 400 right after it
+  const complexityIdx = source.indexOf('passwordRuleError(');
+  assert.ok(complexityIdx > 0, 'Register route must apply the shared password rule (passwordRuleError)');
   const returnIdx = source.indexOf('status: 400', complexityIdx);
   assert.ok(
     returnIdx > complexityIdx && returnIdx - complexityIdx < 300,

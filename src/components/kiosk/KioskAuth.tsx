@@ -1,7 +1,8 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { useStore } from '../../store';
 import api from '../../api';
-import { authFormError, type KioskAuthMode } from './kiosk-logic';
+import { accountFormError } from '../../utils/account-rules';
+import type { KioskAuthMode } from './kiosk-logic';
 import styles from './KioskView.module.css';
 
 // Connexion, inscription et récupération du compte, dans la charte de la borne. Mêmes trois
@@ -67,7 +68,7 @@ export function KioskAuth({ initialMode = 'login', onDone, onCancel }: KioskAuth
     event.preventDefault();
     if (busy) return;
     clearAuthError();
-    const refusal = authFormError(mode, { username, password, confirm, phrase });
+    const refusal = accountFormError(mode, { username, password, confirm, phrase });
     setFormError(refusal);
     if (refusal) return;
 

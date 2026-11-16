@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 import { registerUser, usernameExists } from '@/lib/auth';
 import { createSessionToken } from '@/lib/session';
 import { checkRateLimit, getRateLimitKey } from '@/lib/rate-limit';
+import { passwordRuleError, usernameRuleError } from '@/src/utils/account-rules';
 
 export async function POST(request: NextRequest) {
     const rateLimitKey = getRateLimitKey(request, 'register');
@@ -20,16 +21,10 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Pseudo et mot de passe requis' }, { status: 400 });
     }
 
-    if (username.length < 3 || username.length > 30) {
-        return NextResponse.json({ error: 'Le pseudo doit faire entre 3 et 30 caractères' }, { status: 400 });
-    }
-
-    if (password.length < 8) {
-        return NextResponse.json({ error: 'Le mot de passe doit faire au moins 8 caractères' }, { status: 400 });
-    }
-
-    if (!/[a-z]/.test(password) || !/[A-Z]/.test(password) || !/[0-9]/.test(password)) {
-        return NextResponse.json({ error: 'Le mot de passe doit contenir au moins une minuscule, une majuscule et un chiffre' }, { status: 400 });
+    // Mêmes règles que les formulaires (src/utils/account-rules.ts) : une seule définition.
+    const ruleError = usernameRuleError(String(username)) ?? passwordRuleError(String(password));
+    if (ruleError) {
+        return NextResponse.json({ error: ruleError }, { status: 400 });
     }
 
     if (usernameExists(username)) {
