@@ -3,7 +3,7 @@ import type { Film } from '../../types';
 import { searchFilms } from '../../utils/minitelSearch';
 import { KioskPoster } from './KioskBrowse';
 import { releaseYear, tabLabel } from './kiosk-logic';
-import styles from './KioskView.module.css';
+import styles from './KioskPanels.module.css';
 
 // Recherche par titre : la même recherche que le Minitel (insensible à la casse et aux accents,
 // dix résultats au plus), recalculée à chaque frappe. Le champ est en haut de l'écran, hors de

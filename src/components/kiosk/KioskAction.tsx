@@ -4,13 +4,20 @@ import { RENTAL_COSTS, type Film } from '../../types';
 import { getRentalTier } from '../../utils/rental-tier';
 import type { KioskNoticeSpec } from './KioskNotice';
 import { creditsLabel, formatUntil, offersRelogin, rentAction, rentFlow, type RentAction } from './kiosk-logic';
-import styles from './KioskView.module.css';
+import styles from './KioskBrowse.module.css';
 
 // Le bouton d'action de la fiche. Il ne se grise jamais : quand il ne peut pas louer, il le dit
 // (un bouton éteint avale l'appui sans rien expliquer, surtout sur mobile).
 
-/** Ce que la fiche sait du film au-delà du catalogue : versions jouables et copies restantes. */
-export type KioskFilmDetail = { vf: boolean; vo: boolean; copiesLeft: number; earliestReturn: string | null };
+/** Ce que la fiche sait du film au-delà du catalogue : versions jouables, copies restantes, générique. */
+export type KioskFilmDetail = {
+  vf: boolean;
+  vo: boolean;
+  copiesLeft: number;
+  earliestReturn: string | null;
+  directors: string[];
+  cast: string[];
+};
 
 interface KioskActionProps {
   film: Film;

@@ -22,7 +22,7 @@
   text-align: center;
   background: linear-gradient(180deg, #23213a 0%, #191827 40%, #14131f 100%);
   color: #d6ecff;
-  font-family: "Avenir Next Condensed", "Roboto Condensed", sans-serif-condensed, "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+  font-family: "Barlow Condensed", "DIN Condensed", "Roboto Condensed", sans-serif-condensed, "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -69,8 +69,9 @@
   margin-top: 6px;
   padding: 9px 18px;
   border: 2px solid #4fc3e8;
-  border-radius: 8px;
-  background: linear-gradient(180deg, #3fb2d6 0%, #1a7fae 48%, #0f6895 52%, #17749f 100%);
+  border-radius: 4px;
+  background: linear-gradient(180deg, #3db2d8 0%, #2590bd 55%, #1a79a5 100%);
+  text-transform: lowercase;
   color: #fff;
   font: inherit;
   font-size: 15px;

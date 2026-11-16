@@ -1,0 +1,463 @@
+/* Borne de location — le parcours des films : rayons, fiche, boutons, bande de jaquettes.
+   Positions en cqw, hauteurs prises dans les variables --k-* posées sur l'écran
+   (KioskView.module.css) : la même feuille sert l'écran haut du téléphone et l'écran 2:3 du PC. */
+
+/* ----- colonne des rayons -----
+   Comme sur la référence : des onglets collés les uns aux autres dans un cadre clair, séparés par
+   un simple filet ; seul l'onglet actif se détache, blanc à texte orange. */
+
+.kSide {
+  position: absolute;
+  left: 2.4cqw;
+  top: 12cqw;
+  width: 26cqw;
+  display: flex;
+  flex-direction: column;
+  padding: 0.5cqw;
+  border: 0.4cqw solid var(--k-frame);
+  border-color: var(--k-frame-hi) var(--k-frame) var(--k-frame-lo) var(--k-frame);
+  border-radius: 1.3cqw;
+  background: #1d6388;
+  box-shadow: 0 0.8cqw 2cqw rgba(0, 0, 20, 0.45), 0 0 1.4cqw rgba(120, 205, 245, 0.22);
+}
+
+/* Pas de rognage : avec une police de repli large, « Nouveautés » déborde dans la marge du cadre
+   plutôt que d'être coupé. */
+.kTab {
+  height: var(--k-tab-h);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  font-size: var(--k-tab-size);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: #f1fbff;
+  text-shadow: var(--k-text-shadow);
+  background: var(--k-skin-tab);
+  box-shadow: var(--k-bevel);
+}
+
+.kTab:first-child {
+  border-radius: 0.8cqw 0.8cqw 0 0;
+}
+
+.kTab:last-child {
+  border-radius: 0 0 0.8cqw 0.8cqw;
+}
+
+.kTabOn,
+.kTabOn:first-child,
+.kTabOn:last-child {
+  border-radius: 0.8cqw;
+  color: #e8501c;
+  text-shadow: none;
+  /* Le blanc d'une dalle : un peu froid, et il bave sur ce qui l'entoure. */
+  background: linear-gradient(180deg, #fbfdff 0%, #eaf0f6 46%, #d9e2ea 100%);
+  box-shadow: 0 0.4cqw 1cqw rgba(0, 10, 40, 0.5), 0 0 1.8cqw rgba(214, 232, 255, 0.5), inset 0 -0.3cqw 0 rgba(0, 0, 0, 0.1);
+}
+
+/* ----- fiche : le clap ----- */
+
+.kCard {
+  position: absolute;
+  left: 31cqw;
+  right: 3cqw;
+  top: 12cqw;
+  height: var(--k-card-h);
+  color: #333;
+  text-shadow: none;
+}
+
+/* Le bras du clap, légèrement relevé comme sur la référence. */
+.kClap {
+  position: absolute;
+  left: -0.4cqw;
+  right: -0.4cqw;
+  top: 0.9cqw;
+  height: 6.2cqw;
+  z-index: 1;
+  transform: rotate(-1.5deg);
+  transform-origin: 0 100%;
+  background: repeating-linear-gradient(-58deg, #3b3b3f 0 5.2cqw, #eef2f6 5.2cqw 10.4cqw);
+  border-bottom: 0.45cqw solid #26262a;
+  border-radius: 0.5cqw 0.5cqw 0 0;
+  box-shadow: 0 0.5cqw 1.1cqw rgba(0, 0, 0, 0.4);
+}
+
+/* L'ardoise : blanche, finement hachurée, coins du bas arrondis. */
+.kSlate {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 6.6cqw;
+  bottom: 0;
+  overflow: hidden;
+  border-radius: 0 0 2cqw 2cqw;
+  background:
+    repeating-linear-gradient(135deg, rgba(20, 40, 80, 0.035) 0 0.2cqw, rgba(255, 255, 255, 0) 0.2cqw 0.8cqw),
+    linear-gradient(180deg, #f8fbff 0%, #eef3f8 60%, #e4ebf2 100%);
+  box-shadow: 0 1.2cqw 3cqw rgba(0, 0, 20, 0.55), 0 0 3cqw rgba(204, 224, 255, 0.34);
+}
+
+.kMeta {
+  position: absolute;
+  left: 2.6cqw;
+  top: 1.4cqw;
+  width: 23cqw;
+}
+
+.kMeta dt,
+.kTitleLabel {
+  display: block;
+  padding-bottom: 0.4cqw;
+  font-size: 2.6cqw;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  color: #6f757d;
+  border-bottom: 0.25cqw solid #c5cbd2;
+}
+
+.kMeta dt {
+  margin-top: var(--k-meta-gap);
+}
+
+.kMeta dd {
+  margin: 0.6cqw 0 0;
+  font-family: "Marker Felt", "Comic Sans MS", cursive;
+  font-size: var(--k-meta-year);
+  line-height: 1;
+  white-space: nowrap;
+  color: #f0641e;
+  transform: rotate(-3deg);
+  transform-origin: left;
+}
+
+.kMeta dd.kMetaSm {
+  font-size: var(--k-meta-sm);
+}
+
+.kPoster {
+  position: absolute;
+  right: 2.6cqw;
+  top: 2.8cqw;
+  width: var(--k-poster-w);
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  background: #223;
+  box-shadow: 0 0 0 0.25cqw #2a2a2e, 0 0.6cqw 1.6cqw rgba(0, 0, 0, 0.45);
+}
+
+/* Jaquette absente ou qui ne charge pas : une vignette du même format, qui porte le titre. */
+.kPosterFallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6%;
+  overflow: hidden;
+  text-align: center;
+  overflow-wrap: anywhere;
+  font-family: var(--k-font);
+  font-weight: 600;
+  font-size: 4.4cqw;
+  line-height: 1.12;
+  color: #dff5ff;
+  background: linear-gradient(160deg, #1b46a3 0%, #0a1c4d 100%);
+}
+
+/* Le titre, au bas de l'ardoise, sous son filet. */
+.kTitleZone {
+  position: absolute;
+  left: 2.6cqw;
+  right: 2.6cqw;
+  bottom: 1.4cqw;
+  height: var(--k-title-h);
+  display: flex;
+  flex-direction: column;
+}
+
+.kTitle {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-size: var(--k-title-size);
+  font-weight: 700;
+  line-height: 1.04;
+  color: #f0641e;
+}
+
+/* Un titre court tient sur une ligne, en grand ; un titre long passe sur deux, plus petit. */
+.kTitle span {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.kTitleSm {
+  font-size: var(--k-title-size-sm);
+}
+
+.kTitleSm span {
+  -webkit-line-clamp: 2;
+}
+
+/* ----- sous la fiche : l'essentiel du film, dans un cadre fin -----
+   « En bref » (le synopsis) puis le générique : réalisation et interprètes. */
+
+.kUnder {
+  position: absolute;
+  left: 2.4cqw;
+  right: 2.4cqw;
+  top: var(--k-under-top);
+  height: var(--k-under-h);
+  padding: 1.5cqw 2.4cqw;
+  overflow: hidden;
+  border: 0.3cqw solid rgba(110, 200, 245, 0.5);
+  border-color: rgba(190, 238, 255, 0.6) rgba(110, 200, 245, 0.5) rgba(60, 145, 190, 0.5) rgba(110, 200, 245, 0.5);
+  border-radius: 1.3cqw;
+  background: linear-gradient(180deg, rgba(8, 34, 100, 0.42) 0%, rgba(3, 20, 72, 0.34) 100%);
+}
+
+.kSyn,
+.kCredits {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: var(--k-syn-size);
+  font-weight: 500;
+  line-height: 1.24;
+  color: #e6f3ff;
+}
+
+.kSyn {
+  -webkit-line-clamp: var(--k-syn-lines);
+}
+
+.kCredits {
+  margin-top: 1cqw;
+  -webkit-line-clamp: var(--k-credits-lines);
+  color: #cfe6ff;
+}
+
+.kSyn b,
+.kCredits b {
+  font-weight: 700;
+  color: #ffcf5a;
+}
+
+/* ----- boutons -----
+   Plats, à trame, bordure claire, libellés en bas-de-casse : la facture de la référence. */
+
+.kBtn {
+  position: absolute;
+  top: var(--k-btn-top);
+  height: var(--k-btn-h);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  white-space: nowrap;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: var(--k-text-shadow);
+  border-radius: var(--k-radius);
+  box-shadow: var(--k-bevel), 0 0.8cqw 2cqw rgba(0, 0, 20, 0.5);
+}
+
+/* Le bouton d'action occupe toute la largeur de la fiche (l'« extrait » arrive en tranche c). */
+.kLouer,
+.kSearch {
+  text-transform: lowercase;
+}
+
+.kLouer {
+  left: 31cqw;
+  right: 3cqw;
+  font-size: 7.4cqw;
+  letter-spacing: 0.01em;
+  border: 0.4cqw solid var(--k-edge-orange);
+  background: var(--k-skin-orange);
+}
+
+.kSearch {
+  left: 2.4cqw;
+  width: 26cqw;
+  font-size: 5.9cqw;
+  border: 0.4cqw solid var(--k-edge-teal);
+  background: var(--k-skin-teal);
+}
+
+/* La loupe en filigrane derrière le libellé. */
+.kSearchMark {
+  position: absolute;
+  left: -1.2cqw;
+  top: 50%;
+  width: 11cqw;
+  height: 11cqw;
+  transform: translateY(-50%);
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.24);
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  pointer-events: none;
+}
+
+.kBtnLabel {
+  position: relative;
+}
+
+/* ----- bande de jaquettes ----- */
+
+.kStripH {
+  position: absolute;
+  left: 3cqw;
+  right: 3cqw;
+  top: var(--k-striph-top);
+  height: 6.2cqw;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+}
+
+.kStripH b {
+  font-size: 5.6cqw;
+  font-weight: 500;
+  line-height: 1.05;
+}
+
+.kChips {
+  display: flex;
+  gap: 0.5cqw;
+}
+
+/* Onglets de tri : coins du haut arrondis, posés sur le cadre de la bande. */
+.kChip {
+  padding: 0.6cqw 2.2cqw 0.7cqw;
+  font-size: 3.7cqw;
+  font-weight: 500;
+  color: #e3f6ff;
+  border: 0.3cqw solid var(--k-frame);
+  border-top-color: var(--k-frame-hi);
+  border-bottom: 0;
+  border-radius: 1.1cqw 1.1cqw 0 0;
+  background: linear-gradient(180deg, #1f6f99 0%, #125a82 100%);
+}
+
+.kChipOn {
+  color: #06306b;
+  text-shadow: none;
+  background: linear-gradient(180deg, #a4e4fa 0%, #6fcff2 40%, #52bde7 100%);
+}
+
+.kStrip {
+  position: absolute;
+  left: 2.4cqw;
+  right: 2.4cqw;
+  top: var(--k-strip-top);
+  bottom: 2.4cqw;
+  display: flex;
+  align-items: center;
+  gap: 1cqw;
+  padding: 0 1cqw;
+  border: 0.4cqw solid var(--k-frame);
+  border-color: var(--k-frame-hi) var(--k-frame) var(--k-frame-lo) var(--k-frame);
+  border-radius: 1.3cqw;
+  background: linear-gradient(180deg, rgba(6, 24, 76, 0.8) 0%, rgba(2, 12, 50, 0.8) 100%);
+  box-shadow: inset 0 0.6cqw 1.6cqw rgba(0, 0, 20, 0.6), 0 0 1.4cqw rgba(120, 205, 245, 0.2);
+}
+
+/* Flèches : triangle dégradé cerné de blanc (deux triangles emboîtés). */
+.kArrow {
+  position: relative;
+  flex: 0 0 6.4cqw;
+  height: 17cqw;
+}
+
+.kArrow::before,
+.kArrow::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+.kArrow::before {
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.kArrow::after {
+  background: linear-gradient(180deg, #6fd4f6 0%, #2a8fc4 55%, #0f5f9c 100%);
+}
+
+.kArrowL::before {
+  clip-path: polygon(100% 0, 100% 100%, 0 50%);
+}
+
+.kArrowL::after {
+  clip-path: polygon(88% 9%, 88% 91%, 13% 50%);
+}
+
+.kArrowR::before {
+  clip-path: polygon(0 0, 0 100%, 100% 50%);
+}
+
+.kArrowR::after {
+  clip-path: polygon(12% 9%, 12% 91%, 87% 50%);
+}
+
+/* La bande défile nativement (doigt, molette, trackpad) ; les flèches l'y aident. */
+.kRail {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.5cqw;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+}
+
+.kRail::-webkit-scrollbar {
+  display: none;
+}
+
+.kRailItem {
+  flex: 0 0 auto;
+  height: 88%;
+  aspect-ratio: 2 / 3;
+  overflow: hidden;
+  scroll-snap-align: start;
+  border: 0.3cqw solid transparent;
+  background: #223;
+}
+
+.kRailItemOn {
+  border-color: #ffb347;
+  box-shadow: 0 0 2cqw #ffb347;
+}
+
+.kRailPoster {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.kRailPoster.kPosterFallback {
+  display: flex;
+  font-size: 2.3cqw;
+}
+
+.kRailEmpty {
+  flex: 1;
+  text-align: center;
+  font-size: 4.2cqw;
+  color: #bfe3ff;
+}

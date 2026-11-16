@@ -178,3 +178,18 @@ test('BORNE: sur un téléphone en paysage, la borne ne s\'affiche pas', () => {
   assert.equal(K.hidesKioskInLandscape({ ...phone, coarsePointer: false }), false, 'une fenêtre de PC basse n\'est pas un téléphone');
   assert.equal(K.hidesKioskInLandscape({ ...phone, shortSide: 768 }), false, 'une tablette a la hauteur qu\'il faut');
 });
+
+// ===== Retouche visuelle du 16/11/2026 : la fiche donne le générique =====
+test('BORNE: générique court de la fiche — deux réalisateurs et trois interprètes au plus', () => {
+  assert.deepEqual(
+    K.creditsLine(['Jordan Peele'], ['Daniel Kaluuya', 'Allison Williams', 'Bradley Whitford', 'Catherine Keener']),
+    { by: 'Jordan Peele', cast: 'Daniel Kaluuya, Allison Williams, Bradley Whitford' },
+  );
+  assert.deepEqual(K.creditsLine(['Joel Coen', 'Ethan Coen', 'Un Troisième'], []), { by: 'Joel Coen, Ethan Coen', cast: null });
+  assert.deepEqual(K.creditsLine([], ['  ', 'Sigourney Weaver']), { by: null, cast: 'Sigourney Weaver' });
+});
+test('BORNE: sans générique connu, la fiche n\'affiche pas de ligne vide', () => {
+  assert.equal(K.creditsLine([], []), null);
+  assert.equal(K.creditsLine(null, undefined), null);
+  assert.equal(K.creditsLine(['', '  '], ['']), null);
+});

@@ -15,12 +15,15 @@ import {
   type KioskSort,
   type KioskTab,
 } from './kiosk-logic';
-import styles from './KioskView.module.css';
+import styles from './KioskBrowse.module.css';
 
 // Parcours des films : la colonne des rayons, la fiche du film affiché, les deux boutons et la
 // bande de jaquettes. Chaque bloc est posé en coordonnées de l'écran de la borne (cqw).
 
 const TAB_PAGES = tabPages();
+
+/** Au-delà, le titre passe sur deux lignes, en plus petit, au bas du clap. */
+const TITLE_ONE_LINE_MAX = 20;
 
 const SORTS: ReadonlyArray<{ id: KioskSort; label: string }> = [
   { id: 'rayon', label: 'sélection' },
@@ -63,6 +66,8 @@ interface KioskBrowseProps {
   selectedId: number | null;
   /** Versions jouables du film affiché ; `null` tant qu'on ne les connaît pas. */
   versions: { vf: boolean; vo: boolean } | null;
+  /** Générique court du film affiché (creditsLine) ; `null` tant qu'on ne le connaît pas. */
+  credits: { by: string | null; cast: string | null } | null;
   onSelect: (film: Film) => void;
   onSearch: () => void;
   /** Rend le bouton d'action de la fiche pour le film affiché. */
@@ -71,7 +76,7 @@ interface KioskBrowseProps {
   initialTab?: KioskTab;
 }
 
-export function KioskBrowse({ selectedId, versions, onSelect, onSearch, actionSlot, initialTab }: KioskBrowseProps) {
+export function KioskBrowse({ selectedId, versions, credits, onSelect, onSearch, actionSlot, initialTab }: KioskBrowseProps) {
   const films = useStore((state) => state.films);
   const [tab, setTab] = useState<KioskTab>(() => initialTab ?? firstNonEmptyTab(films));
   const [sort, setSort] = useState<KioskSort>('rayon');
@@ -127,31 +132,58 @@ export function KioskBrowse({ selectedId, versions, onSelect, onSearch, actionSl
         </button>
       </div>
 
-      {/* Fiche du film */}
+      {/* Fiche du film : le clap, avec le titre au bas de l'ardoise comme sur la référence */}
       <div className={styles.kCard}>
         <div className={styles.kClap} />
-        <dl className={styles.kMeta}>
-          <dt>ANNÉE</dt>
-          <dd>{releaseYear(film)}</dd>
-          <dt>DURÉE</dt>
-          <dd className={styles.kMetaSm}>{formatRuntime(film.runtime)}</dd>
-          <dt>RAYON</dt>
-          <dd className={styles.kMetaSm}>{tabLabel(film.aisle)}</dd>
-          <dt>VERSION</dt>
-          <dd className={styles.kMetaSm}>{versionLabel(versions)}</dd>
-        </dl>
-        <KioskPoster key={film.id} film={film} size="w342" className={styles.kPoster} eager />
+        <div className={styles.kSlate}>
+          <dl className={styles.kMeta}>
+            <dt>ANNÉE</dt>
+            <dd>{releaseYear(film)}</dd>
+            <dt>DURÉE</dt>
+            <dd className={styles.kMetaSm}>{formatRuntime(film.runtime)}</dd>
+            <dt>RAYON</dt>
+            <dd className={styles.kMetaSm}>{tabLabel(film.aisle)}</dd>
+            <dt>VERSION</dt>
+            <dd className={styles.kMetaSm}>{versionLabel(versions)}</dd>
+          </dl>
+          <KioskPoster key={film.id} film={film} size="w342" className={styles.kPoster} eager />
+          <div className={styles.kTitleZone}>
+            <span className={styles.kTitleLabel}>TITRE</span>
+            <div className={`${styles.kTitle} ${film.title.length > TITLE_ONE_LINE_MAX ? styles.kTitleSm : ''}`}>
+              <span>{film.title}</span>
+            </div>
+          </div>
+        </div>
       </div>
 
+      {/* L'essentiel du film : synopsis, puis générique (réalisation, interprètes) */}
       <div className={styles.kUnder}>
-        <div className={styles.kName}>{film.title}</div>
         <p className={styles.kSyn}>
           <b>En bref :</b> {synopsisText(film.overview)}
         </p>
+        {credits && (
+          <p className={styles.kCredits}>
+            {credits.by && (
+              <>
+                <b>De</b> {credits.by}
+              </>
+            )}
+            {credits.by && credits.cast && ' · '}
+            {credits.cast && (
+              <>
+                <b>Avec</b> {credits.cast}
+              </>
+            )}
+          </p>
+        )}
       </div>
 
       <button type="button" className={`${styles.kBtn} ${styles.kSearch}`} onClick={onSearch}>
-        recherche
+        <svg className={styles.kSearchMark} viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="10" cy="10" r="6.5" />
+          <path d="M15 15l6.5 6.5" />
+        </svg>
+        <span className={styles.kBtnLabel}>recherche</span>
       </button>
       {actionSlot(film)}
 

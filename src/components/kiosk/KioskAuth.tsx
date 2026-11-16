@@ -3,7 +3,7 @@ import { useStore } from '../../store';
 import api from '../../api';
 import { accountFormError } from '../../utils/account-rules';
 import type { KioskAuthMode } from './kiosk-logic';
-import styles from './KioskView.module.css';
+import styles from './KioskPanels.module.css';
 
 // Connexion, inscription et récupération du compte, dans la charte de la borne. Mêmes trois
 // parcours que la fenêtre du vidéoclub, mais ici tout refus est dit : des mots de passe

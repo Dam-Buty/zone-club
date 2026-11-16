@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef } from 'react';
-import styles from './KioskView.module.css';
+import styles from './KioskPanels.module.css';
 
 /** Un message dans l'écran de la borne : un titre, un texte, un ou deux boutons. */
 export type KioskNoticeSpec = {

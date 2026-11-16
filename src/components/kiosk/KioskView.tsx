@@ -13,6 +13,7 @@ import {
   catalogState,
   createPendingAction,
   creditsLabel,
+  creditsLine,
   filmsForTab,
   firstNonEmptyTab,
   hidesKioskInLandscape,
@@ -195,6 +196,8 @@ export function KioskView() {
             vo: !!film.has_vo,
             copiesLeft: film.rental_status.available_copies,
             earliestReturn: film.rental_status.earliest_return ?? null,
+            directors: (film.directors ?? []).map((d) => d.name),
+            cast: (film.actors ?? []).map((a) => a.name),
           },
         });
       },
@@ -330,9 +333,19 @@ export function KioskView() {
                   <div className={styles.kNav}>
                     <button type="button" className={styles.kNavBtn} onClick={openAccount}>
                       compte
+                      {isAuthenticated && authUser && (
+                        <>
+                          {/* L'espace ne se voit pas (bouton en flex) mais sépare les mots pour un lecteur d'écran. */}
+                          {' '}
+                          <span className={styles.kNavCredits}>{credits} cr.</span>
+                        </>
+                      )}
                     </button>
                     <button type="button" className={`${styles.kNavBtn} ${quitHint ? styles.kNavHint : ''}`} onClick={quit}>
-                      quitter<span className={styles.kNavTri} aria-hidden="true">◀</span>
+                      quitter
+                      <svg className={styles.kNavTri} viewBox="0 0 9 12" aria-hidden="true">
+                        <path d="M8 1 1 6l7 5z" />
+                      </svg>
                     </button>
                     <span className={states.srOnly} role="status">
                       {quitHint ? 'Pour sortir de la borne, utilisez le bouton quitter.' : ''}
@@ -352,6 +365,7 @@ export function KioskView() {
                       initialTab={browse.tab}
                       selectedId={displayed?.id ?? null}
                       versions={currentDetail ? { vf: currentDetail.vf, vo: currentDetail.vo } : null}
+                      credits={currentDetail ? creditsLine(currentDetail.directors, currentDetail.cast) : null}
                       onSelect={(film) => setSelectedId(film.id)}
                       onSearch={() => setMode('search')}
                       actionSlot={(film) => (

@@ -130,6 +130,22 @@ export function synopsisText(overview: string | null | undefined): string {
   return text || 'Synopsis indisponible.';
 }
 
+/**
+ * Générique court de la fiche : deux réalisateurs et trois interprètes au plus. `null` quand on
+ * ne sait rien (détail pas encore arrivé, ou film sans générique) : la fiche n'affiche alors
+ * pas de ligne vide.
+ */
+export function creditsLine(
+  directors: ReadonlyArray<string> | null | undefined,
+  cast: ReadonlyArray<string> | null | undefined,
+): { by: string | null; cast: string | null } | null {
+  const names = (list: ReadonlyArray<string> | null | undefined, max: number) =>
+    (list ?? []).map((name) => name.trim()).filter(Boolean).slice(0, max).join(', ') || null;
+  const by = names(directors, 2);
+  const withCast = names(cast, 3);
+  return by === null && withCast === null ? null : { by, cast: withCast };
+}
+
 // ===== Bouton d'action =====
 
 export type RentAction = 'login' | 'watch' | 'unavailable' | 'out-of-stock' | 'insufficient' | 'rent';

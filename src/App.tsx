@@ -269,7 +269,7 @@ const kioskPanelStyle = {
   position: 'fixed', inset: 0, zIndex: 1, display: 'flex', flexDirection: 'column',
   alignItems: 'center', justifyContent: 'center', gap: 18, padding: 24, textAlign: 'center',
   background: KIOSK_BACKDROP, color: '#d6ecff',
-  fontFamily: '"Avenir Next Condensed", "Roboto Condensed", "Arial Narrow", "Helvetica Neue", Arial, sans-serif',
+  fontFamily: '"Barlow Condensed", "DIN Condensed", "Roboto Condensed", "Arial Narrow", "Helvetica Neue", Arial, sans-serif',
   fontSize: 20, fontWeight: 600,
 } as const;
 const kioskPanelButtonStyle = {
