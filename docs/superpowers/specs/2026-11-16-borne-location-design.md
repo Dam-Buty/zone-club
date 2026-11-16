@@ -23,7 +23,8 @@
 > - **§ 5, bouton provisoire sur mobile** : il part tel quel, on ajustera en voyant la version
 >   locale. **[R]**
 > - **Inscriptions (nouveau, hors tranche a)** : tout nouveau compte devra être validé par un
->   administrateur, prévenu par courriel à chaque inscription. À concevoir. **[R]**
+>   administrateur, prévenu par courriel à chaque inscription. **Mis en dette le 16/11/2026** :
+>   ni conçu ni codé, à reprendre plus tard comme un projet à part. **[R]**
 
 Chaque décision porte sa provenance : **[R]** = dite par Rusmir pendant la conception,
 **[C]** = choix de Claude, à vérifier à la relecture.
