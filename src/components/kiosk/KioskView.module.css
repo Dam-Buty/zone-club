@@ -795,6 +795,108 @@
   color: #e3f1ff;
 }
 
+/* ----- recherche par titre ----- */
+
+/* Calque du volet : il ne sert qu'à rendre le volet inerte sous un message ou la connexion,
+   sans masquer la barre du haut. */
+.kLayer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.kLayer > * {
+  pointer-events: auto;
+}
+
+.kSearchPane {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 11cqw;
+  bottom: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  padding: 2cqw 6cqw 4cqw;
+  background: radial-gradient(120% 70% at 62% 24%, #2a86e6 0%, #0e49ad 38%, #06206a 68%, #020b33 100%);
+}
+
+.kSearchPane .kAuthBack {
+  align-self: flex-start;
+}
+
+.kSearchResults {
+  flex: 1;
+  min-height: 0;
+  margin-top: 4cqw;
+  overflow-y: auto;
+  scrollbar-width: none;
+  overscroll-behavior: contain;
+}
+
+.kSearchResults::-webkit-scrollbar {
+  display: none;
+}
+
+.kSearchHint {
+  margin-top: 4cqw;
+  text-align: center;
+  font-size: 4.6cqw;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+  color: #bfe3ff;
+}
+
+.screen .kSearchRow {
+  display: flex;
+  align-items: center;
+  gap: 3.4cqw;
+  width: 100%;
+  padding: 1.6cqw;
+  margin-bottom: 1.6cqw;
+  text-align: left;
+  border: 0.4cqw solid #4fc3e8;
+  border-radius: 1.6cqw;
+  background: rgba(2, 14, 56, 0.75);
+}
+
+.kSearchPoster {
+  flex: none;
+  display: block;
+  width: 12cqw;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  background: #223;
+}
+
+.kSearchPoster.kPosterFallback {
+  display: flex;
+  font-size: 1.9cqw;
+}
+
+.kSearchText {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8cqw;
+}
+
+.kSearchTitle {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 5.2cqw;
+  font-weight: 700;
+  color: #ffb347;
+}
+
+.kSearchMeta {
+  font-size: 3.8cqw;
+  color: #d6ecff;
+}
+
 /* ----- message dans l'écran ----- */
 
 .kNoticeScrim {

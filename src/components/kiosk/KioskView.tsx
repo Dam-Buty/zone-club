@@ -7,7 +7,8 @@ import { KioskAction, type KioskFilmDetail } from './KioskAction';
 import { KioskAuth } from './KioskAuth';
 import { KioskBrowse } from './KioskBrowse';
 import { KioskNotice, type KioskNoticeSpec } from './KioskNotice';
-import { allFilms, catalogState, creditsLabel, filmsForTab, firstNonEmptyTab } from './kiosk-logic';
+import { KioskSearch } from './KioskSearch';
+import { allFilms, catalogState, creditsLabel, filmsForTab, firstNonEmptyTab, type KioskTab } from './kiosk-logic';
 import styles from './KioskView.module.css';
 
 // Borne de location : seconde façon de louer, sans aucun rendu 3D. Cette coque porte le corps
@@ -69,7 +70,8 @@ export function KioskView() {
   useBackGuard(guardArmed, quit);
 
   // ----- Catalogue : jamais un écran vide -----
-  const total = useMemo(() => allFilms(films).length, [films]);
+  const catalogue = useMemo(() => allFilms(films), [films]);
+  const total = catalogue.length;
   const [waitStart, setWaitStart] = useState(() => Date.now());
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -88,9 +90,22 @@ export function KioskView() {
 
   // Film affiché : celui qu'on a choisi, sinon le premier de Nouveautés (ou du premier rayon garni).
   const displayed = useMemo<Film | null>(() => {
-    const chosen = selectedId === null ? undefined : allFilms(films).find((f) => f.id === selectedId);
+    const chosen = selectedId === null ? undefined : catalogue.find((f) => f.id === selectedId);
     return chosen ?? filmsForTab(films, firstNonEmptyTab(films), 'rayon')[0] ?? null;
-  }, [films, selectedId]);
+  }, [catalogue, films, selectedId]);
+
+  // ----- Recherche -----
+  // Choisir un résultat affiche le film et ramène aux rayons, sur l'onglet de SON rayon : le
+  // parcours est remonté (clé) pour repartir de cet onglet, bande au début.
+  const [browse, setBrowse] = useState<{ key: number; tab?: KioskTab }>({ key: 0 });
+  const closeSearch = useCallback(() => setMode('browse'), []);
+  const pickFromSearch = (film: Film) => {
+    setSelectedId(film.id);
+    setBrowse((current) => ({ key: current.key + 1, tab: film.aisle ?? 'tous' }));
+    setMode('browse');
+  };
+  // Le geste retour ferme la recherche avant de quitter la borne.
+  useBackGuard(mode === 'search', closeSearch);
 
   // ----- Détail du film affiché : versions jouables et copies restantes -----
   // La réponse porte l'identifiant du film demandé : celle d'un film qu'on ne regarde déjà plus
@@ -204,7 +219,7 @@ export function KioskView() {
                   </div>
                 </div>
 
-                <div className={styles.kPane} inert={overlay !== null || authVisible}>
+                <div className={styles.kPane} inert={overlay !== null || authVisible || mode === 'search'}>
                   {catalog === 'loading' && (
                     <p className={styles.kMessage} role="status">
                       Chargement du catalogue…
@@ -212,6 +227,8 @@ export function KioskView() {
                   )}
                   {catalog === 'ready' && (
                     <KioskBrowse
+                      key={browse.key}
+                      initialTab={browse.tab}
                       selectedId={displayed?.id ?? null}
                       versions={currentDetail ? { vf: currentDetail.vf, vo: currentDetail.vo } : null}
                       onSelect={(film) => setSelectedId(film.id)}
@@ -222,6 +239,12 @@ export function KioskView() {
                     />
                   )}
                 </div>
+
+                {mode === 'search' && catalog === 'ready' && (
+                  <div className={styles.kLayer} inert={overlay !== null || authVisible}>
+                    <KioskSearch films={catalogue} onPick={pickFromSearch} onBack={closeSearch} />
+                  </div>
+                )}
 
                 {authVisible && <KioskAuth onDone={finishAuth} onCancel={cancelAuth} />}
 

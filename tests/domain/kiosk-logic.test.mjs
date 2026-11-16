@@ -117,3 +117,11 @@ test('BORNE: échéance d\'une location, en français', () => {
   const expiresAt = Date.UTC(2026, 10, 19, 17, 42); // 19/11/2026 18:42 à Paris
   assert.equal(K.formatUntil(expiresAt, 'Europe/Paris'), '19 novembre à 18:42');
 });
+
+// ===== Recherche (partagée avec le Minitel) =====
+import { searchFilms } from '../../src/utils/minitelSearch.ts';
+test('BORNE: la recherche ignore la casse et les accents, exact d\'abord', () => {
+  const films = [f(1, 'Les Évadés'), f(2, 'Evade'), f(3, 'Alien')];
+  assert.deepEqual(searchFilms(films, 'évade').map(x => x.id), [2, 1]);
+  assert.deepEqual(searchFilms(films, '   '), []);
+});

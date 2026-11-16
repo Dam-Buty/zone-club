@@ -86,6 +86,13 @@ export function KioskBrowse({ selectedId, versions, onSelect, onSearch, actionSl
     if (railRef.current) railRef.current.scrollLeft = 0;
   }, [tab, sort]);
 
+  // À l'arrivée (retour de la recherche), la jaquette du film affiché est amenée dans la bande.
+  useEffect(() => {
+    const rail = railRef.current;
+    const current = rail?.querySelector<HTMLElement>('[aria-pressed="true"]');
+    if (rail && current) rail.scrollLeft = current.offsetLeft - rail.offsetLeft - (rail.clientWidth - current.offsetWidth) / 2;
+  }, []);
+
   const scrollRail = (direction: -1 | 1) => {
     const rail = railRef.current;
     if (!rail) return;
