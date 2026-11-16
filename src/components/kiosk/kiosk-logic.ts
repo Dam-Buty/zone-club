@@ -125,6 +125,71 @@ export function creditsLabel(n: number): string {
   return `${n} crédit${n > 1 ? 's' : ''}`;
 }
 
+/**
+ * Largeur des signes dans la police des libellés (Sofia Sans Extra Condensed, graisse 700), en em,
+ * relevée sur le fichier de police et arrondie au centième supérieur. Sert à choisir le corps du
+ * titre : compter les signes ne suffit pas, « Confessions d'un homme dangereux » et « Killers of
+ * the Flower Moon » n'ont que six signes d'écart mais 38 % de largeur.
+ */
+const TITLE_GLYPH_EM: ReadonlyArray<readonly [number, string]> = [
+  [0.13, " "],
+  [0.17, "'j"],
+  [0.18, "ilîï"],
+  [0.2, "!():IJÎ"],
+  [0.21, "."],
+  [0.22, ",’"],
+  [0.27, "fr"],
+  [0.29, "/t"],
+  [0.31, "³"],
+  [0.32, "-"],
+  [0.33, "Lsz"],
+  [0.34, "1?"],
+  [0.35, "aàâä"],
+  [0.36, "Fcegkvxyçèéêë"],
+  [0.37, "257ETZbdopquÈÉÊôöùûü"],
+  [0.38, "3PShn"],
+  [0.39, "X«»"],
+  [0.4, "04689BY"],
+  [0.41, "ARÀÂ"],
+  [0.42, "KV"],
+  [0.43, "CÇ"],
+  [0.44, "&DGOQUÔ"],
+  [0.45, "HN"],
+  [0.48, "–"],
+  [0.51, "w"],
+  [0.53, "æ"],
+  [0.54, "M"],
+  [0.55, "m"],
+  [0.56, "œ"],
+  [0.57, "—"],
+  [0.58, "…"],
+  [0.59, "WŒ"],
+];
+const TITLE_GLYPH_LOOKUP = new Map<string, number>(TITLE_GLYPH_EM.flatMap(([em, glyphs]) => Array.from(glyphs, (glyph) => [glyph, em] as [string, number])));
+const TITLE_SPACE_EM = TITLE_GLYPH_LOOKUP.get(' ') ?? 0.2;
+/** Un signe absent de la table compte large : mieux vaut un titre un peu petit qu'un titre coupé. */
+const TITLE_UNKNOWN_EM = 0.6;
+
+/** Largeur estimée d'un titre, en em. Vérifiée sur les titres du catalogue : de 0,6 à 2,1 % au-dessus de la largeur réelle. */
+export function titleWidthEm(title: string): number {
+  let width = 0;
+  for (const glyph of title.trim()) {
+    width += glyph === '\u00a0' || glyph === '\u202f' ? TITLE_SPACE_EM : TITLE_GLYPH_LOOKUP.get(glyph) ?? TITLE_UNKNOWN_EM;
+  }
+  return width;
+}
+
+/**
+ * Corps du titre sur la fiche : le plus grand qui tient dans ses 60,8cqw. Grand (7,4cqw) jusqu'à
+ * 7,9 em, moyen (6,1cqw) jusqu'à 9,6 em — une ligne dans les deux cas, à moins de 59cqw —, petit
+ * et sur deux lignes au-delà.
+ */
+export function titleScale(title: string): 'lg' | 'md' | 'sm' {
+  const width = titleWidthEm(title);
+  if (width <= 7.9) return 'lg';
+  return width <= 9.6 ? 'md' : 'sm';
+}
+
 export function synopsisText(overview: string | null | undefined): string {
   const text = (overview ?? '').trim();
   return text || 'Synopsis indisponible.';
@@ -165,6 +230,18 @@ export function rentAction(i: {
   if (i.copiesLeft !== null && i.copiesLeft <= 0) return 'out-of-stock';
   if (i.credits < i.cost) return 'insufficient';
   return 'rent';
+}
+
+/**
+ * Ce qu'affiche le bouton d'action : l'action, et le prix à part — en toutes lettres, jamais en
+ * abrégé. Le prix n'apparaît que lorsqu'un appui mène à une location.
+ */
+export function actionLabel(action: RentAction, cost: number, renting: boolean): { text: string; price: string | null } {
+  if (renting) return { text: 'location…', price: null };
+  if (action === 'watch') return { text: 'regarder', price: null };
+  if (action === 'unavailable') return { text: 'indisponible', price: null };
+  if (action === 'out-of-stock') return { text: 'toutes louées', price: null };
+  return { text: 'louer', price: creditsLabel(cost) };
 }
 
 export type RentFlowResult =

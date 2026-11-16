@@ -22,7 +22,7 @@
   text-align: center;
   background: linear-gradient(180deg, #23213a 0%, #191827 40%, #14131f 100%);
   color: #d6ecff;
-  font-family: "Barlow Condensed", "DIN Condensed", "Roboto Condensed", sans-serif-condensed, "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+  font-family: "Sofia Sans Condensed", "Roboto Condensed", "Arial Narrow", sans-serif-condensed, "Helvetica Neue", Arial, sans-serif;
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -51,7 +51,8 @@
 
 .rotateTitle {
   margin: 0;
-  font-size: 22px;
+  font-family: "Sofia Sans Extra Condensed", "DIN Condensed", "Arial Narrow", sans-serif-condensed, "Helvetica Neue", Arial, sans-serif;
+  font-size: 27px;
   font-weight: 700;
   letter-spacing: 0.02em;
   color: #fff;
@@ -74,7 +75,8 @@
   text-transform: lowercase;
   color: #fff;
   font: inherit;
-  font-size: 15px;
+  font-family: "Sofia Sans Extra Condensed", "DIN Condensed", "Arial Narrow", sans-serif-condensed, "Helvetica Neue", Arial, sans-serif;
+  font-size: 19px;
   font-weight: 600;
   cursor: pointer;
 }

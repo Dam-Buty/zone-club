@@ -221,3 +221,35 @@ test('BORNE: la grille de la dalle est aussi serrée que l\'écran le permet', (
 test('BORNE: sans densité lisible, la grille prend le pas le plus serré', () => {
   for (const bad of [0, -2, NaN, Infinity, undefined]) assert.equal(K.lcdPitchInDevicePixels(bad), 2);
 });
+
+// ===== Bouton d'action : l'action d'un côté, le prix de l'autre =====
+test('BORNE: le bouton d\'action dit l\'action, le prix est donné à part et en toutes lettres', () => {
+  assert.deepEqual(K.actionLabel('rent', 2, false), { text: 'louer', price: '2 crédits' });
+  assert.deepEqual(K.actionLabel('login', 1, false), { text: 'louer', price: '1 crédit' });
+  assert.deepEqual(K.actionLabel('insufficient', 3, false), { text: 'louer', price: '3 crédits' });
+});
+test('BORNE: quand il n\'y a rien à payer, le bouton ne montre pas de prix', () => {
+  assert.deepEqual(K.actionLabel('watch', 2, false), { text: 'regarder', price: null });
+  assert.deepEqual(K.actionLabel('unavailable', 2, false), { text: 'indisponible', price: null });
+  assert.deepEqual(K.actionLabel('out-of-stock', 2, false), { text: 'toutes louées', price: null });
+  assert.deepEqual(K.actionLabel('rent', 2, true), { text: 'location…', price: null });
+});
+
+// ===== Titre de la fiche : le plus grand corps qui tient =====
+// Largeurs réelles mesurées sur le fichier de police (Sofia Sans Extra Condensed 700), en em.
+const TITRES_MESURES = [['Get Out', 2.29], ['Dernier train pour Busan', 7.23], ['Killers of the Flower Moon', 7.71], ["Confessions d'un homme dangereux", 10.65]];
+test('BORNE: la largeur estimée d\'un titre suit sa largeur réelle sans jamais la sous-évaluer', () => {
+  for (const [title, real] of TITRES_MESURES) {
+    const est = K.titleWidthEm(title);
+    assert.ok(est >= real && est <= real * 1.03, `${title} : estimé ${est.toFixed(2)} em pour ${real} em mesurés`);
+  }
+  assert.ok(K.titleWidthEm('日本') >= 1.2, 'un signe inconnu compte large, par prudence');
+  assert.equal(K.titleWidthEm('  Get Out  '), K.titleWidthEm('Get Out'), 'les espaces autour ne comptent pas');
+});
+test('BORNE: le titre garde le plus grand corps qui tient sur sa ligne', () => {
+  assert.equal(K.titleScale('Get Out'), 'lg');
+  assert.equal(K.titleScale('Dernier train pour Busan'), 'lg');
+  assert.equal(K.titleScale('Killers of the Flower Moon'), 'lg', '57cqw à 7,4cqw de corps : il tient en grand');
+  assert.equal(K.titleScale('Il était une fois en Amérique'), 'md', '8,25 em : une ligne, en corps moyen');
+  assert.equal(K.titleScale("Confessions d'un homme dangereux"), 'sm', 'trop large pour une ligne : deux lignes, en petit');
+});

@@ -11,6 +11,7 @@ import {
   synopsisText,
   tabLabel,
   tabPages,
+  titleScale,
   versionLabel,
   type KioskSort,
   type KioskTab,
@@ -22,12 +23,9 @@ import styles from './KioskBrowse.module.css';
 
 const TAB_PAGES = tabPages();
 
-/** Au-delà, le titre passe sur deux lignes, en plus petit, au bas du clap. */
-const TITLE_ONE_LINE_MAX = 20;
-
 const SORTS: ReadonlyArray<{ id: KioskSort; label: string }> = [
   { id: 'rayon', label: 'sélection' },
-  { id: 'alpha', label: 'A→Z' },
+  { id: 'alpha', label: 'de A à Z' },
   { id: 'date', label: 'par date' },
 ];
 
@@ -124,11 +122,11 @@ export function KioskBrowse({ selectedId, versions, credits, onSelect, onSearch,
         ))}
         <button
           type="button"
-          className={styles.kTab}
+          className={`${styles.kTab} ${styles.kTabMore}`}
           aria-label="Afficher les autres rayons"
           onClick={() => setPage((p) => (p + 1) % TAB_PAGES.length)}
         >
-          suite ▾
+          suite
         </button>
       </div>
 
@@ -149,7 +147,7 @@ export function KioskBrowse({ selectedId, versions, credits, onSelect, onSearch,
           <KioskPoster key={film.id} film={film} size="w342" className={styles.kPoster} eager />
           <div className={styles.kTitleZone}>
             <span className={styles.kTitleLabel}>TITRE</span>
-            <div className={`${styles.kTitle} ${film.title.length > TITLE_ONE_LINE_MAX ? styles.kTitleSm : ''}`}>
+            <div className={`${styles.kTitle} ${{ lg: '', md: styles.kTitleMd, sm: styles.kTitleSm }[titleScale(film.title)]}`}>
               <span>{film.title}</span>
             </div>
           </div>
@@ -164,15 +162,14 @@ export function KioskBrowse({ selectedId, versions, credits, onSelect, onSearch,
         {credits && (
           <p className={styles.kCredits}>
             {credits.by && (
-              <>
+              <span className={styles.kCreditPart}>
                 <b>De</b> {credits.by}
-              </>
+              </span>
             )}
-            {credits.by && credits.cast && ' · '}
             {credits.cast && (
-              <>
+              <span className={styles.kCreditPart}>
                 <b>Avec</b> {credits.cast}
-              </>
+              </span>
             )}
           </p>
         )}

@@ -369,7 +369,7 @@ export function KioskView() {
                         <>
                           {/* L'espace ne se voit pas (bouton en flex) mais sépare les mots pour un lecteur d'écran. */}
                           {' '}
-                          <span className={styles.kNavCredits}>{credits} cr.</span>
+                          <span className={styles.kNavCredits}>{creditsLabel(credits)}</span>
                         </>
                       )}
                     </button>

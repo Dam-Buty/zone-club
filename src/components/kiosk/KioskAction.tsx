@@ -3,7 +3,7 @@ import { useStore, useCredits } from '../../store';
 import { RENTAL_COSTS, type Film } from '../../types';
 import { getRentalTier } from '../../utils/rental-tier';
 import type { KioskNoticeSpec } from './KioskNotice';
-import { creditsLabel, formatUntil, offersRelogin, rentAction, rentFlow, type RentAction } from './kiosk-logic';
+import { actionLabel, creditsLabel, formatUntil, offersRelogin, rentAction, rentFlow } from './kiosk-logic';
 import styles from './KioskBrowse.module.css';
 
 // Le bouton d'action de la fiche. Il ne se grise jamais : quand il ne peut pas louer, il le dit
@@ -40,14 +40,6 @@ function lockFor(filmId: number): { busy: boolean } {
   return lock;
 }
 
-function label(action: RentAction, cost: number, renting: boolean): string {
-  if (renting) return 'LOCATION…';
-  if (action === 'watch') return 'REGARDER';
-  if (action === 'unavailable') return 'INDISPONIBLE';
-  if (action === 'out-of-stock') return 'TOUTES LOUÉES';
-  return `LOUER · ${cost} cr.`;
-}
-
 export function KioskAction({ film, detail, onNotice, onRequestAuth }: KioskActionProps) {
   const isAuthenticated = useStore((state) => state.isAuthenticated);
   const isRented = useStore((state) => state.rentals.some((r) => r.filmId === film.id));
@@ -60,6 +52,8 @@ export function KioskAction({ film, detail, onNotice, onRequestAuth }: KioskActi
   const copiesLeft = detail ? detail.copiesLeft : null;
   const isAvailable = film.is_available !== false;
   const action = rentAction({ isAuthenticated, isRented, isAvailable, copiesLeft, credits, cost });
+
+  const shown = actionLabel(action, cost, renting);
 
   const close = () => onNotice(null);
   const say = (title: string, body: string) => onNotice({ title, body, primary: { label: 'Fermer', onPress: close } });
@@ -162,7 +156,14 @@ export function KioskAction({ film, detail, onNotice, onRequestAuth }: KioskActi
         void press();
       }}
     >
-      {label(action, cost, renting)}
+      <span className={styles.kBtnLabel}>{shown.text}</span>
+      {shown.price && (
+        <>
+          {/* L'espace ne se voit pas (bouton en flex) mais sépare les mots pour un lecteur d'écran. */}
+          {' '}
+          <span className={styles.kPrice}>{shown.price}</span>
+        </>
+      )}
     </button>
   );
 }

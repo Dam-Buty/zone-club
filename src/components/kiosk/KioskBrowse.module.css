@@ -4,7 +4,9 @@
 
 /* ----- colonne des rayons -----
    Comme sur la référence : des onglets collés les uns aux autres dans un cadre clair, séparés par
-   un simple filet ; seul l'onglet actif se détache, blanc à texte orange. */
+   un simple filet. Le libellé le plus long (« Nouveautés », 3,48 em) occupe 83 % de la largeur
+   utile, comme « New Releases » sur la photo. Seul l'onglet actif se détache, blanc à texte
+   orange — par sa couleur, sans rien recouvrir. */
 
 .kSide {
   position: absolute;
@@ -21,8 +23,6 @@
   box-shadow: 0 0.8cqw 2cqw rgba(0, 0, 20, 0.45), 0 0 1.4cqw rgba(120, 205, 245, 0.22);
 }
 
-/* Pas de rognage : avec une police de repli large, « Nouveautés » déborde dans la marge du cadre
-   plutôt que d'être coupé. */
 .kTab {
   height: var(--k-tab-h);
   display: flex;
@@ -31,8 +31,8 @@
   white-space: nowrap;
   font-size: var(--k-tab-size);
   font-weight: 600;
-  letter-spacing: 0.01em;
-  color: #f1fbff;
+  line-height: 1;
+  color: var(--k-ink);
   text-shadow: var(--k-text-shadow);
   background: var(--k-skin-tab);
   box-shadow: var(--k-bevel);
@@ -46,15 +46,26 @@
   border-radius: 0 0 0.8cqw 0.8cqw;
 }
 
+/* Ni ombre portée ni halo : ils débordaient sur l'onglet voisin et donnaient l'impression d'un
+   chevauchement. Le relief est tout entier à l'intérieur de l'onglet. */
 .kTabOn,
 .kTabOn:first-child,
 .kTabOn:last-child {
   border-radius: 0.8cqw;
-  color: #e8501c;
+  color: #e4501d;
   text-shadow: none;
-  /* Le blanc d'une dalle : un peu froid, et il bave sur ce qui l'entoure. */
-  background: linear-gradient(180deg, #fbfdff 0%, #eaf0f6 46%, #d9e2ea 100%);
-  box-shadow: 0 0.4cqw 1cqw rgba(0, 10, 40, 0.5), 0 0 1.8cqw rgba(214, 232, 255, 0.5), inset 0 -0.3cqw 0 rgba(0, 0, 0, 0.1);
+  background: linear-gradient(180deg, #fbfdff 0%, #eef2f6 55%, #dde4ea 100%);
+  box-shadow: inset 0 0 0 0.25cqw rgba(255, 255, 255, 0.9), inset 0 -0.45cqw 0.5cqw rgba(110, 130, 150, 0.28);
+}
+
+/* « suite » : son triangle est dessiné, pas tiré d'une police de secours. */
+.kTabMore::after {
+  content: "";
+  width: 2.2cqw;
+  height: 1.4cqw;
+  margin: 0.5cqw 0 0 1.3cqw;
+  background: currentColor;
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
 }
 
 /* ----- fiche : le clap ----- */
@@ -114,14 +125,18 @@
   width: 23cqw;
 }
 
+/* Petites étiquettes de la fiche : sur la référence, une grotesque de largeur normale, en
+   capitales grises, sur un filet. */
 .kMeta dt,
 .kTitleLabel {
   display: block;
-  padding-bottom: 0.4cqw;
-  font-size: 2.6cqw;
-  font-weight: 500;
-  letter-spacing: 0.08em;
-  color: #6f757d;
+  padding-bottom: 0.5cqw;
+  font-family: var(--k-font-label);
+  font-size: 2.3cqw;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: 0.05em;
+  color: #6c727a;
   border-bottom: 0.25cqw solid #c5cbd2;
 }
 
@@ -131,7 +146,7 @@
 
 .kMeta dd {
   margin: 0.6cqw 0 0;
-  font-family: "Marker Felt", "Comic Sans MS", cursive;
+  font-family: var(--k-font-marker);
   font-size: var(--k-meta-year);
   line-height: 1;
   white-space: nowrap;
@@ -196,13 +211,17 @@
   color: #f0641e;
 }
 
-/* Un titre court tient sur une ligne, en grand ; un titre long passe sur deux, plus petit. */
+/* Trois corps (titleScale) : grand ou moyen sur une ligne, petit sur deux. */
 .kTitle span {
   display: -webkit-box;
   -webkit-line-clamp: 1;
   -webkit-box-orient: vertical;
   overflow: hidden;
   overflow-wrap: anywhere;
+}
+
+.kTitleMd {
+  font-size: var(--k-title-size-md);
 }
 
 .kTitleSm {
@@ -233,23 +252,39 @@
 
 .kSyn,
 .kCredits {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
   overflow: hidden;
+  font-family: var(--k-font-text);
   font-size: var(--k-syn-size);
   font-weight: 500;
   line-height: 1.24;
-  color: #e6f3ff;
+  color: #e6f0f6;
 }
 
 .kSyn {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
   -webkit-line-clamp: var(--k-syn-lines);
 }
 
+/* Générique : « De … » puis « Avec … », chacun sur sa ligne sur l'écran haut ; à la suite,
+   séparés par un filet, sur l'écran 2:3 (voir --k-credit-display dans KioskView.module.css).
+   Un nom trop long est coupé par des points de suspension, jamais renvoyé à la ligne. */
 .kCredits {
   margin-top: 1cqw;
-  -webkit-line-clamp: var(--k-credits-lines);
-  color: #cfe6ff;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--k-ink-soft);
+}
+
+.kCreditPart {
+  display: var(--k-credit-display, block);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kCreditPart + .kCreditPart::before {
+  content: var(--k-credit-sep, none);
+  color: rgba(255, 255, 255, 0.5);
 }
 
 .kSyn b,
@@ -259,7 +294,8 @@
 }
 
 /* ----- boutons -----
-   Plats, à trame, bordure claire, libellés en bas-de-casse : la facture de la référence. */
+   Ceux de la référence : un aplat à trame fine dans un filet clair, lui-même cerné d'un trait
+   sombre ; un libellé gras en bas-de-casse qui respire dans sa case. Pas de brillance. */
 
 .kBtn {
   position: absolute;
@@ -269,48 +305,56 @@
   align-items: center;
   justify-content: center;
   overflow: hidden;
+  padding: 0 2cqw;
   white-space: nowrap;
   font-weight: 700;
-  color: #fff;
-  text-shadow: var(--k-text-shadow);
+  line-height: 1;
+  color: #fbfcf8;
   border-radius: var(--k-radius);
-  box-shadow: var(--k-bevel), 0 0.8cqw 2cqw rgba(0, 0, 20, 0.5);
+  box-shadow: inset 0 0.25cqw 0 rgba(255, 255, 255, 0.16), 0 0 0 0.25cqw rgba(0, 10, 30, 0.6), 0 0.9cqw 2cqw rgba(0, 0, 20, 0.5);
 }
 
-/* Le bouton d'action occupe toute la largeur de la fiche (l'« extrait » arrive en tranche c). */
-.kLouer,
-.kSearch {
-  text-transform: lowercase;
-}
-
+/* Le bouton d'action occupe toute la largeur de la fiche (l'« extrait » arrive en tranche c).
+   Il dit l'action ; le prix est à part, derrière un filet, comme les entrées de la barre du haut
+   de la référence (« account | back | quit »). */
 .kLouer {
   left: 31cqw;
   right: 3cqw;
-  font-size: 7.4cqw;
-  letter-spacing: 0.01em;
+  gap: 2.6cqw;
+  font-size: var(--k-btn-size);
+  text-shadow: 0 0.25cqw 0.12cqw rgba(92, 34, 0, 0.55);
   border: 0.4cqw solid var(--k-edge-orange);
   background: var(--k-skin-orange);
+}
+
+.kPrice {
+  padding: 0.5cqw 0 0.5cqw 2.6cqw;
+  border-left: 0.3cqw solid rgba(255, 255, 255, 0.55);
+  font-size: var(--k-price-size);
+  font-weight: 500;
+  color: #fff1dc;
 }
 
 .kSearch {
   left: 2.4cqw;
   width: 26cqw;
-  font-size: 5.9cqw;
+  font-size: var(--k-search-size);
+  text-shadow: 0 0.25cqw 0.12cqw rgba(0, 40, 70, 0.55);
   border: 0.4cqw solid var(--k-edge-teal);
   background: var(--k-skin-teal);
 }
 
-/* La loupe en filigrane derrière le libellé. */
+/* La loupe en filigrane, comme sur la référence : grande, à gauche, à peine visible sous le libellé. */
 .kSearchMark {
   position: absolute;
-  left: -1.2cqw;
+  left: 0.6cqw;
   top: 50%;
-  width: 11cqw;
-  height: 11cqw;
-  transform: translateY(-50%);
+  width: 12cqw;
+  height: 12cqw;
+  transform: translateY(-46%);
   fill: none;
-  stroke: rgba(255, 255, 255, 0.24);
-  stroke-width: 2.2;
+  stroke: rgba(255, 255, 255, 0.15);
+  stroke-width: 2.6;
   stroke-linecap: round;
   pointer-events: none;
 }
@@ -333,9 +377,10 @@
 }
 
 .kStripH b {
-  font-size: 5.6cqw;
-  font-weight: 500;
-  line-height: 1.05;
+  font-size: 6.2cqw;
+  font-weight: 600;
+  line-height: 1;
+  text-shadow: var(--k-text-shadow);
 }
 
 .kChips {
@@ -345,10 +390,12 @@
 
 /* Onglets de tri : coins du haut arrondis, posés sur le cadre de la bande. */
 .kChip {
-  padding: 0.6cqw 2.2cqw 0.7cqw;
-  font-size: 3.7cqw;
-  font-weight: 500;
-  color: #e3f6ff;
+  padding: 0.7cqw 2.2cqw 0.8cqw;
+  font-size: 4.2cqw;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--k-ink);
+  text-shadow: var(--k-text-shadow);
   border: 0.3cqw solid var(--k-frame);
   border-top-color: var(--k-frame-hi);
   border-bottom: 0;

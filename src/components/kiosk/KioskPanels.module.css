@@ -53,12 +53,12 @@
 
 .kAuthBack {
   padding: 1.2cqw 3.2cqw 1.4cqw;
-  font-size: 4.6cqw;
+  font-size: 5.2cqw;
 }
 
 .kAuthTitle {
   margin-top: 4cqw;
-  font-size: 7.8cqw;
+  font-size: 8.6cqw;
   font-weight: 700;
   line-height: 1.1;
   color: #ffb347;
@@ -125,8 +125,7 @@
   min-height: 12.5cqw;
   margin-top: 4.4cqw;
   padding: 1.2cqw 3cqw 1.4cqw;
-  font-size: 6.6cqw;
-  letter-spacing: 0.01em;
+  font-size: 7.4cqw;
 }
 
 .kAuthLinks {
@@ -140,7 +139,7 @@
   flex: 1 1 auto;
   min-height: 10cqw;
   padding: 1cqw 3cqw 1.2cqw;
-  font-size: 4.8cqw;
+  font-size: 5.4cqw;
 }
 
 .kAuthPhrase {
@@ -252,7 +251,7 @@ span.kSearchPoster {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  font-size: 5.6cqw;
+  font-size: 6.2cqw;
   font-weight: 700;
   color: #ffb347;
 }
@@ -288,7 +287,7 @@ span.kSearchPoster {
 }
 
 .kNoticeTitle {
-  font-size: 6.8cqw;
+  font-size: 7.4cqw;
   font-weight: 700;
   line-height: 1.1;
   color: #ffb347;
@@ -315,5 +314,18 @@ span.kSearchPoster {
   flex: 1 1 34cqw;
   min-height: 11.5cqw;
   padding: 1.2cqw 3cqw 1.4cqw;
-  font-size: 5.6cqw;
+  font-size: 6.2cqw;
+}
+
+/* ----- texte courant -----
+   Les libellés sont dans la police étroite de l'écran ; ce qui se LIT ou se SAISIT (champs,
+   consignes, messages) est dans sa version condensée ordinaire, plus confortable. */
+.kFieldLabel,
+.kInput,
+.kAuthError,
+.kAuthText,
+.kSearchHint,
+.kSearchMeta,
+.kNoticeBody {
+  font-family: var(--k-font-text);
 }

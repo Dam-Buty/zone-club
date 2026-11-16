@@ -294,9 +294,26 @@
    valent pour l'écran haut (5:9, 180cqw de haut) ; l'écran 2:3 du PC (150cqw) les redéfinit plus
    bas. */
 .screen {
-  /* Typographie : DIN condensée de la référence → Barlow Condensed (chargée avec les polices du
-     site), puis la DIN du système, puis une condensée de repli. */
-  --k-font: "Barlow Condensed", "DIN Condensed", "Roboto Condensed", sans-serif-condensed, "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+  /* Typographie, mesurée sur la photo de référence. Les libellés (onglets, boutons, titres) y
+     sont dans une DIN très étroite, le texte courant dans une condensée ordinaire, les petites
+     étiquettes de la fiche dans une grotesque de largeur normale.
+     - --k-font : Sofia Sans Extra Condensed, pour les libellés. À hauteur d'x égale, « search »
+       y est 18 % plus large que sur la photo ; avec Barlow Condensed, utilisée avant, c'était
+       40 % — d'où des libellés qui débordaient de leurs cases.
+     - --k-font-text : Sofia Sans Condensed, la même famille en plus large, pour ce qui se lit.
+     - --k-font-label : Inter (déjà chargée par le site), pour les étiquettes de la fiche.
+     - --k-font-marker : les valeurs « au feutre » — Marker Felt sur les appareils Apple, Caveat
+       Brush ailleurs (sans elle un téléphone Android tombait sur une cursive quelconque).
+     Les trois premières sont chargées par l'import de polices de src/index.css. */
+  --k-font: "Sofia Sans Extra Condensed", "DIN Condensed", "Arial Narrow", sans-serif-condensed, "Helvetica Neue", Arial, sans-serif;
+  --k-font-text: "Sofia Sans Condensed", "Roboto Condensed", "Arial Narrow", sans-serif-condensed, "Helvetica Neue", Arial, sans-serif;
+  --k-font-label: "Inter", "Helvetica Neue", Arial, sans-serif;
+  --k-font-marker: "Marker Felt", "Caveat Brush", "Comic Sans MS", cursive;
+  /* Corps des libellés de la rangée de boutons : calculés sur la largeur réelle des mots, pour
+     qu'il reste au moins 2cqw de marge de chaque côté (« recherche » fait 3,07 em). */
+  --k-btn-size: 8.4cqw;
+  --k-price-size: 5cqw;
+  --k-search-size: 6.6cqw;
 
   /* Boutons : plats, bordure claire, angles à peine arrondis, et la trame verticale de la
      référence — un trait d'un pixel physique tous les quatre, à peine marqué (--k-trame) : sur un
@@ -313,11 +330,14 @@
   --k-edge-teal: #a5eaff;
   /* Satiné des onglets : le reflet d'un aplat peint sur métal, sans brillance franche. */
   --k-skin-tab: linear-gradient(180deg, #5aa3c1 0%, #3a8aaf 24%, #2d799e 60%, #287196 82%, #3080a5 100%);
-  /* Biseau : filet clair en haut, filet sombre en bas. */
-  --k-bevel: inset 0 0.3cqw 0 rgba(255, 255, 255, 0.34), inset 0 -0.3cqw 0 rgba(0, 18, 48, 0.4);
-  /* Les clairs d'une dalle photographiée bavent un peu : halo léger autour du texte clair. */
-  --k-glow: 0 0 0.8cqw rgba(205, 228, 255, 0.2);
-  --k-text-shadow: 0 0.15cqw 0.4cqw rgba(0, 20, 60, 0.55), 0 0 0.8cqw rgba(255, 255, 255, 0.14);
+  /* Relief des aplats : un filet clair discret en haut, un filet sombre en bas — pas de brillance. */
+  --k-bevel: inset 0 0.25cqw 0 rgba(255, 255, 255, 0.15), inset 0 -0.25cqw 0 rgba(0, 18, 48, 0.42);
+  /* Ombre des libellés clairs : courte et nette, vers le bas, comme sur la référence. Pas de
+     halo : sur un écran non dense il empâte les lettres. */
+  --k-text-shadow: 0 0.2cqw 0.1cqw rgba(0, 18, 44, 0.6);
+  /* Encres : un blanc à peine cassé sur les aplats de couleur, jamais un blanc pur. */
+  --k-ink: #eef3f1;
+  --k-ink-soft: #cfe3f2;
   /* Grille de la dalle : la matrice noire entre les pixels, dans les deux sens — un trait d'UN
      pixel physique (--k-dpx), répété tous les --k-lcd-n pixels physiques ; les deux valeurs sont
      posées par KioskView d'après la densité de l'écran. Elle est aussi serrée que l'écran le
@@ -367,20 +387,20 @@
 
   /* Mise en page verticale (écran haut). */
   --k-tab-h: 9.75cqw;
-  --k-tab-size: 5.1cqw;
+  --k-tab-size: 5.8cqw;
   --k-card-h: 80cqw;
   --k-poster-w: 35.5cqw;
   --k-meta-year: 7.6cqw;
   --k-meta-sm: 4.8cqw;
   --k-meta-gap: 1.7cqw;
   --k-title-h: 14.4cqw;
-  --k-title-size: 6.6cqw;
+  --k-title-size: 7.4cqw;
+  --k-title-size-md: 6.1cqw;
   --k-title-size-sm: 5.1cqw;
   --k-under-top: 93.6cqw;
   --k-under-h: 32cqw;
   --k-syn-size: 3.75cqw;
   --k-syn-lines: 4;
-  --k-credits-lines: 2;
   --k-btn-top: 127.6cqw;
   --k-btn-h: 12cqw;
   --k-striph-top: 141.4cqw;
@@ -394,8 +414,7 @@
   z-index: 0;
   overflow: hidden;
   font-family: var(--k-font);
-  color: #f4f9ff;
-  text-shadow: var(--k-glow);
+  color: var(--k-ink);
   background:
     linear-gradient(90deg, transparent 0 22%, rgba(150, 212, 255, 0.16) 50%, transparent 78%) 0 11.4cqw / 100% 0.4cqw no-repeat,
     radial-gradient(86% 47% at 58% 30%, var(--k-bg-stops));
@@ -404,20 +423,23 @@
 @media (min-width: 769px) and (pointer: fine) {
   .screen {
     --k-tab-h: 7.75cqw;
-    --k-tab-size: 4.6cqw;
+    --k-tab-size: 4.9cqw;
     --k-card-h: 64cqw;
     --k-poster-w: 27cqw;
     --k-meta-year: 5.8cqw;
     --k-meta-sm: 3.9cqw;
     --k-meta-gap: 0.5cqw;
     --k-title-h: 12.2cqw;
-    --k-title-size: 5.6cqw;
+    --k-title-size: 6.4cqw;
+    --k-title-size-md: 5.3cqw;
     --k-title-size-sm: 4cqw;
     --k-under-top: 77.4cqw;
     --k-under-h: 19.6cqw;
     --k-syn-size: 3.5cqw;
     --k-syn-lines: 2;
-    --k-credits-lines: 1;
+    /* Écran 2:3 : le générique tient sur une ligne, ses deux parties séparées par un filet. */
+    --k-credit-display: inline;
+    --k-credit-sep: "\2002|\2002";
     --k-btn-top: 98.6cqw;
     --k-btn-h: 11.5cqw;
     --k-striph-top: 112.4cqw;
@@ -588,28 +610,32 @@
 
 .kLogo {
   font-weight: 700;
-  font-size: 4.9cqw;
-  letter-spacing: 0.05em;
+  font-size: 5.4cqw;
+  line-height: 1;
+  letter-spacing: 0.06em;
   white-space: nowrap;
-  color: #fff;
-  text-shadow: 0 0 1.6cqw #c084ff, 0 0 3cqw #8b3dff;
+  color: #f1e9ff;
+  /* Le violet de l'enseigne, en liseré net plutôt qu'en halo. */
+  text-shadow: 0 0 0.5cqw #a66bff, 0 0.2cqw 0.1cqw rgba(30, 0, 70, 0.6);
 }
 
 .kLogo small {
-  margin-left: 1.2cqw;
+  margin-left: 1.4cqw;
   font-weight: 500;
-  font-size: 3.1cqw;
+  font-size: 3.9cqw;
   letter-spacing: 0.02em;
-  color: #bfe3ff;
+  color: var(--k-ink-soft);
   text-shadow: none;
 }
 
 .kNav {
   display: flex;
   align-items: center;
-  font-size: 4.7cqw;
+  font-size: 5.4cqw;
   font-weight: 500;
-  color: #eef8ff;
+  line-height: 1;
+  color: var(--k-ink);
+  text-shadow: var(--k-text-shadow);
 }
 
 /* Zone d'appui plus haute que le texte : la barre ne fait que 7cqw. */
@@ -634,8 +660,9 @@
 
 /* Solde du compte, à côté de « compte ». */
 .kNavCredits {
-  margin-left: 1.1cqw;
-  font-weight: 600;
+  margin-left: 1.3cqw;
+  font-size: 4.4cqw;
+  font-weight: 500;
   color: #ffcf5a;
 }
 
