@@ -472,6 +472,22 @@ Règles à ne pas casser — chacune a son test dans `tests/domain/kiosk-*.test.
 
 - **Rien de 3D sous `kiosk/`** : ni `three`, ni `<canvas>`, ni `backdrop-filter`, ni filtre CSS. Tout ce
   qui est dans l'écran se mesure en `cqw`. La logique décidable vit dans `kiosk-logic.ts` (pur, testé).
+- **Objectif photoréaliste : une dalle LCD de 2007 derrière sa vitre, pas une page web.** Référence
+  de Rusmir : la photographie « 01_iMOZI_interface_2007 ». Facture : onglets collés dans un cadre,
+  boutons plats à trame et fine bordure claire, satiné légèrement métallique, libellés d'action en
+  bas-de-casse, angles à peine arrondis. Deux couches recouvrent le contenu de l'écran
+  (`KioskView.module.css`) : la **dalle** (`::before` — trame des sous-pixels, grain, rétroéclairage
+  inégal, noirs relevés) et la **vitre** (`::after` — le reflet de la rue). Le reflet est une
+  **photo** (`public/kiosk/glass-reflection.webp`, tirée de `public/exterior.jpeg` : recadrée,
+  inversée, floutée, transparente hors des lumières), pas un dégradé dessiné ; le grain est
+  `public/kiosk/lcd-grain.png`. Tout est composé par simple transparence : ni filtre, ni flou
+  d'arrière-plan, ni mode de fusion. Typographie : Barlow Condensed (la plus proche de la DIN
+  condensée de la référence, chargée par l'import de polices de `src/index.css`) ; l'enseigne
+  « LOCATION 24/7 » reprend l'Orbitron de l'enseigne VIDEOCLUB. Trois feuilles — `KioskView`
+  (corps, écran, dalle, vitre), `KioskBrowse` (rayons, fiche, bande), `KioskPanels` (connexion,
+  recherche, messages) — partagent les variables `--k-*` posées sur l'écran. L'écran est en
+  **5:9 sur téléphone** et en **2:3 sur PC** : les hauteurs passent par ces variables.
+  Le corps de la borne (fente, vitrines) reste schématique jusqu'au lot 3 (rendu Blender).
 - **L'appui sur la borne libère le vidéoclub 3D.** La scène intérieure est démontée, prête ou non
   (`shouldMountInterior`), son renderer libéré (`interior/release-renderer.ts` — R3F ne libère pas un
   `WebGPURenderer`), et la vanne des préchargements se referme : les `fetch` inscrits par

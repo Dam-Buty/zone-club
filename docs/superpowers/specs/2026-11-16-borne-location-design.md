@@ -18,6 +18,19 @@
 > - **§ 6, orientation.** Sur téléphone, le paysage est réservé au film : la borne ne s'y affiche
 >   pas. **[R]**
 > - **§ 6, ouverture.** Pas d'écran noir à l'ouverture de la borne. **[R]**
+> - **§ 6, charte.** L'écran doit représenter plus fidèlement l'interface de référence
+>   (`01_iMOZI_interface_2007.jpg`) : boutons retravaillés, typographie des boutons au plus près
+>   de la référence, rayons de boutons réduits, effet d'écran derrière une vitre, enseigne
+>   « Location 24/7 » dans la typographie de l'enseigne VIDEOCLUB. **[R]** L'écran gagne 20 % de
+>   hauteur là où elle est disponible (téléphone : 5:9 au lieu de 2:3 ; le PC reste en 2:3,
+>   choix **[C]**) ; la place sert au générique du film (réalisation, interprètes) et à un
+>   synopsis plus long. **[R]** pour la hauteur, **[C]** pour son usage.
+> - **§ 6, rendu.** L'affichage doit être **photoréaliste** et « transpirer l'écran LCD de 2007 » :
+>   vraie transparence de vitre (pas un effet dessiné), léger côté métallique des couleurs, petits
+>   défauts de contraste et de saturation ; on ne doit pas avoir l'impression d'être devant une
+>   page web. **[R]** Moyen retenu **[C]** : un reflet tiré d'une photo de la rue et une couche
+>   « dalle », composés par simple transparence (la contrainte « ni filtre ni flou d'arrière-plan »
+>   est maintenue).
 > - **Tarif** : l'affichage suit ce que le serveur facture. **Dates du serveur** : lues en UTC.
 >   Les deux validés. **[R]**
 > - **§ 5, bouton provisoire sur mobile** : il part tel quel, on ajustera en voyant la version
