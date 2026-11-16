@@ -90,11 +90,12 @@ lib/                         # Backend
 ├── cleanup.ts push.ts tmdb.ts
 
 src/
-├── App.tsx                  # Vrai point d'entrée : gate WebGPU, lazy loading, prefetch catalogue, PWA
+├── App.tsx                  # Vrai point d'entrée : trois scènes (devanture, vidéoclub, borne), lazy loading, prefetch catalogue, PWA
 ├── api/index.ts             # Client API frontend
 ├── store/index.ts + slices/ # Zustand (manager.ts, tutorial.ts externalisés)
 ├── components/
 │   ├── exterior/scene/      # ExteriorScene.ts — WebGL pur, shader vitrine, pluie, phares
+│   ├── kiosk/               # Borne de location — DOM pur, aucun rendu 3D (voir section dédiée)
 │   ├── interior/            # Scène WebGPU : Aisle, CassetteInstances, Controls, Lighting,
 │   │                        # PostProcessingEffects, MinitelScreen, InteractiveTVDisplay,
 │   │                        # LaZoneCRT, VHSCaseViewer, BenchmarkMode
@@ -103,8 +104,9 @@ src/
 │   ├── player/              # VHSPlayer + Google Cast / AirPlay
 │   ├── manager/             # Chat du gérant + composants Generative UI
 │   ├── videoclub/ tutorial/ mobile/ ui/ board/ auth/ review/ search/
-├── hooks/                   # useGoogleCast, useKTX2Textures, useIdleDetection…
-├── utils/                   # CassetteTextureArray (atlas), VHSCoverGenerator…
+├── hooks/                   # useGoogleCast, useKTX2Textures, useBackGuard…
+├── utils/                   # CassetteTextureArray (atlas), VHSCoverGenerator, interior-preload-gate
+│                            # (vanne des préchargements 3D), account-rules (règles d'un compte)…
 
 cinema-stream/               # Service Node autonome — chaîne HLS 24/7
 zone-discord-bot/            # Service Node autonome — présence Discord
@@ -336,8 +338,11 @@ GLSL maison. Pluie en 3 couches de `LineSegments` avec vent et rafales, phares p
 (voitures / police / pompiers) réfléchis sur vitre, métal et flaques, letterboxing dynamique.
 Desktop uniquement — sur mobile, image statique + bouton.
 
-**Intérieur** — WebGPU (`THREE.WebGPURenderer` + R3F + TSL). **Pas de repli WebGL** : sans
-`navigator.gpu`, `App.tsx` affiche un écran d'excuses avec instructions par navigateur.
+**Intérieur** — WebGPU (`THREE.WebGPURenderer` + R3F + TSL). **Pas de repli WebGL.** Sans
+`navigator.gpu` le site reste ouvert : la devanture s'affiche (image fixe au besoin), la porte
+explique pourquoi le vidéoclub 3D ne peut pas s'ouvrir et renvoie vers la **borne de location**,
+qui loue et lit les films sans aucun rendu 3D. Ni le chunk 3D, ni ses assets, ni le service worker
+ne sont alors envoyés (`src/utils/interior-preload-gate.ts`).
 
 ### Optimisations réelles
 
@@ -452,6 +457,43 @@ final au unmount. Au disconnect, on restaure depuis `lastKnownCastTimeRef` (le S
 7 étapes, `TUTORIAL_WAYPOINTS` dans le store, lerp caméra dans `Controls`. Étape 2 ouvre une K7
 aléatoire, étape 3 la garde ouverte avec annotations et glow cyclique, étape 4+ la ferme. Fin :
 téléportation au waypoint d'entrée + modale d'inscription si non authentifié.
+
+## Borne de location (`src/components/kiosk/`)
+
+Troisième scène de l'application (`currentScene === 'kiosk'`, à côté de `'exterior'` et
+`'interior'`) : une seconde façon de louer, en **DOM pur**, pour tout appareil — WebGPU ou non.
+Rayons, recherche par titre, fiche, connexion / inscription / récupération, location, puis le
+**même lecteur** (`VHSPlayer`) et le même suivi de Cast que le vidéoclub. Document de conception :
+`docs/superpowers/specs/2026-11-16-borne-location-design.md` (trois lots ; seule la tranche a du
+lot 1 est construite). On y accède par un **bouton provisoire** posé sur la photo de la devanture ;
+la borne modélisée et la vue mobile « porte + borne » sont au lot 3.
+
+Règles à ne pas casser — chacune a son test dans `tests/domain/kiosk-*.test.mjs` :
+
+- **Rien de 3D sous `kiosk/`** : ni `three`, ni `<canvas>`, ni `backdrop-filter`, ni filtre CSS. Tout ce
+  qui est dans l'écran se mesure en `cqw`. La logique décidable vit dans `kiosk-logic.ts` (pur, testé).
+- **L'appui sur la borne libère le vidéoclub 3D.** La scène intérieure est démontée, prête ou non
+  (`shouldMountInterior`), son renderer libéré (`interior/release-renderer.ts` — R3F ne libère pas un
+  `WebGPURenderer`), et la vanne des préchargements se referme : les `fetch` inscrits par
+  `whileStorefront` sont coupés, puis relancés quand la devanture est de nouveau affichée. La scène
+  ne se remonte qu'à ce moment-là (0,8 s après), jamais dans le même rendu que la devanture.
+  ⚠️ Reste hors d'atteinte : les chargements déjà lancés par les loaders de three, qui vont à leur
+  terme (`LoadingManager.abort()` existe en r187 mais oblige à purger les caches de drei).
+- **Le code de la borne est demandé dès que la devanture est affichée** (`preloadKiosk`), avant les
+  fichiers 3D : demandé à l'appui, il attendait derrière eux (14,3 s d'écran noir à 20 Mbit/s).
+- **Le geste retour ne quitte jamais la borne.** Une seule garde (`useBackGuard`), reposée dès
+  qu'elle a servi, qui ferme ce qui est ouvert selon `kioskBackAction` ; à la racine elle ne fait
+  rien. On ne sort que par « quitter ». La garde n'est jamais posée dès le montage (StrictMode).
+- **Téléphone en paysage = film seulement** : la borne s'efface devant une invitation à redresser
+  l'appareil (`hidesKioskInLandscape`, lu sur l'écran et non sur la fenêtre, à cause du clavier).
+- **Jamais de bouton `disabled` muet ni d'écran vide** : chaque refus est dit, le catalogue absent
+  est demandé par la borne elle-même puis déclaré indisponible.
+
+Les **règles d'un compte** (pseudo, mot de passe) n'ont qu'une définition,
+`src/utils/account-rules.ts`, utilisée par les routes d'inscription et de récupération, la fenêtre
+du vidéoclub et la borne. Le **tarif** d'une location aussi : `src/utils/rental-tier.ts`, auquel
+`lib/films.ts` délègue. Les **dates du serveur** (UTC sans fuseau) se lisent par
+`src/utils/server-date.ts`, jamais par `new Date()`.
 
 ## Gérant LLM
 
@@ -608,7 +650,7 @@ Runner **natif Node** (`node --test`), pas de Jest/Vitest.
 | Dossier | Contenu |
 |---|---|
 | `tests/architecture/` | Imports morts, budget de taille (≤ 1000 lignes, exceptions listées), assets référencés existants |
-| `tests/domain/` | Audits figés en régressions (sécurité, performance, UX/compat) + cohérence des types |
+| `tests/domain/` | Audits figés en régressions (sécurité, performance, UX/compat) + cohérence des types + borne de location (`kiosk-logic`, `kiosk-wiring`), règles de compte, tarif, dates du serveur |
 | `tests/media/` | Pipeline : `identify-tracks`, `iso639`, `quality-control`, `video-plan`, `media-dir` (`.test.ts`, type-strip natif Node 22) |
 | `tests/cache/` | LRU des textures VHS, cache TMDB, en-têtes HTTP |
 | `tests/performance/` | Rejoue la logique de collision de `Controls.tsx` |

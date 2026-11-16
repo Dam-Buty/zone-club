@@ -4,6 +4,27 @@
 - **Statut** : validé par Rusmir le 16/11/2026
 - **Base de code** : `main` = `6f0ece1`
 
+> **Mise à jour du 16/11/2026 au soir — décisions de Rusmir après la relecture de la tranche a.**
+> Elles priment sur le texte qui suit, laissé tel qu'il a été validé.
+>
+> - **§ 6, scène intérieure pendant la borne.** Elle n'est plus gardée « en mémoire, rendu gelé »
+>   quand elle était prête : dès l'appui sur la borne, le GPU et les chargements du vidéoclub sont
+>   libérés, dans tous les cas, et la préparation repart au retour devant la devanture. **[R]**
+>   (« dès que le clic est fait sur la borne on doit libérer le GPU et les chargements côté
+>   vidéoclub »). Conséquence acceptée : après un passage par la borne, la porte n'est plus
+>   immédiate, même sur un appareil dont la scène était prête.
+> - **§ 6, navigation.** Le geste retour ne fait jamais sortir de l'application ni de la borne : il
+>   agit dans la borne. La seule manière de quitter est le bouton « quitter ». **[R]**
+> - **§ 6, orientation.** Sur téléphone, le paysage est réservé au film : la borne ne s'y affiche
+>   pas. **[R]**
+> - **§ 6, ouverture.** Pas d'écran noir à l'ouverture de la borne. **[R]**
+> - **Tarif** : l'affichage suit ce que le serveur facture. **Dates du serveur** : lues en UTC.
+>   Les deux validés. **[R]**
+> - **§ 5, bouton provisoire sur mobile** : il part tel quel, on ajustera en voyant la version
+>   locale. **[R]**
+> - **Inscriptions (nouveau, hors tranche a)** : tout nouveau compte devra être validé par un
+>   administrateur, prévenu par courriel à chaque inscription. À concevoir. **[R]**
+
 Chaque décision porte sa provenance : **[R]** = dite par Rusmir pendant la conception,
 **[C]** = choix de Claude, à vérifier à la relecture.
 

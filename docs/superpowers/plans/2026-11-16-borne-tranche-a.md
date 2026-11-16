@@ -2,6 +2,19 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Bandeau du 16/11/2026 — ce plan a été exécuté ; voici ce qui a changé depuis.** Son texte est
+> laissé tel qu'il a été suivi.
+>
+> - **Tarif.** Le plan dit que la borne garde « la même règle qu'aujourd'hui » : c'était faux. La
+>   règle du client (année de sortie) différait de celle du serveur (nouveauté marquée, rayon
+>   Classiques) ; l'affichage a été aligné sur le serveur — `src/utils/rental-tier.ts`, commit
+>   `290796b`. Décision validée par Rusmir.
+> - **Écart n° 1, scène gelée si elle était prête.** Remplacé : la scène est démontée à l'ouverture
+>   de la borne dans tous les cas, et les préchargements 3D sont coupés.
+> - **Geste retour, paysage sur téléphone, ouverture sans écran noir, « Se reconnecter », règles
+>   du formulaire** : décidés après la relecture — voir le bandeau du document de conception et
+>   la section « Borne de location » d'`AGENTS.md`.
+
 **Goal:** Depuis la devanture, n'importe quel appareil — même sans WebGPU — peut ouvrir la borne, trouver un film, le louer, le regarder et l'envoyer sur un Chromecast, sans qu'aucun rendu 3D ne tourne.
 
 **Architecture:** La borne est une troisième scène de l'application (`currentScene === 'kiosk'`), dans la même page et le même magasin d'état que le reste. Son interface est du DOM pur (`src/components/kiosk/`), dessinée en unités `cqw` d'après la maquette validée ; elle réutilise tel quel le lecteur (`VHSPlayer`) et les actions du magasin (`login`, `register`, `rentFilm`, `openPlayer`) ; la connexion y est redessinée dans sa charte. Toute la logique décidable vit dans un module pur testé (`kiosk-logic.ts`).
