@@ -71,6 +71,14 @@ export function filmsForTab(films: Record<AisleType, Film[]>, tab: KioskTab, sor
   return list;
 }
 
+/** L'onglet affiché à l'ouverture : Nouveautés, ou le premier rayon qui a des films. */
+export function firstNonEmptyTab(films: Record<AisleType, Film[]>): KioskTab {
+  for (const { id } of KIOSK_TABS) {
+    if (id !== 'tous' && (films[id]?.length ?? 0) > 0) return id;
+  }
+  return 'nouveautes';
+}
+
 // ===== État du catalogue =====
 
 export const CATALOG_WAIT_MS = 8000;
@@ -105,6 +113,11 @@ export function versionLabel(v: { vf: boolean; vo: boolean } | null): string {
   if (v.vf) parts.push('VF');
   if (v.vo) parts.push('VO');
   return parts.length ? parts.join(' · ') : '—';
+}
+
+/** « 0 crédit », « 1 crédit », « 2 crédits ». */
+export function creditsLabel(n: number): string {
+  return `${n} crédit${n > 1 ? 's' : ''}`;
 }
 
 export function synopsisText(overview: string | null | undefined): string {

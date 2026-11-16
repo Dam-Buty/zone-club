@@ -1,6 +1,15 @@
-import { useCallback, useEffect, useState } from 'react';
-import { useStore } from '../../store';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useStore, useCredits } from '../../store';
 import { useBackGuard } from '../../hooks/useBackGuard';
+import type { Film } from '../../types';
+import { KioskBrowse } from './KioskBrowse';
+import { KioskNotice, type KioskNoticeSpec } from './KioskNotice';
+import { allFilms, catalogState, creditsLabel, filmsForTab, firstNonEmptyTab } from './kiosk-logic';
+import styles from './KioskView.module.css';
+
+// Borne de location : seconde façon de louer, sans aucun rendu 3D. Cette coque porte le corps
+// de la borne (métal, enseigne, fente, vitrines), son écran, la barre du haut et les messages ;
+// le parcours des films vit dans KioskBrowse.
 
 /**
  * Vrai une image après le montage. La garde du geste retour ne doit pas être posée dès le
@@ -17,19 +26,155 @@ function useArmedAfterMount(): boolean {
   return armed;
 }
 
-// Borne de location — coque minimale : de quoi traverser l'application (ouvrir, quitter,
-// geste retour). L'écran de la borne vient ensuite.
+// Tranches de K7 des vitrines : teintes tirées d'une suite fixe, identiques d'un affichage à l'autre.
+const SPINE_TINTS = ['#1e1e24', '#b3261e', '#1f4fa8', '#e0b12a', '#2f7d4f', '#6b2fa8', '#d8d4c8', '#c9571b', '#14141a', '#0f8a8a', '#2a2a33', '#8c1d4b'];
+function spineTints(count: number, seed: number): string[] {
+  return Array.from({ length: count }, (_, i) => {
+    const r = Math.abs(Math.sin((i + 1) * 12.9898 + seed * 78.233) * 43758.5453) % 1;
+    return SPINE_TINTS[Math.floor(r * SPINE_TINTS.length)];
+  });
+}
+const SPINES_SIDE = spineTints(46, 1);
+const SPINES_BELOW = spineTints(9, 0);
+
+function Spines({ tints, className }: { tints: string[]; className: string }) {
+  return (
+    <div className={className} aria-hidden="true">
+      {tints.map((tint, i) => (
+        <i key={i} style={{ background: tint }} />
+      ))}
+    </div>
+  );
+}
+
 export function KioskView() {
   const setScene = useStore((state) => state.setScene);
+  const films = useStore((state) => state.films);
+  const loadFilmsFromApi = useStore((state) => state.loadFilmsFromApi);
+  const isAuthenticated = useStore((state) => state.isAuthenticated);
+  const authUser = useStore((state) => state.authUser);
+  const logout = useStore((state) => state.logout);
+  const credits = useCredits();
+
+  const [mode, setMode] = useState<'browse' | 'search'>('browse');
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  // Un seul message à la fois dans l'écran.
+  const [notice, setNotice] = useState<KioskNoticeSpec | null>(null);
+
   const quit = useCallback(() => setScene('exterior'), [setScene]);
   const guardArmed = useArmedAfterMount();
   useBackGuard(guardArmed, quit);
 
+  // ----- Catalogue : jamais un écran vide -----
+  const total = useMemo(() => allFilms(films).length, [films]);
+  const [waitStart, setWaitStart] = useState(() => Date.now());
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (total > 0) return;
+    const id = window.setInterval(() => setNow(Date.now()), 500);
+    return () => window.clearInterval(id);
+  }, [total, waitStart]);
+  const catalog = catalogState(total, now - waitStart);
+
+  const retryCatalog = useCallback(() => {
+    const t = Date.now();
+    setWaitStart(t);
+    setNow(t);
+    void loadFilmsFromApi();
+  }, [loadFilmsFromApi]);
+
+  // Film affiché : celui qu'on a choisi, sinon le premier de Nouveautés (ou du premier rayon garni).
+  const displayed = useMemo<Film | null>(() => {
+    const chosen = selectedId === null ? undefined : allFilms(films).find((f) => f.id === selectedId);
+    return chosen ?? filmsForTab(films, firstNonEmptyTab(films), 'rayon')[0] ?? null;
+  }, [films, selectedId]);
+
+  const closeNotice = useCallback(() => setNotice(null), []);
+
+  const openAccount = () => {
+    // Visiteur non connecté : la connexion de la borne (tâche suivante).
+    if (!isAuthenticated || !authUser) return;
+    setNotice({
+      title: 'Compte',
+      body: `${authUser.username} — ${creditsLabel(credits)}`,
+      primary: { label: 'Fermer', onPress: closeNotice },
+      secondary: {
+        label: 'Se déconnecter',
+        onPress: () => {
+          closeNotice();
+          void logout();
+        },
+      },
+    });
+  };
+
+  const overlay: KioskNoticeSpec | null =
+    catalog === 'unavailable'
+      ? {
+          title: 'Catalogue indisponible',
+          body: 'Vérifiez votre connexion.',
+          primary: { label: 'Réessayer', onPress: retryCatalog },
+          // Le message couvre la barre du haut : sans ce bouton, un visiteur hors ligne
+          // n'aurait plus aucun moyen de revenir à la devanture.
+          secondary: { label: 'Quitter', onPress: quit },
+        }
+      : notice;
+
   return (
-    <div style={{ position: 'fixed', inset: 0, background: '#0d0c16', color: '#e9e6f2' }}>
-      <button type="button" onClick={quit} style={{ margin: 16, padding: '10px 16px' }}>
-        quitter
-      </button>
+    <div className={styles.root}>
+      <div className={styles.sign} aria-hidden="true">
+        <span className={styles.neonTxt}>Location 24/7</span>
+      </div>
+
+      <div className={styles.body}>
+        <Spines tints={SPINES_SIDE} className={`${styles.spines} ${styles.sideVitrine}`} />
+
+        <div className={styles.column}>
+          <div className={styles.bezel}>
+            <div className={styles.ks}>
+              <div className={styles.screen} data-mode={mode}>
+                <div className={styles.kTop} inert={overlay !== null}>
+                  <div className={styles.kLogo}>
+                    VIDÉOCLUB<small>borne 24/7</small>
+                  </div>
+                  <div className={styles.kNav}>
+                    <button type="button" className={styles.kNavBtn} onClick={openAccount}>
+                      compte
+                    </button>
+                    <button type="button" className={styles.kNavBtn} onClick={quit}>
+                      quitter<span className={styles.kNavTri} aria-hidden="true">◀</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className={styles.kPane} inert={overlay !== null}>
+                  {catalog === 'loading' && (
+                    <p className={styles.kMessage} role="status">
+                      Chargement du catalogue…
+                    </p>
+                  )}
+                  {catalog === 'ready' && (
+                    <KioskBrowse
+                      selectedId={displayed?.id ?? null}
+                      versions={null}
+                      onSelect={(film) => setSelectedId(film.id)}
+                      onSearch={() => setMode('search')}
+                      actionSlot={() => null}
+                    />
+                  )}
+                </div>
+
+                {overlay && <KioskNotice {...overlay} />}
+              </div>
+            </div>
+          </div>
+
+          <div className={styles.slot} aria-hidden="true">retour des cassettes</div>
+          <div className={styles.vitrine}>
+            <Spines tints={SPINES_BELOW} className={styles.spines} />
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

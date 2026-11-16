@@ -98,3 +98,18 @@ test('BORNE: un échec du mode de visionnage ne fait pas échouer la location', 
   const res = await K.rentFlow({ rent: async () => {}, setMode: async () => { throw new Error('x'); } }, { busy: false });
   assert.deepEqual(res, { status: 'ok' });
 });
+test('BORNE: à l\'ouverture, l\'onglet est Nouveautés, ou le premier rayon qui a des films', () => {
+  const films = empty();
+  assert.equal(K.firstNonEmptyTab(films), 'nouveautes', 'catalogue vide : on reste sur Nouveautés');
+  films.drame = [f(1, 'Fargo')];
+  films.sf = [f(2, 'Alien')];
+  assert.equal(K.firstNonEmptyTab(films), 'drame', 'ordre des onglets : Drame vient avant SF');
+  films.nouveautes = [f(2, 'Alien')];
+  assert.equal(K.firstNonEmptyTab(films), 'nouveautes');
+});
+test('BORNE: « crédit » s\'accorde — 0 et 1 au singulier', () => {
+  assert.equal(K.creditsLabel(0), '0 crédit');
+  assert.equal(K.creditsLabel(1), '1 crédit');
+  assert.equal(K.creditsLabel(2), '2 crédits');
+  assert.equal(K.creditsLabel(15), '15 crédits');
+});
