@@ -215,6 +215,196 @@
   50% { opacity: 1; }
 }
 
+/* ===== SHARED: bouton provisoire de la borne =====
+   Même néon violet que l'indicateur PUSH, mais dans un cadre : c'est un bouton, pas une
+   étiquette. Sur PC il est posé sur le mur à gauche de la porte (coordonnées de .contentArea) ;
+   sur mobile il est fixé à gauche, au-dessus de la zone de la porte. Sous le rideau (z-index 8). */
+
+.kioskButton {
+  position: absolute;
+  /* Le mur à gauche de la porte ne fait que 10 % de la largeur de l'image : le bouton s'y
+     loge en entier (≈ 8,5 % de large), sans mordre sur le montant de la porte. */
+  left: 0.9%;
+  top: 58%;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25em;
+  padding: 0.55em 0.7em;
+  background: rgba(13, 12, 22, 0.86);
+  border: 2px solid rgba(214, 170, 255, 0.9);
+  border-radius: 8px;
+  box-shadow:
+    0 0 8px rgba(180, 120, 255, 0.65),
+    0 0 18px rgba(180, 120, 255, 0.35),
+    inset 0 0 8px rgba(180, 120, 255, 0.3);
+  color: rgba(255, 255, 255, 0.95);
+  font-family: 'Orbitron', sans-serif;
+  font-size: clamp(0.6rem, 0.85cqw, 0.9rem);
+  cursor: pointer;
+  pointer-events: auto;
+  transition: box-shadow 0.2s ease, background 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.kioskButton:hover,
+.kioskButton:focus-visible {
+  background: rgba(34, 22, 58, 0.92);
+  box-shadow:
+    0 0 10px rgba(200, 150, 255, 0.9),
+    0 0 26px rgba(180, 120, 255, 0.55),
+    inset 0 0 10px rgba(180, 120, 255, 0.4);
+  outline: none;
+}
+
+.kioskButtonTitle {
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  white-space: nowrap;
+  text-shadow:
+    0 0 10px rgba(180, 120, 255, 0.8),
+    0 0 20px rgba(180, 120, 255, 0.5);
+}
+
+.kioskButtonHint {
+  font-size: 0.68em;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  color: rgba(255, 255, 255, 0.8);
+  text-shadow: 0 0 8px rgba(180, 120, 255, 0.7);
+}
+
+.kioskButtonMobile {
+  position: fixed;
+  left: 4%;
+  /* Sous le néon « Open 24/7 » (qu'il recouvrait à 44 %), au-dessus de la zone de la porte (56 %). */
+  top: 47%;
+  font-size: 0.82rem;
+}
+
+/* ===== SHARED: message de la porte =====
+   Panneau opaque au-dessus de la devanture. Pas de flou d'arrière-plan : il ferait compiler
+   des shaders au navigateur à sa première apparition (diagnostic du 14/11/2026). */
+
+.doorNoticeBackdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.doorNotice {
+  width: 100%;
+  max-width: 460px;
+  max-height: 100%;
+  overflow-y: auto;
+  padding: 22px 20px 18px;
+  background: #0d0c16;
+  border: 2px solid rgba(214, 170, 255, 0.9);
+  border-radius: 12px;
+  box-shadow:
+    0 0 10px rgba(180, 120, 255, 0.6),
+    0 0 28px rgba(180, 120, 255, 0.3);
+  color: #e9e6f2;
+  font-family: -apple-system, 'Helvetica Neue', Arial, sans-serif;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.doorNoticeTitle {
+  margin: 0 0 10px;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1.35;
+  color: #fff;
+  text-shadow: 0 0 10px rgba(180, 120, 255, 0.7);
+}
+
+.doorNoticeBody {
+  margin: 0 0 16px;
+  color: #cfc9e2;
+}
+
+.doorNoticeActions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.doorNoticePrimary,
+.doorNoticeSecondary {
+  width: 100%;
+  min-height: 46px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.doorNoticePrimary {
+  background: linear-gradient(180deg, #b77bff 0%, #8b3dff 100%);
+  border: 2px solid #f0d9ff;
+  color: #fff;
+  box-shadow: 0 0 12px rgba(180, 120, 255, 0.6);
+}
+
+.doorNoticeSecondary {
+  background: transparent;
+  border: 2px solid rgba(214, 170, 255, 0.55);
+  color: #e9e6f2;
+}
+
+.doorNoticePrimary:focus-visible,
+.doorNoticeSecondary:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
+.doorNoticeHelp {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(214, 170, 255, 0.25);
+  color: #b9b3cf;
+  font-size: 0.86rem;
+}
+
+.doorNoticeHelp summary {
+  cursor: pointer;
+  color: #d9c2ff;
+}
+
+.doorNoticeHelp p {
+  margin: 8px 0 0;
+}
+
+.doorNoticeHelp ol {
+  margin: 8px 0 0;
+  padding-left: 1.4rem;
+}
+
+.doorNoticeHelp code {
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(180, 120, 255, 0.16);
+  color: #e9d9ff;
+}
+
+.doorNoticeHint {
+  color: #8f89a8;
+  font-size: 0.82rem;
+}
+
 /* ===== SHARED: rideau d'arrivée =====
    Noir plein au-dessus de l'indicateur PUSH et du bouton tant que la devanture n'est pas
    à l'écran, puis fondu. Sous le voile de sortie (z-index 10). */

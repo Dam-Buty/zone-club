@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useState, useCallback, useRef, lazy, Suspen
 import { useStore } from './store';
 import { preloadPosterImage } from './utils/CassetteTextureArray';
 import './utils/asset-preload'; // Side-effect import: registers the HDR/KTX2/wasm prefetch (starts once the storefront is shown)
-import { afterStorefront, releaseInteriorPreload } from './utils/interior-preload-gate';
+import { afterStorefront, hasWebGPU, releaseInteriorPreload } from './utils/interior-preload-gate';
 import api, { apiFilmToFilm } from './api';
 import type { AisleType, Film } from './types';
 import './utils/perf-beacon'; // Side-effect import: mesure de terrain de l'entrée dans la boutique (POST /api/perf)
@@ -579,7 +579,11 @@ function App() {
       {/* Devanture — par-dessus la scène intérieure tant qu'on n'est pas entré */}
       {!isInterior && (
         <Suspense fallback={null}>
-          <ExteriorView onEnter={handleEnterStore} />
+          <ExteriorView
+            onEnter={handleEnterStore}
+            onOpenKiosk={() => setScene('kiosk')}
+            canEnter={hasWebGPU()}
+          />
         </Suspense>
       )}
 
