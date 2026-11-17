@@ -68,6 +68,11 @@
 >   deviennent des boutons ; « Recherche » et « Suite » prennent une majuscule initiale (ma
 >   lecture de « en majuscule comme suite ») ; l'action principale est en capitales, dans les
 >   panneaux aussi.
+> - **§ 6, police des libellés.** Après comparaison côte à côte : « la police Big Shoulders rend
+>   mieux » ; « la police dans les boutons de catégories à gauche mériterait d'être un peu plus
+>   grande […] tu n'agrandis pas les onglets, tu agrandis juste la police légèrement ». **[R]**
+>   Fait **[C]** : libellés en Big Shoulders Display, corps des onglets +10 %, hauteur des
+>   onglets inchangée.
 > - **Tarif** : l'affichage suit ce que le serveur facture. **Dates du serveur** : lues en UTC.
 >   Les deux validés. **[R]**
 > - **§ 5, bouton provisoire sur mobile** : il part tel quel, on ajustera en voyant la version

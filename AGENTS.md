@@ -511,8 +511,9 @@ Règles à ne pas casser — chacune a son test dans `tests/domain/kiosk-*.test.
   entières. C'est une
   simulation des défauts VISIBLES : quantifier réellement les jaquettes demanderait un filtre ou
   un canvas, exclus ici. **Typographie, mesurée sur la photo de référence** (passe de design demandée par Rusmir le
-  16/11) : une famille en deux largeurs — Sofia Sans Extra Condensed pour les libellés (onglets,
-  boutons, titres), Sofia Sans Condensed pour ce qui se lit —, Inter pour les petites étiquettes
+  16/11) : Big Shoulders Display pour les libellés (onglets, boutons, titres ;
+  choisie par Rusmir le 17/11 sur une comparaison côte à côte avec Sofia Sans Extra Condensed),
+  Sofia Sans Condensed pour ce qui se lit, Inter pour les petites étiquettes
   de la fiche, Marker Felt puis Caveat Brush pour les valeurs au feutre ; toutes chargées par
   l'import de `src/index.css`. Sur la photo les libellés sont dans une DIN très étroite : à
   hauteur d'x égale, Barlow Condensed (utilisée avant) était 40 % trop large, d'où des libellés
@@ -521,7 +522,12 @@ Règles à ne pas casser — chacune a son test dans `tests/domain/kiosk-*.test.
   corps qui tient (`titleScale()`, largeur estimée par `titleWidthEm()`) ; ni abréviation ni
   point médian dans un libellé — le bouton d'action dit l'action, le prix est à part
   (`actionLabel()`) ; ombre de texte courte et nette, jamais de halo ; l'onglet actif ne déborde
-  pas sur ses voisins ; aucun glyphe tiré d'une police de secours (les triangles sont dessinés). L'enseigne « LOCATION 24/7 » est un
+  pas sur ses voisins ; aucun glyphe tiré d'une police de secours (les triangles sont dessinés).
+  Big Shoulders Display est une police HAUTE aux traits fins (hauteur d'x 0,60 em, capitale
+  0,80 em) : ses corps sont plus petits et ses graisses d'un cran plus fortes qu'avec une police
+  ordinaire, et la table de largeurs de `titleWidthEm()` est relevée sur elle — à refaire si la
+  police du titre change. Pour grossir les libellés des onglets on change leur corps
+  (`--k-tab-size`), jamais la hauteur des onglets (`--k-tab-h`). L'enseigne « LOCATION 24/7 » est un
   néon **rendu** (`public/kiosk/neon-location-247.webp`), sur le modèle de l'enseigne VIDEOCLUB
   de la devanture telle qu'elle est sur `public/exterior.jpeg` : lettres **en contour** d'une
   grotesque géométrique grasse, tube fin au cœur rose presque blanc, halo violet — pas Orbitron,
