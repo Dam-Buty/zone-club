@@ -3,6 +3,8 @@ import {
   markSessionNotified,
 } from "./cast-sessions";
 import { sendPushNotification } from "./push";
+import { db } from "./db";
+import { completeCastRental } from "./cast-completion";
 
 const CHECK_INTERVAL_MS = 60_000; // 60 seconds
 
@@ -12,6 +14,13 @@ async function checkExpiredSessions(): Promise<void> {
   const sessions = getExpiredUnnotifiedSessions();
 
   for (const session of sessions) {
+    // D'abord la location, sans dépendre de la notification : un visiteur sans abonnement aux
+    // notifications doit aussi retrouver son film noté vu (spec 2026-11-17-cast-suivi-serveur).
+    try {
+      completeCastRental(db, session);
+    } catch {
+      // Rejoué au passage suivant tant que la séance n'est pas notifiée.
+    }
     try {
       await sendPushNotification(session.user_id, {
         title: "Zone Club",
