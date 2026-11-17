@@ -52,8 +52,17 @@
 }
 
 .kAuthBack {
+  position: relative;
   padding: 1.2cqw 3.2cqw 1.4cqw;
   font-size: 4.2cqw;
+}
+
+/* Zone d'appui prolongée autour du bouton (36 px de haut sur un Pixel 9a, 48 avec elle) : rien
+   d'actionnable ne l'entoure. */
+.kAuthBack::after {
+  content: "";
+  position: absolute;
+  inset: -1.6cqw -1.2cqw;
 }
 
 /* Le triangle du retour est dessiné, pas tiré d'une police de secours. */

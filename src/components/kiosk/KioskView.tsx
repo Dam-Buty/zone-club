@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useMemo, useState, type CSSProperties, type MouseEvent } from 'react';
 import { useStore, useCredits } from '../../store';
 import { useBackGuard } from '../../hooks/useBackGuard';
 import api from '../../api';
@@ -339,13 +339,35 @@ export function KioskView() {
     return () => window.clearTimeout(id);
   }, [trapArmed]);
 
+  // Tirer vers le bas en haut de page recharge la page sur Chrome Android — et une page rechargée
+  // a quitté la borne, ce que seul « Quitter » doit faire. Le blog de Chrome : couper l'enchaînement
+  // du défilement sur l'élément qui définit la fenêtre (html ou body) désactive ce geste. Le temps
+  // que la borne est ouverte seulement.
+  useEffect(() => {
+    const targets = [document.documentElement, document.body];
+    const before = targets.map((el) => el.style.overscrollBehaviorY);
+    for (const el of targets) el.style.overscrollBehaviorY = 'none';
+    return () => {
+      targets.forEach((el, i) => {
+        el.style.overscrollBehaviorY = before[i];
+      });
+    };
+  }, []);
+
+  // Un appui long ouvre le menu du navigateur sur Android (« ouvrir l'image », « télécharger »…) :
+  // pas sur une borne. Les champs de saisie et la phrase de récupération le gardent, pour coller et copier.
+  const blockContextMenu = (event: MouseEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement;
+    if (!target.closest('input, textarea, code')) event.preventDefault();
+  };
+
   // Téléphone en paysage : la borne s'efface (elle garde son état) devant l'invitation à
   // redresser l'appareil. Sous le lecteur, elle est inerte : ni focus clavier, ni appui.
   const hidden = phoneLandscape;
 
   return (
     <>
-    <div className={`${styles.root} ${hidden ? states.rootHidden : ''}`} inert={isPlayerOpen || hidden}>
+    <div className={`${styles.root} ${hidden ? states.rootHidden : ''}`} inert={isPlayerOpen || hidden} onContextMenu={blockContextMenu}>
       <div className={styles.sign} aria-hidden="true">
         {/* Décor : l'enseigne est une image rendue (voir .neonImg). Son conteneur est masqué aux lecteurs d'écran. */}
         <img className={styles.neonImg} src="/kiosk/neon-location-247.webp" alt="" width={1345} height={302} decoding="async" draggable={false} />

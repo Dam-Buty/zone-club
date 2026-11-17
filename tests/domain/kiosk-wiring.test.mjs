@@ -284,3 +284,24 @@ test('BORNE: en paysage sur téléphone, la borne laisse la place à une invitat
   assert.ok(src.includes('hidesKioskInLandscape('), 'la décision est la fonction testée');
   assert.ok(src.includes('KioskRotate'), 'l\'invitation est affichée à la place de la borne');
 });
+
+// ===== Audit d'ergonomie sur téléphone du 17/11/2026 =====
+test('BORNE: tirer vers le bas ne recharge pas la page tant que la borne est ouverte', () => {
+  // Chrome sur Android recharge la page quand on tire vers le bas en haut de page — une page
+  // rechargée a quitté la borne, ce que seul « Quitter » doit faire.
+  const src = readText(path.join(ROOT, 'src/components/kiosk/KioskView.tsx'));
+  assert.match(src, /overscrollBehaviorY\s*=\s*'none'/, 'html et body : overscroll-behavior-y à none pendant la borne');
+});
+test('BORNE: deux appuis rapprochés ne zooment pas, l\'appui long n\'ouvre pas le menu du navigateur', () => {
+  const css = readText(path.join(ROOT, 'src/components/kiosk/KioskView.module.css'));
+  const start = css.indexOf('.root {');
+  const root = css.slice(start, css.indexOf('}', start));
+  assert.match(root, /touch-action:\s*manipulation/, 'double-tap sans zoom, pincement conservé');
+  assert.match(root, /-webkit-touch-callout:\s*none/, 'pas de menu de l\'image sur iOS');
+  const src = readText(path.join(ROOT, 'src/components/kiosk/KioskView.tsx'));
+  assert.ok(src.includes('onContextMenu'), 'menu contextuel du navigateur coupé sur la borne');
+});
+test('BORNE: les flèches de la bande suivent ses extrémités', () => {
+  const src = readText(path.join(ROOT, 'src/components/kiosk/KioskBrowse.tsx'));
+  assert.ok(src.includes('railEdges('), 'KioskBrowse consulte railEdges');
+});

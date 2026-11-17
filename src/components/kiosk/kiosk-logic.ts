@@ -392,3 +392,12 @@ export function lcdPitchInDevicePixels(devicePixelRatio: number | undefined): nu
   if (typeof devicePixelRatio !== 'number' || !Number.isFinite(devicePixelRatio) || devicePixelRatio <= 0) return 2;
   return Math.max(2, Math.round(devicePixelRatio * 1.5));
 }
+
+/**
+ * La bande de jaquettes est-elle à son début, à son bout ? Une flèche qui ne mènerait plus nulle
+ * part s'éteint à moitié (elle reste un bouton). Deux pixels de tolérance : sur un écran dense le
+ * défilement s'arrête sur une fraction de pixel.
+ */
+export function railEdges(scrollLeft: number, clientWidth: number, scrollWidth: number): { atStart: boolean; atEnd: boolean } {
+  return { atStart: scrollLeft <= 2, atEnd: scrollLeft + clientWidth >= scrollWidth - 2 };
+}

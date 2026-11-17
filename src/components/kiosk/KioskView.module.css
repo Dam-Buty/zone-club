@@ -49,6 +49,12 @@
   -webkit-tap-highlight-color: transparent;
   user-select: none;
   -webkit-user-select: none;
+  /* Gestes parasites (audit du 17/11/2026). « manipulation » garde le défilement et le pincement
+     mais retire le double-tap qui zoome (MDN) : deux appuis rapides sur une flèche ne doivent pas
+     agrandir la page sur un iPhone. Et un appui long sur une jaquette n'ouvre pas le menu de
+     l'image sur iOS (sur Android, voir onContextMenu dans KioskView). */
+  touch-action: manipulation;
+  -webkit-touch-callout: none;
 }
 
 .sign {
@@ -634,11 +640,13 @@
 
 /* « Compte » et « Quitter » sont des BOUTONS et doivent en avoir l'air : même aplat et même filet
    clair que « Recherche », en plus petit. En simple texte, comme la barre du haut de la
-   référence, on ne voyait pas qu'ils s'actionnent (retour de Rusmir du 17/11/2026). */
+   référence, on ne voyait pas qu'ils s'actionnent (retour de Rusmir du 17/11/2026).
+   Écartés de 4cqw : « Quitter » fait sortir de la borne, il ne doit pas se prendre pour
+   « Compte ». Leurs zones d'appui étaient à 2 px l'une de l'autre (audit du 17/11/2026). */
 .kNav {
   display: flex;
   align-items: center;
-  gap: 1.5cqw;
+  gap: 4cqw;
 }
 
 .kNavBtn {
@@ -659,11 +667,12 @@
   box-shadow: inset 0 0.25cqw 0 rgba(255, 255, 255, 0.16), 0 0 0 0.25cqw rgba(0, 10, 30, 0.6), 0 0.5cqw 1.2cqw rgba(0, 0, 20, 0.45);
 }
 
-/* Zone d'appui plus haute que le bouton : la barre est basse, le doigt ne l'est pas. */
+/* Zone d'appui plus haute que le bouton : la barre est basse, le doigt ne l'est pas (46 px sur un
+   Pixel 9a). */
 .kNavBtn::after {
   content: "";
   position: absolute;
-  inset: -2cqw -0.6cqw;
+  inset: -2.4cqw -0.6cqw;
 }
 
 /* Solde du compte, derrière un filet comme le prix du bouton d'action. */

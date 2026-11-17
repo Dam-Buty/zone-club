@@ -397,9 +397,13 @@
   gap: 0.5cqw;
 }
 
-/* Onglets de tri : coins du haut arrondis, posés sur le cadre de la bande. */
+/* Onglets de tri : coins du haut arrondis, posés sur le cadre de la bande. Ils occupent toute la
+   hauteur de leur rangée (6,2cqw : 23 px sur un Pixel 9a au lieu de 20). Leur zone d'appui ne
+   monte PAS au-delà : les trois sont sous « LOUER », qui loue en un appui — un prolongement de
+   0,8cqw les en rapprochait à 4 px (audit du 17/11/2026). Plus haut, il faudrait prendre de la
+   hauteur ailleurs dans l'écran. */
 .kChip {
-  padding: 0.7cqw 2.2cqw 0.8cqw;
+  padding: 1.2cqw 2.2cqw 1.3cqw;
   font-size: 3.4cqw;
   font-weight: 700;
   line-height: 1;
@@ -436,42 +440,85 @@
   box-shadow: inset 0 0.6cqw 1.6cqw rgba(0, 0, 10, 0.6), 0 0 1.4cqw rgba(120, 205, 245, 0.2);
 }
 
-/* Flèches : triangle dégradé cerné de blanc (deux triangles emboîtés). */
+/* Flèches : triangle dégradé cerné de blanc (deux triangles emboîtés), dans une zone d'appui bien
+   plus large que lui. Audit d'ergonomie du 17/11/2026 : la flèche faisait 24 px de large sur un
+   Pixel 9a, 22 sur un téléphone de 360 px — sous les 44 px du critère 2.5.5 des WCAG et les 48 dp
+   recommandés par Android. Le bouton prend toute la hauteur de la bande, et sa zone d'appui
+   s'étend jusqu'au bord de l'écran (::before) : 51 px de large sur le Pixel, 45 sur 360 px. Le
+   triangle, lui, ne s'élargit que d'un tiers (6,4 → 8,4cqw). */
 .kArrow {
   position: relative;
-  flex: 0 0 6.4cqw;
-  height: 17cqw;
+  flex: 0 0 10cqw;
+  align-self: stretch;
+  /* Pas jusqu'au bord haut de la bande : « par date » est juste au-dessus de la flèche droite. */
+  margin: 1.4cqw 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.kArrow::before,
-.kArrow::after {
+/* Prolongement invisible de la zone d'appui jusqu'au bord de l'écran : marge de la bande (2,4cqw),
+   sa bordure (0,4cqw) et son retrait intérieur (1cqw). */
+.kArrow::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+
+.kArrowL::before {
+  left: -3.8cqw;
+  right: 0;
+}
+
+.kArrowR::before {
+  left: 0;
+  right: -3.8cqw;
+}
+
+.kArrowShape {
+  position: relative;
+  width: 8.4cqw;
+  height: 17cqw;
+  transition: opacity 0.2s;
+}
+
+.kArrowShape::before,
+.kArrowShape::after {
   content: "";
   position: absolute;
   inset: 0;
 }
 
-.kArrow::before {
+.kArrowShape::before {
   background: rgba(255, 255, 255, 0.92);
 }
 
-.kArrow::after {
+.kArrowShape::after {
   background: linear-gradient(180deg, #6fd4f6 0%, #2a8fc4 55%, #0f5f9c 100%);
 }
 
-.kArrowL::before {
+/* Liseré blanc de même épaisseur qu'avant l'élargissement (0,8cqw environ). */
+.kArrowL .kArrowShape::before {
   clip-path: polygon(100% 0, 100% 100%, 0 50%);
 }
 
-.kArrowL::after {
-  clip-path: polygon(88% 9%, 88% 91%, 13% 50%);
+.kArrowL .kArrowShape::after {
+  clip-path: polygon(90.8% 9%, 90.8% 91%, 10% 50%);
 }
 
-.kArrowR::before {
+.kArrowR .kArrowShape::before {
   clip-path: polygon(0 0, 0 100%, 100% 50%);
 }
 
-.kArrowR::after {
-  clip-path: polygon(12% 9%, 12% 91%, 87% 50%);
+.kArrowR .kArrowShape::after {
+  clip-path: polygon(9.2% 9%, 9.2% 91%, 90% 50%);
+}
+
+/* Au début ou au bout de la bande, la flèche qui n'y mène plus nulle part s'éteint à moitié. Elle
+   reste un bouton (jamais l'attribut disabled, qui avale l'appui sans rien dire). */
+.kArrow[data-edge="true"] .kArrowShape {
+  opacity: 0.32;
 }
 
 /* La bande défile nativement (doigt, molette, trackpad) ; les flèches l'y aident. */

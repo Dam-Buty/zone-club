@@ -255,3 +255,12 @@ test('BORNE: le titre garde le plus grand corps qui tient sur sa ligne', () => {
   assert.equal(K.titleScale('Il était une fois en Amérique'), 'md');
   assert.equal(K.titleScale("Confessions d'un homme dangereux"), 'sm', 'trop large pour une ligne : deux lignes, en petit');
 });
+
+// ===== Bande de jaquettes : une flèche s'éteint à l'extrémité où elle ne mène plus nulle part =====
+test('BORNE: la bande sait si elle est à son début ou à son bout', () => {
+  assert.deepEqual(K.railEdges(0, 289, 2570), { atStart: true, atEnd: false });
+  assert.deepEqual(K.railEdges(1000, 289, 2570), { atStart: false, atEnd: false });
+  assert.deepEqual(K.railEdges(2281, 289, 2570), { atStart: false, atEnd: true });
+  assert.deepEqual(K.railEdges(2280.4, 289, 2570), { atStart: false, atEnd: true }, 'défilement fractionnaire (écran dense)');
+  assert.deepEqual(K.railEdges(0, 289, 200), { atStart: true, atEnd: true }, 'rayon qui tient sans défiler');
+});

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useStore } from '../../store';
 import type { Film } from '../../types';
 import {
@@ -7,6 +7,7 @@ import {
   firstNonEmptyTab,
   formatRuntime,
   posterSrc,
+  railEdges,
   releaseYear,
   synopsisText,
   tabLabel,
@@ -80,21 +81,40 @@ export function KioskBrowse({ selectedId, versions, credits, onSelect, onSearch,
   const [sort, setSort] = useState<KioskSort>('rayon');
   const [page, setPage] = useState(() => Math.max(0, TAB_PAGES.findIndex((p) => p.includes(tab))));
   const railRef = useRef<HTMLDivElement>(null);
+  const prevRef = useRef<HTMLButtonElement>(null);
+  const nextRef = useRef<HTMLButtonElement>(null);
 
   const film = useMemo(() => allFilms(films).find((f) => f.id === selectedId) ?? null, [films, selectedId]);
   const list = useMemo(() => filmsForTab(films, tab, sort), [films, tab, sort]);
 
+  // Une flèche s'éteint à l'extrémité où elle ne mènerait plus nulle part. Écrit directement sur
+  // les boutons, sans état React : ce suivi tourne à chaque image du défilement.
+  const syncArrows = useCallback(() => {
+    const rail = railRef.current;
+    if (!rail) return;
+    const { atStart, atEnd } = railEdges(rail.scrollLeft, rail.clientWidth, rail.scrollWidth);
+    if (prevRef.current) prevRef.current.dataset.edge = String(atStart);
+    if (nextRef.current) nextRef.current.dataset.edge = String(atEnd);
+  }, []);
+
   // Changer de rayon ou de tri ramène la bande à son début.
   useEffect(() => {
     if (railRef.current) railRef.current.scrollLeft = 0;
-  }, [tab, sort]);
+    syncArrows();
+  }, [tab, sort, list, syncArrows]);
+
+  useEffect(() => {
+    window.addEventListener('resize', syncArrows);
+    return () => window.removeEventListener('resize', syncArrows);
+  }, [syncArrows]);
 
   // À l'arrivée (retour de la recherche), la jaquette du film affiché est amenée dans la bande.
   useEffect(() => {
     const rail = railRef.current;
     const current = rail?.querySelector<HTMLElement>('[aria-pressed="true"]');
     if (rail && current) rail.scrollLeft = current.offsetLeft - rail.offsetLeft - (rail.clientWidth - current.offsetWidth) / 2;
-  }, []);
+    syncArrows();
+  }, [syncArrows]);
 
   const scrollRail = (direction: -1 | 1) => {
     const rail = railRef.current;
@@ -203,12 +223,15 @@ export function KioskBrowse({ selectedId, versions, credits, onSelect, onSearch,
       </div>
       <div className={styles.kStrip}>
         <button
+          ref={prevRef}
           type="button"
           className={`${styles.kArrow} ${styles.kArrowL}`}
           aria-label="Films précédents"
           onClick={() => scrollRail(-1)}
-        />
-        <div className={styles.kRail} ref={railRef}>
+        >
+          <span className={styles.kArrowShape} aria-hidden="true" />
+        </button>
+        <div className={styles.kRail} ref={railRef} onScroll={syncArrows}>
           {list.length === 0 && <p className={styles.kRailEmpty}>Aucun film dans ce rayon.</p>}
           {list.map((item) => (
             <button
@@ -224,11 +247,14 @@ export function KioskBrowse({ selectedId, versions, credits, onSelect, onSearch,
           ))}
         </div>
         <button
+          ref={nextRef}
           type="button"
           className={`${styles.kArrow} ${styles.kArrowR}`}
           aria-label="Films suivants"
           onClick={() => scrollRail(1)}
-        />
+        >
+          <span className={styles.kArrowShape} aria-hidden="true" />
+        </button>
       </div>
     </>
   );
