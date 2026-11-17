@@ -394,6 +394,23 @@ span.kSearchPoster {
   border: 0;
 }
 
+/* ----- « Mes locations » (sur le panneau de la recherche) ----- */
+
+.kRentalsTitle {
+  margin-top: 3.4cqw;
+  font-size: 6cqw;
+  font-weight: 800;
+  line-height: 1.1;
+  color: #ffb347;
+}
+
+/* Le bouton d'une ligne : à droite, sans s'étirer comme ceux des messages. */
+.kNoticeBtn.kRentalWatch {
+  flex: none;
+  min-height: max(44px, 10cqw);
+  font-size: 4.4cqw;
+}
+
 /* ----- texte courant -----
    Les libellés sont dans la police étroite de l'écran ; ce qui se LIT ou se SAISIT (champs,
    consignes, messages) est dans sa version condensée ordinaire, plus confortable. */

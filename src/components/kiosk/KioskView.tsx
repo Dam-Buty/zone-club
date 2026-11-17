@@ -8,6 +8,7 @@ import { KioskAuth } from './KioskAuth';
 import { KioskBrowse } from './KioskBrowse';
 import { KioskDetail } from './KioskDetail';
 import { KioskReady, KioskWaiting } from './KioskDistribution';
+import { KioskRentals } from './KioskRentals';
 import { KioskNotice, type KioskNoticeSpec } from './KioskNotice';
 import { KioskSearch } from './KioskSearch';
 import {
@@ -531,7 +532,7 @@ export function KioskView() {
                 {/* Sous la fiche détaillée, le parcours reste monté (rayon, page, position de la bande) mais caché. */}
                 <div
                   className={styles.kPane}
-                  inert={overlay !== null || distribution !== null || authVisible || mode === 'search' || detailOpen}
+                  inert={overlay !== null || distribution !== null || authVisible || mode === 'search' || detailOpen || rentalsOpen}
                   style={detailOpen ? { visibility: 'hidden' } : undefined}
                 >
                   {catalog === 'loading' && (
@@ -570,6 +571,12 @@ export function KioskView() {
                       }}
                       action={<KioskAction film={displayed} detail={currentDetail} onNotice={setNotice} onRequestAuth={requestAuth} onRenting={onRenting} onRented={onRented} />}
                     />
+                  </div>
+                )}
+
+                {rentalsOpen && (
+                  <div className={styles.kLayer} inert={overlay !== null || distribution !== null || authVisible}>
+                    <KioskRentals films={catalogue} onWatch={(filmId) => openPlayer(filmId)} onBack={() => setRentalsOpen(false)} />
                   </div>
                 )}
 

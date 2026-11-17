@@ -391,3 +391,11 @@ test('DISTRIBUTION: le panneau « prête » ne bloque jamais la borne', () => {
   assert.ok(!/if \(!film\) return null/.test(view), 'un film absent du catalogue ne doit pas laisser une distribution invisible');
   assert.ok(view.includes("'Titre indisponible'"), 'titre de repli');
 });
+test('DISTRIBUTION: « Mes locations » liste les locations en cours', () => {
+  const src = readText(path.join(ROOT, 'src/components/kiosk/KioskRentals.tsx'));
+  for (const copy of ['Mes locations', 'Aucune location en cours.', 'Regarder', 'Retour']) assert.ok(src.includes(copy), copy);
+  assert.ok(src.includes('rentalRows'), 'les lignes viennent de la logique testée');
+  assert.ok(src.includes('clearInterval'), 'le minuteur est nettoyé');
+  const view = readText(path.join(ROOT, 'src/components/kiosk/KioskView.tsx'));
+  assert.ok(view.includes('<KioskRentals'), 'monté par la borne');
+});
