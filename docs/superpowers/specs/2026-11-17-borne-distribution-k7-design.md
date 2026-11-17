@@ -2,6 +2,8 @@
 
 - **Date** : 17/11/2026
 - **Statut** : relu par un constructeur neuf, **validé par Rusmir le 17/11/2026** (« je valide le tout »)
+- **Avancement** : livraison 1 (sans vidéo) codée le 17/11/2026 — plan
+  `docs/superpowers/plans/2026-11-17-borne-distribution-livraison-1.md` ; livraison 2 en attente du lot 3.
 - **Base** : branche `feat/borne-location` (HEAD `953ca0d`) et l'essai Blender du lot 3
   (`.superpowers/lot3-essai/`, hors dépôt)
 - **Document parent** : `2026-11-16-borne-location-design.md` — ses décisions restent valables ; celui-ci

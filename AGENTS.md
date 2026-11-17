@@ -554,6 +554,17 @@ Règles à ne pas casser — chacune a son test dans `tests/domain/kiosk-*.test.
   (`overscroll-behavior-y: none` sur html et body, posé par `KioskView` le temps de la borne —
   une page rechargée a quitté la borne), menu de l'appui long (sauf champs et phrase de
   récupération).
+- **Après « LOUER » confirmé, la borne distribue la K7** (`KioskDistribution`, document
+  `docs/superpowers/specs/2026-11-17-borne-distribution-k7-design.md`, validé par Rusmir le
+  17/11/2026). La location est enregistrée **avant** tout : « Veuillez patienter » pendant l'appel au
+  serveur (sans bouton, le geste retour n'y fait rien), puis le panneau « Votre K7 est prête » —
+  « Regarder », « Sur la TV », « Plus tard », « Mes locations » (`KioskRentals`). Un refus du serveur
+  garde son message d'avant, sans panneau. « Sur la TV » passe par `openPlayerOnTv` : le drapeau
+  `castOnOpen` (jamais persisté) demande au lecteur de lancer son propre parcours Cast à
+  l'ouverture (`shouldStartCastOnOpen`) ; le panneau précharge le SDK pour que la demande de
+  session tienne dans l'activation de l'appui ; sur Apple (AirPlay), le lecteur s'ouvre
+  normalement. La livraison 2 — robot, carter, afficheur et vidéo de 8 s, avec le lot 3 — viendra
+  s'insérer entre l'attente et le panneau.
 - **Sur téléphone, la hauteur de l'écran se répartit d'après sa taille réelle** (`phoneLayout`,
   validé par Rusmir le 17/11/2026 sur son Pixel 9a). `KioskView` mesure l'écran de la borne
   (`ResizeObserver`) et pose les variables (`phoneLayoutVars`) ; l'écran 2:3 du PC garde sa
