@@ -80,8 +80,14 @@
 >   par page ; sous « LOUER », la seule bande de jaquettes, trois à la fois — **le tri (de A à Z,
 >   par date) est retiré de la borne** ; texte du résumé +2 px. Rejeté par lui : le cadre « En bref »
 >   feuilleté à points (« aucun écran à l'époque ne possédait ce type de transition ») et l'écran
->   étiré sur toute la hauteur (marge à garder pour la barre du navigateur). En attente : la fiche
->   détaillée d'un film (rubriques, bande-annonce).
+>   étiré sur toute la hauteur (marge à garder pour la barre du navigateur).
+> - **Fiche détaillée d'un film (17/11/2026).** **[R]** Fait **[C]** : bouton « (i) Fiche » à côté du
+>   titre, six rubriques dans la colonne de gauche, données TMDB à la volée (cache, rien en base),
+>   « À voir aussi » dans nos rayons, **bandes-annonces sans publicité** (Allociné / Dailymotion,
+>   récupérées par le serveur et jouées par la borne — jamais de lecteur YouTube), jaquette de
+>   l'ardoise 10 % plus grande. Défauts de dalle de 2007 ajoutés : fourmillement visible, allumage
+>   du rétroéclairage, fuites de lumière, rémanence, animations à 25 i/s, angle de vue piloté par
+>   l'inclinaison du téléphone. Rejeté par lui : le bandeau « Fiche du film » sur la jaquette.
 > - **Tarif** : l'affichage suit ce que le serveur facture. **Dates du serveur** : lues en UTC.
 >   Les deux validés. **[R]**
 > - **§ 5, bouton provisoire sur mobile** : il part tel quel, on ajustera en voyant la version

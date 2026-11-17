@@ -70,7 +70,7 @@ d'un container arrêté ne bouge pas).
 app/
 ├── page.tsx                 # Dynamic import de src/App (ssr: false)
 ├── layout.tsx               # Root layout — précharge les seules images de la devanture (l'intérieur attend qu'elle soit affichée)
-└── api/                     # 40 routes App Router (table complète plus bas)
+└── api/                     # 47 routes App Router (table complète plus bas)
 proxy.ts                     # CSRF Origin/Referer sur /api/* non-GET, bypass x-api-key (ex-middleware.ts)
 instrumentation.ts           # Boot : cleanup scheduler, Radarr poller, recoverMediaPipeline, Langfuse
 
@@ -160,6 +160,9 @@ Notes d'infra qui ont coûté cher :
 | `GET / POST` | `/api/me/weekly-bonus` | session | Statut + claim bonus hebdo |
 | `GET` | `/api/films` | publique | Liste films |
 | `GET` | `/api/films/[tmdbId]` | mixte | Détail + statut de location + `has_vf`/`has_vo` |
+| `GET` | `/api/films/[tmdbId]/extras` | publique | Fiche détaillée de la borne : accroche, public, sortie, pays, équipe, note (TMDB, cache 30 j) |
+| `GET` | `/api/films/[tmdbId]/related` | publique | « À voir aussi » : films de nos rayons (même réalisateur, acteurs en commun) |
+| `GET` | `/api/films/[tmdbId]/trailer/status` · `/trailer` | publique | Bande-annonce sans publicité : état (lance sa récupération) · fichier MP4 (plages d'octets) |
 | `GET` | `/api/films/aisle/[aisle]` | publique | Films par rayon |
 | `GET` | `/api/films/genre/[slug]` | publique | Films par genre |
 | `GET` | `/api/films/desk-display` | publique | 3 derniers retours (comptoir) |
@@ -506,9 +509,11 @@ Règles à ne pas casser — chacune a son test dans `tests/domain/kiosk-*.test.
   fiche qui tombe au **noir** vers les bords, pas un aplat bleu ; les cadres ne sont pas remplis
   de bleu. Ce dégradé est quantifié sur 6 bits (`--k-bg-stops`, liste produite par script) et
   `.kFrc` fait fourmiller l'image : un semis (`public/kiosk/lcd-frc.png`, une cellule par pixel
-  physique, amplitude d'UN cran de 6 bits) qui saute de place trente fois par seconde — seule une translation
-  est animée, en pourcentages d'un porteur de 96 pixels physiques pour retomber sur des cellules
-  entières. C'est une
+  de la DALLE SIMULÉE — un pas de la grille, `--k-lcd-n` pixels physiques —, amplitude d'un cran
+  de 6 bits) qui saute de place trente fois par seconde — seule une translation est animée, en
+  pourcentages d'un porteur de 96 cellules pour retomber sur des cellules entières. Validé par
+  Rusmir le 17/11 (« le bon compromis ») : avec une cellule par pixel physique et un demi-cran, il
+  était devenu invisible sur le Pixel (4 niveaux d'écart au plus entre deux instants). C'est une
   simulation des défauts VISIBLES : quantifier réellement les jaquettes demanderait un filtre ou
   un canvas, exclus ici. **Typographie, mesurée sur la photo de référence** (passe de design demandée par Rusmir le
   16/11) : Big Shoulders Display pour les libellés (onglets, boutons, titres ;
@@ -561,6 +566,40 @@ Règles à ne pas casser — chacune a son test dans `tests/domain/kiosk-*.test.
   hauteur (5:9) ne change pas : il garde de la marge pour la barre du navigateur. En largeur, en
   revanche, la borne prend tout (cadre de 6 px) ; la fente et la vitrine du dessous ne prennent
   que la hauteur qui reste.
+- **Fiche détaillée d'un film** (`KioskDetail`, validée par Rusmir le 17/11/2026). Elle s'ouvre par
+  le bouton « (i) Fiche » à droite du titre — un bandeau posé sur la jaquette ne se lisait pas comme
+  un bouton — et par la jaquette. La colonne de gauche y porte six rubriques (`DETAIL_TABS` :
+  Résumé, Distribution, Équipe, Avis, Bande-annonce, À voir aussi), l'ardoise reste en haut
+  (`KioskSlate`, commune au parcours ; PUBLIC à la place de RAYON quand TMDB donne la
+  classification), la rubrique prend tout le cadre du dessous, la disponibilité y reste en tête, un
+  triangle signale un texte plus long que le cadre ; « Retour » et « LOUER » sont au pied de l'écran.
+  Données : la base (rôles, stock), `/api/films/[tmdbId]/extras` (TMDB, gardé 30 jours en mémoire
+  puis sur disque dans `TMDB_CACHE_DIR`, rien en base), `/related` (nos rayons ; les suggestions de
+  TMDB ne tombaient sur aucun de nos films), `/api/reviews`. Geste retour : la bande-annonce
+  s'arrête et revient au résumé, puis la fiche se ferme (`close-trailer`, `close-detail`). Sur le
+  parcours, le bouton « (i) Fiche » fait 12,7cqw et le corps du titre suit la place qu'il lui laisse
+  (`titleScale(title, TITLE_W_WITH_INFO)`) ; la jaquette de l'ardoise est 10 % plus grande dans la
+  limite des valeurs au feutre de gauche (`POSTER_MAX_W`), son filet « TITRE » s'arrêtant avant elle.
+- **Aucune publicité, donc aucun lecteur vidéo tiers dans la borne** (Rusmir, 17/11/2026 : « on ne
+  veut absolument pas de pub […] hors de question de faire ça aux utilisateurs »). Le lecteur intégré
+  de YouTube peut diffuser des publicités, et c'est la chaîne qui en décide ; un test refuse tout
+  `<iframe>`, YouTube ou Dailymotion sous `kiosk/`. Les bandes-annonces viennent d'**Allociné**
+  (VF le plus souvent), qui les héberge sur Dailymotion : le serveur (`lib/trailers.ts`) trouve la
+  fiche Allociné par Wikidata (TMDB P4947 → AlloCiné P1265), choisit VF > VOST > VO, prend le flux
+  « 480 » de la playlist HLS et le copie en MP4 par ffmpeg, déjà dans l'image — à la première
+  ouverture de la fiche, une récupération à la fois, échec retenu 24 h. Gardées dans
+  `TRAILER_CACHE_DIR`, sinon `MEDIA_FILMS_PATH/.bandes-annonces` (pas sous `.next`, que le
+  déploiement efface), et jouées par un `<video>` dans l'écran. YouTube refuse tout téléchargement
+  depuis ce réseau (« Sign in to confirm you're not a bot », 17/11/2026, même avec yt-dlp à jour).
+  Estimation pour le catalogue : environ 3,6 Go (11,4 Mo en moyenne sur 20 films, 11 en VF).
+- **Défauts d'une dalle de 2007, simulés** (validés par Rusmir le 17/11/2026) : allumage des tubes du
+  rétroéclairage à l'ouverture (`.kWarm`, 2,8 s, retiré ensuite) ; fuites de lumière aux coins et
+  nuages, visibles sur le sombre seulement (`.screen::before`) ; rémanence de 90 ms sur ce qui change
+  à l'écran (`.kRise`) ; bande tournée par les flèches à 25 images par seconde
+  (`steppedScroll`, calage suspendu le temps du mouvement) ; angle de vue piloté par l'inclinaison
+  du téléphone (`viewingAngle`, `followBaseline` : délavée vue d'en dessus, assombrie d'en
+  dessous, teinte de côté, reflet qui glisse ; zone morte 4°, plein effet à 60°, retour « de face »
+  en 8 s) — rien sur PC ni sur iPhone (autorisation), ni pour qui demande moins de mouvement.
 - **La garde du geste retour est testée, et son retrait d'entrée est différé.** `useBackGuard`
   délègue à `src/hooks/back-guard-stack.ts` (sans React ni `window` ; tests
   `tests/domain/back-guard.test.mjs`). Une garde refermée par l'interface laisse une entrée
@@ -764,6 +803,8 @@ régressions constatées lors des audits.
 |---|---|
 | `DOMAIN` / `SUBDOMAIN` / `STORAGE_SUBDOMAIN` | Domaines Traefik |
 | `TMDB_API_KEY` / `NEXT_PUBLIC_TMDB_API_KEY` | TMDB serveur / client |
+| `TMDB_CACHE_DIR` | Cache disque des données TMDB de la fiche détaillée (défaut `.tmdb-cache/`) |
+| `TRAILER_CACHE_DIR` | Bandes-annonces de la borne (défaut `MEDIA_FILMS_PATH/.bandes-annonces`, sinon `.trailer-cache/`) |
 | `HMAC_SECRET` | Signature des cookies |
 | `API_SECRET` | Clé API pour tests automatisés (`x-api-key`) |
 | `DATABASE_PATH` | Chemin SQLite (`/data/zone.db`) |
