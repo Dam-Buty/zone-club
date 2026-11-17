@@ -456,3 +456,39 @@ test('DALLE: l\'angle de vue se répartit jusqu\'à 60°, et la position de face
   const b = K.followBaseline(0, 10, 8000);
   assert.ok(Math.abs(b - 10 * (1 - Math.exp(-1))) < 1e-9, 'constante de temps par défaut : 8 s');
 });
+
+// ===== Distribution de la K7, livraison 1 (spec 2026-11-17, § 7) =====
+const H = 3600_000, D = 24 * H, M = 60_000;
+test('DISTRIBUTION: échéance du panneau « Votre K7 est prête »', () => {
+  const t = Date.UTC(2026, 10, 19, 17, 42);
+  assert.equal(K.readyUntilText(t, 'Europe/Paris'), 'À rendre avant le 19 novembre à 18:42');
+});
+test('DISTRIBUTION: temps restant d\'une location', () => {
+  const now = Date.UTC(2026, 10, 17, 12, 0);
+  assert.equal(K.timeLeftLabel(now + 2 * D + 4 * H + 10 * M, now), 'encore 2 j 4 h');
+  assert.equal(K.timeLeftLabel(now + 2 * D + 20 * M, now), 'encore 2 j');
+  assert.equal(K.timeLeftLabel(now + 3 * H + 5 * M, now), 'encore 3 h 05');
+  assert.equal(K.timeLeftLabel(now + 42 * M, now), 'encore 42 min');
+  assert.equal(K.timeLeftLabel(now + 20_000, now), 'encore 1 min');
+  assert.equal(K.timeLeftLabel(now, now), 'expirée');
+  assert.equal(K.timeLeftLabel(now - H, now), 'expirée');
+});
+test('DISTRIBUTION: lignes de « Mes locations », la plus proche de l\'échéance d\'abord', () => {
+  const now = 0;
+  const rows = K.rentalRows([{ filmId: 2, expiresAt: 5 * H }, { filmId: 9, expiresAt: 2 * H }],
+    [{ id: 2, title: 'Get Out' }], now);
+  assert.deepEqual(rows.map(r => r.filmId), [9, 2]);
+  assert.equal(rows[0].title, 'Titre indisponible');
+  assert.equal(rows[1].title, 'Get Out');
+  assert.equal(rows[1].timeLeft, 'encore 5 h 00');
+  assert.deepEqual(K.rentalRows([], [], now), []);
+});
+test('DISTRIBUTION: geste retour — rien pendant l\'attente, ferme le panneau puis la liste', () => {
+  const base = { playerOpen: false, noticeOpen: false, noticeClosable: true, authOpen: false, phrasePending: false, searchOpen: false };
+  assert.equal(K.kioskBackAction({ ...base, waiting: true }), 'none');
+  assert.equal(K.kioskBackAction({ ...base, waiting: true, readyOpen: true }), 'none');
+  assert.equal(K.kioskBackAction({ ...base, readyOpen: true, rentalsOpen: true }), 'close-ready');
+  assert.equal(K.kioskBackAction({ ...base, rentalsOpen: true, detailOpen: true }), 'close-rentals');
+  assert.equal(K.kioskBackAction({ ...base, playerOpen: true, readyOpen: true }), 'close-player');
+  assert.equal(K.kioskBackAction({ ...base, noticeOpen: true, waiting: true }), 'close-notice');
+});

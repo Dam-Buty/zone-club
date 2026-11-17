@@ -327,6 +327,49 @@ export function formatUntil(expiresAt: number, timeZone?: string): string {
   });
 }
 
+// ===== Distribution de la K7 =====
+//
+// Après « LOUER » confirmé : « Veuillez patienter », puis le panneau « Votre K7 est prête » et l'écran
+// « Mes locations » (docs/superpowers/specs/2026-11-17-borne-distribution-k7-design.md, § 7).
+
+/** « À rendre avant le 19 novembre à 18:42 ». `timeZone` ne sert qu'aux tests. */
+export function readyUntilText(expiresAt: number, timeZone?: string): string {
+  return `À rendre avant le ${formatUntil(expiresAt, timeZone)}`;
+}
+
+/** Temps restant d'une location : « encore 2 j 4 h », « encore 3 h 05 », « encore 42 min », « expirée ». */
+export function timeLeftLabel(expiresAt: number, now: number): string {
+  const ms = expiresAt - now;
+  if (ms <= 0) return 'expirée';
+  const minutes = Math.floor(ms / 60_000);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+  if (days >= 1) {
+    const h = hours - days * 24;
+    return h > 0 ? `encore ${days} j ${h} h` : `encore ${days} j`;
+  }
+  if (hours >= 1) return `encore ${hours} h ${String(minutes - hours * 60).padStart(2, '0')}`;
+  return `encore ${Math.max(1, minutes)} min`;
+}
+
+export type KioskRentalRow = { filmId: number; title: string; timeLeft: string; expiresAt: number };
+
+/** Lignes de « Mes locations » : la plus proche de son échéance d'abord. */
+export function rentalRows(
+  rentals: ReadonlyArray<{ filmId: number; expiresAt: number }>,
+  films: ReadonlyArray<Pick<Film, 'id' | 'title'>>,
+  now: number,
+): KioskRentalRow[] {
+  return rentals
+    .map((r) => ({
+      filmId: r.filmId,
+      title: films.find((f) => f.id === r.filmId)?.title ?? 'Titre indisponible',
+      timeLeft: timeLeftLabel(r.expiresAt, now),
+      expiresAt: r.expiresAt,
+    }))
+    .sort((a, b) => a.expiresAt - b.expiresAt);
+}
+
 // ===== Connexion =====
 
 /**
@@ -359,14 +402,24 @@ export type { AccountFormMode as KioskAuthMode } from '../../utils/account-rules
 
 // ===== Geste retour =====
 
-export type KioskBackAction = 'none' | 'close-player' | 'close-notice' | 'cancel-auth' | 'close-trailer' | 'close-detail' | 'close-search';
+export type KioskBackAction =
+  | 'none'
+  | 'close-player'
+  | 'close-notice'
+  | 'close-ready'
+  | 'close-rentals'
+  | 'cancel-auth'
+  | 'close-trailer'
+  | 'close-detail'
+  | 'close-search';
 
 /**
  * Ce que fait le geste retour (ou le bouton retour du navigateur) dans la borne : il ferme ce
  * qui est ouvert au-dessus des rayons, du plus haut au plus bas. À la racine il ne fait rien —
  * on ne sort de la borne que par « quitter ». Ne se ferment pas d'un geste : la phrase de
- * récupération (elle ne se retrouve nulle part ailleurs) et un message sans fermeture
- * (« Catalogue indisponible », qui porte ses propres boutons).
+ * récupération (elle ne se retrouve nulle part ailleurs), un message sans fermeture
+ * (« Catalogue indisponible », qui porte ses propres boutons) et « Veuillez patienter » (l'appel
+ * au serveur qui enregistre la location ne s'annule pas).
  */
 export function kioskBackAction(s: {
   playerOpen: boolean;
@@ -379,9 +432,18 @@ export function kioskBackAction(s: {
   detailOpen?: boolean;
   /** Sa bande-annonce est affichée : le geste l'arrête et ramène au résumé, la fiche reste ouverte. */
   trailerOpen?: boolean;
+  /** « Veuillez patienter » : la location est en route vers le serveur. */
+  waiting?: boolean;
+  /** Le panneau « Votre K7 est prête » est affiché. */
+  readyOpen?: boolean;
+  /** L'écran « Mes locations » est ouvert. */
+  rentalsOpen?: boolean;
 }): KioskBackAction {
   if (s.playerOpen) return 'close-player';
   if (s.noticeOpen) return s.noticeClosable ? 'close-notice' : 'none';
+  if (s.waiting) return 'none';
+  if (s.readyOpen) return 'close-ready';
+  if (s.rentalsOpen) return 'close-rentals';
   if (s.phrasePending) return 'none';
   if (s.authOpen) return 'cancel-auth';
   if (s.detailOpen) return s.trailerOpen ? 'close-trailer' : 'close-detail';
