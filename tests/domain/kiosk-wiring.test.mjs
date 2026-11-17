@@ -363,3 +363,31 @@ test('DALLE: allumage, rémanence, cadence de 25 i/s et angle de vue sont branch
   assert.ok(browse.includes('steppedScroll(') && !browse.includes("behavior: smooth ? 'smooth'"), 'les flèches tournent la bande à 25 i/s, pas en défilement fluide');
   assert.ok(browse.includes('kRise'), 'rémanence au changement de film');
 });
+
+// ===== Distribution de la K7, livraison 1 (spec 2026-11-17) =====
+test('DISTRIBUTION: la location réussie mène au panneau « prête », pas au message d\'avant', () => {
+  const src = readText(path.join(ROOT, 'src/components/kiosk/KioskAction.tsx'));
+  assert.ok(!src.includes('Location enregistrée'), 'l\'ancien message disparaît');
+  const rentNow = src.slice(src.indexOf('const rentNow'), src.indexOf('const press'));
+  assert.ok(rentNow.indexOf('onRenting(film.id)') !== -1 && rentNow.indexOf('onRenting(film.id)') < rentNow.indexOf('rentFlow('), 'l\'attente s\'affiche avant l\'appel');
+  assert.ok(rentNow.indexOf('onRenting(null)') !== -1 && rentNow.indexOf('onRenting(null)') < rentNow.indexOf("status === 'error'"), 'l\'attente se retire avant toute erreur');
+  assert.ok(rentNow.lastIndexOf('onRented(film.id)') > rentNow.indexOf("status === 'error'"), 'le panneau seulement après le cas d\'erreur');
+});
+test('DISTRIBUTION: pendant l\'attente la barre du haut est inerte et le panneau précharge le Cast', () => {
+  const view = readText(path.join(ROOT, 'src/components/kiosk/KioskView.tsx'));
+  assert.match(view, /className=\{styles\.kTop\} inert=\{[^}]*distribution/, 'barre du haut inerte pendant la distribution');
+  assert.ok(view.includes('openPlayerOnTv'), '« Sur la TV »');
+  const dist = readText(path.join(ROOT, 'src/components/kiosk/KioskDistribution.tsx'));
+  for (const copy of ['Veuillez patienter', 'Votre K7 est prête', 'Regarder', 'Sur la TV', 'Mes locations']) {
+    assert.ok(dist.includes(copy), copy);
+  }
+  assert.ok(dist.includes('preloadCastSdk'), 'SDK préchargé à l\'affichage du panneau');
+  assert.ok(!/\bdisabled\b/.test(dist), 'aucun bouton grisé');
+});
+test('DISTRIBUTION: le panneau « prête » ne bloque jamais la borne', () => {
+  const dist = readText(path.join(ROOT, 'src/components/kiosk/KioskDistribution.tsx'));
+  assert.ok(dist.includes('Plus tard'), 'une sortie sans rien lancer');
+  const view = readText(path.join(ROOT, 'src/components/kiosk/KioskView.tsx'));
+  assert.ok(!/if \(!film\) return null/.test(view), 'un film absent du catalogue ne doit pas laisser une distribution invisible');
+  assert.ok(view.includes("'Titre indisponible'"), 'titre de repli');
+});

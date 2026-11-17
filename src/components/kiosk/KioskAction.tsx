@@ -3,7 +3,7 @@ import { useStore, useCredits } from '../../store';
 import { RENTAL_COSTS, type Film } from '../../types';
 import { getRentalTier } from '../../utils/rental-tier';
 import type { KioskNoticeSpec } from './KioskNotice';
-import { actionLabel, confirmRentText, creditsLabel, formatUntil, offersRelogin, rentAction, rentFlow } from './kiosk-logic';
+import { actionLabel, confirmRentText, creditsLabel, offersRelogin, rentAction, rentFlow } from './kiosk-logic';
 import styles from './KioskBrowse.module.css';
 
 // Le bouton d'action de la fiche. Il ne se grise jamais : quand il ne peut pas louer, il le dit
@@ -32,6 +32,10 @@ interface KioskActionProps {
   onNotice: (notice: KioskNoticeSpec | null) => void;
   /** Ouvre la connexion de la borne, puis appelle `then` une fois le visiteur connecté. */
   onRequestAuth: (then: () => void) => void;
+  /** « Veuillez patienter » : le film dont la location part au serveur, puis `null` à sa réponse. */
+  onRenting: (filmId: number | null) => void;
+  /** La location est enregistrée : la borne distribue la K7 (panneau « Votre K7 est prête »). */
+  onRented: (filmId: number) => void;
 }
 
 // Un verrou par film, partagé par tous les affichages du bouton : revenir sur une fiche pendant
@@ -46,7 +50,7 @@ function lockFor(filmId: number): { busy: boolean } {
   return lock;
 }
 
-export function KioskAction({ film, detail, onNotice, onRequestAuth }: KioskActionProps) {
+export function KioskAction({ film, detail, onNotice, onRequestAuth, onRenting, onRented }: KioskActionProps) {
   const isAuthenticated = useStore((state) => state.isAuthenticated);
   const isRented = useStore((state) => state.rentals.some((r) => r.filmId === film.id));
   const credits = useCredits();
@@ -71,6 +75,7 @@ export function KioskAction({ film, detail, onNotice, onRequestAuth }: KioskActi
     const lock = lockFor(film.id);
     if (lock.busy) return;
     setRentingId(film.id);
+    onRenting(film.id);
     const result = await rentFlow(
       {
         rent: () => state.rentFilm(film.id),
@@ -81,6 +86,8 @@ export function KioskAction({ film, detail, onNotice, onRequestAuth }: KioskActi
     );
     if (result.status === 'busy') return;
     setRentingId((current) => (current === film.id ? null : current));
+    // L'attente se retire avant tout : un refus montre son message, une réussite le panneau.
+    onRenting(null);
 
     if (result.status === 'error') {
       // Le refus du serveur est montré tel quel. « Se reconnecter » n'est proposé que pour une
@@ -104,19 +111,7 @@ export function KioskAction({ film, detail, onNotice, onRequestAuth }: KioskActi
       return;
     }
 
-    const rental = useStore.getState().getRental(film.id);
-    onNotice({
-      title: 'Location enregistrée',
-      body: rental ? `${film.title} est à vous jusqu'au ${formatUntil(rental.expiresAt)}.` : `${film.title} est à vous.`,
-      primary: {
-        label: 'Regarder',
-        onPress: () => {
-          close();
-          useStore.getState().openPlayer(film.id);
-        },
-      },
-      secondary: { label: 'Plus tard', onPress: close },
-    });
+    onRented(film.id);
   };
 
   // L'état est relu dans le magasin au moment de l'appui : après une connexion, cette fonction

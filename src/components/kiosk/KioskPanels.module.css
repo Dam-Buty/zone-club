@@ -338,6 +338,62 @@ span.kSearchPoster {
   font-size: 5.1cqw;
 }
 
+/* ----- distribution de la K7 : attente, puis « Votre K7 est prête » ----- */
+
+/* Barre de progression d'époque : des pavés qui avancent par crans, à la cadence de la borne. */
+.kWaitBar {
+  margin: 4.4cqw auto 0;
+  width: 60%;
+  height: 3.2cqw;
+  border: 0.4cqw solid var(--k-frame);
+  border-radius: 0.6cqw;
+  background:
+    repeating-linear-gradient(90deg, #ffb347 0 4cqw, transparent 4cqw 5.2cqw) 0 0 / 31.2cqw 100% no-repeat,
+    #041a52;
+  animation: kWaitStep 2.4s steps(6) infinite;
+}
+
+@keyframes kWaitStep {
+  from { background-size: 0 100%; }
+  to { background-size: 31.2cqw 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kWaitBar { animation: none; background-size: 31.2cqw 100%; }
+}
+
+.kReadyFilm {
+  margin-top: 2.8cqw;
+  font-size: 6.6cqw;
+  font-weight: 800;
+  line-height: 1.12;
+  overflow-wrap: anywhere;
+  color: #fff;
+  text-shadow: var(--k-text-shadow);
+}
+
+/* « Plus tard » et « Mes locations » : des boutons qui se lisent comme des liens, mais gardent une
+   zone d'appui d'au moins 44 px de haut (KIOSK_MIN_PX.tab). */
+.kReadyLinks {
+  margin-top: 3.4cqw;
+  display: flex;
+  justify-content: space-between;
+  gap: 2.4cqw;
+}
+
+.kReadyLink {
+  min-height: max(44px, 10cqw);
+  padding: 0 3cqw;
+  font-family: var(--k-font-text);
+  font-size: 4.7cqw;
+  font-weight: 700;
+  color: #9fe3ff;
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+  background: none;
+  border: 0;
+}
+
 /* ----- texte courant -----
    Les libellés sont dans la police étroite de l'écran ; ce qui se LIT ou se SAISIT (champs,
    consignes, messages) est dans sa version condensée ordinaire, plus confortable. */

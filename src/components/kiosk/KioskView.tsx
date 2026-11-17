@@ -7,6 +7,7 @@ import { KioskAction, type KioskFilmDetail } from './KioskAction';
 import { KioskAuth } from './KioskAuth';
 import { KioskBrowse } from './KioskBrowse';
 import { KioskDetail } from './KioskDetail';
+import { KioskReady, KioskWaiting } from './KioskDistribution';
 import { KioskNotice, type KioskNoticeSpec } from './KioskNotice';
 import { KioskSearch } from './KioskSearch';
 import {
@@ -227,6 +228,8 @@ export function KioskView() {
   const logout = useStore((state) => state.logout);
   const isPlayerOpen = useStore((state) => state.isPlayerOpen);
   const closePlayer = useStore((state) => state.closePlayer);
+  const openPlayer = useStore((state) => state.openPlayer);
+  const openPlayerOnTv = useStore((state) => state.openPlayerOnTv);
   const credits = useCredits();
   const phoneLandscape = usePhoneLandscape();
   const density = useScreenDensity();
@@ -249,6 +252,16 @@ export function KioskView() {
   const closeDetail = useCallback(() => setDetailOpen(false), []);
   // Un seul message à la fois dans l'écran.
   const [notice, setNotice] = useState<KioskNoticeSpec | null>(null);
+
+  // ----- Distribution de la K7 (spec 2026-11-17) -----
+  // « Veuillez patienter » pendant l'appel au serveur, puis le panneau « Votre K7 est prête ».
+  const [distribution, setDistribution] = useState<{ phase: 'waiting' | 'ready'; filmId: number } | null>(null);
+  const [rentalsOpen, setRentalsOpen] = useState(false);
+  const onRenting = useCallback((filmId: number | null) => {
+    setDistribution(filmId === null ? null : { phase: 'waiting', filmId });
+  }, []);
+  const onRented = useCallback((filmId: number) => setDistribution({ phase: 'ready', filmId }), []);
+  const closeReady = useCallback(() => setDistribution(null), []);
 
   // « quitter » est la SEULE sortie de la borne (avec ses deux relais : « Quitter » du message
   // « Catalogue indisponible » et de l'invitation à redresser le téléphone).
@@ -418,6 +431,9 @@ export function KioskView() {
     const action = kioskBackAction({
       playerOpen: isPlayerOpen,
       noticeOpen: overlay !== null,
+      waiting: distribution?.phase === 'waiting',
+      readyOpen: distribution?.phase === 'ready',
+      rentalsOpen,
       noticeClosable: catalog !== 'unavailable',
       authOpen,
       phrasePending: pendingPhrase !== null,
@@ -427,11 +443,13 @@ export function KioskView() {
     });
     if (action === 'close-player') closePlayer();
     else if (action === 'close-notice') closeNotice();
+    else if (action === 'close-ready') closeReady();
+    else if (action === 'close-rentals') setRentalsOpen(false);
     else if (action === 'cancel-auth') cancelAuth();
     else if (action === 'close-trailer') setDetailTab('resume');
     else if (action === 'close-detail') closeDetail();
     else if (action === 'close-search') closeSearch();
-    else if (overlay === null && !authVisible) setQuitHintTick((tick) => tick + 1);
+    else if (overlay === null && !authVisible && distribution === null) setQuitHintTick((tick) => tick + 1);
   };
   const guardArmed = useArmedAfterMount();
   const [trapArmed, setTrapArmed] = useState(true);
@@ -483,7 +501,7 @@ export function KioskView() {
           <div className={styles.bezel}>
             <div ref={screenRef} className={styles.ks} style={{ '--k-dpx': lcdDevicePixel(density), '--k-lcd-n': lcdPitchInDevicePixels(density) } as CSSProperties}>
               <div className={styles.screen} data-mode={mode} style={layoutVars}>
-                <div className={styles.kTop} inert={overlay !== null}>
+                <div className={styles.kTop} inert={overlay !== null || distribution !== null}>
                   <div className={styles.kLogo}>
                     VIDÉOCLUB<small>borne 24/7</small>
                   </div>
@@ -513,7 +531,7 @@ export function KioskView() {
                 {/* Sous la fiche détaillée, le parcours reste monté (rayon, page, position de la bande) mais caché. */}
                 <div
                   className={styles.kPane}
-                  inert={overlay !== null || authVisible || mode === 'search' || detailOpen}
+                  inert={overlay !== null || distribution !== null || authVisible || mode === 'search' || detailOpen}
                   style={detailOpen ? { visibility: 'hidden' } : undefined}
                 >
                   {catalog === 'loading' && (
@@ -532,14 +550,14 @@ export function KioskView() {
                       onSearch={() => setMode('search')}
                       onOpenDetail={openDetail}
                       actionSlot={(film) => (
-                        <KioskAction film={film} detail={currentDetail} onNotice={setNotice} onRequestAuth={requestAuth} />
+                        <KioskAction film={film} detail={currentDetail} onNotice={setNotice} onRequestAuth={requestAuth} onRenting={onRenting} onRented={onRented} />
                       )}
                     />
                   )}
                 </div>
 
                 {detailOpen && catalog === 'ready' && displayed && (
-                  <div className={styles.kLayer} inert={overlay !== null || authVisible}>
+                  <div className={styles.kLayer} inert={overlay !== null || distribution !== null || authVisible}>
                     <KioskDetail
                       film={displayed}
                       detail={currentDetail}
@@ -550,18 +568,42 @@ export function KioskView() {
                         setSelectedId(film.id);
                         setDetailTab('resume');
                       }}
-                      action={<KioskAction film={displayed} detail={currentDetail} onNotice={setNotice} onRequestAuth={requestAuth} />}
+                      action={<KioskAction film={displayed} detail={currentDetail} onNotice={setNotice} onRequestAuth={requestAuth} onRenting={onRenting} onRented={onRented} />}
                     />
                   </div>
                 )}
 
                 {mode === 'search' && catalog === 'ready' && (
-                  <div className={styles.kLayer} inert={overlay !== null || authVisible}>
+                  <div className={styles.kLayer} inert={overlay !== null || distribution !== null || authVisible}>
                     <KioskSearch films={catalogue} onPick={pickFromSearch} onBack={closeSearch} />
                   </div>
                 )}
 
                 {authVisible && <KioskAuth onDone={finishAuth} onCancel={cancelAuth} />}
+
+                {distribution?.phase === 'waiting' && <KioskWaiting />}
+                {distribution?.phase === 'ready' && (() => {
+                  const filmId = distribution.filmId;
+                  return (
+                    <KioskReady
+                      title={catalogue.find((f) => f.id === filmId)?.title ?? 'Titre indisponible'}
+                      expiresAt={useStore.getState().getRental(filmId)?.expiresAt ?? null}
+                      onWatch={() => {
+                        closeReady();
+                        openPlayer(filmId);
+                      }}
+                      onTv={() => {
+                        closeReady();
+                        openPlayerOnTv(filmId);
+                      }}
+                      onRentals={() => {
+                        closeReady();
+                        setRentalsOpen(true);
+                      }}
+                      onLater={closeReady}
+                    />
+                  );
+                })()}
 
                 {overlay && <KioskNotice {...overlay} />}
 
