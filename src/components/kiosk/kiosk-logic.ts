@@ -332,6 +332,12 @@ export function formatUntil(expiresAt: number, timeZone?: string): string {
 // Après « LOUER » confirmé : « Veuillez patienter », puis le panneau « Votre K7 est prête » et l'écran
 // « Mes locations » (docs/superpowers/specs/2026-11-17-borne-distribution-k7-design.md, § 7).
 
+/**
+ * Au-delà, « Veuillez patienter » rend la main : l'appel au serveur n'a pas de délai maximal, et
+ * pendant l'attente « Quitter » est inerte et le geste retour ne fait rien (revue du 17/11/2026).
+ */
+export const KIOSK_RENT_TIMEOUT_MS = 30_000;
+
 /** « À rendre avant le 19 novembre à 18:42 ». `timeZone` ne sert qu'aux tests. */
 export function readyUntilText(expiresAt: number, timeZone?: string): string {
   return `À rendre avant le ${formatUntil(expiresAt, timeZone)}`;

@@ -16,3 +16,13 @@ export function shouldStartCastOnOpen(i: {
 }): boolean {
   return i.isPlayerOpen && i.hasRental && !i.isApple && i.castOnOpen !== null && i.castOnOpen === i.currentPlayingFilm;
 }
+
+/**
+ * Appareil Apple dont le navigateur sait faire AirPlay — c'est-à-dire Safari : la TV y passe par
+ * AirPlay, pas par le Cast. Même règle que l'invite « Regarder sur TV » du lecteur (agent Apple ET
+ * AirPlay disponible), mais lue sur l'élément vidéo lui-même : l'état « AirPlay disponible » du lecteur
+ * est posé par un effet du commit d'ouverture, trop tard pour l'effet qui lance le Cast.
+ */
+export function appleAirPlay(userAgent: string, video: { webkitShowPlaybackTargetPicker?: unknown } | null): boolean {
+  return /(iPad|iPhone|iPod|Macintosh)/.test(userAgent) && typeof video?.webkitShowPlaybackTargetPicker === 'function';
+}

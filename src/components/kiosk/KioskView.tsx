@@ -20,6 +20,7 @@ import {
   filmsForTab,
   firstNonEmptyTab,
   followBaseline,
+  KIOSK_RENT_TIMEOUT_MS,
   hidesKioskInLandscape,
   kioskBackAction,
   lcdDevicePixel,
@@ -263,6 +264,30 @@ export function KioskView() {
   }, []);
   const onRented = useCallback((filmId: number) => setDistribution({ phase: 'ready', filmId }), []);
   const closeReady = useCallback(() => setDistribution(null), []);
+  // Un serveur muet ne doit pas enfermer le visiteur : au bout de KIOSK_RENT_TIMEOUT_MS, l'attente
+  // laisse place à un message qui mène à « Mes locations » (la location a pu aboutir) et à « Quitter ».
+  // Si la réponse arrive ensuite, le parcours normal reprend (panneau ou message d'erreur).
+  const waitingFilmId = distribution?.phase === 'waiting' ? distribution.filmId : null;
+  useEffect(() => {
+    if (waitingFilmId === null) return;
+    const id = window.setTimeout(() => {
+      setDistribution(null);
+      setNotice({
+        title: 'La borne ne répond pas',
+        body: 'La location a peut-être été enregistrée : vérifiez dans Mes locations.',
+        primary: {
+          label: 'Mes locations',
+          onPress: () => {
+            setNotice(null);
+            setRentalsOpen(true);
+          },
+        },
+        // La sortie de la borne, comme « quitter » (déclaré plus bas).
+        secondary: { label: 'Quitter', onPress: () => setScene('exterior') },
+      });
+    }, KIOSK_RENT_TIMEOUT_MS);
+    return () => window.clearTimeout(id);
+  }, [waitingFilmId, setScene]);
 
   // « quitter » est la SEULE sortie de la borne (avec ses deux relais : « Quitter » du message
   // « Catalogue indisponible » et de l'invitation à redresser le téléphone).

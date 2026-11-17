@@ -23,3 +23,18 @@ test('CAST: le drapeau est consommé une fois et jamais persisté', () => {
   assert.ok(player.includes('shouldStartCastOnOpen'), 'le lecteur consulte la règle');
   assert.ok(player.includes('clearCastOnOpen'), 'le lecteur consomme le drapeau');
 });
+// Revue finale : l'état « AirPlay disponible » du lecteur est posé par un effet du même commit que
+// l'ouverture — lu par l'effet de « Sur la TV », il valait encore false sur Apple. La détection se
+// fait donc sur l'élément vidéo lui-même.
+test('CAST: Apple se reconnaît sur l\'élément vidéo, pas sur un état du rendu précédent', async () => {
+  const { appleAirPlay } = await import('../../src/utils/cast-on-open.ts');
+  const iphone = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15';
+  const pixel = 'Mozilla/5.0 (Linux; Android 17; Pixel 9a) AppleWebKit/537.36 Chrome/157.0';
+  const airplay = { webkitShowPlaybackTargetPicker() {} };
+  assert.equal(appleAirPlay(iphone, airplay), true);
+  assert.equal(appleAirPlay(iphone, {}), false);        // Chrome sur Mac : pas d'AirPlay, il garde le Cast
+  assert.equal(appleAirPlay(pixel, airplay), false);
+  assert.equal(appleAirPlay(iphone, null), false);
+  const player = readText(path.join(process.cwd(), 'src/components/player/VHSPlayer.tsx'));
+  assert.ok(player.includes('appleAirPlay(navigator.userAgent, videoRef.current'), 'l\'effet lit l\'élément vidéo');
+});

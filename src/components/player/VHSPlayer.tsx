@@ -9,7 +9,7 @@ import { useGoogleCast, preloadCastSdk } from '../../hooks/useGoogleCast';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { useBackGuard } from '../../hooks/useBackGuard';
 import { buildCastSubtitleTracks, activeSubtitleId } from '../../utils/cast-subtitles';
-import { shouldStartCastOnOpen } from '../../utils/cast-on-open';
+import { appleAirPlay, shouldStartCastOnOpen } from '../../utils/cast-on-open';
 import styles from './VHSPlayer.module.css';
 
 const MIN_CONTENT_LENGTH = 500;
@@ -999,9 +999,10 @@ export function VHSPlayer() {
   // L'appui a eu lieu quelques centaines de millisecondes plus tôt ; l'activation par l'utilisateur
   // couvre encore la demande de session, à condition que le SDK soit déjà chargé (le panneau de la
   // borne le précharge). Sinon handleCastCurrentVideo retombe en pause, comme depuis son bouton.
-  // Apple (AirPlay, même règle que handleWatchOnTVFromPrompt) : rien ici, l'invite du lecteur s'en charge.
+  // Apple (AirPlay, même règle que handleWatchOnTVFromPrompt, lue sur l'élément : voir appleAirPlay) :
+  // rien ici, l'invite du lecteur s'en charge.
   useEffect(() => {
-    const isApple = typeof navigator !== 'undefined' && /(iPad|iPhone|iPod|Macintosh)/.test(navigator.userAgent) && isAirPlaySupported;
+    const isApple = typeof navigator !== 'undefined' && appleAirPlay(navigator.userAgent, videoRef.current as AirPlayVideoElement | null);
     if (!shouldStartCastOnOpen({ castOnOpen, currentPlayingFilm, isPlayerOpen, hasRental: Boolean(rental && videoUrl), isApple })) {
       // Sur Apple, ou si le lecteur s'est fermé, le drapeau ne doit pas survivre à cette ouverture.
       if (castOnOpen !== null && (!isPlayerOpen || isApple || castOnOpen !== currentPlayingFilm)) clearCastOnOpen();
@@ -1009,7 +1010,7 @@ export function VHSPlayer() {
     }
     clearCastOnOpen();
     void handleCastCurrentVideo();
-  }, [castOnOpen, currentPlayingFilm, isPlayerOpen, rental, videoUrl, isAirPlaySupported, clearCastOnOpen, handleCastCurrentVideo]);
+  }, [castOnOpen, currentPlayingFilm, isPlayerOpen, rental, videoUrl, clearCastOnOpen, handleCastCurrentVideo]);
 
   // Push notification subscription handler — aucun appelant, voir la note sur pushSubscribed en haut
   // du composant.

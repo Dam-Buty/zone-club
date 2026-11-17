@@ -399,3 +399,14 @@ test('DISTRIBUTION: « Mes locations » liste les locations en cours', () => {
   const view = readText(path.join(ROOT, 'src/components/kiosk/KioskView.tsx'));
   assert.ok(view.includes('<KioskRentals'), 'monté par la borne');
 });
+// Revue finale : l'appel au serveur n'a aucun délai maximal ; pendant l'attente « Quitter » est inerte
+// et le geste retour ne fait rien. Un serveur muet ne doit pas enfermer le visiteur.
+test('DISTRIBUTION: « Veuillez patienter » rend la main au bout de 30 s avec une sortie', async () => {
+  const K = await import('../../src/components/kiosk/kiosk-logic.ts');
+  assert.equal(K.KIOSK_RENT_TIMEOUT_MS, 30_000);
+  const view = readText(path.join(ROOT, 'src/components/kiosk/KioskView.tsx'));
+  const guard = view.slice(view.indexOf('KIOSK_RENT_TIMEOUT_MS)'), view.indexOf('KIOSK_RENT_TIMEOUT_MS)') + 1);
+  assert.ok(guard, 'un minuteur de garde sur la phase d\'attente');
+  const notice = view.slice(view.indexOf('La borne ne répond pas'), view.indexOf('La borne ne répond pas') + 700);
+  assert.ok(notice.includes('Mes locations') && notice.includes("setScene('exterior')"), 'le message mène à « Mes locations » et à « Quitter »');
+});
