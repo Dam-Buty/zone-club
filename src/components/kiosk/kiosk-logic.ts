@@ -126,51 +126,52 @@ export function creditsLabel(n: number): string {
 }
 
 /**
- * Largeur des signes dans la police des libellés (Sofia Sans Extra Condensed, graisse 700), en em,
+ * Largeur des signes dans la police des libellés (Big Shoulders Display, graisse 800), en em,
  * relevée sur le fichier de police et arrondie au centième supérieur. Sert à choisir le corps du
  * titre : compter les signes ne suffit pas, « Confessions d'un homme dangereux » et « Killers of
- * the Flower Moon » n'ont que six signes d'écart mais 38 % de largeur.
+ * the Flower Moon » n'ont que six signes d'écart mais 38 % de largeur. À REFAIRE si la police ou
+ * la graisse du titre change (les tests portent des largeurs mesurées qui le rappelleront).
  */
 const TITLE_GLYPH_EM: ReadonlyArray<readonly [number, string]> = [
-  [0.13, " "],
-  [0.17, "'j"],
-  [0.18, "ilîï"],
-  [0.2, "!():IJÎ"],
-  [0.21, "."],
-  [0.22, ",’"],
-  [0.27, "fr"],
-  [0.29, "/t"],
-  [0.31, "³"],
-  [0.32, "-"],
-  [0.33, "Lsz"],
-  [0.34, "1?"],
-  [0.35, "aàâä"],
-  [0.36, "Fcegkvxyçèéêë"],
-  [0.37, "257ETZbdopquÈÉÊôöùûü"],
-  [0.38, "3PShn"],
-  [0.39, "X«»"],
-  [0.4, "04689BY"],
-  [0.41, "ARÀÂ"],
-  [0.42, "KV"],
-  [0.43, "CÇ"],
-  [0.44, "&DGOQUÔ"],
-  [0.45, "HN"],
-  [0.48, "–"],
-  [0.51, "w"],
-  [0.53, "æ"],
-  [0.54, "M"],
-  [0.55, "m"],
-  [0.56, "œ"],
-  [0.57, "—"],
-  [0.58, "…"],
-  [0.59, "WŒ"],
+  [0.2, "'"],
+  [0.22, " IijlÎîï"],
+  [0.24, "!,.:’"],
+  [0.26, "1"],
+  [0.28, "()"],
+  [0.3, "³"],
+  [0.32, "f"],
+  [0.33, "rt"],
+  [0.36, "«»"],
+  [0.38, "FLz"],
+  [0.39, "/ETZxÈÉÊ"],
+  [0.41, "s"],
+  [0.42, "-vy"],
+  [0.43, "JYcekçèéêë"],
+  [0.44, "PX"],
+  [0.45, "7?ABRSaoÀÂàâäôö"],
+  [0.46, "2CGHKUVÇ"],
+  [0.47, "689DOQbdghnpquÔùûü"],
+  [0.48, "034"],
+  [0.49, "5"],
+  [0.51, "N"],
+  [0.52, "–"],
+  [0.59, "&"],
+  [0.64, "Œ"],
+  [0.66, "…"],
+  [0.67, "æ"],
+  [0.68, "œ"],
+  [0.7, "M"],
+  [0.71, "w"],
+  [0.72, "m"],
+  [0.74, "W"],
+  [0.85, "—"],
 ];
 const TITLE_GLYPH_LOOKUP = new Map<string, number>(TITLE_GLYPH_EM.flatMap(([em, glyphs]) => Array.from(glyphs, (glyph) => [glyph, em] as [string, number])));
 const TITLE_SPACE_EM = TITLE_GLYPH_LOOKUP.get(' ') ?? 0.2;
 /** Un signe absent de la table compte large : mieux vaut un titre un peu petit qu'un titre coupé. */
-const TITLE_UNKNOWN_EM = 0.6;
+const TITLE_UNKNOWN_EM = 0.7;
 
-/** Largeur estimée d'un titre, en em. Vérifiée sur les titres du catalogue : de 0,6 à 2,1 % au-dessus de la largeur réelle. */
+/** Largeur estimée d'un titre, en em. Vérifiée sur les titres du catalogue : de 0,4 à 1,6 % au-dessus de la largeur réelle. */
 export function titleWidthEm(title: string): number {
   let width = 0;
   for (const glyph of title.trim()) {
@@ -180,14 +181,14 @@ export function titleWidthEm(title: string): number {
 }
 
 /**
- * Corps du titre sur la fiche : le plus grand qui tient dans ses 60,8cqw. Grand (7,4cqw) jusqu'à
- * 7,9 em, moyen (6,1cqw) jusqu'à 9,6 em — une ligne dans les deux cas, à moins de 59cqw —, petit
+ * Corps du titre sur la fiche : le plus grand qui tient dans ses 60,8cqw. Grand (6cqw) jusqu'à
+ * 9,6 em, moyen (5cqw) jusqu'à 11,5 em — une ligne dans les deux cas, à moins de 59cqw —, petit
  * et sur deux lignes au-delà.
  */
 export function titleScale(title: string): 'lg' | 'md' | 'sm' {
   const width = titleWidthEm(title);
-  if (width <= 7.9) return 'lg';
-  return width <= 9.6 ? 'md' : 'sm';
+  if (width <= 9.6) return 'lg';
+  return width <= 11.5 ? 'md' : 'sm';
 }
 
 export function synopsisText(overview: string | null | undefined): string {

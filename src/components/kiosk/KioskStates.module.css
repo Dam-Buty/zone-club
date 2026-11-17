@@ -51,9 +51,9 @@
 
 .rotateTitle {
   margin: 0;
-  font-family: "Sofia Sans Extra Condensed", "DIN Condensed", "Arial Narrow", sans-serif-condensed, "Helvetica Neue", Arial, sans-serif;
-  font-size: 27px;
-  font-weight: 700;
+  font-family: "Big Shoulders Display", "DIN Condensed", "Arial Narrow", sans-serif-condensed, "Helvetica Neue", Arial, sans-serif;
+  font-size: 22px;
+  font-weight: 800;
   letter-spacing: 0.02em;
   color: #fff;
   text-shadow: 0 0 8px #c084ff, 0 0 16px #8b3dff;
@@ -74,9 +74,9 @@
   background: linear-gradient(180deg, #3db2d8 0%, #2590bd 55%, #1a79a5 100%);
   color: #fff;
   font: inherit;
-  font-family: "Sofia Sans Extra Condensed", "DIN Condensed", "Arial Narrow", sans-serif-condensed, "Helvetica Neue", Arial, sans-serif;
-  font-size: 19px;
-  font-weight: 600;
+  font-family: "Big Shoulders Display", "DIN Condensed", "Arial Narrow", sans-serif-condensed, "Helvetica Neue", Arial, sans-serif;
+  font-size: 16px;
+  font-weight: 700;
   cursor: pointer;
 }
 

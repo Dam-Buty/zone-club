@@ -15,7 +15,7 @@
 .kAuthBack,
 .kAuthLink,
 .kNoticeBtn {
-  font-weight: 600;
+  font-weight: 700;
   color: #fff;
   text-shadow: var(--k-text-shadow);
   border: 0.4cqw solid var(--k-edge-teal);
@@ -26,7 +26,7 @@
 
 .kAuthSubmit,
 .kNoticeBtnPrimary {
-  font-weight: 700;
+  font-weight: 800;
   color: #fff;
   text-shadow: var(--k-text-shadow);
   border: 0.4cqw solid var(--k-edge-orange);
@@ -53,7 +53,7 @@
 
 .kAuthBack {
   padding: 1.2cqw 3.2cqw 1.4cqw;
-  font-size: 5.2cqw;
+  font-size: 4.2cqw;
 }
 
 /* Le triangle du retour est dessiné, pas tiré d'une police de secours. */
@@ -70,8 +70,8 @@
 
 .kAuthTitle {
   margin-top: 4cqw;
-  font-size: 8.6cqw;
-  font-weight: 700;
+  font-size: 7cqw;
+  font-weight: 800;
   line-height: 1.1;
   color: #ffb347;
 }
@@ -137,7 +137,7 @@
   min-height: 12.5cqw;
   margin-top: 4.4cqw;
   padding: 1.2cqw 3cqw 1.4cqw;
-  font-size: 7.4cqw;
+  font-size: 6cqw;
 }
 
 .kAuthLinks {
@@ -151,7 +151,7 @@
   flex: 1 1 auto;
   min-height: 10cqw;
   padding: 1cqw 3cqw 1.2cqw;
-  font-size: 5.4cqw;
+  font-size: 4.4cqw;
 }
 
 .kAuthPhrase {
@@ -248,7 +248,7 @@
 /* Vignette de remplacement (un <span>, là où la jaquette est une <img>) : son format de ligne. */
 span.kSearchPoster {
   display: flex;
-  font-size: 1.9cqw;
+  font-size: 1.6cqw;
 }
 
 .kSearchText {
@@ -263,8 +263,8 @@ span.kSearchPoster {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  font-size: 6.2cqw;
-  font-weight: 700;
+  font-size: 5.1cqw;
+  font-weight: 800;
   color: #ffb347;
 }
 
@@ -299,8 +299,8 @@ span.kSearchPoster {
 }
 
 .kNoticeTitle {
-  font-size: 7.4cqw;
-  font-weight: 700;
+  font-size: 6cqw;
+  font-weight: 800;
   line-height: 1.1;
   color: #ffb347;
 }
@@ -326,7 +326,7 @@ span.kSearchPoster {
   flex: 1 1 34cqw;
   min-height: 11.5cqw;
   padding: 1.2cqw 3cqw 1.4cqw;
-  font-size: 6.2cqw;
+  font-size: 5.1cqw;
 }
 
 /* ----- texte courant -----

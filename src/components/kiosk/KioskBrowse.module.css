@@ -4,8 +4,9 @@
 
 /* ----- colonne des rayons -----
    Comme sur la référence : des onglets collés les uns aux autres dans un cadre clair, séparés par
-   un simple filet. Le libellé le plus long (« Nouveautés », 3,48 em) occupe 83 % de la largeur
-   utile, comme « New Releases » sur la photo. Seul l'onglet actif se détache, blanc à texte
+   un simple filet. La capitale des libellés fait 43 % de la hauteur de l'onglet, et le plus long
+   (« Nouveautés », 4,02 em) garde 1,6cqw de marge de chaque côté. Pour grossir les libellés on
+   change le corps (--k-tab-size), jamais la hauteur des onglets (--k-tab-h). Seul l'onglet actif se détache, blanc à texte
    orange — par sa couleur, sans rien recouvrir. */
 
 .kSide {
@@ -30,7 +31,7 @@
   justify-content: center;
   white-space: nowrap;
   font-size: var(--k-tab-size);
-  font-weight: 600;
+  font-weight: 700;
   line-height: 1;
   color: var(--k-ink);
   text-shadow: var(--k-text-shadow);
@@ -180,8 +181,8 @@
   text-align: center;
   overflow-wrap: anywhere;
   font-family: var(--k-font);
-  font-weight: 600;
-  font-size: 4.4cqw;
+  font-weight: 700;
+  font-size: 3.6cqw;
   line-height: 1.12;
   color: #dff5ff;
   background: linear-gradient(160deg, #1b46a3 0%, #0a1c4d 100%);
@@ -206,7 +207,7 @@
   justify-content: center;
   text-align: center;
   font-size: var(--k-title-size);
-  font-weight: 700;
+  font-weight: 800;
   line-height: 1.04;
   color: #f0641e;
 }
@@ -310,7 +311,7 @@
   overflow: hidden;
   padding: 0 2cqw;
   white-space: nowrap;
-  font-weight: 700;
+  font-weight: 800;
   line-height: 1;
   color: #fbfcf8;
   border-radius: var(--k-radius);
@@ -339,7 +340,7 @@
   padding: 0.5cqw 0 0.5cqw 2.6cqw;
   border-left: 0.3cqw solid rgba(255, 255, 255, 0.55);
   font-size: var(--k-price-size);
-  font-weight: 500;
+  font-weight: 600;
   color: #fff1dc;
 }
 
@@ -385,8 +386,8 @@
 }
 
 .kStripH b {
-  font-size: 6.2cqw;
-  font-weight: 600;
+  font-size: 5.1cqw;
+  font-weight: 700;
   line-height: 1;
   text-shadow: var(--k-text-shadow);
 }
@@ -399,8 +400,8 @@
 /* Onglets de tri : coins du haut arrondis, posés sur le cadre de la bande. */
 .kChip {
   padding: 0.7cqw 2.2cqw 0.8cqw;
-  font-size: 4.2cqw;
-  font-weight: 600;
+  font-size: 3.4cqw;
+  font-weight: 700;
   line-height: 1;
   color: var(--k-ink);
   text-shadow: var(--k-text-shadow);
@@ -516,12 +517,12 @@
 
 .kRailPoster.kPosterFallback {
   display: flex;
-  font-size: 2.3cqw;
+  font-size: 1.9cqw;
 }
 
 .kRailEmpty {
   flex: 1;
   text-align: center;
-  font-size: 4.2cqw;
+  font-size: 3.4cqw;
   color: #bfe3ff;
 }
