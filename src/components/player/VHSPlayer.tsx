@@ -9,7 +9,7 @@ import { useGoogleCast, preloadCastSdk } from '../../hooks/useGoogleCast';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { useBackGuard } from '../../hooks/useBackGuard';
 import { buildCastSubtitleTracks, activeSubtitleId } from '../../utils/cast-subtitles';
-import { appleAirPlay, shouldStartCastOnOpen } from '../../utils/cast-on-open';
+import { appleAirPlay, shouldOfferRewindOnOpen, shouldStartCastOnOpen } from '../../utils/cast-on-open';
 import styles from './VHSPlayer.module.css';
 
 const MIN_CONTENT_LENGTH = 500;
@@ -1171,6 +1171,26 @@ export function VHSPlayer() {
     return () => video.removeEventListener('ended', handleEnded);
   }, [currentPlayingFilm, stopRW, rental?.rewindClaimed, closePlayer, updateRentalProgress]);
 
+  // ===== Film already finished at opening — Rewind Prompt =====
+  // Vu jusqu'au bout ailleurs (fin de lecture, ou serveur à la fin estimée d'un Cast, téléphone éteint) :
+  // le lecteur propose de rembobiner au lieu de repartir du début. Une fois par ouverture et par film.
+  // « NON MERCI » laisse revoir le film (pendingEject faux), au lieu d'éjecter comme en fin de lecture.
+  const rewindOfferedForRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!isPlayerOpen || !currentPlayingFilm) {
+      rewindOfferedForRef.current = null;
+      return;
+    }
+    if (!rental || rewindOfferedForRef.current === currentPlayingFilm) return;
+    rewindOfferedForRef.current = currentPlayingFilm;
+    const castingThisFilm = activeCastFilmId === currentPlayingFilm || playerState === 'casting' || playerState === 'awaitingCast';
+    if (!shouldOfferRewindOnOpen({ watchProgress: rental.watchProgress ?? 0, rewindClaimed: !!rental.rewindClaimed, castingThisFilm })) return;
+    videoRef.current?.pause();
+    setPlayerState('paused');
+    setPendingEject(false);
+    setRewindPhase('prompt');
+  }, [isPlayerOpen, currentPlayingFilm, rental, activeCastFilmId, playerState]);
+
   // ===== Remote Film Ended / Stopped Detection =====
   // IDLE can mean film finished OR manual stop on receiver — distinguish by position
   const prevRemoteCastPlayerStateRef = useRef(remoteCastPlayerState);
@@ -1534,7 +1554,7 @@ export function VHSPlayer() {
         ref={videoRef}
         className={styles.video}
         crossOrigin={hasRemoteSubtitles ? 'anonymous' : undefined}
-        autoPlay={playerState !== 'casting' && playerState !== 'awaitingCast'}
+        autoPlay={playerState !== 'casting' && playerState !== 'awaitingCast' && rewindPhase === 'none'}
         playsInline
         onPlay={() => {
           // Ignore play events while we're handing off to the cast device —

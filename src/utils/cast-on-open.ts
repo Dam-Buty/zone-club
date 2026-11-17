@@ -26,3 +26,13 @@ export function shouldStartCastOnOpen(i: {
 export function appleAirPlay(userAgent: string, video: { webkitShowPlaybackTargetPicker?: unknown } | null): boolean {
   return /(iPad|iPhone|iPod|Macintosh)/.test(userAgent) && typeof video?.webkitShowPlaybackTargetPicker === 'function';
 }
+
+/**
+ * À l'ouverture du lecteur : proposer tout de suite de rembobiner ? Oui pour un film vu jusqu'au bout
+ * (100 %, posé par la fin de lecture ou par le serveur à la fin estimée d'un Cast) dont le rembobinage
+ * n'a pas été réclamé — sauf si la TV joue encore ce film, le Cast reprend alors la main
+ * (docs/superpowers/specs/2026-11-17-cast-suivi-serveur-design.md).
+ */
+export function shouldOfferRewindOnOpen(i: { watchProgress: number; rewindClaimed: boolean; castingThisFilm: boolean }): boolean {
+  return i.watchProgress >= 100 && !i.rewindClaimed && !i.castingThisFilm;
+}

@@ -38,3 +38,19 @@ test('CAST: Apple se reconnaît sur l\'élément vidéo, pas sur un état du ren
   const player = readText(path.join(process.cwd(), 'src/components/player/VHSPlayer.tsx'));
   assert.ok(player.includes('appleAirPlay(navigator.userAgent, videoRef.current'), 'l\'effet lit l\'élément vidéo');
 });
+
+// Suivi serveur d'un film regardé sur la TV (spec 2026-11-17-cast-suivi-serveur) : à la réouverture,
+// un film noté vu par le serveur propose le rembobinage au lieu de repartir du début.
+test('REMBOBINAGE: proposé à l\'ouverture d\'un film fini, pas encore rembobiné', async () => {
+  const { shouldOfferRewindOnOpen } = await import('../../src/utils/cast-on-open.ts');
+  const ok = { watchProgress: 100, rewindClaimed: false, castingThisFilm: false };
+  assert.equal(shouldOfferRewindOnOpen(ok), true);
+  assert.equal(shouldOfferRewindOnOpen({ ...ok, watchProgress: 99 }), false);
+  assert.equal(shouldOfferRewindOnOpen({ ...ok, rewindClaimed: true }), false);
+  assert.equal(shouldOfferRewindOnOpen({ ...ok, castingThisFilm: true }), false);
+});
+test('REMBOBINAGE: le lecteur applique la règle une fois par ouverture et ne lance pas le film derrière', () => {
+  const player = readText(path.join(process.cwd(), 'src/components/player/VHSPlayer.tsx'));
+  assert.ok(player.includes('shouldOfferRewindOnOpen('), 'le lecteur consulte la règle');
+  assert.match(player, /autoPlay=\{[^}]*rewindPhase === 'none'/, 'pas de lecture automatique derrière la proposition');
+});
