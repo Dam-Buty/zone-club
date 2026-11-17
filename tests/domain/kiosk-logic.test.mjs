@@ -334,3 +334,125 @@ test('BORNE: le texte du cadre « En bref » est agrandi de 2 px sur téléphone
   }
   assert.equal(K.phoneLayoutVars(K.phoneLayout(4))['--k-syn-size'], '4.25cqw');
 });
+
+// ===== Fiche détaillée d'un film (Rusmir, 17/11/2026) =====
+test('FICHE: six rubriques, dans l\'ordre d\'une fiche de vidéoclub', () => {
+  assert.deepEqual(K.DETAIL_TABS.map((t) => t.label), ['Résumé', 'Distribution', 'Équipe', 'Avis', 'Bande-annonce', 'À voir aussi']);
+});
+test('FICHE: étoiles d\'une note sur 5, arrondie à l\'étoile', () => {
+  assert.equal(K.starsFor(4.2), '★★★★☆');
+  assert.equal(K.starsFor(4.6), '★★★★★');
+  assert.equal(K.starsFor(0), '☆☆☆☆☆');
+  assert.equal(K.starsFor(7), '★★★★★', 'jamais plus de cinq');
+});
+test('FICHE: public conseillé, d\'après la classification française', () => {
+  assert.equal(K.audienceLabel('12'), 'Dès 12 ans');
+  assert.equal(K.audienceLabel('16'), 'Dès 16 ans');
+  assert.equal(K.audienceLabel('U'), 'Tous publics');
+  assert.equal(K.audienceLabel('TP'), 'Tous publics');
+  assert.equal(K.audienceLabel(''), null);
+  assert.equal(K.audienceLabel(null), null);
+});
+test('FICHE: date de sortie en toutes lettres', () => {
+  assert.equal(K.frenchDate('2017-05-03'), '3 mai 2017');
+  assert.equal(K.frenchDate('2001-12-01'), '1 décembre 2001');
+  assert.equal(K.frenchDate('pas une date'), null);
+  assert.equal(K.frenchDate(null), null);
+});
+test('FICHE: le geste retour ferme la fiche, après ce qui est au-dessus d\'elle', () => {
+  const base = { playerOpen: false, noticeOpen: false, noticeClosable: true, authOpen: false, phrasePending: false, searchOpen: false };
+  assert.equal(K.kioskBackAction({ ...base, detailOpen: true }), 'close-detail');
+  assert.equal(K.kioskBackAction({ ...base, detailOpen: true, noticeOpen: true }), 'close-notice', 'la confirmation de location d\'abord');
+  assert.equal(K.kioskBackAction({ ...base, detailOpen: true, playerOpen: true }), 'close-player');
+  assert.equal(K.kioskBackAction(base), 'none', 'sans fiche ouverte, rien ne change');
+  assert.equal(K.kioskBackAction({ ...base, detailOpen: true, trailerOpen: true }), 'close-trailer', 'la bande-annonce s\'arrête d\'abord, la fiche reste');
+});
+
+test('FICHE: disponibilité en toutes lettres, jamais devinée', () => {
+  // L'heure du serveur est lue par src/utils/server-date.ts (parseServerDate) avant d'arriver ici.
+  assert.equal(K.availabilityText({ stock: 3, copiesLeft: 2, earliestReturnMs: NaN }), '2 copies sur 3 en rayon');
+  assert.equal(K.availabilityText({ stock: 3, copiesLeft: 1, earliestReturnMs: NaN }), '1 copie sur 3 en rayon');
+  assert.equal(K.availabilityText({ stock: 2, copiesLeft: 0, earliestReturnMs: Date.UTC(2026, 10, 19, 17, 42), timeZone: 'Europe/Paris' }), 'Toutes louées, prochain retour le 19 novembre à 18:42', 'heure de Paris');
+  assert.equal(K.availabilityText({ stock: 2, copiesLeft: 0, earliestReturnMs: NaN }), 'Toutes les copies sont louées', 'date de retour illisible : on ne l\'invente pas');
+  assert.equal(K.availabilityText(null), null, 'stock inconnu : rien plutôt qu\'un chiffre faux');
+});
+
+// ===== Jaquette 10 % plus grande, bouton « (i) Fiche film » à côté du titre (Rusmir, 17/11/2026) =====
+test('BORNE: à côté du bouton « Fiche film », le corps du titre suit la place qui reste', () => {
+  const titles = ['Get Out', 'Heat', 'Dernier train pour Busan', 'Killers of the Flower Moon', 'Il était une fois en Amérique', "Confessions d'un homme dangereux"];
+  const rank = { lg: 0, md: 1, sm: 2 };
+  for (const t of titles) {
+    assert.equal(K.titleScale(t, 60.8), K.titleScale(t), t + ' : toute la largeur, comme avant');
+    assert.ok(rank[K.titleScale(t, K.TITLE_W_WITH_INFO)] >= rank[K.titleScale(t)], t + ' : jamais plus grand dans moins de place');
+  }
+  // Bouton réduit de 30 % (24 → 16,8cqw), puis « Fiche film » → « Fiche », moins la largeur de « film »
+  // mesurée dans le navigateur (4,13cqw) : 12,7cqw (Rusmir, 17/11/2026).
+  assert.ok(Math.abs(K.TITLE_W_WITH_INFO - (60.8 - 12.7 - 1.6)) < 1e-9, 'le titre a la largeur que le bouton lui laisse');
+  assert.equal(K.titleScale('Get Out', K.TITLE_W_WITH_INFO), 'lg');
+  assert.equal(K.titleScale('Dernier train pour Busan', K.TITLE_W_WITH_INFO), 'sm', 'grand sur toute la largeur, petit à côté du bouton');
+});
+
+test('BORNE: jaquette de la fiche 10 % plus grande, sans toucher les valeurs de gauche ni le titre', () => {
+  // « la jaquette elle-même devrait être 10 % plus grande » (Rusmir, 17/11/2026, sur son Pixel 9a).
+  const before = (q) => Math.min(38, (K.phoneLayout(q).cardH - 26.7) / 1.5); // calcul d'avant
+  for (const [name, q] of Object.entries(PHONES)) {
+    const L = K.phoneLayout(q);
+    assert.ok(L.posterW <= K.POSTER_MAX_W + 1e-9, name + ' : la jaquette ne passe pas sur les valeurs de gauche');
+    assert.ok(L.posterW >= before(q) - 1e-9, name + ' : jamais plus petite qu\'avant');
+    assert.ok(L.posterW <= before(q) * 1.1 + 1e-9, name + ' : 10 % de plus au plus');
+    // Ardoise : 6,6cqw sous le haut de la fiche ; jaquette à 1,4cqw de son haut ; la ligne du titre
+    // commence à 1,4 + (14,4 - 3,83) cqw de son bas ; 1cqw d'écart au moins.
+    assert.ok(1.4 + L.posterW * 1.5 <= L.cardH - 6.6 - 1.4 - (14.4 - 3.83) - 1 + 1e-9, name + ' : au-dessus de la ligne du titre');
+  }
+  const pixel = K.phoneLayout(PHONES.pixel9a);
+  assert.ok(Math.abs(pixel.posterW / before(PHONES.pixel9a) - 1.1) < 0.005, 'Pixel 9a : 10 % plus grande');
+});
+
+// ===== Effets de dalle de 2007 (Rusmir, 17/11/2026 : « je suis chaud pour les 4 ») =====
+test('DALLE: la bande tourne à 25 images par seconde, avec un ralenti en fin de course', () => {
+  assert.equal(K.KIOSK_FPS, 25);
+  const steps = K.steppedScroll(0, 300, 240);
+  assert.equal(steps.length, 6, '240 ms à 25 i/s : six images');
+  assert.equal(steps.at(-1), 300, 'la dernière image est exactement la cible');
+  for (let i = 1; i < steps.length; i++) assert.ok(steps[i] > steps[i - 1], 'toujours vers la cible');
+  assert.ok(steps[0] > 300 / 6, 'ralenti en fin de course : la première image va plus loin qu\'un sixième');
+  const back = K.steppedScroll(300, 0, 240);
+  assert.equal(back.at(-1), 0);
+  assert.ok(back[0] < 300);
+  assert.deepEqual(K.steppedScroll(0, 300, 0), [300], 'durée nulle : on y va d\'un coup');
+});
+
+test('DALLE: l\'angle de vue d\'une TN — délavée vue d\'en dessus, assombrie vue d\'en dessous', () => {
+  const zero = { washOut: 0, darken: 0, warm: 0, cool: 0, reflectX: 0, reflectY: 0 };
+  assert.deepEqual(K.viewingAngle(0, 0), zero);
+  const small = K.viewingAngle(3, -3);
+  assert.equal(small.washOut + small.darken + small.warm + small.cool, 0, 'zone morte : tenir le téléphone ne bouge rien');
+  const above = K.viewingAngle(20, 0);
+  assert.ok(above.washOut > 0 && above.darken === 0, 'vue d\'en dessus : délavée');
+  const below = K.viewingAngle(-20, 0);
+  assert.ok(below.darken > 0 && below.washOut === 0, 'vue d\'en dessous : assombrie');
+  assert.equal(K.viewingAngle(90, 0).washOut, 1, 'plafonné');
+  assert.ok(K.viewingAngle(0, 20).warm > 0 && K.viewingAngle(0, -20).cool > 0, 'de côté : la teinte glisse');
+  assert.ok(K.viewingAngle(20, -10).reflectY > 0 && K.viewingAngle(20, -10).reflectX < 0, 'le reflet suit l\'inclinaison');
+  assert.equal(K.viewingAngle(0, 500).reflectX, 1, 'reflet plafonné');
+  assert.deepEqual(K.viewingAngle(NaN, Infinity), zero, 'mesure illisible : rien');
+});
+
+test('DALLE: la position « de face » suit lentement la façon dont on tient le téléphone', () => {
+  assert.equal(K.followBaseline(NaN, 40, 16), 40, 'première mesure : elle devient la référence');
+  assert.equal(K.followBaseline(40, 60, 0), 40, 'sans temps écoulé, rien ne bouge');
+  const afterTau = K.followBaseline(40, 60, 4000, 4000);
+  assert.ok(Math.abs(afterTau - (40 + 20 * (1 - Math.exp(-1)))) < 1e-9, 'au bout d\'une constante de temps : 63 % du chemin');
+  assert.ok(K.followBaseline(40, 60, 16) - 40 < 0.2, 'un geste rapide ne déplace presque pas la référence');
+});
+
+test('DALLE: l\'angle de vue se répartit jusqu\'à 60°, et la position de face revient en 8 s', () => {
+  // Rusmir, 17/11/2026 : « la partie gyroscope devrait pouvoir avoir plus d'angle réaliste, le
+  // mouvement est trop restreint ».
+  assert.ok(K.viewingAngle(35, 0).washOut < 0.6, 'à 35° l\'effet n\'est plus au maximum');
+  assert.equal(K.viewingAngle(60, 0).washOut, 1, 'plein effet à 60°');
+  assert.ok(K.viewingAngle(-45, 0).darken > K.viewingAngle(-30, 0).darken, 'l\'effet croît encore au-delà de 30°');
+  assert.ok(Math.abs(K.viewingAngle(0, 30).reflectX - 0.5) < 1e-9, 'le reflet suit l\'inclinaison sur toute la plage');
+  const b = K.followBaseline(0, 10, 8000);
+  assert.ok(Math.abs(b - 10 * (1 - Math.exp(-1))) < 1e-9, 'constante de temps par défaut : 8 s');
+});

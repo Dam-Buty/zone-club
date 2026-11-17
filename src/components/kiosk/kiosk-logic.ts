@@ -185,15 +185,25 @@ export function titleWidthEm(title: string): number {
   return width;
 }
 
+/** Largeur du titre au bas de l'ardoise, en cqw. */
+export const TITLE_W = 60.8;
 /**
- * Corps du titre sur la fiche : le plus grand qui tient dans ses 60,8cqw. Grand (6cqw) jusqu'à
- * 9,6 em, moyen (5cqw) jusqu'à 11,5 em — une ligne dans les deux cas, à moins de 59cqw —, petit
- * et sur deux lignes au-delà.
+ * Largeur laissée au titre sur le parcours, à côté du bouton « (i) Fiche » (12,7cqw, à 1,6cqw du titre).
+ * Rusmir, 17/11/2026 : « placé à côté du titre avec un petit bouton de type (i) fiche film », puis
+ * « réduis le bouton fiche film de 30 % » (24 → 16,8cqw), puis « change fiche film par fiche et réduis
+ * d'autant » (moins 4,13cqw, la largeur de « film » mesurée dans le navigateur) : le titre regagne la place.
  */
-export function titleScale(title: string): 'lg' | 'md' | 'sm' {
+export const TITLE_W_WITH_INFO = TITLE_W - 12.7 - 1.6;
+
+/**
+ * Corps du titre sur la fiche : le plus grand qui tient dans sa largeur (`widthCqw`, toute
+ * l'ardoise par défaut). Grand (6cqw) ou moyen (5cqw) sur une ligne, avec 3,2cqw de marge — sur
+ * toute la largeur : jusqu'à 9,6 em et 11,5 em —, petit et sur deux lignes au-delà.
+ */
+export function titleScale(title: string, widthCqw: number = TITLE_W): 'lg' | 'md' | 'sm' {
   const width = titleWidthEm(title);
-  if (width <= 9.6) return 'lg';
-  return width <= 11.5 ? 'md' : 'sm';
+  if (width * 6 <= widthCqw - 3.2 + 1e-9) return 'lg';
+  return width * 5 <= widthCqw - 3.3 + 1e-9 ? 'md' : 'sm';
 }
 
 export function synopsisText(overview: string | null | undefined): string {
@@ -349,7 +359,7 @@ export type { AccountFormMode as KioskAuthMode } from '../../utils/account-rules
 
 // ===== Geste retour =====
 
-export type KioskBackAction = 'none' | 'close-player' | 'close-notice' | 'cancel-auth' | 'close-search';
+export type KioskBackAction = 'none' | 'close-player' | 'close-notice' | 'cancel-auth' | 'close-trailer' | 'close-detail' | 'close-search';
 
 /**
  * Ce que fait le geste retour (ou le bouton retour du navigateur) dans la borne : il ferme ce
@@ -365,11 +375,16 @@ export function kioskBackAction(s: {
   authOpen: boolean;
   phrasePending: boolean;
   searchOpen: boolean;
+  /** La fiche détaillée d'un film est ouverte. */
+  detailOpen?: boolean;
+  /** Sa bande-annonce est affichée : le geste l'arrête et ramène au résumé, la fiche reste ouverte. */
+  trailerOpen?: boolean;
 }): KioskBackAction {
   if (s.playerOpen) return 'close-player';
   if (s.noticeOpen) return s.noticeClosable ? 'close-notice' : 'none';
   if (s.phrasePending) return 'none';
   if (s.authOpen) return 'cancel-auth';
+  if (s.detailOpen) return s.trailerOpen ? 'close-trailer' : 'close-detail';
   if (s.searchOpen) return 'close-search';
   return 'none';
 }
@@ -457,6 +472,16 @@ export const RAIL_POSTER_MAX_H = ((RAIL_W - 1) / 3) * 1.5;
 /** Corps du texte du cadre « En bref », en cqw ; sur téléphone on y ajoute SYN_EXTRA_PX pixels (Rusmir, 17/11/2026 : « une police 1 ou 2 px plus grande, on a du mal à lire »). */
 const SYN_SIZE = 3.75;
 export const SYN_EXTRA_PX = 2;
+/**
+ * Jaquette de l'ardoise : 10 % plus grande que le calcul d'origine (Rusmir, 17/11/2026 : « la jaquette
+ * elle-même devrait être 10 % plus grande »), dans la limite de la place. À gauche, les valeurs au
+ * feutre : la plus large, « Tous publics », s'arrête à 24,3cqw du bord de l'ardoise (Marker Felt,
+ * relevé le 17/11/2026) ; l'ardoise fait 66cqw, la jaquette est à 2cqw de son bord droit → 38,4cqw
+ * au plus. En bas, elle s'arrête 1cqw au-dessus de la ligne du titre (elle passe sur celle de
+ * l'étiquette « TITRE », dont le filet s'arrête avant elle).
+ */
+export const POSTER_MAX_W = 38.4;
+const POSTER_GROWTH = 1.1;
 const STRIP_MIN = 30; // en dessous, les jaquettes de la bande deviennent trop petites
 const STRIP_PREF = 34; // bande confortable : des jaquettes d'environ 30cqw de haut
 /** Boutons de la colonne des rayons : une page d'onglets et « Suite ». */
@@ -501,7 +526,10 @@ export function phoneLayout(pxPerCqw: number): KioskLayout {
     cardTop,
     tabH,
     cardH,
-    posterW: Math.min(38, (cardH - 6.6 - 2.8 - 14.4 - 1.4 - 1.5) / 1.5),
+    // Avant : Math.min(38, (cardH - 26.7) / 1.5), jaquette à 2,8cqw du haut de l'ardoise (6,6cqw sous
+    // le haut de la fiche), 1,5cqw au-dessus de la zone du titre (14,4cqw, à 1,4cqw du bas).
+    // Maintenant à 1,4cqw du haut, et jusqu'à 1cqw au-dessus de la ligne du titre (14,4 − 3,83cqw).
+    posterW: Math.min(POSTER_MAX_W, Math.min(38, (cardH - 26.7) / 1.5) * POSTER_GROWTH, (cardH - 6.6 - 1.4 - (14.4 - 3.83) - 1 - 1.4) / 1.5),
     metaGap: 1.7 + Math.max(0, cardH - 80) / 6,
     underTop,
     underH,
@@ -537,4 +565,129 @@ export function phoneLayoutVars(L: KioskLayout): Record<string, string> {
     '--k-strip-top': cq(L.stripTop),
     '--k-rail-poster-h': cq(L.railPosterH),
   };
+}
+
+// ===== Fiche détaillée d'un film =====
+//
+// Ouverte d'un appui sur la jaquette de la fiche (Rusmir, 17/11/2026 : « entrer dans la fiche du
+// film en cliquant sur la jaquette […] une nouvelle page où on conserve la jaquette, le bouton
+// location ou le retour, et où on aura toute la place »). Ses rubriques prennent la place des
+// rayons, dans la même colonne d'onglets.
+
+export type DetailTab = 'resume' | 'distribution' | 'equipe' | 'avis' | 'bande-annonce' | 'voir-aussi';
+
+export const DETAIL_TABS: ReadonlyArray<{ id: DetailTab; label: string }> = [
+  { id: 'resume', label: 'Résumé' },
+  { id: 'distribution', label: 'Distribution' },
+  { id: 'equipe', label: 'Équipe' },
+  { id: 'avis', label: 'Avis' },
+  { id: 'bande-annonce', label: 'Bande-annonce' },
+  { id: 'voir-aussi', label: 'À voir aussi' },
+];
+
+/** Une note sur 5 en étoiles, arrondie à l'étoile la plus proche. */
+export function starsFor(rating: number): string {
+  const full = Math.max(0, Math.min(5, Math.round(rating)));
+  return '★'.repeat(full) + '☆'.repeat(5 - full);
+}
+
+/** Public conseillé d'après la classification française que donne TMDB (« 12 », « U »…). */
+export function audienceLabel(certification: string | null | undefined): string | null {
+  const c = (certification ?? '').trim().toUpperCase();
+  if (!c) return null;
+  if (c === 'U' || c === 'TP' || c === 'TOUS PUBLICS') return 'Tous publics';
+  const age = c.match(/^-?(\d{1,2})$/);
+  return age ? `Dès ${age[1]} ans` : null;
+}
+
+/** « 3 mai 2017 » pour « 2017-05-03 » ; null pour ce qui n'est pas une date. */
+export function frenchDate(iso: string | null | undefined): string | null {
+  if (!iso || !/^\d{4}-\d{2}-\d{2}/.test(iso)) return null;
+  const date = new Date(iso.slice(0, 10) + 'T00:00:00Z');
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
+}
+
+/**
+ * Disponibilité affichée sur la fiche : « 2 copies sur 3 en rayon », ou le prochain retour quand
+ * tout est loué. `earliestReturnMs` est déjà lu par parseServerDate (UTC sans fuseau) ; NaN quand
+ * on ne le connaît pas. `null` tant que le stock est inconnu. `timeZone` ne sert qu'aux tests.
+ */
+export function availabilityText(
+  i: { stock: number; copiesLeft: number; earliestReturnMs: number; timeZone?: string } | null,
+): string | null {
+  if (!i) return null;
+  if (i.copiesLeft > 0) return `${i.copiesLeft} copie${i.copiesLeft > 1 ? 's' : ''} sur ${i.stock} en rayon`;
+  if (!Number.isFinite(i.earliestReturnMs)) return 'Toutes les copies sont louées';
+  return `Toutes louées, prochain retour le ${formatUntil(i.earliestReturnMs, i.timeZone)}`;
+}
+
+// ===== Effets de dalle de 2007 =====
+//
+// Rusmir, 17/11/2026, sur quatre propositions pour « donner un effet plus réaliste à un écran LCD » :
+// « je suis chaud pour les 4 » — allumage du rétroéclairage, fuites de lumière, rémanence et
+// cadence de l'époque, angle de vue piloté par l'inclinaison du téléphone.
+
+/** Cadence des animations d'une borne de 2007 (Flash, Director) : 25 images par seconde. */
+export const KIOSK_FPS = 25;
+
+/**
+ * Positions successives d'un défilement de `from` à `to` en `durationMs`, une par image à
+ * `fps` images par seconde, avec un ralenti en fin de course. La dernière est exactement `to`.
+ * Un écran d'aujourd'hui défile de façon fluide (120 images par seconde sur le Pixel 9a) : c'est ce
+ * qui trahit le plus la page web.
+ */
+export function steppedScroll(from: number, to: number, durationMs: number, fps: number = KIOSK_FPS): number[] {
+  const frames = Math.max(1, Math.round((Math.max(0, durationMs) / 1000) * fps));
+  return Array.from({ length: frames }, (_, i) => {
+    if (i === frames - 1) return to;
+    const t = (i + 1) / frames;
+    return Math.round(from + (to - from) * (1 - (1 - t) ** 3));
+  });
+}
+
+export type ViewingAngle = { washOut: number; darken: number; warm: number; cool: number; reflectX: number; reflectY: number };
+
+/**
+ * En deçà, tenir le téléphone ne change rien ; au-delà de ANGLE_FULL, l'effet est entier. En degrés.
+ * 35° au départ ; 60° depuis le 17/11/2026 (Rusmir : « plus d'angle réaliste, le mouvement est trop
+ * restreint ») : une TN change dès qu'on la penche et continue de changer bien au-delà de 30°.
+ */
+const ANGLE_DEAD = 4;
+const ANGLE_FULL = 60;
+
+/**
+ * Ce que l'angle de vue fait à une dalle TN, d'après l'écart d'inclinaison du téléphone avec sa
+ * position « de face » (degrés ; `dBeta` : avant/arrière, positif quand le haut vient vers soi ;
+ * `dGamma` : de côté). Vue d'en dessus, l'image se délave ; vue d'en dessous, elle s'assombrit
+ * (une TN y tend vers le négatif, qu'on ne peut pas simuler sans filtre) ; de côté, la teinte
+ * glisse. Le reflet, lui, glisse sur la vitre. Chaque valeur va de 0 à 1 (de -1 à 1 pour le reflet).
+ */
+export function viewingAngle(dBeta: number, dGamma: number): ViewingAngle {
+  if (!Number.isFinite(dBeta) || !Number.isFinite(dGamma)) return { washOut: 0, darken: 0, warm: 0, cool: 0, reflectX: 0, reflectY: 0 };
+  const ramp = (deg: number) => {
+    const a = Math.abs(deg);
+    return a <= ANGLE_DEAD ? 0 : Math.min(1, (a - ANGLE_DEAD) / (ANGLE_FULL - ANGLE_DEAD));
+  };
+  const clamp = (v: number) => Math.max(-1, Math.min(1, v));
+  const v = ramp(dBeta);
+  const h = ramp(dGamma);
+  return {
+    washOut: dBeta > 0 ? v : 0,
+    darken: dBeta < 0 ? v : 0,
+    warm: dGamma > 0 ? h : 0,
+    cool: dGamma < 0 ? h : 0,
+    reflectX: clamp(dGamma / ANGLE_FULL) + 0,
+    reflectY: clamp(dBeta / ANGLE_FULL) + 0,
+  };
+}
+
+/**
+ * La position « de face » suit lentement l'inclinaison réelle (constante de temps `tauMs`) : on
+ * ne connaît pas la place de l'œil, mais on tient d'ordinaire le téléphone de face. Un geste
+ * rapide se voit ; une façon durable de le tenir redevient « de face ».
+ */
+export function followBaseline(baseline: number, sample: number, dtMs: number, tauMs = 8000): number {
+  if (!Number.isFinite(baseline)) return sample;
+  return baseline + (sample - baseline) * (1 - Math.exp(-Math.max(0, dtMs) / tauMs));
 }

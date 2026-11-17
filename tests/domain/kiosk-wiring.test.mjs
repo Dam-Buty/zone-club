@@ -323,3 +323,43 @@ test('BORNE: sous LOUER, seulement la bande de jaquettes (Rusmir, 17/11/2026)', 
   const view = readText(path.join(ROOT, 'src/components/kiosk/KioskView.tsx'));
   assert.ok(view.includes('phoneLayout('), 'la mise en page du téléphone vient de phoneLayout');
 });
+
+test('FICHE: la jaquette ouvre la fiche détaillée, le geste retour la ferme', () => {
+  const browse = readText(path.join(ROOT, 'src/components/kiosk/KioskBrowse.tsx'));
+  assert.ok(browse.includes('onOpenDetail'), 'la jaquette de la fiche ouvre la fiche détaillée');
+  const view = readText(path.join(ROOT, 'src/components/kiosk/KioskView.tsx'));
+  assert.ok(view.includes('detailOpen') && view.includes("'close-detail'"), 'le geste retour connaît la fiche');
+  const detail = readText(path.join(ROOT, 'src/components/kiosk/KioskDetail.tsx'));
+  // Aucun lecteur tiers dans la borne : YouTube peut y diffuser des publicités, le club n'en montre
+  // aucune (Rusmir, 17/11/2026 : « hors de question de faire ça aux utilisateurs »).
+  for (const file of walkFiles(path.join(ROOT, 'src/components/kiosk'))) {
+    const text = readText(file);
+    const code = text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, ''); // commentaires seulement, pas les adresses
+    assert.ok(!/<iframe|youtube|youtu\.be|dailymotion/i.test(code), path.basename(file) + ' : pas de lecteur vidéo tiers');
+  }
+  assert.ok(detail.includes('DETAIL_TABS'), 'les rubriques viennent de DETAIL_TABS');
+});
+
+test('FICHE: la bande-annonce est jouée par le lecteur de la borne, depuis notre serveur', () => {
+  const detail = readText(path.join(ROOT, 'src/components/kiosk/KioskDetail.tsx'));
+  assert.ok(/<video[\s\S]*?\/api\/films\/\$\{[^}]+\}\/trailer/.test(detail), 'un <video> qui lit /api/films/<tmdbId>/trailer');
+  assert.ok(detail.includes('getTrailerStatus'), 'la fiche demande où en est la bande-annonce (et lance sa récupération)');
+});
+
+test('BORNE: un bouton « (i) Fiche film » à côté du titre ouvre la fiche ; plus de bandeau sur la jaquette', () => {
+  // « le bouton fiche du film sur la jaquette n'est pas suffisamment explicite […] placé à côté du
+  // titre avec un petit bouton de type (i) fiche film » (Rusmir, 17/11/2026).
+  const browse = readText(path.join(ROOT, 'src/components/kiosk/KioskBrowse.tsx'));
+  assert.ok(/kInfoMark[\s\S]*?<\/span>\s*Fiche\s*<\/button>/.test(browse), 'le bouton « (i) Fiche » (Rusmir : « change fiche film par fiche »)');
+  assert.ok(!browse.includes('kPosterCue'), 'plus de bandeau sur la jaquette');
+});
+
+test('DALLE: allumage, rémanence, cadence de 25 i/s et angle de vue sont branchés', () => {
+  const view = readText(path.join(ROOT, 'src/components/kiosk/KioskView.tsx'));
+  assert.ok(view.includes('kWarm') && view.includes('onAnimationEnd'), 'l\'allumage du rétroéclairage, retiré une fois joué');
+  assert.ok(view.includes('deviceorientation') && view.includes('viewingAngle('), 'l\'angle de vue suit l\'inclinaison');
+  assert.ok(view.includes('prefers-reduced-motion'), 'rien ne bouge pour qui a demandé moins de mouvement');
+  const browse = readText(path.join(ROOT, 'src/components/kiosk/KioskBrowse.tsx'));
+  assert.ok(browse.includes('steppedScroll(') && !browse.includes("behavior: smooth ? 'smooth'"), 'les flèches tournent la bande à 25 i/s, pas en défilement fluide');
+  assert.ok(browse.includes('kRise'), 'rémanence au changement de film');
+});

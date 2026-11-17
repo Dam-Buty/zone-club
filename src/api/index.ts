@@ -311,6 +311,25 @@ export interface FilmWithRentalStatus extends ApiFilm {
   };
 }
 
+/** Données TMDB de la fiche détaillée de la borne (lib/tmdb-extras.ts). */
+export interface FilmExtrasResponse {
+  tagline: string | null;
+  certification: string | null;
+  releaseDate: string | null;
+  countries: string[];
+  crew: { screenplay: string[]; music: string[]; photography: string[]; editing: string[] };
+  vote: { average: number; count: number } | null;
+}
+
+/** Bande-annonce d'un film, récupérée par le serveur (lib/trailers.ts) : vf, vost ou vo. */
+export type TrailerStatusResponse = { state: 'ready'; lang: 'vf' | 'vost' | 'vo' } | { state: 'preparing' } | { state: 'none' } | { state: 'failed' };
+
+/** « À voir aussi » : identifiants internes de films de nos rayons (lib/related-films.ts). */
+export interface RelatedFilmsResponse {
+  sameDirector: number[];
+  sameCast: { id: number; names: string[] }[];
+}
+
 export interface ApiReturnRequest {
   id: number;
   film_id: number;
@@ -362,6 +381,19 @@ export const films = {
 
   async getById(tmdbId: number): Promise<FilmWithRentalStatus> {
     return request(`/api/films/${tmdbId}`);
+  },
+
+  async getExtras(tmdbId: number): Promise<FilmExtrasResponse> {
+    return request(`/api/films/${tmdbId}/extras`);
+  },
+
+  async getRelated(tmdbId: number): Promise<RelatedFilmsResponse> {
+    return request(`/api/films/${tmdbId}/related`);
+  },
+
+  /** Où en est la bande-annonce ; lance sa récupération côté serveur si besoin. */
+  async getTrailerStatus(tmdbId: number): Promise<TrailerStatusResponse> {
+    return request(`/api/films/${tmdbId}/trailer/status`);
   },
 
   async getAll(): Promise<ApiFilm[]> {

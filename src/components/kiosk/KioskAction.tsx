@@ -15,9 +15,14 @@ export type KioskFilmDetail = {
   vf: boolean;
   vo: boolean;
   copiesLeft: number;
+  /** Nombre de copies du club. */
+  stock: number;
   earliestReturn: string | null;
   directors: string[];
   cast: string[];
+  /** Interprètes et leurs rôles, dans l'ordre du générique (fiche détaillée). */
+  roles: { name: string; character: string }[];
+  titleOriginal: string | null;
 };
 
 interface KioskActionProps {

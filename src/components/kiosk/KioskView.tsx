@@ -6,6 +6,7 @@ import type { Film } from '../../types';
 import { KioskAction, type KioskFilmDetail } from './KioskAction';
 import { KioskAuth } from './KioskAuth';
 import { KioskBrowse } from './KioskBrowse';
+import { KioskDetail } from './KioskDetail';
 import { KioskNotice, type KioskNoticeSpec } from './KioskNotice';
 import { KioskSearch } from './KioskSearch';
 import {
@@ -16,12 +17,15 @@ import {
   creditsLine,
   filmsForTab,
   firstNonEmptyTab,
+  followBaseline,
   hidesKioskInLandscape,
   kioskBackAction,
   lcdDevicePixel,
   lcdPitchInDevicePixels,
   phoneLayout,
   phoneLayoutVars,
+  viewingAngle,
+  type DetailTab,
   type KioskTab,
 } from './kiosk-logic';
 import states from './KioskStates.module.css';
@@ -131,6 +135,52 @@ function usePhoneLayoutVars(screen: RefObject<HTMLDivElement | null>): CSSProper
 }
 
 /**
+ * L'angle de vue d'une dalle TN, d'après l'inclinaison du téléphone (viewingAngle) : vue d'en
+ * dessus l'image se délave, vue d'en dessous elle s'assombrit, de côté sa teinte glisse, et le
+ * reflet glisse sur la vitre. Écrit en variables CSS sur l'écran de la borne, à chaque image, sans
+ * passer par React. Rien sur un appareil sans capteur (PC), ni sur iPhone, qui exigerait une
+ * autorisation, ni pour qui a demandé moins de mouvement.
+ */
+function useViewingAngle(screen: RefObject<HTMLDivElement | null>) {
+  useEffect(() => {
+    const el = screen.current;
+    if (!el || typeof window.DeviceOrientationEvent === 'undefined') return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    let baseBeta = NaN;
+    let baseGamma = NaN;
+    let last = 0;
+    let frame = 0;
+    let sample: { beta: number; gamma: number } | null = null;
+    const apply = () => {
+      frame = 0;
+      if (!sample) return;
+      const now = performance.now();
+      const dt = last ? now - last : 0;
+      last = now;
+      baseBeta = followBaseline(baseBeta, sample.beta, dt);
+      baseGamma = followBaseline(baseGamma, sample.gamma, dt);
+      const a = viewingAngle(sample.beta - baseBeta, sample.gamma - baseGamma);
+      el.style.setProperty('--k-view-wash', a.washOut.toFixed(3));
+      el.style.setProperty('--k-view-dark', a.darken.toFixed(3));
+      el.style.setProperty('--k-view-warm', a.warm.toFixed(3));
+      el.style.setProperty('--k-view-cool', a.cool.toFixed(3));
+      el.style.setProperty('--k-reflect-x', a.reflectX.toFixed(3));
+      el.style.setProperty('--k-reflect-y', a.reflectY.toFixed(3));
+    };
+    const onOrientation = (event: DeviceOrientationEvent) => {
+      if (event.beta === null || event.gamma === null) return;
+      sample = { beta: event.beta, gamma: event.gamma };
+      if (!frame) frame = requestAnimationFrame(apply);
+    };
+    window.addEventListener('deviceorientation', onOrientation);
+    return () => {
+      window.removeEventListener('deviceorientation', onOrientation);
+      cancelAnimationFrame(frame);
+    };
+  }, [screen]);
+}
+
+/**
  * Sur un téléphone, le paysage est réservé au film : à la place de la borne, une invitation à
  * redresser l'appareil. Elle garde une sortie, pour ne jamais laisser le visiteur sans issue.
  */
@@ -182,9 +232,21 @@ export function KioskView() {
   const density = useScreenDensity();
   const screenRef = useRef<HTMLDivElement>(null);
   const layoutVars = usePhoneLayoutVars(screenRef);
+  useViewingAngle(screenRef);
+  // Allumage du rétroéclairage à l'ouverture de la borne (.kWarm), une seule fois ; pas pour qui a
+  // demandé moins de mouvement.
+  const [warming, setWarming] = useState(() => typeof window !== 'undefined' && !window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
   const [mode, setMode] = useState<'browse' | 'search'>('browse');
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  // Fiche détaillée du film affiché, ouverte d'un appui sur sa jaquette, et sa rubrique.
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailTab, setDetailTab] = useState<DetailTab>('resume');
+  const openDetail = useCallback(() => {
+    setDetailTab('resume');
+    setDetailOpen(true);
+  }, []);
+  const closeDetail = useCallback(() => setDetailOpen(false), []);
   // Un seul message à la fois dans l'écran.
   const [notice, setNotice] = useState<KioskNoticeSpec | null>(null);
 
@@ -260,9 +322,12 @@ export function KioskView() {
             vf: !!film.has_vf,
             vo: !!film.has_vo,
             copiesLeft: film.rental_status.available_copies,
+            stock: film.rental_status.stock,
             earliestReturn: film.rental_status.earliest_return ?? null,
             directors: (film.directors ?? []).map((d) => d.name),
             cast: (film.actors ?? []).map((a) => a.name),
+            roles: (film.actors ?? []).map((a) => ({ name: a.name, character: a.character ?? '' })),
+            titleOriginal: film.title_original ?? null,
           },
         });
       },
@@ -357,10 +422,14 @@ export function KioskView() {
       authOpen,
       phrasePending: pendingPhrase !== null,
       searchOpen: mode === 'search',
+      detailOpen,
+      trailerOpen: detailOpen && detailTab === 'bande-annonce',
     });
     if (action === 'close-player') closePlayer();
     else if (action === 'close-notice') closeNotice();
     else if (action === 'cancel-auth') cancelAuth();
+    else if (action === 'close-trailer') setDetailTab('resume');
+    else if (action === 'close-detail') closeDetail();
     else if (action === 'close-search') closeSearch();
     else if (overlay === null && !authVisible) setQuitHintTick((tick) => tick + 1);
   };
@@ -441,7 +510,12 @@ export function KioskView() {
                   </div>
                 </div>
 
-                <div className={styles.kPane} inert={overlay !== null || authVisible || mode === 'search'}>
+                {/* Sous la fiche détaillée, le parcours reste monté (rayon, page, position de la bande) mais caché. */}
+                <div
+                  className={styles.kPane}
+                  inert={overlay !== null || authVisible || mode === 'search' || detailOpen}
+                  style={detailOpen ? { visibility: 'hidden' } : undefined}
+                >
                   {catalog === 'loading' && (
                     <p className={styles.kMessage} role="status">
                       Chargement du catalogue…
@@ -456,12 +530,30 @@ export function KioskView() {
                       credits={currentDetail ? creditsLine(currentDetail.directors, currentDetail.cast) : null}
                       onSelect={(film) => setSelectedId(film.id)}
                       onSearch={() => setMode('search')}
+                      onOpenDetail={openDetail}
                       actionSlot={(film) => (
                         <KioskAction film={film} detail={currentDetail} onNotice={setNotice} onRequestAuth={requestAuth} />
                       )}
                     />
                   )}
                 </div>
+
+                {detailOpen && catalog === 'ready' && displayed && (
+                  <div className={styles.kLayer} inert={overlay !== null || authVisible}>
+                    <KioskDetail
+                      film={displayed}
+                      detail={currentDetail}
+                      tab={detailTab}
+                      onTab={setDetailTab}
+                      onBack={closeDetail}
+                      onOpenFilm={(film) => {
+                        setSelectedId(film.id);
+                        setDetailTab('resume');
+                      }}
+                      action={<KioskAction film={displayed} detail={currentDetail} onNotice={setNotice} onRequestAuth={requestAuth} />}
+                    />
+                  </div>
+                )}
 
                 {mode === 'search' && catalog === 'ready' && (
                   <div className={styles.kLayer} inert={overlay !== null || authVisible}>
@@ -472,6 +564,9 @@ export function KioskView() {
                 {authVisible && <KioskAuth onDone={finishAuth} onCancel={cancelAuth} />}
 
                 {overlay && <KioskNotice {...overlay} />}
+
+                {/* Allumage des tubes du rétroéclairage : l'écran part du noir et monte, un peu chaud et terne. */}
+                {warming && <div className={styles.kWarm} aria-hidden="true" onAnimationEnd={() => setWarming(false)} />}
 
                 {/* Fourmillement de la dalle (FRC) : décor, au-dessus de tout ce que l'écran affiche. */}
                 <div className={styles.kFrc} aria-hidden="true" />

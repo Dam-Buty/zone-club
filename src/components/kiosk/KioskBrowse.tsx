@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { useStore } from '../../store';
 import type { Film } from '../../types';
 import {
+  KIOSK_FPS,
   allFilms,
   filmsForTab,
   firstNonEmptyTab,
@@ -9,9 +10,12 @@ import {
   posterSrc,
   railEdges,
   releaseYear,
+  steppedScroll,
   synopsisText,
   tabLabel,
   tabPages,
+  TITLE_W,
+  TITLE_W_WITH_INFO,
   titleScale,
   versionLabel,
   type KioskTab,
@@ -57,6 +61,54 @@ export function KioskPoster({
   );
 }
 
+/**
+ * L'ardoise du clap : année, durée, une troisième ligne (le rayon, ou le public conseillé sur la
+ * fiche détaillée), versions, la jaquette et le titre. Commune au parcours et à la fiche détaillée.
+ * `titleAction` : un bouton posé à droite du titre (« Fiche film » sur le parcours).
+ */
+export function KioskSlate({
+  film,
+  versions,
+  third,
+  poster,
+  titleAction,
+}: {
+  film: Film;
+  versions: { vf: boolean; vo: boolean } | null;
+  third: { label: string; value: string };
+  poster: ReactNode;
+  titleAction?: ReactNode;
+}) {
+  const scale = titleScale(film.title, titleAction ? TITLE_W_WITH_INFO : TITLE_W);
+  return (
+    <div className={styles.kCard}>
+      <div className={styles.kClap} />
+      <div className={styles.kSlate}>
+        <dl className={`${styles.kMeta} ${styles.kRise}`}>
+          <dt>ANNÉE</dt>
+          <dd>{releaseYear(film)}</dd>
+          <dt>DURÉE</dt>
+          <dd className={styles.kMetaSm}>{formatRuntime(film.runtime)}</dd>
+          <dt>{third.label}</dt>
+          <dd className={styles.kMetaSm}>{third.value}</dd>
+          <dt>VERSION</dt>
+          <dd className={styles.kMetaSm}>{versionLabel(versions)}</dd>
+        </dl>
+        {poster}
+        <div className={styles.kTitleZone}>
+          <span className={styles.kTitleLabel}>TITRE</span>
+          <div className={styles.kTitleRow}>
+            <div className={`${styles.kTitle} ${styles.kRise} ${{ lg: '', md: styles.kTitleMd, sm: styles.kTitleSm }[scale]}`}>
+              <span>{film.title}</span>
+            </div>
+            {titleAction}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 interface KioskBrowseProps {
   /** Le film affiché sur la fiche. */
   selectedId: number | null;
@@ -66,17 +118,20 @@ interface KioskBrowseProps {
   credits: { by: string | null; cast: string | null } | null;
   onSelect: (film: Film) => void;
   onSearch: () => void;
+  /** Ouvre la fiche détaillée du film affiché (appui sur sa jaquette). */
+  onOpenDetail: () => void;
   /** Rend le bouton d'action de la fiche pour le film affiché. */
   actionSlot: (film: Film) => ReactNode;
   /** Onglet à l'arrivée (retour de la recherche) ; par défaut le premier rayon garni. */
   initialTab?: KioskTab;
 }
 
-export function KioskBrowse({ selectedId, versions, credits, onSelect, onSearch, actionSlot, initialTab }: KioskBrowseProps) {
+export function KioskBrowse({ selectedId, versions, credits, onSelect, onSearch, onOpenDetail, actionSlot, initialTab }: KioskBrowseProps) {
   const films = useStore((state) => state.films);
   const [tab, setTab] = useState<KioskTab>(() => initialTab ?? firstNonEmptyTab(films));
   const [page, setPage] = useState(() => Math.max(0, TAB_PAGES.findIndex((p) => p.includes(tab))));
   const railRef = useRef<HTMLDivElement>(null);
+  const turnRef = useRef(0);
   const prevRef = useRef<HTMLButtonElement>(null);
   const nextRef = useRef<HTMLButtonElement>(null);
 
@@ -112,13 +167,34 @@ export function KioskBrowse({ selectedId, versions, credits, onSelect, onSearch,
     syncArrows();
   }, [syncArrows]);
 
-  // Une flèche fait passer aux trois K7 suivantes (la bande est large de trois jaquettes exactement).
+  // Une flèche fait passer aux trois K7 suivantes (la bande est large de trois jaquettes exactement),
+  // en six images à 25 par seconde comme une borne de 2007 — pas en défilement fluide, qui trahit
+  // l'écran d'aujourd'hui. Le calage sur les jaquettes est suspendu le temps du mouvement : sinon
+  // chaque image intermédiaire serait ramenée sur la jaquette la plus proche.
   const scrollRail = (direction: -1 | 1) => {
     const rail = railRef.current;
     if (!rail) return;
-    const smooth = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    rail.scrollBy({ left: direction * rail.clientWidth, behavior: smooth ? 'smooth' : 'auto' });
+    window.clearInterval(turnRef.current);
+    const gap = parseFloat(getComputedStyle(rail).columnGap) || 0;
+    const from = rail.scrollLeft;
+    const to = Math.max(0, Math.min(rail.scrollWidth - rail.clientWidth, from + direction * (rail.clientWidth + gap)));
+    if (to === from || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      rail.scrollLeft = to;
+      return;
+    }
+    const steps = steppedScroll(from, to, 240);
+    let i = 0;
+    rail.style.scrollSnapType = 'none';
+    const frame = () => {
+      rail.scrollLeft = steps[i++];
+      if (i < steps.length) return;
+      window.clearInterval(turnRef.current);
+      rail.style.scrollSnapType = '';
+    };
+    frame();
+    turnRef.current = window.setInterval(frame, 1000 / KIOSK_FPS);
   };
+  useEffect(() => () => window.clearInterval(turnRef.current), []);
 
   if (!film) return null;
 
@@ -147,37 +223,36 @@ export function KioskBrowse({ selectedId, versions, credits, onSelect, onSearch,
         </button>
       </div>
 
-      {/* Fiche du film : le clap, avec le titre au bas de l'ardoise comme sur la référence */}
-      <div className={styles.kCard}>
-        <div className={styles.kClap} />
-        <div className={styles.kSlate}>
-          <dl className={styles.kMeta}>
-            <dt>ANNÉE</dt>
-            <dd>{releaseYear(film)}</dd>
-            <dt>DURÉE</dt>
-            <dd className={styles.kMetaSm}>{formatRuntime(film.runtime)}</dd>
-            <dt>RAYON</dt>
-            <dd className={styles.kMetaSm}>{tabLabel(film.aisle)}</dd>
-            <dt>VERSION</dt>
-            <dd className={styles.kMetaSm}>{versionLabel(versions)}</dd>
-          </dl>
-          <KioskPoster key={film.id} film={film} size="w342" className={styles.kPoster} eager />
-          <div className={styles.kTitleZone}>
-            <span className={styles.kTitleLabel}>TITRE</span>
-            <div className={`${styles.kTitle} ${{ lg: '', md: styles.kTitleMd, sm: styles.kTitleSm }[titleScale(film.title)]}`}>
-              <span>{film.title}</span>
-            </div>
-          </div>
-        </div>
-      </div>
+      {/* Fiche du film : le clap, avec le titre au bas de l'ardoise comme sur la référence. La fiche
+          détaillée s'ouvre par le bouton « (i) Fiche film », à côté du titre — un bandeau sur la
+          jaquette ne se lisait pas comme un bouton (Rusmir, 17/11/2026) —, et aussi par la jaquette. */}
+      <KioskSlate
+        key={`ardoise-${film.id}`}
+        film={film}
+        versions={versions}
+        third={{ label: 'RAYON', value: tabLabel(film.aisle) }}
+        poster={
+          <button type="button" className={`${styles.kPoster} ${styles.kRise}`} aria-label={`Fiche détaillée de ${film.title}`} onClick={onOpenDetail}>
+            <KioskPoster key={film.id} film={film} size="w342" className={styles.kPosterFill} eager />
+          </button>
+        }
+        titleAction={
+          <button type="button" className={styles.kInfoBtn} aria-label="Fiche du film" onClick={onOpenDetail}>
+            <span className={styles.kInfoMark} aria-hidden="true">
+              i
+            </span>
+            Fiche
+          </button>
+        }
+      />
 
       {/* L'essentiel du film : synopsis, puis générique (réalisation, interprètes) */}
-      <div className={styles.kUnder}>
-        <p className={styles.kSyn}>
+      <div className={styles.kUnder} key={`en-bref-${film.id}`}>
+        <p className={`${styles.kSyn} ${styles.kRise}`}>
           <b>En bref :</b> {synopsisText(film.overview)}
         </p>
         {credits && (
-          <p className={styles.kCredits}>
+          <p className={`${styles.kCredits} ${styles.kRise}`}>
             {credits.by && (
               <span className={styles.kCreditPart}>
                 <b>De</b> {credits.by}

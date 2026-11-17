@@ -316,6 +316,31 @@
   mix-blend-mode: screen;
   /* Discret : le reflet doit se deviner sur les zones sombres, pas concurrencer l'affichage. */
   opacity: 0.22;
+  /* Un reflet est celui d'un décor lointain : il glisse sur la vitre quand on incline le téléphone
+     (variables posées par useViewingAngle). Un bord qui se découvre n'y perd rien : il n'aurait
+     ajouté que du noir. */
+  transform: translate(calc(var(--k-reflect-x, 0) * -10%), calc(var(--k-reflect-y, 0) * -8%));
+}
+
+/* ----- l'angle de vue d'une dalle TN -----
+   Vue d'en dessus, l'image se délave — davantage en bas, vu plus en biais ; vue d'en dessous, elle
+   s'assombrit — davantage en haut ; de côté, sa teinte glisse vers le chaud ou le froid. Sous la
+   vitre (le reflet n'en dépend pas), au-dessus de toute la dalle. Piloté par l'inclinaison du
+   téléphone (useViewingAngle) ; à zéro, il ne dessine rien. La bande noire du bord de la dalle
+   (0,7cqw, voir .screen::after) n'est pas éclairée : le voile s'arrête avant elle (en pourcentages,
+   les cqw se résolvant ici sur un ancêtre). */
+.ks::before {
+  content: "";
+  position: absolute;
+  inset: 0.4% 0.7%;
+  z-index: 1;
+  pointer-events: none;
+  background:
+    /* Intensités baissées de 15 % le 17/11/2026 (« niveau dalle claire / sombre, réduire légèrement l'effet »). */
+    linear-gradient(180deg, rgb(206 214 230 / calc(var(--k-view-wash, 0) * 0.136)), rgb(206 214 230 / calc(var(--k-view-wash, 0) * 0.29))),
+    linear-gradient(180deg, rgb(6 5 2 / calc(var(--k-view-dark, 0) * 0.527)), rgb(6 5 2 / calc(var(--k-view-dark, 0) * 0.255))),
+    linear-gradient(90deg, rgb(255 196 120 / 0), rgb(255 196 120 / calc(var(--k-view-warm, 0) * 0.09))),
+    linear-gradient(90deg, rgb(120 160 255 / calc(var(--k-view-cool, 0) * 0.09)), rgb(120 160 255 / 0));
 }
 
 /* Les unités cqw d'un conteneur se résolvent sur son ANCÊTRE : le fond et tout le contenu sont
@@ -386,7 +411,7 @@
   --k-lcd-rows: repeating-linear-gradient(0deg, rgb(0 0 12 / var(--k-lcd-line-h)) 0 var(--k-dpx, 1px), rgb(0 0 12 / 0) var(--k-dpx, 1px) var(--k-lcd-pitch));
   /* Hachure de la fiche blanche (voir .kSlate) et opacité du fourmillement (voir .kFrc). */
   --k-hatch: 0.028;
-  --k-frc-opacity: 0.5;
+  --k-frc-opacity: 1;
   /* Cadres : cyan métallisé, éclairé par le haut. */
   --k-frame: #63cdf0;
   --k-frame-hi: #bdeeff;
@@ -428,7 +453,7 @@
   --k-tab-h: 11cqw;
   --k-tab-size: 5.2cqw;
   --k-card-h: 78.8cqw;
-  --k-poster-w: 34.7cqw;
+  --k-poster-w: 38.2cqw;
   --k-meta-year: 7.6cqw;
   --k-meta-sm: 4.8cqw;
   --k-meta-gap: 1.7cqw;
@@ -469,7 +494,7 @@
     --k-tab-h: 8.886cqw;
     --k-tab-size: 4.4cqw;
     --k-card-h: 64cqw;
-    --k-poster-w: 27cqw;
+    --k-poster-w: 29.7cqw;
     --k-meta-year: 5.8cqw;
     --k-meta-sm: 3.9cqw;
     --k-meta-gap: 0.5cqw;
@@ -528,6 +553,16 @@
   background:
     var(--k-lcd-cols),
     var(--k-lcd-rows),
+    /* Fuites de lumière là où le cadre appuie sur la dalle, surtout aux coins, inégales d'un coin à
+       l'autre, et une traînée au bas du bord ; puis deux nuages du rétroéclairage. Elles
+       n'ajoutent que de la lumière : on ne les voit que sur le sombre, comme sur une vraie dalle. */
+    radial-gradient(34% 10% at 0% 100%, rgba(200, 218, 255, 0.26), rgba(200, 218, 255, 0) 72%),
+    radial-gradient(26% 8% at 100% 100%, rgba(200, 218, 255, 0.18), rgba(200, 218, 255, 0) 72%),
+    radial-gradient(20% 6% at 0% 0%, rgba(200, 218, 255, 0.12), rgba(200, 218, 255, 0) 72%),
+    radial-gradient(28% 6% at 100% 0%, rgba(200, 218, 255, 0.17), rgba(200, 218, 255, 0) 72%),
+    radial-gradient(16% 3.5% at 62% 100%, rgba(200, 218, 255, 0.14), rgba(200, 218, 255, 0) 75%),
+    radial-gradient(45% 22% at 30% 55%, rgba(170, 190, 235, 0.04), rgba(170, 190, 235, 0) 70%),
+    radial-gradient(40% 18% at 72% 78%, rgba(170, 190, 235, 0.035), rgba(170, 190, 235, 0) 70%),
     linear-gradient(0deg, rgba(190, 212, 255, 0.1) 0%, rgba(190, 212, 255, 0.03) 5%, rgba(190, 212, 255, 0) 12%),
     linear-gradient(
       180deg,
@@ -561,15 +596,53 @@
     inset 0 -1.5cqw 1.5cqw -0.4cqw rgba(0, 0, 8, 0.35);
 }
 
-/* ----- le fourmillement (FRC) -----
-   Une dalle 6 bits simulait les niveaux qui lui manquaient en faisant clignoter chaque sous-pixel
-   entre deux niveaux voisins. Cela ne se voit que de près, sur les aplats sombres : l'amplitude
-   est donc celle d'UN cran de 6 bits (4 niveaux sur 255), pas davantage. Un semis d'une cellule
-   par pixel physique couvre l'écran et saute de place trente fois par seconde, sur seize
-   positions. Seule une translation est animée — le compositeur s'en charge, rien n'est redessiné.
+/* ----- l'allumage du rétroéclairage -----
+   Les tubes fluorescents (CCFL) d'une dalle de 2007 ne s'allumaient pas d'un coup : un instant de
+   noir, l'amorçage, puis une lumière d'abord terne et un peu chaude qui se stabilise. Une seule
+   fois, à l'ouverture de la borne ; l'image reste dessous, seule sa lumière change. Sous la grille
+   et les fuites de la dalle (.screen::before), qui se devinent pendant ce temps. */
+.kWarm {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+  background: rgb(18 9 4);
+  opacity: 0;
+  animation: kWarmUp 2.8s cubic-bezier(0.3, 0.6, 0.4, 1) both;
+}
 
-   .kFrc est le « porteur » : un carré de 96 pixels physiques, dont les déplacements (en
-   pourcentages de son propre côté) tombent donc toujours sur un nombre entier de cellules. Le
+@keyframes kWarmUp {
+  0%,
+  6% {
+    opacity: 0.94;
+  }
+  11% {
+    opacity: 0.56;
+  }
+  35% {
+    opacity: 0.3;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* ----- le fourmillement (FRC) -----
+   Une dalle 6 bits simulait les niveaux qui lui manquaient en faisant clignoter chaque pixel de la
+   dalle entre deux niveaux voisins ; on le voyait surtout sur les aplats sombres. Un semis couvre
+   l'écran et saute de place trente fois par seconde, sur seize positions. Seule une translation
+   est animée — le compositeur s'en charge, rien n'est redessiné.
+
+   Une cellule du semis = un pixel de la DALLE SIMULÉE, c'est-à-dire un pas de la grille
+   (--k-lcd-n pixels physiques : 2 sur un écran non dense, 4 sur le Pixel 9a). Le 17/11/2026, avec
+   une cellule par pixel physique et un demi-cran de 6 bits, le fourmillement était devenu
+   invisible sur le Pixel (écart mesuré entre deux instants : 4 niveaux au plus, 1,36 en moyenne,
+   sur la bande sombre) ; Rusmir : « tu as enlevé tout l'effet de fourmillement […] on essaie de
+   reproduire un écran LCD de l'époque ». Amplitude : un cran entier (--k-frc-opacity 1), entre
+   l'invisible et ce qu'il jugeait « trop important » le 16/11 (12 niveaux).
+
+   .kFrc est le « porteur » : un carré de 96 cellules, dont les déplacements (en pourcentages de son
+   propre côté, multiples de 6,25 %) tombent donc toujours sur un nombre entier de cellules. Le
    semis, lui, déborde du porteur pour couvrir tout l'écran quelle que soit sa position. Sous la
    grille et sous la bande noire du bord. */
 .kFrc {
@@ -577,8 +650,8 @@
   left: 0;
   top: 0;
   z-index: 7;
-  width: calc(var(--k-dpx, 1px) * 96);
-  height: calc(var(--k-dpx, 1px) * 96);
+  width: calc(var(--k-dpx, 1px) * var(--k-lcd-n, 2) * 96);
+  height: calc(var(--k-dpx, 1px) * var(--k-lcd-n, 2) * 96);
   pointer-events: none;
   will-change: transform;
   animation: kFrcWalk 0.5333s step-end infinite;
@@ -589,9 +662,9 @@
   position: absolute;
   left: 0;
   top: 0;
-  width: calc(100cqw + var(--k-dpx, 1px) * 96);
-  height: calc(200cqw + var(--k-dpx, 1px) * 96);
-  background: url(/kiosk/lcd-frc.png) 0 0 / calc(var(--k-dpx, 1px) * 128) calc(var(--k-dpx, 1px) * 128);
+  width: calc(100cqw + var(--k-dpx, 1px) * var(--k-lcd-n, 2) * 96);
+  height: calc(200cqw + var(--k-dpx, 1px) * var(--k-lcd-n, 2) * 96);
+  background: url(/kiosk/lcd-frc.png) 0 0 / calc(var(--k-dpx, 1px) * var(--k-lcd-n, 2) * 128) calc(var(--k-dpx, 1px) * var(--k-lcd-n, 2) * 128);
   image-rendering: pixelated;
   opacity: var(--k-frc-opacity);
 }

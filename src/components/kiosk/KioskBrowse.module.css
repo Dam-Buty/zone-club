@@ -71,6 +71,24 @@
   clip-path: polygon(0 0, 100% 0, 50% 100%);
 }
 
+/* ----- rémanence d'une dalle TN -----
+   Une dalle de 2007 ne change pas d'image d'un coup : ses cristaux mettent un instant à tourner, et
+   ce qui apparaît monte en quelques centièmes de seconde, comme une traînée. Seul ce qui change à
+   l'écran (jaquette, valeurs, titre, résumé, rubrique) est concerné ; le décor qui ne change pas ne
+   bouge pas. Un écran d'aujourd'hui, lui, change d'image instantanément. */
+.kRise {
+  animation: kLcdRise 90ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+@keyframes kLcdRise {
+  from {
+    opacity: 0.2;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 /* ----- fiche : le clap ----- */
 
 .kCard {
@@ -164,16 +182,27 @@
   font-size: var(--k-meta-sm);
 }
 
+/* Le cadre de la jaquette sur l'ardoise. Sur le parcours c'est un bouton : il ouvre la fiche détaillée. */
+/* 10 % plus grande depuis le 17/11/2026 (largeur : phoneLayout) : remontée au niveau de « ANNÉE » et
+   rapprochée du bord droit pour trouver la place. */
 .kPoster {
   position: absolute;
-  right: 2.6cqw;
-  top: 2.8cqw;
+  right: 2cqw;
+  top: 1.4cqw;
   width: var(--k-poster-w);
   aspect-ratio: 2 / 3;
-  object-fit: cover;
+  overflow: hidden;
   background: #223;
   box-shadow: 0 0 0 0.25cqw #2a2a2e, 0 0.6cqw 1.6cqw rgba(0, 0, 0, 0.45);
 }
+
+.kPosterFill {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 
 /* Jaquette absente ou qui ne charge pas : une vignette du même format, qui porte le titre. */
 .kPosterFallback {
@@ -203,8 +232,23 @@
   flex-direction: column;
 }
 
+/* La jaquette descend sur la ligne de l'étiquette : son filet s'arrête avant elle (jaquette à 2cqw du
+   bord droit de l'ardoise, zone du titre à 2,6cqw, 1,2cqw d'écart). */
+.kTitleLabel {
+  margin-right: calc(var(--k-poster-w) + 0.6cqw);
+}
+
+/* Le titre et, sur le parcours, le bouton « Fiche film » à sa droite. */
+.kTitleRow {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 1.6cqw;
+}
+
 .kTitle {
   flex: 1;
+  min-width: 0;
   min-height: 0;
   display: flex;
   align-items: center;
@@ -235,6 +279,55 @@
 
 .kTitleSm span {
   -webkit-line-clamp: 2;
+}
+
+/* « (i) Fiche » : un petit bouton secondaire, même aplat que « Compte » ; le « i » est une lettre
+   de la police des étiquettes dans un cercle dessiné, pas un pictogramme d'une police de secours.
+   Sa largeur est fixe : le corps du titre en dépend (TITLE_W_WITH_INFO). Réduit de 30 % le 17/11/2026
+   (« ce n'est pas très important s'il est moins lisible »), puis « Fiche film » → « Fiche », moins la
+   largeur de « film » ; sa zone d'appui, elle, garde 44 px. */
+.kInfoBtn {
+  position: relative;
+  flex: 0 0 12.7cqw;
+  align-self: center;
+  height: max(5.9cqw, 24px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.8cqw;
+  padding: 0 0.85cqw;
+  white-space: nowrap;
+  font-size: 2.66cqw;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--k-ink);
+  text-shadow: var(--k-text-shadow);
+  border: 0.25cqw solid var(--k-edge-teal);
+  border-radius: var(--k-radius);
+  background: var(--k-skin-teal);
+  box-shadow: inset 0 0.2cqw 0 rgba(255, 255, 255, 0.16), 0 0 0 0.2cqw rgba(0, 10, 30, 0.6), 0 0.4cqw 0.9cqw rgba(0, 0, 20, 0.35);
+}
+
+/* Zone d'appui bien plus haute que le bouton : 44 px au moins sur téléphone. */
+.kInfoBtn::after {
+  content: "";
+  position: absolute;
+  inset: min(-2.8cqw, -11px) -1cqw;
+}
+
+.kInfoMark {
+  flex: none;
+  width: 2.95cqw;
+  height: 2.95cqw;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--k-font-label);
+  font-size: 2.05cqw;
+  font-weight: 800;
+  line-height: 1;
+  border: 0.25cqw solid currentColor;
+  border-radius: 50%;
 }
 
 /* ----- sous la fiche : l'essentiel du film, dans un cadre fin -----
@@ -535,4 +628,274 @@
   text-align: center;
   font-size: 3.4cqw;
   color: #bfe3ff;
+}
+
+/* ----- fiche détaillée -----
+   Ouverte d'un appui sur la jaquette. Mêmes codes que le parcours : la colonne d'onglets porte les
+   rubriques du film, l'ardoise reste en haut, la rubrique choisie prend tout le cadre du dessous,
+   « Retour » et « LOUER » sont au pied de l'écran. */
+
+.kDetail {
+  position: absolute;
+  inset: 0;
+}
+
+/* Six rubriques dans la hauteur de la fiche : chaque onglet est plus haut qu'un onglet de rayon,
+   et un libellé long (« Bande-annonce », « À voir aussi ») y passe sur deux lignes au même corps. */
+.kSideDetail .kTab {
+  flex: 1 1 0;
+  height: auto;
+  min-height: 0;
+  padding: 0 1.2cqw;
+  white-space: normal;
+  text-align: center;
+  line-height: 1.02;
+}
+
+.kDetailBody {
+  position: absolute;
+  left: 2.4cqw;
+  right: 2.4cqw;
+  top: var(--k-under-top);
+  bottom: calc(2.4cqw + var(--k-btn-h) + 1.8cqw);
+  display: flex;
+  flex-direction: column;
+  padding: 1.5cqw 2.4cqw;
+  border: 0.3cqw solid rgba(110, 200, 245, 0.5);
+  border-color: rgba(190, 238, 255, 0.6) rgba(110, 200, 245, 0.5) rgba(60, 145, 190, 0.5) rgba(110, 200, 245, 0.5);
+  border-radius: 1.3cqw;
+  background: rgba(0, 8, 32, 0.2);
+  font-family: var(--k-font-text);
+  font-size: var(--k-syn-size);
+  font-weight: 500;
+  line-height: 1.24;
+  color: #e6f0f6;
+}
+
+/* La disponibilité reste en tête du cadre, quelle que soit la rubrique. */
+.kDetailAvail {
+  flex: none;
+  margin: 0 0 1.2cqw;
+  padding-bottom: 1cqw;
+  font-weight: 700;
+  color: #ffcf5a;
+  border-bottom: 0.25cqw solid rgba(190, 238, 255, 0.3);
+}
+
+/* Une rubrique plus longue que le cadre défile vers le bas, dans le cadre seulement. */
+.kDetailScroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* Il reste du texte plus bas : un triangle au coin du cadre, dessiné comme les flèches de la bande.
+   Il ne prend aucune hauteur et ne capte pas les appuis ; il s'éteint en fin de défilement. */
+.kDetailBody::after {
+  content: "";
+  position: absolute;
+  right: 1.6cqw;
+  bottom: 1.2cqw;
+  width: 4.4cqw;
+  height: 3cqw;
+  pointer-events: none;
+  opacity: 0;
+  background: linear-gradient(180deg, #6fd4f6 0%, #2a8fc4 55%, #0f5f9c 100%);
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+  transition: opacity 0.2s;
+}
+
+.kDetailBody[data-more="true"]::after {
+  opacity: 1;
+}
+
+.kDetailText,
+.kDetailNote,
+.kDetailTagline {
+  margin: 0 0 1.2cqw;
+}
+
+.kDetailNote {
+  color: var(--k-ink-soft);
+}
+
+.kDetailTagline {
+  font-weight: 700;
+  color: #ffcf5a;
+}
+
+.kDetailFacts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 2.4cqw;
+  row-gap: 0.8cqw;
+  margin: 0 0 1.2cqw;
+}
+
+.kDetailFacts dt {
+  font-weight: 700;
+  color: #ffcf5a;
+}
+
+.kDetailFacts dd {
+  margin: 0;
+}
+
+.kDetailCast {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.kDetailCast li {
+  padding: 0.6cqw 0;
+  border-bottom: 0.2cqw solid rgba(190, 238, 255, 0.14);
+}
+
+.kDetailCast b {
+  font-weight: 700;
+  color: #fff;
+}
+
+.kDetailCast span {
+  color: var(--k-ink-soft);
+}
+
+.kDetailStars {
+  margin: 0 0 1.2cqw;
+  font-family: var(--k-font);
+  font-size: 6cqw;
+  font-weight: 800;
+  line-height: 1.05;
+  color: #fff;
+}
+
+.kDetailStars span {
+  letter-spacing: 0.08em;
+  color: #ffb347;
+}
+
+.kDetailStars small {
+  display: block;
+  font-family: var(--k-font-text);
+  font-size: var(--k-syn-size);
+  font-weight: 500;
+  color: var(--k-ink-soft);
+}
+
+.kDetailReview {
+  margin-bottom: 1.2cqw;
+  padding-top: 1cqw;
+  border-top: 0.25cqw solid rgba(190, 238, 255, 0.3);
+}
+
+.kDetailReviewHead {
+  margin: 0;
+}
+
+.kDetailReviewHead b {
+  color: #fff;
+}
+
+.kDetailReviewHead span {
+  margin-left: 1cqw;
+  color: #ffb347;
+}
+
+.kDetailReviewText {
+  display: -webkit-box;
+  margin: 0.4cqw 0 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+}
+
+/* La bande-annonce est jouée dans l'écran de la borne, sous la dalle et la vitre. Sa hauteur est
+   plafonnée à la place du cadre moins la légende : sans cela, quelques pixels de trop faisaient
+   apparaître une barre de défilement sur le Pixel 9a. */
+.kTrailer {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  max-height: calc(100% - 2.2em);
+  margin-bottom: 0.8cqw;
+  background: #000;
+  box-shadow: 0 0 0 0.3cqw #0a0a10;
+}
+
+.kTrailer + .kDetailNote {
+  margin-bottom: 0;
+}
+
+.kTrailer video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
+}
+
+.kDetailHeading {
+  margin: 0 0 1cqw;
+  font-family: var(--k-font);
+  font-size: 4.6cqw;
+  font-weight: 800;
+  line-height: 1.1;
+  color: #ffcf5a;
+}
+
+.kDetailRow {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1.6cqw;
+  margin-bottom: 2cqw;
+}
+
+.kDetailRelated {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6cqw;
+  min-width: 0;
+  text-align: left;
+}
+
+.kDetailRelatedPoster {
+  display: block;
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  background: #223;
+  box-shadow: 0 0 0 0.25cqw #2a2a2e;
+}
+
+.kDetailRelatedPoster.kPosterFallback {
+  display: flex;
+  font-size: 2.2cqw;
+}
+
+.kDetailRelatedCaption {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 0.82em;
+  line-height: 1.15;
+  color: var(--k-ink-soft);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+/* « Retour » à la place de « Recherche », « LOUER » à côté : au pied de l'écran. */
+.kDetail .kBtn {
+  top: auto;
+  bottom: 2.4cqw;
+}
+
+.kBack .kBtnLabel::before {
+  content: "";
+  display: inline-block;
+  width: 2.2cqw;
+  height: 3.2cqw;
+  margin-right: 1.8cqw;
+  vertical-align: -0.04em;
+  background: currentColor;
+  clip-path: polygon(100% 0, 100% 100%, 0 50%);
 }
