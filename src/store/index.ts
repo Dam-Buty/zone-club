@@ -141,6 +141,13 @@ export interface VideoClubState {
   previewFilm: Film | null;
   openPreviewPlayer: (film: Film, rental: Rental) => void;
   openPlayer: (filmId: number) => void;
+  /**
+   * « Sur la TV » de la borne : ouvre le lecteur en lui demandant de lancer aussitôt le Cast
+   * (`castOnOpen`, consommé une fois par le lecteur ; jamais persisté).
+   */
+  openPlayerOnTv: (filmId: number) => void;
+  castOnOpen: number | null;
+  clearCastOnOpen: () => void;
   closePlayer: () => void;
 
   // Cast tracking — kept across player open/close so the next openPlayer
@@ -778,6 +785,12 @@ export const useStore = create<VideoClubState>()(
           chatBackdropUrl: null,
         });
       },
+      castOnOpen: null,
+      openPlayerOnTv: (filmId) => {
+        set({ castOnOpen: filmId });
+        get().openPlayer(filmId);
+      },
+      clearCastOnOpen: () => set({ castOnOpen: null }),
       // closePlayer no longer wipes activeCastFilmId. The cast continues on
       // the receiver independent of whether the player overlay is open, and
       // we want the next openPlayer to find the active cast and auto-enter
