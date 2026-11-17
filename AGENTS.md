@@ -455,6 +455,17 @@ Sync de position : `updateRentalProgress` toutes les 10 s + sur `pause` + au han
 final au unmount. Au disconnect, on restaure depuis `lastKnownCastTimeRef` (le SDK remet `remoteTime`
 à 0 **avant** que l'effet de disconnect ne lise).
 
+**Suivi d'un film regardé sur la TV, téléphone éteint** (`docs/superpowers/specs/2026-11-17-cast-suivi-serveur-design.md`).
+La sauvegarde ci-dessus n'existe que lecteur ouvert et page au premier plan ; une fois le film lancé sur la TV, on doit
+pouvoir fermer l'application. Le serveur prend donc le relais : la séance de Cast (`cast_sessions`, créée au lancement,
+fin estimée recalculée à chaque `updatePosition`) est examinée toutes les 60 s par `lib/cast-session-checker.ts` ; à sa
+fin estimée, `completeCastRental` (`lib/cast-completion.ts`) note la location vue (100 %, position 0, même expirée)
+**avant** et **sans dépendre** de la notification. À la réouverture, `shouldOfferRewindOnOpen` fait proposer « BE KIND
+REWIND » au lecteur au lieu de relancer le film (« NON MERCI » laisse revoir le film). Estimation par l'horloge : pause,
+avance rapide ou arrêt sur la TV ne sont pas vus. **Jamais de récepteur Chromecast maison** (décision de Rusmir du
+17/11/2026). ⚠️ `estimated_end_at` est en ISO (« T ») : toute comparaison avec `datetime('now')` passe par `datetime()`,
+sinon une séance finie le jour même n'est trouvée qu'après minuit UTC (corrigé le 17/11/2026).
+
 ### Tutorial
 
 7 étapes, `TUTORIAL_WAYPOINTS` dans le store, lerp caméra dans `Controls`. Étape 2 ouvre une K7

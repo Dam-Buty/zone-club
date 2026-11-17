@@ -3,6 +3,8 @@
 - **Date** : 17/11/2026
 - **Statut** : approche choisie par Rusmir (A), document **validé le 17/11/2026** (« ok go ») ; tests sur le
   Pixel 9a et un vrai Chromecast prévus le 18/11
+- **Avancement** : codé le 17/11/2026 (plan `docs/superpowers/plans/2026-11-17-cast-suivi-serveur.md`) ; défaut
+  préexistant corrigé en chemin : comparaison de `estimated_end_at` (ISO) à `datetime('now')`
 - **Base** : branche `feat/borne-location`
 
 ## Le problème (constaté par Rusmir, cause trouvée dans le code)
