@@ -305,3 +305,13 @@ test('BORNE: les flèches de la bande suivent ses extrémités', () => {
   const src = readText(path.join(ROOT, 'src/components/kiosk/KioskBrowse.tsx'));
   assert.ok(src.includes('railEdges('), 'KioskBrowse consulte railEdges');
 });
+
+test('BORNE: « LOUER » ne loue jamais en un seul appui', () => {
+  // Décision de Rusmir du 17/11/2026 : un doigt qui glisse ne doit pas dépenser de crédits, y
+  // compris quand la location reprend juste après une connexion demandée par « LOUER ».
+  const src = readText(path.join(ROOT, 'src/components/kiosk/KioskAction.tsx'));
+  const press = src.slice(src.indexOf('const press = async'), src.indexOf('return (', src.indexOf('const press = async')));
+  assert.ok(press.includes('confirmRentText('), 'l\'appui ouvre la confirmation');
+  assert.ok(!press.includes('rentFlow('), 'l\'appui ne lance pas la location lui-même');
+  assert.match(src, /const rentNow = async[\s\S]*?rentFlow\(/, 'la location part de rentNow, appelé par la confirmation');
+});

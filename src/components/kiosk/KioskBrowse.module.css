@@ -127,17 +127,19 @@
 }
 
 /* Petites étiquettes de la fiche : sur la référence, une grotesque de largeur normale, en
-   capitales grises, sur un filet. */
+   capitales grises, sur un filet. Validé par Rusmir le 17/11/2026 après l'audit d'ergonomie :
+   2,3cqw (8,5 px sur un Pixel 9a) et un contraste de 4,35:1 ne se lisaient pas ; 2,8cqw
+   (10,4 px) et ce gris donnent 5,69:1 sur l'ardoise. */
 .kMeta dt,
 .kTitleLabel {
   display: block;
   padding-bottom: 0.5cqw;
   font-family: var(--k-font-label);
-  font-size: 2.3cqw;
+  font-size: 2.8cqw;
   font-weight: 600;
   line-height: 1.1;
   letter-spacing: 0.05em;
-  color: #6c727a;
+  color: #5a6068;
   border-bottom: 0.25cqw solid #c5cbd2;
 }
 

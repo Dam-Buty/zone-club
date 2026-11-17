@@ -3,11 +3,12 @@ import { useStore, useCredits } from '../../store';
 import { RENTAL_COSTS, type Film } from '../../types';
 import { getRentalTier } from '../../utils/rental-tier';
 import type { KioskNoticeSpec } from './KioskNotice';
-import { actionLabel, creditsLabel, formatUntil, offersRelogin, rentAction, rentFlow } from './kiosk-logic';
+import { actionLabel, confirmRentText, creditsLabel, formatUntil, offersRelogin, rentAction, rentFlow } from './kiosk-logic';
 import styles from './KioskBrowse.module.css';
 
 // Le bouton d'action de la fiche. Il ne se grise jamais : quand il ne peut pas louer, il le dit
-// (un bouton éteint avale l'appui sans rien expliquer, surtout sur mobile).
+// (un bouton éteint avale l'appui sans rien expliquer, surtout sur mobile). Et il ne loue jamais
+// en un seul appui : la location se confirme (décision de Rusmir du 17/11/2026).
 
 /** Ce que la fiche sait du film au-delà du catalogue : versions jouables, copies restantes, générique. */
 export type KioskFilmDetail = {
@@ -58,43 +59,9 @@ export function KioskAction({ film, detail, onNotice, onRequestAuth }: KioskActi
   const close = () => onNotice(null);
   const say = (title: string, body: string) => onNotice({ title, body, primary: { label: 'Fermer', onPress: close } });
 
-  // L'état est relu dans le magasin au moment de l'appui : après une connexion, cette fonction
-  // est rappelée telle quelle, et ce qu'elle a vu au rendu (visiteur non connecté) ne vaut plus.
-  const press = async () => {
+  // La location elle-même, une fois confirmée. L'état est relu au moment de la confirmation.
+  const rentNow = async () => {
     const state = useStore.getState();
-    const nowCredits = state.isAuthenticated && state.authUser ? state.authUser.credits : state.localUser.credits;
-    const now = rentAction({
-      isAuthenticated: state.isAuthenticated,
-      isRented: state.rentals.some((r) => r.filmId === film.id),
-      isAvailable,
-      copiesLeft,
-      credits: nowCredits,
-      cost,
-    });
-
-    if (now === 'watch') {
-      state.openPlayer(film.id);
-      return;
-    }
-    if (now === 'login') {
-      onRequestAuth(() => {
-        void press();
-      });
-      return;
-    }
-    if (now === 'insufficient') {
-      say('Crédits insuffisants', `Ce film coûte ${creditsLabel(cost)}. Vous en avez ${nowCredits}.`);
-      return;
-    }
-    if (now === 'unavailable') {
-      say('Film indisponible', "Ce film n'est pas encore en rayon.");
-      return;
-    }
-    if (now === 'out-of-stock') {
-      say('Toutes les copies sont louées', 'Revenez un peu plus tard.');
-      return;
-    }
-
     // Un second appui est ignoré tant que le premier n'a pas répondu.
     const lock = lockFor(film.id);
     if (lock.busy) return;
@@ -144,6 +111,61 @@ export function KioskAction({ film, detail, onNotice, onRequestAuth }: KioskActi
         },
       },
       secondary: { label: 'Plus tard', onPress: close },
+    });
+  };
+
+  // L'état est relu dans le magasin au moment de l'appui : après une connexion, cette fonction
+  // est rappelée telle quelle, et ce qu'elle a vu au rendu (visiteur non connecté) ne vaut plus.
+  const press = async () => {
+    const state = useStore.getState();
+    const nowCredits = state.isAuthenticated && state.authUser ? state.authUser.credits : state.localUser.credits;
+    const now = rentAction({
+      isAuthenticated: state.isAuthenticated,
+      isRented: state.rentals.some((r) => r.filmId === film.id),
+      isAvailable,
+      copiesLeft,
+      credits: nowCredits,
+      cost,
+    });
+
+    if (now === 'watch') {
+      state.openPlayer(film.id);
+      return;
+    }
+    if (now === 'login') {
+      onRequestAuth(() => {
+        void press();
+      });
+      return;
+    }
+    if (now === 'insufficient') {
+      say('Crédits insuffisants', `Ce film coûte ${creditsLabel(cost)}. Vous en avez ${nowCredits}.`);
+      return;
+    }
+    if (now === 'unavailable') {
+      say('Film indisponible', "Ce film n'est pas encore en rayon.");
+      return;
+    }
+    if (now === 'out-of-stock') {
+      say('Toutes les copies sont louées', 'Revenez un peu plus tard.');
+      return;
+    }
+
+    // Louer dépense des crédits : la location attend une confirmation. Y compris juste après une
+    // connexion demandée par « LOUER » — elle ne repart pas toute seule.
+    if (lockFor(film.id).busy) return;
+    const confirm = confirmRentText({ title: film.title, cost, credits: nowCredits });
+    onNotice({
+      title: confirm.title,
+      body: confirm.body,
+      primary: {
+        label: 'Louer',
+        onPress: () => {
+          close();
+          void rentNow();
+        },
+      },
+      secondary: { label: 'Annuler', onPress: close },
     });
   };
 

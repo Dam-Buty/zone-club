@@ -264,3 +264,14 @@ test('BORNE: la bande sait si elle est à son début ou à son bout', () => {
   assert.deepEqual(K.railEdges(2280.4, 289, 2570), { atStart: false, atEnd: true }, 'défilement fractionnaire (écran dense)');
   assert.deepEqual(K.railEdges(0, 289, 200), { atStart: true, atEnd: true }, 'rayon qui tient sans défiler');
 });
+
+// ===== Louer se confirme (décision de Rusmir du 17/11/2026) =====
+test('BORNE: le message de confirmation dit le film, le prix et ce qui restera', () => {
+  assert.deepEqual(K.confirmRentText({ title: 'Get Out', cost: 2, credits: 5 }), {
+    title: 'Confirmer la location',
+    body: '«\u00a0Get Out\u00a0» pour 2 crédits. Il vous restera 3 crédits.',
+  });
+  assert.equal(K.confirmRentText({ title: 'Dune', cost: 1, credits: 2 }).body, '«\u00a0Dune\u00a0» pour 1 crédit. Il vous restera 1 crédit.');
+  assert.equal(K.confirmRentText({ title: 'Dune', cost: 2, credits: 2 }).body, '«\u00a0Dune\u00a0» pour 2 crédits. Il ne vous restera plus de crédit.');
+  assert.equal(K.confirmRentText({ title: '  Dune  ', cost: 1, credits: 3 }).body.startsWith('«\u00a0Dune\u00a0»'), true, 'titre sans espaces autour');
+});

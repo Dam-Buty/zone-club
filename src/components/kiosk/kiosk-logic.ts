@@ -246,6 +246,20 @@ export function actionLabel(action: RentAction, cost: number, renting: boolean):
   return { text: 'Louer', price: creditsLabel(cost) };
 }
 
+/**
+ * Le message qui confirme une location : le film, son prix, et ce qui restera ensuite. Louer
+ * dépense des crédits : la borne ne le fait jamais en un seul appui (décision de Rusmir du
+ * 17/11/2026). Espaces insécables dans les guillemets : « ne reste jamais seul en fin de ligne.
+ */
+export function confirmRentText(i: { title: string; cost: number; credits: number }): { title: string; body: string } {
+  const left = i.credits - i.cost;
+  const after = left > 0 ? `Il vous restera ${creditsLabel(left)}.` : 'Il ne vous restera plus de crédit.';
+  return {
+    title: 'Confirmer la location',
+    body: `«\u00a0${i.title.trim()}\u00a0» pour ${creditsLabel(i.cost)}. ${after}`,
+  };
+}
+
 export type RentFlowResult =
   | { status: 'ok' }
   | { status: 'busy' }
