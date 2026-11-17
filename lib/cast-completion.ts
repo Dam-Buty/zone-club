@@ -10,7 +10,7 @@
 // La base est passée en paramètre et ce module n'importe aucune valeur : il est chargé tel quel par
 // Node dans les tests, sur une base en mémoire.
 
-type Statement = { get(...args: unknown[]): unknown; run(...args: unknown[]): unknown };
+type Statement = { get(...args: unknown[]): unknown; run(...args: unknown[]): unknown; all(...args: unknown[]): unknown[] };
 type Db = { prepare(sql: string): Statement };
 
 /**
@@ -30,4 +30,31 @@ export function completeCastRental(database: Db, session: { rental_id: number | 
     .prepare("UPDATE rentals SET watch_progress = 100, watch_position = 0, watch_completed_at = COALESCE(watch_completed_at, datetime('now')) WHERE id = ?")
     .run(id);
   return true;
+}
+
+export type FinishedCastSession = {
+  id: number;
+  user_id: number;
+  film_id: number;
+  rental_id: number | null;
+  film_title: string;
+};
+
+/**
+ * Séances de Cast non closes, pas encore notifiées, dont l'heure de fin estimée est passée.
+ * `estimated_end_at` est écrite en ISO (« 2026-11-17T21:04:05.000Z ») : comparée telle quelle à
+ * `datetime('now')` (« 2026-11-17 21:05:00 »), le « T » passe après l'espace et une séance finie le jour
+ * même n'était trouvée qu'après minuit UTC. On compare donc des dates normalisées par `datetime()`.
+ */
+export function findFinishedCastSessions(database: Db): FinishedCastSession[] {
+  return database
+    .prepare(
+      `SELECT cs.*, f.title AS film_title
+       FROM cast_sessions cs
+       JOIN films f ON f.id = cs.film_id
+       WHERE datetime(cs.estimated_end_at) <= datetime('now')
+         AND cs.ended = 0
+         AND cs.notified = 0`,
+    )
+    .all() as FinishedCastSession[];
 }

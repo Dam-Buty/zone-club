@@ -1,4 +1,5 @@
 import { db } from "./db";
+import { findFinishedCastSessions } from "./cast-completion";
 
 interface CastSession {
   id: number;
@@ -90,16 +91,8 @@ export function endCastSession(userId: number, filmId: number): void {
 export function getExpiredUnnotifiedSessions(): (CastSession & {
   film_title: string;
 })[] {
-  return db
-    .prepare(
-      `SELECT cs.*, f.title as film_title
-       FROM cast_sessions cs
-       JOIN films f ON f.id = cs.film_id
-       WHERE cs.estimated_end_at <= datetime('now')
-         AND cs.ended = 0
-         AND cs.notified = 0`,
-    )
-    .all() as (CastSession & { film_title: string })[];
+  // La requête vit dans cast-completion.ts, testée sur une base en mémoire (comparaison de dates normalisée).
+  return findFinishedCastSessions(db) as (CastSession & { film_title: string })[];
 }
 
 export function markSessionNotified(sessionId: number): void {

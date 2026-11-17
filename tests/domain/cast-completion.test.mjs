@@ -11,6 +11,10 @@ import { completeCastRental } from '../../lib/cast-completion.ts';
 function freshDb() {
   const db = new Database(':memory:');
   db.exec(readFileSync(path.join(process.cwd(), 'lib/schema.sql'), 'utf-8'));
+  // cast_sessions est créée par une migration de lib/db.ts (pas par schema.sql) : mêmes colonnes ici.
+  db.exec(`CREATE TABLE cast_sessions (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, film_id INTEGER NOT NULL,
+    rental_id INTEGER, started_at DATETIME DEFAULT CURRENT_TIMESTAMP, duration_seconds REAL NOT NULL, last_position REAL DEFAULT 0,
+    estimated_end_at DATETIME NOT NULL, notified INTEGER DEFAULT 0, ended INTEGER DEFAULT 0)`);
   const u = db.prepare("INSERT INTO users (username, password_hash, recovery_phrase_hash) VALUES ('t', 'x', 'y')").run().lastInsertRowid;
   const f = db.prepare("INSERT INTO films (tmdb_id, title) VALUES (1, 'Get Out')").run().lastInsertRowid;
   const rent = (extra = {}) => {
@@ -57,4 +61,22 @@ test('CAST SERVEUR: le vérificateur note la location avant la notification, san
   assert.ok(at !== -1 && at < src.indexOf('sendPushNotification('), 'notée avant la notification');
   const before = src.slice(Math.max(0, at - 120), at);
   assert.match(before, /try\s*\{\s*$/, 'son propre try : un échec de l\'un n\'annule pas l\'autre');
+});
+
+// La fin estimée est écrite en ISO (« 2026-11-17T21:04:05.000Z ») : comparée en chaîne à
+// datetime('now') (« 2026-11-17 21:05:00 »), une séance finie le jour même n'était jamais trouvée
+// avant minuit UTC — le « T » passe après l'espace.
+test('CAST SERVEUR: une séance finie le jour même est trouvée tout de suite', async () => {
+  const { findFinishedCastSessions } = await import('../../lib/cast-completion.ts');
+  const { db, u, f } = freshDb();
+  const iso = (ms) => new Date(Date.now() + ms).toISOString();
+  const add = (end, extra = '') => db.prepare(`INSERT INTO cast_sessions (user_id, film_id, rental_id, duration_seconds, last_position, estimated_end_at${extra ? ', ' + extra.split('=')[0] : ''})
+    VALUES (?, ?, NULL, 3600, 0, ?${extra ? ', ' + extra.split('=')[1] : ''})`).run(u, f, end).lastInsertRowid;
+  const done = add(iso(-2000));
+  add(iso(+3_600_000));
+  add(iso(-2000), 'ended=1');
+  add(iso(-2000), 'notified=1');
+  const found = findFinishedCastSessions(db);
+  assert.deepEqual(found.map((s) => s.id), [done]);
+  assert.equal(found[0].film_title, 'Get Out');
 });
