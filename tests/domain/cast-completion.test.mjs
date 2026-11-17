@@ -80,3 +80,9 @@ test('CAST SERVEUR: une séance finie le jour même est trouvée tout de suite',
   assert.deepEqual(found.map((s) => s.id), [done]);
   assert.equal(found[0].film_title, 'Get Out');
 });
+test('CAST SERVEUR: si la location ne peut être notée, la séance n\'est pas notifiée (rejouée au passage suivant)', () => {
+  const src = readText(path.join(process.cwd(), 'lib/cast-session-checker.ts'));
+  const at = src.indexOf('completeCastRental(');
+  const catchBlock = src.slice(src.indexOf('catch', at), src.indexOf('catch', at) + 200);
+  assert.match(catchBlock, /continue;/, 'pas de notification tant que la location n\'est pas notée');
+});

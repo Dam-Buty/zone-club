@@ -19,7 +19,8 @@ async function checkExpiredSessions(): Promise<void> {
     try {
       completeCastRental(db, session);
     } catch {
-      // Rejoué au passage suivant tant que la séance n'est pas notifiée.
+      // Ni notification ni marque « notifiée » : la séance est rejouée au passage suivant.
+      continue;
     }
     try {
       await sendPushNotification(session.user_id, {

@@ -36,3 +36,14 @@ export function appleAirPlay(userAgent: string, video: { webkitShowPlaybackTarge
 export function shouldOfferRewindOnOpen(i: { watchProgress: number; rewindClaimed: boolean; castingThisFilm: boolean }): boolean {
   return i.watchProgress >= 100 && !i.rewindClaimed && !i.castingThisFilm;
 }
+
+/**
+ * La décision à l'ouverture, à trois issues. `wait` tant que les données ne sont pas fraîches (la
+ * réponse du serveur demandée à l'ouverture n'est pas arrivée : une page gardée en mémoire a une
+ * progression périmée) ou qu'un Cast de ce film est en cours ou attendu (on décidera s'il abandonne) ;
+ * sinon `offer` ou `skip`, d'après shouldOfferRewindOnOpen.
+ */
+export function rewindOfferOnOpen(i: { fresh: boolean; watchProgress: number; rewindClaimed: boolean; castingThisFilm: boolean }): 'offer' | 'skip' | 'wait' {
+  if (!i.fresh || i.castingThisFilm) return 'wait';
+  return shouldOfferRewindOnOpen(i) ? 'offer' : 'skip';
+}

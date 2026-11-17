@@ -51,6 +51,26 @@ test('REMBOBINAGE: proposé à l\'ouverture d\'un film fini, pas encore rembobin
 });
 test('REMBOBINAGE: le lecteur applique la règle une fois par ouverture et ne lance pas le film derrière', () => {
   const player = readText(path.join(process.cwd(), 'src/components/player/VHSPlayer.tsx'));
-  assert.ok(player.includes('shouldOfferRewindOnOpen('), 'le lecteur consulte la règle');
+  assert.ok(player.includes('rewindOfferOnOpen('), 'le lecteur consulte la règle (rewindOfferOnOpen applique shouldOfferRewindOnOpen)');
   assert.match(player, /autoPlay=\{[^}]*rewindPhase === 'none'/, 'pas de lecture automatique derrière la proposition');
+});
+
+// Relecture finale : la décision était prise une seule fois, parfois sur des données périmées (page
+// gardée en mémoire, réponse fraîche du serveur pas encore arrivée), ou verrouillée pendant l'attente du
+// Cast ; et la proposition restait affichée quand la TV jouait encore le film.
+test('REMBOBINAGE: on attend des données fraîches et la fin d\'un Cast en cours avant de décider', async () => {
+  const { rewindOfferOnOpen } = await import('../../src/utils/cast-on-open.ts');
+  const ok = { fresh: true, watchProgress: 100, rewindClaimed: false, castingThisFilm: false };
+  assert.equal(rewindOfferOnOpen(ok), 'offer');
+  assert.equal(rewindOfferOnOpen({ ...ok, fresh: false }), 'wait');
+  assert.equal(rewindOfferOnOpen({ ...ok, castingThisFilm: true }), 'wait');
+  assert.equal(rewindOfferOnOpen({ ...ok, watchProgress: 40 }), 'skip');
+  assert.equal(rewindOfferOnOpen({ ...ok, rewindClaimed: true }), 'skip');
+});
+test('REMBOBINAGE: le lecteur décide sur la réponse fraîche et retire la proposition si la TV reprend', () => {
+  const player = readText(path.join(process.cwd(), 'src/components/player/VHSPlayer.tsx'));
+  assert.ok(player.includes('rewindOfferOnOpen('), 'la décision à trois issues');
+  assert.ok(player.includes('setRentalFreshFor('), 'fraîcheur posée à la réponse du fetchMe d\'ouverture');
+  const sdk = player.slice(player.indexOf('if (sdkSeesCast) {'), player.indexOf('if (sdkSeesCast) {') + 600);
+  assert.match(sdk, /rewindPhase === 'prompt' && !pendingEject\) setRewindPhase\('none'\)/, 'la télécommande l\'emporte');
 });

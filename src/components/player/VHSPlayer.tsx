@@ -9,7 +9,7 @@ import { useGoogleCast, preloadCastSdk } from '../../hooks/useGoogleCast';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { useBackGuard } from '../../hooks/useBackGuard';
 import { buildCastSubtitleTracks, activeSubtitleId } from '../../utils/cast-subtitles';
-import { appleAirPlay, shouldOfferRewindOnOpen, shouldStartCastOnOpen } from '../../utils/cast-on-open';
+import { appleAirPlay, rewindOfferOnOpen, shouldStartCastOnOpen } from '../../utils/cast-on-open';
 import styles from './VHSPlayer.module.css';
 
 const MIN_CONTENT_LENGTH = 500;
@@ -102,6 +102,9 @@ export function VHSPlayer() {
   const rewindStartRef = useRef(0);
   const rewindRafRef = useRef<number | null>(null);
   const [pendingEject, setPendingEject] = useState(false);
+  // Film dont la location a été relue sur le serveur depuis l'ouverture du lecteur (voir l'effet
+  // « Film already finished at opening »).
+  const [rentalFreshFor, setRentalFreshFor] = useState<number | null>(null);
   const [rewindCredited, setRewindCredited] = useState(false);
 
   // Rewind-to-start state (⏮ button)
@@ -321,9 +324,13 @@ export function VHSPlayer() {
   // Non-blocking: local seek effect below uses current store value immediately;
   // when fetchMe resolves with a newer watchPosition, that effect re-runs.
   useEffect(() => {
-    if (!isPlayerOpen) return;
-    fetchMe();
-  }, [isPlayerOpen, fetchMe]);
+    if (!isPlayerOpen) {
+      setRentalFreshFor(null);
+      return;
+    }
+    const film = currentPlayingFilm;
+    void fetchMe().finally(() => setRentalFreshFor(film));
+  }, [isPlayerOpen, currentPlayingFilm, fetchMe]);
 
   // Resume from saved position when player opens
   useEffect(() => {
@@ -363,6 +370,9 @@ export function VHSPlayer() {
     if (sdkSeesCast) {
       const video = videoRef.current;
       if (video && !video.paused) video.pause();
+      // La TV joue encore ce film : la proposition faite à l'ouverture (fin estimée trop tôt par le
+      // serveur, film mis en pause sur la TV) cède la place à la télécommande.
+      if (rewindPhase === 'prompt' && !pendingEject) setRewindPhase('none');
       setPlayerState('casting');
       if (!storeKnowsCast) setActiveCastFilmId(currentPlayingFilm);
       castFilmIdRef.current = currentPlayingFilm ?? null;
@@ -1182,14 +1192,28 @@ export function VHSPlayer() {
       return;
     }
     if (!rental || rewindOfferedForRef.current === currentPlayingFilm) return;
-    rewindOfferedForRef.current = currentPlayingFilm;
+    // Une autre proposition est déjà affichée (fin de lecture, fin du Cast) : on ne s'en mêle pas.
+    if (rewindPhase !== 'none') {
+      rewindOfferedForRef.current = currentPlayingFilm;
+      return;
+    }
     const castingThisFilm = activeCastFilmId === currentPlayingFilm || playerState === 'casting' || playerState === 'awaitingCast';
-    if (!shouldOfferRewindOnOpen({ watchProgress: rental.watchProgress ?? 0, rewindClaimed: !!rental.rewindClaimed, castingThisFilm })) return;
+    const decision = rewindOfferOnOpen({
+      fresh: rentalFreshFor === currentPlayingFilm,
+      watchProgress: rental.watchProgress ?? 0,
+      rewindClaimed: !!rental.rewindClaimed,
+      castingThisFilm,
+    });
+    // Données pas encore relues, ou Cast en cours / attendu : on décidera plus tard (si l'attente du
+    // Cast abandonne au bout de 6 s, castingThisFilm redevient faux et l'effet repasse).
+    if (decision === 'wait') return;
+    rewindOfferedForRef.current = currentPlayingFilm;
+    if (decision === 'skip') return;
     videoRef.current?.pause();
     setPlayerState('paused');
     setPendingEject(false);
     setRewindPhase('prompt');
-  }, [isPlayerOpen, currentPlayingFilm, rental, activeCastFilmId, playerState]);
+  }, [isPlayerOpen, currentPlayingFilm, rental, activeCastFilmId, playerState, rentalFreshFor, rewindPhase]);
 
   // ===== Remote Film Ended / Stopped Detection =====
   // IDLE can mean film finished OR manual stop on receiver — distinguish by position
