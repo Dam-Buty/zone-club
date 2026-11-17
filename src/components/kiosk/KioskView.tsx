@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type CSSProperties, type MouseEvent } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent, type RefObject } from 'react';
 import { useStore, useCredits } from '../../store';
 import { useBackGuard } from '../../hooks/useBackGuard';
 import api from '../../api';
@@ -20,6 +20,8 @@ import {
   kioskBackAction,
   lcdDevicePixel,
   lcdPitchInDevicePixels,
+  phoneLayout,
+  phoneLayoutVars,
   type KioskTab,
 } from './kiosk-logic';
 import states from './KioskStates.module.css';
@@ -98,6 +100,36 @@ function useScreenDensity(): number | undefined {
   return ratio;
 }
 
+/** Même requête que la feuille de style : l'écran 2:3 du PC garde sa mise en page fixe. */
+const PC_QUERY = '(min-width: 769px) and (pointer: fine)';
+
+/**
+ * Sur un téléphone, la mise en page de l'écran de la borne dépend de sa taille réelle : chaque
+ * commande garde une hauteur minimale en pixels, la place qui reste va au résumé et aux jaquettes
+ * (phoneLayout). Mesurée sur l'écran de la borne lui-même, à chaque changement de taille.
+ */
+function usePhoneLayoutVars(screen: RefObject<HTMLDivElement | null>): CSSProperties | undefined {
+  const [pxPerCqw, setPxPerCqw] = useState<number | null>(null);
+  const [isPc, setIsPc] = useState(() => typeof window !== 'undefined' && window.matchMedia(PC_QUERY).matches);
+  useLayoutEffect(() => {
+    const el = screen.current;
+    if (!el) return;
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width;
+      if (width) setPxPerCqw(width / 100);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [screen]);
+  useEffect(() => {
+    const query = window.matchMedia(PC_QUERY);
+    const update = () => setIsPc(query.matches);
+    query.addEventListener('change', update);
+    return () => query.removeEventListener('change', update);
+  }, []);
+  return useMemo(() => (isPc || !pxPerCqw ? undefined : (phoneLayoutVars(phoneLayout(pxPerCqw)) as CSSProperties)), [isPc, pxPerCqw]);
+}
+
 /**
  * Sur un téléphone, le paysage est réservé au film : à la place de la borne, une invitation à
  * redresser l'appareil. Elle garde une sortie, pour ne jamais laisser le visiteur sans issue.
@@ -148,6 +180,8 @@ export function KioskView() {
   const credits = useCredits();
   const phoneLandscape = usePhoneLandscape();
   const density = useScreenDensity();
+  const screenRef = useRef<HTMLDivElement>(null);
+  const layoutVars = usePhoneLayoutVars(screenRef);
 
   const [mode, setMode] = useState<'browse' | 'search'>('browse');
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -378,8 +412,8 @@ export function KioskView() {
 
         <div className={styles.column}>
           <div className={styles.bezel}>
-            <div className={styles.ks} style={{ '--k-dpx': lcdDevicePixel(density), '--k-lcd-n': lcdPitchInDevicePixels(density) } as CSSProperties}>
-              <div className={styles.screen} data-mode={mode}>
+            <div ref={screenRef} className={styles.ks} style={{ '--k-dpx': lcdDevicePixel(density), '--k-lcd-n': lcdPitchInDevicePixels(density) } as CSSProperties}>
+              <div className={styles.screen} data-mode={mode} style={layoutVars}>
                 <div className={styles.kTop} inert={overlay !== null}>
                   <div className={styles.kLogo}>
                     VIDÉOCLUB<small>borne 24/7</small>
@@ -445,9 +479,12 @@ export function KioskView() {
             </div>
           </div>
 
-          <div className={styles.slot} aria-hidden="true">retour des cassettes</div>
-          <div className={styles.vitrine}>
-            <Spines tints={SPINES_BELOW} className={styles.spines} />
+          {/* Décor sous l'écran (fente, vitrine) : il prend la hauteur qui reste, et s'efface quand il n'en reste pas. */}
+          <div className={styles.below}>
+            <div className={styles.slot} aria-hidden="true">retour des cassettes</div>
+            <div className={styles.vitrine}>
+              <Spines tints={SPINES_BELOW} className={styles.spines} />
+            </div>
           </div>
         </div>
       </div>

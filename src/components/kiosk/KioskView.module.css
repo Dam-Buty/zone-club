@@ -29,11 +29,18 @@
 /* ===== Page : téléphone d'abord — toute la page est le corps de la borne ===== */
 
 .root {
-  /* Hauteur réservée autour de l'écran : enseigne, fente, marges, cadre. */
-  --kiosk-reserve: 150px;
-  /* Écran haut (5:9) : sur un téléphone la largeur est comptée, la hauteur disponible. */
+  /* Sur un téléphone, l'écran de la borne prend toute la place qu'il peut : ses boutons en
+     dépendent (retour de Rusmir du 17/11/2026 sur son Pixel 9a : « les boutons de sélection sont
+     trop petits […] les bords de la borne en largeur ne servent à rien, il faut un zoom un peu
+     plus fort »). Il n'est limité que par la largeur de la fenêtre, moins un cadre de 6 px, et par
+     la hauteur qui reste sous l'enseigne (--kiosk-reserve : enseigne 50, écart 10, marges 2 × 6,
+     cadre 2 × 6). La fente et la vitrine du dessous ne sont plus réservées : elles prennent la
+     hauteur qui reste (.below), et s'effacent quand il n'en reste pas. Sur le Pixel 9a (fenêtre
+     411 × 809), l'écran passait de 366 px de large à 399. */
+  --kiosk-reserve: 84px;
+  /* Écran haut (5:9). */
   --ks-ratio: 5 / 9;
-  --ks-w: min(90vw, calc((100dvh - var(--kiosk-reserve)) * 5 / 9));
+  --ks-w: min(100vw - 12px, calc((100dvh - var(--kiosk-reserve)) * 5 / 9));
 
   position: fixed;
   inset: 0;
@@ -41,9 +48,9 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 14px;
-  padding: max(8px, env(safe-area-inset-top)) 0 max(8px, env(safe-area-inset-bottom));
+  justify-content: flex-start;
+  gap: 10px;
+  padding: max(6px, env(safe-area-inset-top)) 0 max(6px, env(safe-area-inset-bottom));
   background: linear-gradient(180deg, #23213a 0%, #191827 40%, #14131f 100%);
   color: #fff;
   -webkit-tap-highlight-color: transparent;
@@ -86,19 +93,29 @@
 }
 
 .body {
-  flex: 0 1 auto;
+  flex: 1 1 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
 }
 
 .column {
-  flex: 0 1 auto;
+  flex: 1 1 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 14px;
+}
+
+/* Le décor du bas : toute la hauteur qui reste sous l'écran, rien de plus. */
+.below {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 10px;
 }
 
 /* Cadre de l'écran : le plastique noir satiné d'un moniteur de borne, LISSE (un grain le faisait
@@ -106,11 +123,12 @@
    que l'arête supérieure ; les flancs s'assombrissent. */
 .bezel {
   flex: none;
-  padding: 13px;
+  /* Fin sur téléphone : chaque pixel de largeur va à l'écran (13 px sur PC). */
+  padding: 6px;
   background:
     linear-gradient(180deg, rgba(190, 150, 255, 0.2) 0, rgba(190, 150, 255, 0) 8px),
     linear-gradient(180deg, #2a2a31 0%, #141418 5%, #0a0a0d 38%, #050507 100%);
-  border-radius: 12px;
+  border-radius: 9px;
   box-shadow:
     0 0 0 1px #000,
     0 0 0 3px #2b2a3d,
@@ -199,12 +217,11 @@
    toute la hauteur, l'enseigne et la fente s'effacent. */
 @media (max-height: 760px) {
   .root {
-    --kiosk-reserve: 34px;
+    --kiosk-reserve: 26px;
   }
 
   .sign,
-  .slot,
-  .vitrine {
+  .below {
     display: none;
   }
 }
@@ -227,9 +244,17 @@
   }
 
   .sign,
-  .slot,
-  .vitrine {
+  .below {
     display: none;
+  }
+
+  .column {
+    flex: 0 1 auto;
+  }
+
+  .bezel {
+    padding: 13px;
+    border-radius: 12px;
   }
 
   .body {
@@ -395,11 +420,15 @@
     #000820 86% 86.75%, #00081c 86.75% 89.75%, #000818 89.75% 93%, #000814 93% 95.25%,
     #000414 95.25% 96%, #000410 96% 99%, #00040c 99% 100%;
 
-  /* Mise en page verticale (écran haut). */
-  --k-tab-h: 9.75cqw;
+  /* Mise en page verticale (écran haut). Sur téléphone, KioskView les recalcule d'après la taille
+     réelle de l'écran (phoneLayout : commandes à hauteur minimale en pixels) ; ces valeurs-ci ne
+     servent qu'avant la première mesure. */
+  --k-nav-h: 10cqw;
+  --k-card-top: 14.4cqw;
+  --k-tab-h: 11cqw;
   --k-tab-size: 5.2cqw;
-  --k-card-h: 80cqw;
-  --k-poster-w: 35.5cqw;
+  --k-card-h: 78.8cqw;
+  --k-poster-w: 34.7cqw;
   --k-meta-year: 7.6cqw;
   --k-meta-sm: 4.8cqw;
   --k-meta-gap: 1.7cqw;
@@ -407,14 +436,16 @@
   --k-title-size: 6cqw;
   --k-title-size-md: 5cqw;
   --k-title-size-sm: 4.2cqw;
-  --k-under-top: 93.6cqw;
-  --k-under-h: 32cqw;
-  --k-syn-size: 3.75cqw;
+  --k-under-top: 94.8cqw;
+  --k-under-h: 32.3cqw;
+  /* Texte du cadre « En bref » : 2 px de plus que la proportion sur téléphone, pour la lecture (phoneLayout). */
+  --k-syn-size: calc(3.75cqw + 2px);
   --k-syn-lines: 4;
-  --k-btn-top: 127.6cqw;
+  --k-btn-top: 129.1cqw;
   --k-btn-h: 12cqw;
-  --k-striph-top: 141.4cqw;
-  --k-strip-top: 147.6cqw;
+  --k-strip-top: 142.9cqw;
+  /* Hauteur d'une jaquette de la bande (trois tiennent entre les flèches jusqu'à 34,7cqw). */
+  --k-rail-poster-h: 30.5cqw;
 
   position: absolute;
   inset: 0;
@@ -432,7 +463,10 @@
 
 @media (min-width: 769px) and (pointer: fine) {
   .screen {
-    --k-tab-h: 7.75cqw;
+    /* Le PC garde sa mise en page fixe (les valeurs du téléphone viennent de phoneLayout). */
+    --k-nav-h: 7.6cqw;
+    --k-card-top: 12cqw;
+    --k-tab-h: 8.886cqw;
     --k-tab-size: 4.4cqw;
     --k-card-h: 64cqw;
     --k-poster-w: 27cqw;
@@ -452,8 +486,8 @@
     --k-credit-sep: "\2002|\2002";
     --k-btn-top: 98.6cqw;
     --k-btn-h: 11.5cqw;
-    --k-striph-top: 112.4cqw;
-    --k-strip-top: 118.6cqw;
+    --k-strip-top: 111.9cqw;
+    --k-rail-poster-h: 31.4cqw;
   }
 }
 
@@ -611,7 +645,7 @@
   left: 3cqw;
   right: 3cqw;
   top: 1.9cqw;
-  height: 7.6cqw;
+  height: var(--k-nav-h);
   z-index: 3;
   display: flex;
   align-items: center;
@@ -653,7 +687,7 @@
   position: relative;
   display: flex;
   align-items: center;
-  height: 7.6cqw;
+  height: var(--k-nav-h);
   padding: 0 2.2cqw;
   white-space: nowrap;
   font-size: 4.1cqw;

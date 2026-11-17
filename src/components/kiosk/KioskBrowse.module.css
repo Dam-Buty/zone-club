@@ -12,8 +12,10 @@
 .kSide {
   position: absolute;
   left: 2.4cqw;
-  top: 12cqw;
+  top: var(--k-card-top);
   width: 26cqw;
+  /* Toujours la hauteur de la fiche, même sur la dernière page, qui a moins d'onglets. */
+  height: var(--k-card-h);
   display: flex;
   flex-direction: column;
   padding: 0.5cqw;
@@ -75,7 +77,7 @@
   position: absolute;
   left: 31cqw;
   right: 3cqw;
-  top: 12cqw;
+  top: var(--k-card-top);
   height: var(--k-card-h);
   color: #333;
   text-shadow: none;
@@ -244,6 +246,8 @@
   right: 2.4cqw;
   top: var(--k-under-top);
   height: var(--k-under-h);
+  /* Sur un petit téléphone, le cadre s'efface devant les jaquettes (phoneLayout). */
+  display: var(--k-under-display, block);
   padding: 1.5cqw 2.4cqw;
   overflow: hidden;
   border: 0.3cqw solid rgba(110, 200, 245, 0.5);
@@ -264,7 +268,7 @@
 }
 
 .kSyn {
-  display: -webkit-box;
+  display: var(--k-syn-display, -webkit-box);
   -webkit-box-orient: vertical;
   -webkit-line-clamp: var(--k-syn-lines);
 }
@@ -374,55 +378,10 @@
   position: relative;
 }
 
-/* ----- bande de jaquettes ----- */
-
-.kStripH {
-  position: absolute;
-  left: 3cqw;
-  right: 3cqw;
-  top: var(--k-striph-top);
-  height: 6.2cqw;
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-}
-
-.kStripH b {
-  font-size: 5.1cqw;
-  font-weight: 700;
-  line-height: 1;
-  text-shadow: var(--k-text-shadow);
-}
-
-.kChips {
-  display: flex;
-  gap: 0.5cqw;
-}
-
-/* Onglets de tri : coins du haut arrondis, posés sur le cadre de la bande. Ils occupent toute la
-   hauteur de leur rangée (6,2cqw : 23 px sur un Pixel 9a au lieu de 20). Leur zone d'appui ne
-   monte PAS au-delà : les trois sont sous « LOUER », qui loue en un appui — un prolongement de
-   0,8cqw les en rapprochait à 4 px (audit du 17/11/2026). Plus haut, il faudrait prendre de la
-   hauteur ailleurs dans l'écran. */
-.kChip {
-  padding: 1.2cqw 2.2cqw 1.3cqw;
-  font-size: 3.4cqw;
-  font-weight: 700;
-  line-height: 1;
-  color: var(--k-ink);
-  text-shadow: var(--k-text-shadow);
-  border: 0.3cqw solid var(--k-frame);
-  border-top-color: var(--k-frame-hi);
-  border-bottom: 0;
-  border-radius: 1.1cqw 1.1cqw 0 0;
-  background: linear-gradient(180deg, #1f6f99 0%, #125a82 100%);
-}
-
-.kChipOn {
-  color: #06306b;
-  text-shadow: none;
-  background: linear-gradient(180deg, #a4e4fa 0%, #6fcff2 40%, #52bde7 100%);
-}
+/* ----- bande de jaquettes -----
+   Sous « LOUER », seulement elle, sur toute la hauteur qui reste, et trois K7 à la fois : la bande
+   est large de trois jaquettes exactement (--k-rail-poster-h : la hauteur d'une jaquette, posée par
+   phoneLayout sur téléphone), centrée entre les flèches. Validé par Rusmir le 17/11/2026. */
 
 .kStrip {
   position: absolute;
@@ -523,9 +482,11 @@
   opacity: 0.32;
 }
 
-/* La bande défile nativement (doigt, molette, trackpad) ; les flèches l'y aident. */
+/* La bande défile nativement (doigt, molette, trackpad), trois K7 par trois ; les flèches l'y aident. */
 .kRail {
-  flex: 1;
+  flex: 0 0 auto;
+  width: calc(var(--k-rail-poster-h) * 2 + 1cqw);
+  margin: 0 auto;
   min-width: 0;
   height: 100%;
   display: flex;
@@ -533,7 +494,7 @@
   gap: 0.5cqw;
   overflow-x: auto;
   overflow-y: hidden;
-  scroll-snap-type: x proximity;
+  scroll-snap-type: x mandatory;
   scrollbar-width: none;
   overscroll-behavior-x: contain;
 }
@@ -544,7 +505,7 @@
 
 .kRailItem {
   flex: 0 0 auto;
-  height: 88%;
+  height: var(--k-rail-poster-h);
   aspect-ratio: 2 / 3;
   overflow: hidden;
   scroll-snap-align: start;

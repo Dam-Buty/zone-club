@@ -18,9 +18,11 @@ test('BORNE: les onglets couvrent chaque rayon d\'AisleType une fois, plus « to
   assert.equal(ids.at(-1), 'tous');
   assert.equal(new Set(ids).size, ids.length);
 });
-test('BORNE: deux pages de sept onglets', () => {
+// Décision de Rusmir du 17/11/2026 : six rayons par page (la colonne des rayons prenait trop de
+// hauteur) — trois pages, la dernière plus courte.
+test('BORNE: trois pages de six onglets au plus', () => {
   const pages = K.tabPages();
-  assert.deepEqual(pages.map(p => p.length), [7, 7]);
+  assert.deepEqual(pages.map(p => p.length), [6, 6, 2]);
   assert.equal(K.tabLabel('comedie'), 'Comédie');
 });
 test('BORNE: « tous » ne répète pas un film présent en rayon et en nouveauté', () => {
@@ -274,4 +276,61 @@ test('BORNE: le message de confirmation dit le film, le prix et ce qui restera',
   assert.equal(K.confirmRentText({ title: 'Dune', cost: 1, credits: 2 }).body, '«\u00a0Dune\u00a0» pour 1 crédit. Il vous restera 1 crédit.');
   assert.equal(K.confirmRentText({ title: 'Dune', cost: 2, credits: 2 }).body, '«\u00a0Dune\u00a0» pour 2 crédits. Il ne vous restera plus de crédit.');
   assert.equal(K.confirmRentText({ title: '  Dune  ', cost: 1, credits: 3 }).body.startsWith('«\u00a0Dune\u00a0»'), true, 'titre sans espaces autour');
+});
+
+// ===== Mise en page sur téléphone : planchers en pixels, trois K7 en bas (Rusmir, 17/11/2026) =====
+const PHONES = { petitAndroid: 3.48, iPhoneSE: 3.56, iPhone16: 3.81, pixel9a: 3.99, grand: 4.28 };
+test('BORNE: chaque commande garde sa taille minimale, quel que soit le téléphone', () => {
+  for (const [name, q] of Object.entries(PHONES)) {
+    const L = K.phoneLayout(q);
+    assert.ok(L.navH * q >= 40 - 0.01, name + ' : Compte et Quitter, 40 px au moins');
+    assert.ok(L.tabH * q >= 44 - 0.01, name + ' : onglets des rayons, 44 px au moins');
+    assert.ok(L.btnH * q >= 48 - 0.01, name + ' : LOUER et Recherche, 48 px au moins');
+  }
+});
+test('BORNE: tout tient dans l\'écran, et la bande montre trois K7 entières', () => {
+  for (const [name, q] of Object.entries(PHONES)) {
+    const L = K.phoneLayout(q);
+    assert.ok(Math.abs(L.stripTop + L.stripH + 2.4 - 180) < 0.01, name + ' : la bande finit au bas de l\'écran');
+    assert.ok(L.stripH >= 30 - 0.01, name + ' : la bande garde une hauteur correcte');
+    assert.ok(2 * L.railPosterH + 1 <= 70.4 + 0.01, name + ' : trois jaquettes tiennent entre les flèches');
+    if (L.showUnder) assert.ok(L.btnTop >= L.underTop + L.underH + 2 - 0.01, name + ' : LOUER sous le cadre « En bref »');
+  }
+});
+test('BORNE: la description prend la place que la bande peut céder, les jaquettes restent correctes', () => {
+  // Rusmir, 17/11/2026 : « laisser plus de place pour la description ».
+  const pixel = K.phoneLayout(PHONES.pixel9a);
+  assert.equal(pixel.synLines, 3, 'Pixel 9a : trois lignes de résumé, en texte agrandi');
+  assert.ok(pixel.railPosterH * PHONES.pixel9a >= 118, 'Pixel 9a : jaquettes d\'au moins 118 px');
+  assert.equal(K.phoneLayout(PHONES.iPhone16).synLines, 2, 'iPhone 16 : deux lignes');
+  const small = K.phoneLayout(PHONES.petitAndroid);
+  assert.equal(small.showUnder, true);
+  assert.equal(small.synLines, 0, 'petit écran : le générique seul');
+  assert.ok(small.railPosterH * PHONES.petitAndroid >= 110, 'petit écran : jaquettes d\'au moins 110 px');
+  const big = K.phoneLayout(PHONES.grand);
+  assert.equal(big.synLines, 4);
+  assert.ok(big.railPosterH * PHONES.grand >= 135, 'grand téléphone : jaquettes d\'au moins 135 px');
+});
+test('BORNE: six rayons par page, « Suite » pour les autres (Rusmir, 17/11/2026)', () => {
+  assert.equal(K.KIOSK_TAB_PAGE_SIZE, 6);
+  const pages = K.tabPages();
+  assert.ok(pages.every((page) => page.length <= 6));
+  assert.deepEqual(pages.flat(), K.KIOSK_TABS.map((t) => t.id), 'tous les onglets, dans l\'ordre');
+  const L = K.phoneLayout(PHONES.pixel9a);
+  assert.ok(Math.abs(L.cardH - (7 * L.tabH + 1.8)) < 0.01, 'la fiche suit une colonne de sept boutons');
+});
+test('BORNE: sur un écran assez grand, rien ne change de taille', () => {
+  const L = K.phoneLayout(6);
+  assert.equal(L.navH, 7.6); assert.equal(L.tabH, 9.75); assert.equal(L.btnH, 12);
+  const odd = K.phoneLayout(0);
+  assert.ok(Object.values(odd).every((v) => typeof v === 'boolean' || Number.isFinite(v)), 'mesure absente : pas de NaN');
+});
+
+test('BORNE: le texte du cadre « En bref » est agrandi de 2 px sur téléphone (Rusmir, 17/11/2026)', () => {
+  // « Le texte du descriptif mériterait une police 1 ou 2 px plus grande, on a du mal à lire. »
+  for (const [name, q] of Object.entries(PHONES)) {
+    const L = K.phoneLayout(q);
+    assert.ok(Math.abs(L.synSize * q - (3.75 * q + 2)) < 0.01, name + ' : 2 px de plus qu\'avant');
+  }
+  assert.equal(K.phoneLayoutVars(K.phoneLayout(4))['--k-syn-size'], '4.25cqw');
 });

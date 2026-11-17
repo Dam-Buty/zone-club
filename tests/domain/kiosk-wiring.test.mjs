@@ -315,3 +315,11 @@ test('BORNE: « LOUER » ne loue jamais en un seul appui', () => {
   assert.ok(!press.includes('rentFlow('), 'l\'appui ne lance pas la location lui-même');
   assert.match(src, /const rentNow = async[\s\S]*?rentFlow\(/, 'la location part de rentNow, appelé par la confirmation');
 });
+
+test('BORNE: sous LOUER, seulement la bande de jaquettes (Rusmir, 17/11/2026)', () => {
+  const src = readText(path.join(ROOT, 'src/components/kiosk/KioskBrowse.tsx'));
+  assert.ok(!src.includes('kChip') && !src.includes('de A à Z'), 'plus de boutons de tri');
+  assert.ok(!src.includes('kStripH'), 'plus d\'intitulé de rayon au-dessus de la bande');
+  const view = readText(path.join(ROOT, 'src/components/kiosk/KioskView.tsx'));
+  assert.ok(view.includes('phoneLayout('), 'la mise en page du téléphone vient de phoneLayout');
+});

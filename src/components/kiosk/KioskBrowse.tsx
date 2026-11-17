@@ -14,21 +14,18 @@ import {
   tabPages,
   titleScale,
   versionLabel,
-  type KioskSort,
   type KioskTab,
 } from './kiosk-logic';
 import styles from './KioskBrowse.module.css';
 
 // Parcours des films : la colonne des rayons, la fiche du film affiché, les deux boutons et la
 // bande de jaquettes. Chaque bloc est posé en coordonnées de l'écran de la borne (cqw).
+//
+// Sous « LOUER », seulement la bande, trois K7 à la fois (Rusmir, 17/11/2026 : « il y a clairement
+// trop de choses, il faut simplifier »). Plus d'intitulé de rayon — l'onglet actif le dit déjà —
+// ni de boutons de tri : la bande garde l'ordre du rayon.
 
 const TAB_PAGES = tabPages();
-
-const SORTS: ReadonlyArray<{ id: KioskSort; label: string }> = [
-  { id: 'rayon', label: 'sélection' },
-  { id: 'alpha', label: 'de A à Z' },
-  { id: 'date', label: 'par date' },
-];
 
 /** Une jaquette, ou une vignette du même format portant le titre si elle manque ou ne charge pas. */
 export function KioskPoster({
@@ -78,14 +75,13 @@ interface KioskBrowseProps {
 export function KioskBrowse({ selectedId, versions, credits, onSelect, onSearch, actionSlot, initialTab }: KioskBrowseProps) {
   const films = useStore((state) => state.films);
   const [tab, setTab] = useState<KioskTab>(() => initialTab ?? firstNonEmptyTab(films));
-  const [sort, setSort] = useState<KioskSort>('rayon');
   const [page, setPage] = useState(() => Math.max(0, TAB_PAGES.findIndex((p) => p.includes(tab))));
   const railRef = useRef<HTMLDivElement>(null);
   const prevRef = useRef<HTMLButtonElement>(null);
   const nextRef = useRef<HTMLButtonElement>(null);
 
   const film = useMemo(() => allFilms(films).find((f) => f.id === selectedId) ?? null, [films, selectedId]);
-  const list = useMemo(() => filmsForTab(films, tab, sort), [films, tab, sort]);
+  const list = useMemo(() => filmsForTab(films, tab, 'rayon'), [films, tab]);
 
   // Une flèche s'éteint à l'extrémité où elle ne mènerait plus nulle part. Écrit directement sur
   // les boutons, sans état React : ce suivi tourne à chaque image du défilement.
@@ -97,11 +93,11 @@ export function KioskBrowse({ selectedId, versions, credits, onSelect, onSearch,
     if (nextRef.current) nextRef.current.dataset.edge = String(atEnd);
   }, []);
 
-  // Changer de rayon ou de tri ramène la bande à son début.
+  // Changer de rayon ramène la bande à son début.
   useEffect(() => {
     if (railRef.current) railRef.current.scrollLeft = 0;
     syncArrows();
-  }, [tab, sort, list, syncArrows]);
+  }, [tab, list, syncArrows]);
 
   useEffect(() => {
     window.addEventListener('resize', syncArrows);
@@ -116,18 +112,19 @@ export function KioskBrowse({ selectedId, versions, credits, onSelect, onSearch,
     syncArrows();
   }, [syncArrows]);
 
+  // Une flèche fait passer aux trois K7 suivantes (la bande est large de trois jaquettes exactement).
   const scrollRail = (direction: -1 | 1) => {
     const rail = railRef.current;
     if (!rail) return;
     const smooth = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    rail.scrollBy({ left: direction * rail.clientWidth * 0.8, behavior: smooth ? 'smooth' : 'auto' });
+    rail.scrollBy({ left: direction * rail.clientWidth, behavior: smooth ? 'smooth' : 'auto' });
   };
 
   if (!film) return null;
 
   return (
     <>
-      {/* Rayons : sept par page, le huitième bouton passe à l'autre page */}
+      {/* Rayons : six par page, le septième bouton (« Suite ») passe à la page suivante */}
       <div className={styles.kSide}>
         {(TAB_PAGES[page] ?? TAB_PAGES[0]).map((id) => (
           <button
@@ -204,24 +201,8 @@ export function KioskBrowse({ selectedId, versions, credits, onSelect, onSearch,
       </button>
       {actionSlot(film)}
 
-      {/* Bande de jaquettes du rayon */}
-      <div className={styles.kStripH}>
-        <b>{tabLabel(tab)}</b>
-        <div className={styles.kChips}>
-          {SORTS.map((s) => (
-            <button
-              key={s.id}
-              type="button"
-              className={`${styles.kChip} ${s.id === sort ? styles.kChipOn : ''}`}
-              aria-pressed={s.id === sort}
-              onClick={() => setSort(s.id)}
-            >
-              {s.label}
-            </button>
-          ))}
-        </div>
-      </div>
-      <div className={styles.kStrip}>
+      {/* Bande de jaquettes du rayon : trois K7 à la fois */}
+      <div className={styles.kStrip} role="group" aria-label={`Films du rayon ${tabLabel(tab)}`}>
         <button
           ref={prevRef}
           type="button"

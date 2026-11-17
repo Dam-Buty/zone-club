@@ -28,9 +28,14 @@ export const KIOSK_TABS: ReadonlyArray<{ id: KioskTab; label: string }> = [
   { id: 'tous', label: 'Tous' },
 ];
 
-export const KIOSK_TAB_PAGE_SIZE = 7;
+/**
+ * Six rayons par page, et « Suite » pour les autres : la colonne compte sept boutons au lieu de huit
+ * (Rusmir, 17/11/2026 : « la partie section occupe trop de place en hauteur […] laisser plus de
+ * place pour la description »).
+ */
+export const KIOSK_TAB_PAGE_SIZE = 6;
 
-/** Les onglets, par pages de sept (la colonne des rayons n'en montre qu'une à la fois). */
+/** Les onglets, par pages de six (la colonne des rayons n'en montre qu'une à la fois). */
 export function tabPages(): KioskTab[][] {
   const pages: KioskTab[][] = [];
   for (let i = 0; i < KIOSK_TABS.length; i += KIOSK_TAB_PAGE_SIZE) {
@@ -414,4 +419,122 @@ export function lcdPitchInDevicePixels(devicePixelRatio: number | undefined): nu
  */
 export function railEdges(scrollLeft: number, clientWidth: number, scrollWidth: number): { atStart: boolean; atEnd: boolean } {
   return { atStart: scrollLeft <= 2, atEnd: scrollLeft + clientWidth >= scrollWidth - 2 };
+}
+
+// ===== Mise en page sur téléphone =====
+//
+// Validé par Rusmir le 17/11/2026 sur maquette, sur son Pixel 9a : chaque commande garde une hauteur
+// minimale en pixels, quel que soit le téléphone ; sous « LOUER », seulement la bande de jaquettes,
+// trois K7 à la fois, sur toute la hauteur qui reste. Le format de l'écran (5:9, 180cqw de haut) ne
+// change pas : c'est la répartition de sa hauteur qui s'adapte.
+
+/** Hauteurs minimales des commandes, en pixels CSS. */
+export const KIOSK_MIN_PX = { nav: 40, tab: 44, btn: 48 } as const;
+
+export type KioskLayout = {
+  navH: number;
+  cardTop: number;
+  tabH: number;
+  cardH: number;
+  posterW: number;
+  metaGap: number;
+  underTop: number;
+  underH: number;
+  showUnder: boolean;
+  synSize: number;
+  synLines: number;
+  btnTop: number;
+  btnH: number;
+  stripTop: number;
+  stripH: number;
+  railPosterH: number;
+};
+
+const SCREEN_H = 180; // écran haut 5:9, en cqw
+const RAIL_W = 70.4; // largeur utile de la bande entre les flèches, en cqw
+/** Hauteur d'une jaquette de la bande quand trois tiennent entières entre les flèches (2:3, deux intervalles de 0,5cqw). */
+export const RAIL_POSTER_MAX_H = ((RAIL_W - 1) / 3) * 1.5;
+/** Corps du texte du cadre « En bref », en cqw ; sur téléphone on y ajoute SYN_EXTRA_PX pixels (Rusmir, 17/11/2026 : « une police 1 ou 2 px plus grande, on a du mal à lire »). */
+const SYN_SIZE = 3.75;
+export const SYN_EXTRA_PX = 2;
+const STRIP_MIN = 30; // en dessous, les jaquettes de la bande deviennent trop petites
+const STRIP_PREF = 34; // bande confortable : des jaquettes d'environ 30cqw de haut
+/** Boutons de la colonne des rayons : une page d'onglets et « Suite ». */
+const COLUMN_BUTTONS = KIOSK_TAB_PAGE_SIZE + 1;
+
+/**
+ * Répartition de la hauteur de l'écran de la borne sur un téléphone, en cqw, pour un écran de
+ * `pxPerCqw` pixels par cqw (sa largeur divisée par 100). Les commandes ne descendent jamais sous
+ * KIOSK_MIN_PX ; la fiche suit la colonne des rayons ; la place qui reste se partage entre le cadre
+ * « En bref » et la bande de jaquettes. La description passe en premier (Rusmir : « laisser plus de
+ * place pour la description »), tant que la bande garde des jaquettes confortables :
+ *  1. le plus de lignes de résumé possible, jusqu'à quatre, avec une bande d'au moins STRIP_PREF ;
+ *  2. sinon deux lignes, avec une bande d'au moins STRIP_MIN ;
+ *  3. sinon le générique seul (« De », « Avec ») ;
+ *  4. sinon le cadre s'efface : sur un tout petit écran, les jaquettes passent avant le reste.
+ */
+export function phoneLayout(pxPerCqw: number): KioskLayout {
+  const q = pxPerCqw > 0 && Number.isFinite(pxPerCqw) ? pxPerCqw : 4;
+  const navH = Math.max(7.6, KIOSK_MIN_PX.nav / q);
+  const tabH = Math.max(9.75, KIOSK_MIN_PX.tab / q);
+  const btnH = Math.max(12, KIOSK_MIN_PX.btn / q);
+  const synSize = SYN_SIZE + SYN_EXTRA_PX / q;
+  const line = synSize * 1.24; // une ligne du cadre « En bref »
+  const underCredits = 3 + 2 * line + 1 + 0.4; // marges du cadre + générique (« De », « Avec »)
+  const cardTop = 1.9 + navH + 2.5;
+  const cardH = COLUMN_BUTTONS * tabH + 1.8;
+  const underTop = cardTop + cardH + 1.6;
+  const available = SCREEN_H - underTop - 2 - btnH - 1.8 - 2.4;
+  const underFor = (lines: number) => underCredits + lines * line;
+  const preferred = [4, 3, 2].find((lines) => available - underFor(lines) >= STRIP_PREF);
+  let underH = 0;
+  let showUnder = true;
+  if (preferred !== undefined) underH = underFor(preferred);
+  else if (available - underFor(2) >= STRIP_MIN) underH = underFor(2);
+  else if (available - underCredits >= STRIP_MIN) underH = underCredits;
+  else showUnder = false;
+  const btnTop = showUnder ? underTop + underH + 2 : underTop;
+  const stripTop = btnTop + btnH + 1.8;
+  const stripH = SCREEN_H - 2.4 - stripTop;
+  return {
+    navH,
+    cardTop,
+    tabH,
+    cardH,
+    posterW: Math.min(38, (cardH - 6.6 - 2.8 - 14.4 - 1.4 - 1.5) / 1.5),
+    metaGap: 1.7 + Math.max(0, cardH - 80) / 6,
+    underTop,
+    underH,
+    showUnder,
+    synSize,
+    synLines: showUnder ? Math.max(0, Math.min(4, Math.floor((underH - underCredits) / line + 1e-6))) : 0,
+    btnTop,
+    btnH,
+    stripTop,
+    stripH,
+    railPosterH: Math.min(RAIL_POSTER_MAX_H, (stripH - 0.8) * 0.9),
+  };
+}
+
+/** Les variables CSS de l'écran de la borne qui portent cette mise en page. */
+export function phoneLayoutVars(L: KioskLayout): Record<string, string> {
+  const cq = (v: number) => `${Math.round(v * 1000) / 1000}cqw`;
+  return {
+    '--k-nav-h': cq(L.navH),
+    '--k-card-top': cq(L.cardTop),
+    '--k-tab-h': cq(L.tabH),
+    '--k-card-h': cq(L.cardH),
+    '--k-poster-w': cq(L.posterW),
+    '--k-meta-gap': cq(L.metaGap),
+    '--k-under-top': cq(L.underTop),
+    '--k-under-h': cq(L.underH),
+    '--k-under-display': L.showUnder ? 'block' : 'none',
+    '--k-syn-size': cq(L.synSize),
+    '--k-syn-lines': String(Math.max(1, L.synLines)),
+    '--k-syn-display': L.synLines > 0 ? '-webkit-box' : 'none',
+    '--k-btn-top': cq(L.btnTop),
+    '--k-btn-h': cq(L.btnH),
+    '--k-strip-top': cq(L.stripTop),
+    '--k-rail-poster-h': cq(L.railPosterH),
+  };
 }
