@@ -536,6 +536,17 @@ Règles à ne pas casser — chacune a son test dans `tests/domain/kiosk-*.test.
   recherche, messages) — partagent les variables `--k-*` posées sur l'écran. L'écran est en
   **5:9 sur téléphone** et en **2:3 sur PC** : les hauteurs passent par ces variables.
   Le corps de la borne (fente, vitrines) reste schématique jusqu'au lot 3 (rendu Blender).
+- **Ergonomie sur téléphone : les zones d'appui se MESURENT** (audit du 17/11/2026). On les
+  relève dans la page par `document.elementFromPoint` sur tout le pourtour de chaque bouton, à
+  360×780, 393×852 et 412×915 : c'est la zone réellement touchable, prolongements invisibles
+  compris. Cible : 44 px au moins (WCAG 2.5.5), 24 px au strict minimum (WCAG 2.5.8). Les
+  flèches de la bande ont une zone d'appui qui va jusqu'au bord de l'écran ; « Compte » et
+  « Quitter » sont écartés de 12 px. **Rien ne se prolonge vers « LOUER »**, qui loue en un
+  appui : les onglets de tri, juste dessous, gardent 6 px d'écart. Gestes parasites coupés sur
+  la borne : double-tap qui zoome (`touch-action: manipulation`), tirer-pour-rafraîchir
+  (`overscroll-behavior-y: none` sur html et body, posé par `KioskView` le temps de la borne —
+  une page rechargée a quitté la borne), menu de l'appui long (sauf champs et phrase de
+  récupération).
 - **La garde du geste retour est testée, et son retrait d'entrée est différé.** `useBackGuard`
   délègue à `src/hooks/back-guard-stack.ts` (sans React ni `window` ; tests
   `tests/domain/back-guard.test.mjs`). Une garde refermée par l'interface laisse une entrée
