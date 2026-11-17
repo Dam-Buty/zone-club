@@ -36,7 +36,7 @@ export function KioskSearch({ films, onPick, onBack }: KioskSearchProps) {
   return (
     <div className={styles.kSearchPane}>
       <button type="button" className={styles.kAuthBack} onClick={onBack}>
-        ◀ rayons
+        Rayons
       </button>
 
       <form noValidate onSubmit={submit}>

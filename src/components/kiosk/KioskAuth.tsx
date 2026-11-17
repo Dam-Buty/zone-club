@@ -21,9 +21,9 @@ interface KioskAuthProps {
 }
 
 const COPY: Record<KioskAuthMode, { title: string; submit: string }> = {
-  login: { title: 'Connexion', submit: 'SE CONNECTER' },
-  register: { title: 'Créer un compte', submit: 'CRÉER MON COMPTE' },
-  recover: { title: 'Récupérer mon compte', submit: 'CHANGER LE MOT DE PASSE' },
+  login: { title: 'Connexion', submit: 'Se connecter' },
+  register: { title: 'Créer un compte', submit: 'Créer mon compte' },
+  recover: { title: 'Récupérer mon compte', submit: 'Changer le mot de passe' },
 };
 
 export function KioskAuth({ initialMode = 'login', onDone, onCancel }: KioskAuthProps) {
@@ -141,7 +141,7 @@ export function KioskAuth({ initialMode = 'login', onDone, onCancel }: KioskAuth
   return (
     <div className={styles.kAuth}>
       <button type="button" className={styles.kAuthBack} onClick={onCancel}>
-        ◀ retour
+        Retour
       </button>
       <h2 className={styles.kAuthTitle}>{COPY[mode].title}</h2>
 
@@ -214,7 +214,7 @@ export function KioskAuth({ initialMode = 'login', onDone, onCancel }: KioskAuth
 
         {/* Jamais grisé : pendant l'appel il le dit, et l'appui est ignoré. */}
         <button type="submit" className={styles.kAuthSubmit} aria-busy={busy}>
-          {busy ? 'UN INSTANT…' : COPY[mode].submit}
+          {busy ? 'Un instant…' : COPY[mode].submit}
         </button>
       </form>
 

@@ -126,7 +126,7 @@ export function KioskBrowse({ selectedId, versions, credits, onSelect, onSearch,
           aria-label="Afficher les autres rayons"
           onClick={() => setPage((p) => (p + 1) % TAB_PAGES.length)}
         >
-          suite
+          Suite
         </button>
       </div>
 
@@ -180,7 +180,7 @@ export function KioskBrowse({ selectedId, versions, credits, onSelect, onSearch,
           <circle cx="10" cy="10" r="6.5" />
           <path d="M15 15l6.5 6.5" />
         </svg>
-        <span className={styles.kBtnLabel}>recherche</span>
+        <span className={styles.kBtnLabel}>Recherche</span>
       </button>
       {actionSlot(film)}
 

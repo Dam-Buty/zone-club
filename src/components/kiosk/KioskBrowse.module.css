@@ -295,7 +295,10 @@
 
 /* ----- boutons -----
    Ceux de la référence : un aplat à trame fine dans un filet clair, lui-même cerné d'un trait
-   sombre ; un libellé gras en bas-de-casse qui respire dans sa case. Pas de brillance. */
+   sombre ; un libellé gras qui respire dans sa case. Pas de brillance.
+   Casse (décision de Rusmir du 17/11/2026) : l'action principale est en CAPITALES (« LOUER »),
+   les autres boutons et les onglets prennent une majuscule initiale (« Recherche », « Suite »).
+   Les capitales sont posées ici, pas dans le texte : un lecteur d'écran lit « Louer ». */
 
 .kBtn {
   position: absolute;
@@ -325,6 +328,11 @@
   text-shadow: 0 0.25cqw 0.12cqw rgba(92, 34, 0, 0.55);
   border: 0.4cqw solid var(--k-edge-orange);
   background: var(--k-skin-orange);
+}
+
+.kLouer .kBtnLabel {
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
 }
 
 .kPrice {

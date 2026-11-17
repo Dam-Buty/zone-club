@@ -223,16 +223,18 @@ test('BORNE: sans densité lisible, la grille prend le pas le plus serré', () =
 });
 
 // ===== Bouton d'action : l'action d'un côté, le prix de l'autre =====
+// Les libellés sont écrits normalement (« Louer ») : c'est la feuille de style qui met l'action
+// principale en capitales, pour qu'un lecteur d'écran ne l'épelle pas.
 test('BORNE: le bouton d\'action dit l\'action, le prix est donné à part et en toutes lettres', () => {
-  assert.deepEqual(K.actionLabel('rent', 2, false), { text: 'louer', price: '2 crédits' });
-  assert.deepEqual(K.actionLabel('login', 1, false), { text: 'louer', price: '1 crédit' });
-  assert.deepEqual(K.actionLabel('insufficient', 3, false), { text: 'louer', price: '3 crédits' });
+  assert.deepEqual(K.actionLabel('rent', 2, false), { text: 'Louer', price: '2 crédits' });
+  assert.deepEqual(K.actionLabel('login', 1, false), { text: 'Louer', price: '1 crédit' });
+  assert.deepEqual(K.actionLabel('insufficient', 3, false), { text: 'Louer', price: '3 crédits' });
 });
 test('BORNE: quand il n\'y a rien à payer, le bouton ne montre pas de prix', () => {
-  assert.deepEqual(K.actionLabel('watch', 2, false), { text: 'regarder', price: null });
-  assert.deepEqual(K.actionLabel('unavailable', 2, false), { text: 'indisponible', price: null });
-  assert.deepEqual(K.actionLabel('out-of-stock', 2, false), { text: 'toutes louées', price: null });
-  assert.deepEqual(K.actionLabel('rent', 2, true), { text: 'location…', price: null });
+  assert.deepEqual(K.actionLabel('watch', 2, false), { text: 'Regarder', price: null });
+  assert.deepEqual(K.actionLabel('unavailable', 2, false), { text: 'Indisponible', price: null });
+  assert.deepEqual(K.actionLabel('out-of-stock', 2, false), { text: 'Toutes louées', price: null });
+  assert.deepEqual(K.actionLabel('rent', 2, true), { text: 'Location…', price: null });
 });
 
 // ===== Titre de la fiche : le plus grand corps qui tient =====

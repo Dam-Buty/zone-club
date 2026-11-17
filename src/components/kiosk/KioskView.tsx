@@ -364,7 +364,7 @@ export function KioskView() {
                   </div>
                   <div className={styles.kNav}>
                     <button type="button" className={styles.kNavBtn} onClick={openAccount}>
-                      compte
+                      Compte
                       {isAuthenticated && authUser && (
                         <>
                           {/* L'espace ne se voit pas (bouton en flex) mais sépare les mots pour un lecteur d'écran. */}
@@ -374,7 +374,7 @@ export function KioskView() {
                       )}
                     </button>
                     <button type="button" className={`${styles.kNavBtn} ${quitHint ? styles.kNavHint : ''}`} onClick={quit}>
-                      quitter
+                      Quitter
                       <svg className={styles.kNavTri} viewBox="0 0 9 12" aria-hidden="true">
                         <path d="M8 1 1 6l7 5z" />
                       </svg>

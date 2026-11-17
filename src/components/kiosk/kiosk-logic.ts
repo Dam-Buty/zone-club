@@ -234,14 +234,15 @@ export function rentAction(i: {
 
 /**
  * Ce qu'affiche le bouton d'action : l'action, et le prix à part — en toutes lettres, jamais en
- * abrégé. Le prix n'apparaît que lorsqu'un appui mène à une location.
+ * abrégé. Le prix n'apparaît que lorsqu'un appui mène à une location. Les libellés sont écrits
+ * normalement : la feuille de style met l'action principale en capitales.
  */
 export function actionLabel(action: RentAction, cost: number, renting: boolean): { text: string; price: string | null } {
-  if (renting) return { text: 'location…', price: null };
-  if (action === 'watch') return { text: 'regarder', price: null };
-  if (action === 'unavailable') return { text: 'indisponible', price: null };
-  if (action === 'out-of-stock') return { text: 'toutes louées', price: null };
-  return { text: 'louer', price: creditsLabel(cost) };
+  if (renting) return { text: 'Location…', price: null };
+  if (action === 'watch') return { text: 'Regarder', price: null };
+  if (action === 'unavailable') return { text: 'Indisponible', price: null };
+  if (action === 'out-of-stock') return { text: 'Toutes louées', price: null };
+  return { text: 'Louer', price: creditsLabel(cost) };
 }
 
 export type RentFlowResult =

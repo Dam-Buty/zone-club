@@ -4,12 +4,12 @@
 
 /* ----- boutons communs aux panneaux ----- */
 
-/* Libellés en bas-de-casse, comme les boutons d'action de la référence. */
-.kAuthBack,
-.kAuthLink,
+/* Même casse que sur le parcours : l'action principale en CAPITALES, les autres boutons avec
+   une majuscule initiale (leur texte est écrit ainsi). */
 .kAuthSubmit,
-.kNoticeBtn {
-  text-transform: lowercase;
+.kNoticeBtnPrimary {
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
 }
 
 .kAuthBack,
@@ -54,6 +54,18 @@
 .kAuthBack {
   padding: 1.2cqw 3.2cqw 1.4cqw;
   font-size: 5.2cqw;
+}
+
+/* Le triangle du retour est dessiné, pas tiré d'une police de secours. */
+.kAuthBack::before {
+  content: "";
+  display: inline-block;
+  width: 1.9cqw;
+  height: 2.8cqw;
+  margin-right: 1.5cqw;
+  vertical-align: -0.06em;
+  background: currentColor;
+  clip-path: polygon(100% 0, 100% 100%, 0 50%);
 }
 
 .kAuthTitle {
