@@ -527,26 +527,40 @@ Règles à ne pas casser — chacune a son test dans `tests/domain/kiosk-*.test.
   0,80 em) : ses corps sont plus petits et ses graisses d'un cran plus fortes qu'avec une police
   ordinaire, et la table de largeurs de `titleWidthEm()` est relevée sur elle — à refaire si la
   police du titre change. Pour grossir les libellés des onglets on change leur corps
-  (`--k-tab-size`), jamais la hauteur des onglets (`--k-tab-h`). L'enseigne « LOCATION 24/7 » est un
+  (`--k-tab-size`) ; leur hauteur, elle, vient de `phoneLayout` (voir plus bas). L'enseigne « LOCATION 24/7 » est un
   néon **rendu** (`public/kiosk/neon-location-247.webp`), sur le modèle de l'enseigne VIDEOCLUB
   de la devanture telle qu'elle est sur `public/exterior.jpeg` : lettres **en contour** d'une
   grotesque géométrique grasse, tube fin au cœur rose presque blanc, halo violet — pas Orbitron,
   et pas un texte avec des ombres portées, qui ne passe pas pour un néon. Trois feuilles — `KioskView`
   (corps, écran, dalle, vitre), `KioskBrowse` (rayons, fiche, bande), `KioskPanels` (connexion,
   recherche, messages) — partagent les variables `--k-*` posées sur l'écran. L'écran est en
-  **5:9 sur téléphone** et en **2:3 sur PC** : les hauteurs passent par ces variables.
+  **5:9 sur téléphone** et en **2:3 sur PC** : les hauteurs passent par ces variables. Le texte du
+  cadre « En bref » a 2 px de plus que sa proportion sur téléphone (Rusmir : « on a du mal à lire »).
   Le corps de la borne (fente, vitrines) reste schématique jusqu'au lot 3 (rendu Blender).
 - **Ergonomie sur téléphone : les zones d'appui se MESURENT** (audit du 17/11/2026). On les
   relève dans la page par `document.elementFromPoint` sur tout le pourtour de chaque bouton, à
   360×780, 393×852 et 412×915 : c'est la zone réellement touchable, prolongements invisibles
   compris. Cible : 44 px au moins (WCAG 2.5.5), 24 px au strict minimum (WCAG 2.5.8). Les
   flèches de la bande ont une zone d'appui qui va jusqu'au bord de l'écran ; « Compte » et
-  « Quitter » sont écartés de 12 px. **Rien ne se prolonge vers « LOUER »**, qui loue en un
-  appui : les onglets de tri, juste dessous, gardent 6 px d'écart. Gestes parasites coupés sur
+  « Quitter » sont écartés de 12 px. **« LOUER » ne loue jamais en un seul appui** : la
+  location se confirme (`confirmRentText`), y compris juste après une connexion qu'il a demandée.
+  Gestes parasites coupés sur
   la borne : double-tap qui zoome (`touch-action: manipulation`), tirer-pour-rafraîchir
   (`overscroll-behavior-y: none` sur html et body, posé par `KioskView` le temps de la borne —
   une page rechargée a quitté la borne), menu de l'appui long (sauf champs et phrase de
   récupération).
+- **Sur téléphone, la hauteur de l'écran se répartit d'après sa taille réelle** (`phoneLayout`,
+  validé par Rusmir le 17/11/2026 sur son Pixel 9a). `KioskView` mesure l'écran de la borne
+  (`ResizeObserver`) et pose les variables (`phoneLayoutVars`) ; l'écran 2:3 du PC garde sa
+  mise en page fixe. Les commandes ne descendent jamais sous `KIOSK_MIN_PX` (« Compte » et
+  « Quitter » 40 px, onglets des rayons 44, « LOUER » et « Recherche » 48) ; la fiche suit la
+  colonne des rayons — **six par page**, « Suite » pour les autres ; la place qui reste va d'abord
+  à la description (jusqu'à quatre lignes), tant que la bande garde des jaquettes confortables,
+  puis au générique seul. **Sous « LOUER », seulement la bande** : trois K7 à la fois, sans
+  intitulé de rayon ni boutons de tri — une flèche passe aux trois suivantes. Le format en
+  hauteur (5:9) ne change pas : il garde de la marge pour la barre du navigateur. En largeur, en
+  revanche, la borne prend tout (cadre de 6 px) ; la fente et la vitrine du dessous ne prennent
+  que la hauteur qui reste.
 - **La garde du geste retour est testée, et son retrait d'entrée est différé.** `useBackGuard`
   délègue à `src/hooks/back-guard-stack.ts` (sans React ni `window` ; tests
   `tests/domain/back-guard.test.mjs`). Une garde refermée par l'interface laisse une entrée

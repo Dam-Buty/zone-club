@@ -73,6 +73,15 @@
 >   grande […] tu n'agrandis pas les onglets, tu agrandis juste la police légèrement ». **[R]**
 >   Fait **[C]** : libellés en Big Shoulders Display, corps des onglets +10 %, hauteur des
 >   onglets inchangée.
+> - **§ 6, ergonomie sur téléphone (audit et essais sur le Pixel 9a, 17/11/2026).** **[R]** Fait **[C]** :
+>   location confirmée avant d'être faite ; zones d'appui mesurées (flèches, Compte/Quitter, retours) ;
+>   gestes parasites coupés (double-tap, tirer-pour-rafraîchir, appui long) ; borne pleine largeur ;
+>   commandes à hauteur minimale en pixels selon la taille du téléphone (`phoneLayout`) ; six rayons
+>   par page ; sous « LOUER », la seule bande de jaquettes, trois à la fois — **le tri (de A à Z,
+>   par date) est retiré de la borne** ; texte du résumé +2 px. Rejeté par lui : le cadre « En bref »
+>   feuilleté à points (« aucun écran à l'époque ne possédait ce type de transition ») et l'écran
+>   étiré sur toute la hauteur (marge à garder pour la barre du navigateur). En attente : la fiche
+>   détaillée d'un film (rubriques, bande-annonce).
 > - **Tarif** : l'affichage suit ce que le serveur facture. **Dates du serveur** : lues en UTC.
 >   Les deux validés. **[R]**
 > - **§ 5, bouton provisoire sur mobile** : il part tel quel, on ajustera en voyant la version
