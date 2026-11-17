@@ -474,8 +474,13 @@ Règles à ne pas casser — chacune a son test dans `tests/domain/kiosk-*.test.
   qui est dans l'écran se mesure en `cqw`. La logique décidable vit dans `kiosk-logic.ts` (pur, testé).
 - **Objectif photoréaliste : une dalle LCD de 2007 derrière sa vitre, pas une page web.** Référence
   de Rusmir : la photographie « 01_iMOZI_interface_2007 ». Facture : onglets collés dans un cadre,
-  boutons plats à trame et fine bordure claire, satiné légèrement métallique, libellés d'action en
-  bas-de-casse, angles à peine arrondis. Deux couches recouvrent le contenu de l'écran
+  boutons plats à trame et fine bordure claire, satiné légèrement métallique, angles à peine
+  arrondis. **Casse des libellés** (décision de Rusmir du 17/11) : l'action principale en
+  CAPITALES (« LOUER », « SE CONNECTER »), les autres boutons et les onglets avec une majuscule
+  initiale (« Recherche », « Suite », « Compte ») ; les capitales sont posées par la feuille de
+  style, le texte reste écrit normalement pour les lecteurs d'écran. « Compte » et « Quitter »
+  sont de vrais boutons : en texte nu, comme la barre du haut de la référence, on ne voyait pas
+  qu'ils s'actionnent. Deux couches recouvrent le contenu de l'écran
   (`KioskView.module.css`) : la **dalle** (`.screen::before` — grille des pixels, rétroéclairage
   inégal, noirs relevés ; `.screen::after` — sa bande noire et l'ombre du cadre) et la **vitre**
   (`.ks::after` — le reflet de la rue). Ce qui fait « verre » et non « plastique » : un reflet

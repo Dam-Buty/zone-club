@@ -62,6 +62,12 @@
 >   changée après mesure sur la photo (Sofia Sans Extra Condensed), corps recalculés pour que
 >   chaque libellé tienne dans sa case, onglet actif sans débordement, bouton d'action en deux
 >   parties (l'action, puis le prix en toutes lettres), titre au plus grand corps qui tient.
+> - **§ 6, casse et barre du haut.** « En haut, compte et quitter semblent un peu petits, on n'a
+>   pas l'impression que ce sont des actions […] recherche devrait être en majuscule comme suite,
+>   louer devrait être tout en majuscules. » **[R]** Fait **[C]** : « Compte » et « Quitter »
+>   deviennent des boutons ; « Recherche » et « Suite » prennent une majuscule initiale (ma
+>   lecture de « en majuscule comme suite ») ; l'action principale est en capitales, dans les
+>   panneaux aussi.
 > - **Tarif** : l'affichage suit ce que le serveur facture. **Dates du serveur** : lues en UTC.
 >   Les deux validés. **[R]**
 > - **§ 5, bouton provisoire sur mobile** : il part tel quel, on ajustera en voyant la version
