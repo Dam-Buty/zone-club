@@ -1,0 +1,279 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { installFakeCastSdk, MEDIA_NAMESPACE } from '../helpers/fake-cast-sdk.mjs';
+import {
+  castView, CAST_ACK_TIMEOUT_MS, CAST_LOAD_TIMEOUT_MS, CAST_REPORT_EVERY_MS, CAST_STATUS_TIMEOUT_MS,
+} from '../../src/cast/cast-machine.ts';
+
+// Le service Cast (src/cast/cast-service.ts) devant un faux SDK (tests/helpers/fake-cast-sdk.mjs) qui rejoue ce
+// que fait le vrai sur le Pixel 9a (mesuré le 18/11/2026). Chaque cas part d'une page neuve
+// (__resetCastForTests) ; les minuteurs sont ceux de node:test.
+
+installFakeCastSdk();
+const service = await import('../../src/cast/cast-service.ts');
+
+const flush = () => new Promise((resolve) => setImmediate(resolve));
+const getOut = { url: 'https://s/vf.mp4', title: 'Get Out', startAt: 0, subtitles: [], activeSubtitleId: null };
+const ask = (filmId) => ({ type: 'REQUEST_CAST', filmId, tracked: true, media: getOut });
+
+function fakePorts(remembered = null) {
+  const ports = {
+    calls: [],
+    rental: { exists: true, watchProgress: 40, watchPosition: 120 },
+    rememberedId: remembered,
+    serverOpen: (...args) => record('serverOpen', args),
+    serverReport: (...args) => record('serverReport', args),
+    serverClose: (...args) => record('serverClose', args),
+    readRental: async (filmId) => { ports.calls.push(['readRental', filmId]); return ports.rental; },
+    remember: (filmId) => { ports.calls.push(['remember', filmId]); ports.rememberedId = filmId; },
+    remembered: () => ports.rememberedId,
+  };
+  function record(name, args) {
+    ports.calls.push([name, ...args]);
+    return Promise.resolve();
+  }
+  return ports;
+}
+const named = (ports, name) => ports.calls.filter(([n]) => n === name).map(([, ...args]) => args);
+
+/**
+ * Page neuve, service démarré. `session` : la page est rechargée pendant un Cast (séance reprise, annoncée
+ * quelques ms après l'initialisation). `settle` : le délai de reprise s'écoule, SDK_READY part.
+ */
+async function start(t, { sdk = true, session = false, remembered = null, settle = true } = {}) {
+  service.__resetCastForTests();
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+  const fake = installFakeCastSdk({ sdk });
+  const tv = session ? fake.makeSession('Salon') : null;
+  if (tv) fake.context.resume(tv);
+  const ports = fakePorts(remembered);
+  service.initCast(ports);
+  await flush();                                       // le chargeur rend la main : initialisation du SDK
+  if (tv) fake.context.emitSession('SESSION_RESUMED', tv);
+  if (sdk && settle) t.mock.timers.tick(service.CAST_RESUME_SETTLE_MS);
+  return { fake, tv, ports, state: () => service.getCastState() };
+}
+
+/** Page rechargée pendant que la TV joue `filmId`, le SDK annonce son objet média : télécommande. */
+async function remoteOn(t, filmId = 7, mediaOptions = {}) {
+  const ctx = await start(t, { session: true });
+  const playing = ctx.fake.makeMedia({ filmId, ...mediaOptions });
+  ctx.tv.announceMedia(playing);
+  await flush();
+  assert.equal(ctx.state().phase, 'remote', 'préalable : télécommande');
+  return { ...ctx, playing };
+}
+
+test('CAST SERVICE (a): deux démarrages, une seule initialisation du SDK', async (t) => {
+  const { fake, state } = await start(t);
+  service.initCast(fakePorts());
+  await flush();
+  assert.equal(fake.calls.setOptions.length, 1);
+  assert.equal(fake.calls.setOptions[0].autoJoinPolicy, 'origin_scoped');
+  assert.equal(state().available, true);
+  assert.equal(state().connected, false);
+});
+
+test('CAST SERVICE (b): rechargée pendant que la TV joue, la réponse brute à GET_STATUS ramène le film', async (t) => {
+  const { fake, tv, ports, state } = await start(t, { session: true, remembered: 7 });
+  assert.equal(fake.getStatusCount(), 1, 'séance reprise → GET_STATUS');
+  assert.equal(fake.calls.sendMessage[0].namespace, MEDIA_NAMESPACE);
+  fake.player.volumeLevel = 0.28;
+  // F2 : le SDK n'a pas encore d'objet média ; seule la réponse brute dit ce que joue la TV.
+  assert.equal(tv.getMediaSession(), null);
+  tv.reply({ type: 'MEDIA_STATUS', requestId: 1, status: [{
+    mediaSessionId: 4, playerState: 'PLAYING', currentTime: 1234.5, media: { duration: 5400, customData: { filmId: 7 } },
+  }] });
+  await flush();
+  const s = state();
+  assert.equal(s.phase, 'remote');
+  assert.equal(s.filmId, 7);
+  assert.equal(s.position, 1234.5);
+  assert.equal(s.duration, 5400);
+  assert.equal(s.volume, 0.28);
+  assert.equal(s.connected, true);
+  assert.equal(castView(s, 7), 'remote', 'le lecteur rouvert montre la télécommande, pas le film en local (D6)');
+  assert.deepEqual(named(ports, 'serverReport'), [[7, 1234.5, 5400]]);
+  assert.deepEqual(named(ports, 'remember'), [[7]]);
+  t.mock.timers.tick(CAST_STATUS_TIMEOUT_MS);
+  assert.equal(state().phase, 'remote', 'la réponse a levé l\'échéance du statut');
+});
+
+test('CAST SERVICE (c): rechargée, TV revenue à l\'accueil : la liste vide fait relire la location', async (t) => {
+  const { tv, ports, state } = await start(t, { session: true, remembered: 7 });
+  tv.reply({ type: 'MEDIA_STATUS', requestId: 1, status: [] });
+  await flush();
+  assert.deepEqual(named(ports, 'readRental'), [[7]]);
+  const s = state();
+  assert.equal(s.phase, 'idle');
+  assert.equal(s.notice?.code, 'stopped_elsewhere');
+  assert.equal(s.notice?.filmId, 7);
+  assert.deepEqual(s.resume, { filmId: 7, position: 120, play: false }, 'reprise locale en pause, à la position du serveur');
+});
+
+test('CAST SERVICE (d): GET_STATUS sans réponse → liaison perdue à l\'échéance, pas avant', async (t) => {
+  const { fake, state } = await remoteOn(t);
+  const before = fake.getStatusCount();
+  t.mock.timers.tick(CAST_REPORT_EVERY_MS);            // TICK : demande de statut, la TV se tait
+  assert.equal(fake.getStatusCount(), before + 1);
+  t.mock.timers.tick(CAST_STATUS_TIMEOUT_MS - 1);
+  assert.equal(state().phase, 'remote');
+  t.mock.timers.tick(1);
+  assert.equal(state().phase, 'lost');
+});
+
+test('CAST SERVICE (e): liaison morte, l\'envoi lève dans le SDK → liaison perdue, rien ne remonte', async (t) => {
+  const { tv, state } = await remoteOn(t);
+  tv.sendMessageImpl = () => { throw new DOMException('PresentationConnection is closed', 'InvalidStateError'); };
+  assert.doesNotThrow(() => service.sendCast({ type: 'TICK' }));
+  assert.equal(state().phase, 'lost');
+});
+
+test('CAST SERVICE (f): film A remplacé par B, puis l\'ancien objet A parle et meurt → B continue', async (t) => {
+  const { fake, tv, ports, state, playing: filmA } = await remoteOn(t, 7);
+  tv.loadMediaImpl = () => {
+    tv.mediaSession = fake.makeMedia({ filmId: 8, currentTime: 0 });
+    return Promise.resolve();
+  };
+  service.sendCast(ask(8));
+  assert.equal(state().phase, 'loading');
+  await flush();
+  assert.equal(state().phase, 'remote');
+  assert.equal(state().filmId, 8);
+  assert.deepEqual(fake.calls.loadMedia[0].media.customData, { filmId: 8 });
+  filmA.update({ playerState: 'PAUSED' });             // dernier statut de l'ancien objet
+  filmA.update({}, false);                             // puis sa mort, sans IDLE
+  await flush();
+  const s = state();
+  assert.equal(s.phase, 'remote');
+  assert.equal(s.filmId, 8);
+  assert.equal(s.paused, false);
+  assert.ok(!named(ports, 'serverClose').some(([filmId]) => filmId === 8), 'aucune clôture pour B');
+  assert.ok(!named(ports, 'readRental').some(([filmId]) => filmId === 8), 'aucune relecture de la location de B');
+});
+
+test('CAST SERVICE (g): le sélecteur s\'ouvre dans la pile de l\'appui ; refermé, retour au repos sans message', async (t) => {
+  const { fake, state } = await start(t);
+  let inTap = false;
+  let openedInTap = null;
+  fake.context.requestSessionImpl = () => {
+    openedInTap = inTap;
+    return Promise.reject('cancel');
+  };
+  inTap = true;
+  service.sendCast(ask(7));
+  inTap = false;
+  assert.equal(openedInTap, true, 'requestSession appelé avant que sendCast ne rende la main');
+  assert.equal(state().phase, 'choosing');
+  await flush();
+  assert.equal(state().phase, 'idle');
+  assert.equal(state().notice, null, 'un geste du visiteur n\'est pas une panne');
+});
+
+test('CAST SERVICE (g): jamais le sélecteur quand une séance existe — le film part dessus', async (t) => {
+  // Séance reprise, demande faite avant SDK_READY : la machine ne se sait pas encore connectée.
+  const { fake, state } = await start(t, { session: true, settle: false });
+  assert.equal(state().connected, false);
+  service.sendCast(ask(7));
+  assert.equal(fake.calls.requestSession, 0);
+  assert.equal(state().phase, 'loading');
+  assert.equal(fake.calls.loadMedia.length, 1);
+});
+
+test('CAST SERVICE (h): SDK absent pendant le choix → « Impossible de joindre… », puis Cast indisponible', async (t) => {
+  const { fake, state } = await start(t, { sdk: false });
+  service.sendCast(ask(7));
+  assert.equal(state().phase, 'choosing');
+  fake.scripts[0].onerror();                           // le script du SDK ne se charge pas
+  await flush();
+  const s = state();
+  assert.equal(s.phase, 'idle');
+  assert.deepEqual(s.notice, { code: 'connect_failed', filmId: 7, deviceName: null });
+  assert.equal(s.available, false);
+});
+
+test('CAST SERVICE (i): fin du film lue sur l\'objet média, RemotePlayer remis à zéro → terminé', async (t) => {
+  const { fake, ports, state, playing } = await remoteOn(t, 7, { duration: 596.5, currentTime: 590 });
+  fake.player.duration = 0;                            // D4 : remis à zéro au même instant
+  fake.player.currentTime = 0;
+  playing.update({ playerState: 'IDLE', idleReason: 'FINISHED' }, false);
+  await flush();
+  assert.equal(state().phase, 'ended');
+  assert.deepEqual(named(ports, 'serverClose'), [[7, null, true]]);
+});
+
+test('CAST SERVICE (j): appels serveur en file — la clôture attend la position, un rejet n\'arrête pas la file', async (t) => {
+  const { fake, ports, state } = await remoteOn(t);
+  let failReport = null;
+  ports.serverReport = (...args) => {
+    ports.calls.push(['serverReport', ...args]);
+    return new Promise((_resolve, reject) => { failReport = reject; });
+  };
+  fake.setVisibility('hidden');                        // PAGE_HIDDEN : la position part avant le gel de Chrome
+  service.sendCast({ type: 'USER_STOP' });             // « Arrêter »
+  await flush();
+  assert.equal(named(ports, 'serverReport').length, 2, 'à la reprise du suivi, puis à la mise en arrière-plan');
+  assert.deepEqual(named(ports, 'serverClose'), [], 'la clôture attend la fin de l\'envoi de position');
+  failReport(new Error('502'));
+  await flush();
+  assert.deepEqual(named(ports, 'serverClose'), [[7, 10, false]]);
+  assert.deepEqual(fake.calls.endCurrentSession, [true], 'la TV revient à son accueil');
+  assert.equal(state().phase, 'idle');
+});
+
+test('CAST SERVICE (k): commande sans accusé → COMMAND_FAILED à l\'échéance, puis demande de statut', async (t) => {
+  const { fake, state, playing } = await remoteOn(t);
+  playing.answer = 'silent';
+  const before = fake.getStatusCount();
+  service.sendCast({ type: 'COMMAND', command: { kind: 'toggle' } });
+  assert.deepEqual(fake.calls.commands, ['pause']);
+  assert.equal(state().busy, true);
+  t.mock.timers.tick(CAST_ACK_TIMEOUT_MS - 1);
+  assert.equal(state().busy, true);
+  t.mock.timers.tick(1);
+  assert.equal(state().busy, false);
+  assert.equal(fake.getStatusCount(), before + 1, 'la TV est interrogée');
+});
+
+test('CAST SERVICE (l): fin de séance pendant le lancement → échec dit tout de suite, sans attendre 20 s', async (t) => {
+  const { fake, tv, state } = await start(t, { session: true });
+  tv.reply({ type: 'MEDIA_STATUS', requestId: 1, status: [] });   // TV à l'accueil
+  tv.loadMediaImpl = () => new Promise(() => {});
+  service.sendCast(ask(7));
+  assert.equal(state().phase, 'loading');
+  fake.context.emitSession('SESSION_ENDED');
+  const s = state();
+  assert.equal(s.phase, 'idle');
+  assert.equal(s.notice?.code, 'load_failed');
+  assert.equal(s.notice?.filmId, 7);
+  t.mock.timers.tick(CAST_LOAD_TIMEOUT_MS);
+  assert.equal(state(), s, 'plus rien ne se passe après');
+});
+
+test('CAST SERVICE: réponse sans `media` pour la séance média connue → son film, son nouvel état', async (t) => {
+  const { tv, state, playing } = await remoteOn(t);
+  service.sendCast({ type: 'TICK' });
+  tv.reply({ type: 'MEDIA_STATUS', requestId: 2, status: [{ mediaSessionId: playing.mediaSessionId, playerState: 'PAUSED', currentTime: 300 }] });
+  const s = state();
+  assert.equal(s.filmId, 7);
+  assert.equal(s.paused, true);
+  assert.equal(s.position, 300);
+});
+
+test('CAST SERVICE: séance finie avant la reprise de son objet média → elle ne rouvre pas la télécommande', async (t) => {
+  const { fake, tv, state } = await start(t, { session: true, remembered: 7 });
+  tv.reply({ type: 'MEDIA_STATUS', requestId: 1, status: [{
+    mediaSessionId: 4, playerState: 'PLAYING', currentTime: 50, media: { duration: 600, customData: { filmId: 7 } },
+  }] });
+  assert.equal(state().phase, 'remote');
+  tv.mediaSession = fake.makeMedia({ filmId: 7, currentTime: 50 });   // l'objet que le SDK crée pour cette réponse…
+  fake.context.emitSession('SESSION_ENDED');                         // …mais la séance finit avant qu'on le reprenne
+  assert.equal(state().phase, 'idle');
+  t.mock.timers.tick(1);
+  assert.equal(state().phase, 'idle', 'l\'objet média d\'une séance finie ne parle plus');
+});
+test('CAST SERVICE: le volume du récepteur change → la télécommande le suit', async (t) => {
+  const { fake, state } = await remoteOn(t);
+  fake.controller.setVolume(0.4);
+  assert.equal(state().volume, 0.4);
+});

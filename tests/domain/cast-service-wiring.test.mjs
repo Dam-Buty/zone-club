@@ -49,3 +49,13 @@ test('CAST SERVICE: la machine et le fil n\'importent aucune valeur', () => {
     assert.ok(!/\bimport\s*\(/.test(src), `${name} : pas d'import dynamique`);
   }
 });
+
+test('CAST SERVICE: la remise à neuf réservée aux tests n\'est appelée nulle part dans l\'application', () => {
+  // Elle oublie la séance, l'état et le SDK initialisé : appelée en vrai, elle rouvrirait la voie à un second
+  // appel d'initialisation (D1).
+  for (const file of walkFiles(path.join(ROOT, 'src'), new Set(['.ts', '.tsx']))) {
+    const rel = toPosix(path.relative(ROOT, file));
+    if (rel === 'src/cast/cast-service.ts' || rel === 'src/cast/cast-sdk.ts') continue;
+    assert.ok(!readText(file).includes('ForTests'), `${rel} ne doit pas appeler une fonction réservée aux tests`);
+  }
+});
