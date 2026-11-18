@@ -3,6 +3,8 @@
 - **Date** : 17/11/2026
 - **Statut** : validé par Rusmir le 17/11/2026 (« on valide »), relu par un constructeur neuf ; ses deux questions
   tranchées le 18/11 (§ 6)
+- **Avancement** : codé le 18/11/2026 (plan `docs/superpowers/plans/2026-11-18-borne-mon-compte.md`), vérifié sur
+  build de production ; formulaire de critique du lecteur : étoiles empilées sur téléphone (débordaient à 412 px)
 - **Base** : branche `feat/borne-location` ; suit la livraison 1 de la distribution
   (`2026-11-17-borne-distribution-k7-design.md`) et le suivi serveur du Cast (`2026-11-17-cast-suivi-serveur-design.md`)
 

@@ -32,3 +32,12 @@ test('CRITIQUE: aucune note abrégée là où une critique s\'écrit ou se lit',
     }
   }
 });
+// Vu le 18/11 au format du téléphone (412 px) : les trois rangées de cinq étoiles, côte à côte, débordaient de
+// l'écran du lecteur. Sous 600 px, elles s'empilent, avec des étoiles à la taille du doigt.
+test('CRITIQUE (lecteur): les notes s\'empilent sur un téléphone', () => {
+  const css = readText(path.join(ROOT, 'src/components/player/VHSPlayer.module.css'));
+  const mq = css.slice(css.indexOf('@media (max-width: 600px)', css.indexOf('.rewindRatingsRow')));
+  assert.ok(css.indexOf('@media (max-width: 600px)', css.indexOf('.rewindRatingsRow')) !== -1, 'une règle pour les écrans étroits');
+  assert.match(mq, /\.rewindRatingsRow\s*\{[^}]*flex-direction:\s*column/, 'notes empilées');
+  assert.match(mq, /\.rewindStar\s*\{[^}]*min-width:\s*44px/, 'étoiles à la taille du doigt');
+});

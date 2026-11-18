@@ -576,6 +576,16 @@ Règles à ne pas casser — chacune a son test dans `tests/domain/kiosk-*.test.
   session tienne dans l'activation de l'appui ; sur Apple (AirPlay), le lecteur s'ouvre
   normalement. La livraison 2 — robot, carter, afficheur et vidéo de 8 s, avec le lot 3 — viendra
   s'insérer entre l'attente et le panneau.
+- **« Mon compte » et les critiques** (`KioskAccount`, `KioskReview`, spec
+  `docs/superpowers/specs/2026-11-17-borne-mon-compte-design.md`). « Compte » ouvre l'écran à tout moment, sans avoir à
+  louer : crédits, locations en cours, **tout l'historique** (rendu / expiré / terminée, rembobiné, rendu en avance,
+  critique). La règle des critiques est **au serveur** (`lib/review-eligibility.ts`, renvoyée par `/api/me` →
+  `reviewEligibility`) : une location suffit si elle est vue à 80 % **et** si 80 % de la durée se sont écoulés depuis son
+  lancement (`rentals.watch_started_at`, posé par `lib/rental-marks.ts` sur une location sans progression) ; une seule
+  critique par film et par visiteur, modifiable. Minimum **144 caractères** et intitulés **Réalisation / Scénario / Jeu
+  d'acteurs** définis une seule fois (`src/utils/review-rules.ts`) et utilisés partout (serveur, lecteur, terminal,
+  vidéoclub, Michel, borne). Le panneau d'après location demande « Où voulez-vous regarder ? » (`watchHereLabel`,
+  `tvMeansLabel`).
 - **Sur téléphone, la hauteur de l'écran se répartit d'après sa taille réelle** (`phoneLayout`,
   validé par Rusmir le 17/11/2026 sur son Pixel 9a). `KioskView` mesure l'écran de la borne
   (`ResizeObserver`) et pose les variables (`phoneLayoutVars`) ; l'écran 2:3 du PC garde sa

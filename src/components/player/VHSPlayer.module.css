@@ -441,6 +441,31 @@
   text-shadow: 0 0 8px #ffd700;
 }
 
+/* Téléphone : trois rangées de cinq étoiles côte à côte débordaient de l'écran (vu le 18/11 à 412 px). Les notes
+   s'empilent, l'intitulé à gauche, les étoiles à droite, à la taille du doigt. */
+@media (max-width: 600px) {
+  .rewindRatingsRow {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+    padding: 0 16px;
+  }
+  .rewindRatingGroup {
+    flex-direction: row;
+    justify-content: space-between;
+  }
+  .rewindRatingLabel {
+    font-size: 0.85rem;
+    white-space: nowrap;
+  }
+  .rewindStar {
+    min-width: 44px;
+    min-height: 44px;
+    font-size: 1.5rem;
+    padding: 0;
+  }
+}
+
 .rewindTextareaWrap {
   position: relative;
   margin-bottom: 10px;
