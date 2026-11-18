@@ -1,0 +1,5 @@
+# Intermédiaire de la fabrique (fond, textures, cache TMDB, rendus)
+travail/
+__pycache__/
+# Le .gitignore de la racine écarte tous les .png : les sources, elles, sont suivies.
+!sources/*.png
