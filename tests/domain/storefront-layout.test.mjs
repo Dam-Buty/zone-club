@@ -71,3 +71,13 @@ test('ZOOM: câblage dans la devanture', () => {
   const jsx = app.slice(app.indexOf('<ExteriorView'), app.indexOf('<ExteriorView') + 400);
   assert.ok(jsx.includes('onKioskIntent='), 'App branche l\'intention');
 });
+
+// Constaté à la vérification à l'écran (18/11/2026) : le rendu qui lance le zoom démonte aussi la scène 3D quand elle
+// était montée, ce qui prend plusieurs centaines de millisecondes. Compté depuis l'appui, le minuteur de garde tombait
+// avant la fin du zoom et le coupait.
+test('ZOOM: le minuteur de garde part avec le zoom, pas avec l\'appui', () => {
+  const tsx = readFileSync(path.join(ROOT, 'src/components/exterior/ExteriorView.tsx'), 'utf8');
+  const ouvrir = tsx.slice(tsx.indexOf('const openKiosk = '), tsx.indexOf('const openKiosk = ') + 900);
+  assert.ok(!ouvrir.includes('setTimeout'), 'aucun minuteur armé dans le gestionnaire de l\'appui');
+  assert.match(tsx, /useEffect\(\(\) => \{\s*if \(!kioskZoom\) return;[\s\S]{0,400}KIOSK_ZOOM_GUARD_MS/, 'armé dans un effet, une fois le zoom affiché');
+});

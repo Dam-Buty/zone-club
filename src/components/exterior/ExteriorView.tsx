@@ -22,7 +22,8 @@ const zoneStyle = (r: Rect) => ({
 // Vue rapprochée de l'écran de la borne, fondue sur la scène pendant le zoom (même fabrique).
 const CLOSE_UP_SRC = '/storefront-borne-zoom.webp';
 // Le zoom dure 900 ms (durées dans la feuille de style). Si sa fin ne nous parvient pas — onglet
-// passé en arrière-plan, transition coupée —, la borne s'ouvre quand même à cette échéance.
+// passé en arrière-plan, transition coupée —, la borne s'ouvre quand même à cette échéance,
+// comptée depuis l'affichage du zoom.
 const KIOSK_ZOOM_GUARD_MS = 1200;
 
 const readViewport = () => (
@@ -84,7 +85,6 @@ export function ExteriorView({ onEnter, onOpenKiosk, onKioskIntent, canEnter, on
   // était décodée à l'appui (sinon le zoom part sans elle). Non nul = le zoom est parti.
   const [kioskZoom, setKioskZoom] = useState<{ transform: string; closeUp: boolean } | null>(null);
   const [closeUpReady, setCloseUpReady] = useState(false);
-  const kioskGuardRef = useRef(0);
   const kioskOpenedRef = useRef(false);
 
   // La vue rapprochée n'est demandée qu'une fois la devanture affichée : elle ne retarde rien.
@@ -97,7 +97,6 @@ export function ExteriorView({ onEnter, onOpenKiosk, onKioskIntent, canEnter, on
     return () => { cancelled = true; };
   }, [isStatic, isStorefrontShown]);
 
-  useEffect(() => () => window.clearTimeout(kioskGuardRef.current), []);
 
   // Content area dimensions (for hotspot positioning) — desktop only
   const [contentArea, setContentArea] = useState({ width: '100%', height: '100%', top: '0', left: '0' });
@@ -213,12 +212,20 @@ export function ExteriorView({ onEnter, onOpenKiosk, onKioskIntent, canEnter, on
   // Porte poussée : la transition vers le vidéoclub est partie, la borne ne s'ouvre plus (elle
   // s'ouvrait, puis le visiteur était emmené à l'intérieur 0,7 s plus tard).
   // Fin du zoom (ou échéance de garde) : la borne s'ouvre, une seule fois.
-  const finishKioskZoom = () => {
+  const finishKioskZoom = useCallback(() => {
     if (kioskOpenedRef.current) return;
     kioskOpenedRef.current = true;
-    window.clearTimeout(kioskGuardRef.current);
     onOpenKiosk();
-  };
+  }, [onOpenKiosk]);
+
+  // Le minuteur de garde est armé une fois le zoom affiché, pas à l'appui : le rendu qui lance le
+  // zoom démonte aussi la scène 3D, ce qui peut prendre plusieurs centaines de millisecondes —
+  // compté depuis l'appui, il tombait avant la fin du zoom et le coupait.
+  useEffect(() => {
+    if (!kioskZoom) return;
+    const guard = window.setTimeout(finishKioskZoom, KIOSK_ZOOM_GUARD_MS);
+    return () => window.clearTimeout(guard);
+  }, [kioskZoom, finishKioskZoom]);
 
   const openKiosk = () => {
     // Une seule transition : ni double appui, ni borne après la porte, ni appui sous le rideau.
@@ -232,7 +239,6 @@ export function ExteriorView({ onEnter, onOpenKiosk, onKioskIntent, canEnter, on
     }
     const z = zoomTransform(LAYOUT, viewport.w, viewport.h);
     setKioskZoom({ transform: `translate(${z.x}px, ${z.y}px) scale(${z.scale})`, closeUp: closeUpReady });
-    kioskGuardRef.current = window.setTimeout(finishKioskZoom, KIOSK_ZOOM_GUARD_MS);
   };
 
   // Bouton provisoire de la borne (bureau, en attendant sa devanture élargie) : il n'apparaît

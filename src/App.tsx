@@ -43,9 +43,24 @@ const MinitelOverlay = lazy(() => import('./components/minitel/MinitelOverlay').
 // affichée (preloadKiosk), AVANT les fichiers du vidéoclub 3D : demandé seulement à l'appui, il
 // attendait derrière eux — 14,3 s d'écran noir mesurées à 20 Mbit/s le 16/11/2026.
 const loadKiosk = () => import('./components/kiosk/KioskView');
-const preloadKiosk = () => { void loadKiosk().catch(() => {}); };
+// Une fois arrivé, le code de la borne est gardé ici pour la monter directement (KioskMount).
+let KioskViewLoaded: (typeof import('./components/kiosk/KioskView'))['KioskView'] | null = null;
+const preloadKiosk = () => { void loadKiosk().then((m) => { KioskViewLoaded = m.KioskView; }).catch(() => {}); };
 // Un premier échec (réseau) est retenté une fois : webpack redemande un chunk resté en échec.
-const KioskView = lazy(() => loadKiosk().catch(() => loadKiosk()).then(m => ({ default: m.KioskView })));
+const KioskViewLazy = lazy(() => loadKiosk().catch(() => loadKiosk()).then(m => ({ default: m.KioskView })));
+
+/**
+ * La borne. Son code déjà là, elle est montée directement et s'affiche dans le rendu même du
+ * changement de scène ; sinon elle passe par React.lazy et le repli du Suspense.
+ * Par React.lazy, même chargée, elle passait toujours par le repli, et pour 300 ms au moins
+ * (React ne remplace pas plus tôt un repli qu'il vient d'afficher) : un carton « Ouverture de la
+ * borne… » entre la fin du zoom de la devanture et l'écran de la borne. Le choix est fait une
+ * fois, au montage : changer de composant en cours de route remonterait la borne.
+ */
+function KioskMount() {
+  const [Kiosk] = useState(() => KioskViewLoaded ?? KioskViewLazy);
+  return <Kiosk />;
+}
 
 // Preload heavy interior assets (HDR, PBR textures, GLBs) while user is on exterior/onboarding.
 // These fire HTTP requests as soon as the interior chunk is in — by the time the user enters, assets are in browser cache.
@@ -629,7 +644,7 @@ function App() {
         <KioskBoundary onLeave={leaveKiosk}>
           {/* Jamais d'écran noir : tant que le code de la borne n'est pas là, son fond l'est. */}
           <Suspense fallback={<KioskOpening />}>
-            <KioskView />
+            <KioskMount />
           </Suspense>
           <Suspense fallback={null}>
             {isPlayerOpen && <VHSPlayer />}

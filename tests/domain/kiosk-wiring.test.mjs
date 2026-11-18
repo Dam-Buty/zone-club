@@ -276,6 +276,15 @@ test('BORNE: pas d\'écran noir à l\'ouverture — code préchargé, repli aux 
   const exterior = readText(path.join(ROOT, 'src/components/exterior/ExteriorView.tsx'));
   assert.ok(exterior.includes('onShown'), 'la devanture signale qu\'elle est affichée');
 });
+// Mesuré le 18/11/2026 sur le build de production : même avec son code déjà chargé, la borne montée par React.lazy
+// passait par le repli « Ouverture de la borne… » pendant 320 ms (React ne remplace pas avant ~300 ms un repli qu'il
+// vient d'afficher) — un carton de texte entre la fin du zoom et l'écran de la borne.
+test('BORNE: son code déjà chargé, elle s\'ouvre sans passer par le repli', () => {
+  const app = readText(path.join(ROOT, 'src/App.tsx'));
+  assert.match(app, /KioskViewLoaded = m\.KioskView/, 'le code préchargé est gardé');
+  assert.match(app, /useState\(\(\) => KioskViewLoaded \?\? KioskViewLazy\)/, 'le composant est choisi une fois, au montage de la borne');
+  assert.match(app, /<Suspense fallback=\{<KioskOpening \/>\}>\s*<KioskMount \/>/, 'le repli reste là pour un code pas encore arrivé');
+});
 test('BORNE: pendant la transition de la porte, le bouton de la borne ne répond plus', () => {
   const src = readText(path.join(ROOT, 'src/components/exterior/ExteriorView.tsx'));
   const start = src.indexOf('const openKiosk = ');

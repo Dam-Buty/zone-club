@@ -178,10 +178,11 @@
   animation: mobileIndicatorBob 2s ease-in-out infinite;
 }
 
-/* La plaque est près du bord droit : le texte reste assez petit pour ne pas sortir de la fenêtre. */
+/* La plaque est près du bord droit : le texte reste assez petit pour ne pas sortir de la fenêtre
+   (à 2,5cqw il dépassait de 1,3 px sur une fenêtre de 412 × 915). */
 .mobileDoorIndicator .doorIndicatorText,
 .mobileDoorIndicator .doorIndicatorArrow {
-  font-size: clamp(0.62rem, 2.5cqw, 0.9rem);
+  font-size: clamp(0.62rem, 2.1cqw, 0.9rem);
 }
 
 @keyframes mobileIndicatorBob {
