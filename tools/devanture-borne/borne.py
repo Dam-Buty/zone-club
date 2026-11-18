@@ -1,6 +1,6 @@
 """Devanture mobile avec la borne : la borne sous Blender, calée sur la vue mobile reculée.
 
-blender -b --factory-startup -P borne.py -- <echantillons> [<sortie.png> [borne|mur|zoom|masque]]
+blender -b --factory-startup -P borne.py -- <echantillons> [<sortie.png> [borne|mur|masque]]
 Repère : X vers la droite (0 = centre de la porte), Y vers le mur (mur en Y = 0), Z vers le haut
 (0 = sol). 1 unité = 1 m. Échelle et position tirées de travail/repere.json (fond.py).
 """
@@ -19,8 +19,8 @@ from variante import D, G, SOURCES  # noqa: E402 — la variante en cours : sa g
 SAMPLES = int(args[0]) if len(args) > 0 else 64
 OUT = args[1] if len(args) > 1 else str(D / 'borne.png')
 # 'borne' : la borne sur fond transparent (et la mise en page lue par le site) ; 'mur' : la lumière que le mur renvoie
-# (voir « passe mur » plus bas) ; 'zoom' : la vue rapprochée de l'écran, pour le zoom du site ; 'masque' : la borne en
-# aplats, pour le masque de reflets de la devanture animée du bureau.
+# (voir « passe mur » plus bas) ; 'masque' : la borne en aplats, pour le masque de reflets de la devanture animée du
+# bureau. Le film d'approche rend ces mêmes passes image par image (approche_rendu.py).
 PASSE = args[2] if len(args) > 2 else 'borne'
 R = json.loads((D / 'repere.json').read_text())
 W, H, PPM = G['sortie']['w'], G['sortie']['h'], G['sortie']['px_par_m']
@@ -1030,14 +1030,12 @@ def pose_reverbere():
     return ob
 
 
-# ----- Ce que le site lit : la mise en page de l'image, et la vue rapprochée de l'écran -----
-# Le site pose ses zones d'appui et son zoom sur ces positions, en fractions de l'image (0 à 1, origine en haut à
+# ----- Ce que le site lit : la mise en page de l'image -----
+# Le site pose ses zones d'appui sur ces positions, en fractions de l'image (0 à 1, origine en haut à
 # gauche). Elles sont projetées par la caméra de la scène, jamais recopiées à la main.
 from bpy_extras.object_utils import world_to_camera_view as vers_image  # noqa: E402
 
 SITE = G.get('site', {})
-ZOOM = SITE.get('zoom')              # la vue rapprochée : seulement pour les variantes qui en ont une
-ZOOM_W, ZOOM_H = (ZOOM['ecran_px'] * ZOOM['largeur_en_ecrans'], ZOOM['ecran_px'] * ZOOM['hauteur_en_ecrans']) if ZOOM else (0, 0)
 
 
 def cadre(points):
@@ -1046,16 +1044,6 @@ def cadre(points):
     vus = [vers_image(scene, cam, Vector(q)) for q in points]
     xs_, ys_ = [v.x for v in vus], [1 - v.y for v in vus]
     return {'x0': min(xs_), 'y0': min(ys_), 'x1': max(xs_), 'y1': max(ys_)}
-
-
-def zone_zoom(ecran):
-    """La vue rapprochée : centrée sur l'écran, large de deux écrans et haute de trois largeurs d'écran. Rend la taille
-    de l'image entière à cette échelle (l'écran y fait ecran_px de large) et le coin haut-gauche de la vue, en pixels."""
-    s_ = ZOOM['ecran_px'] / ((ecran['x1'] - ecran['x0']) * W)
-    wz, hz = round(W * s_), round(H * s_)
-    bx = round((ecran['x0'] + ecran['x1']) / 2 * wz - ZOOM_W / 2)
-    by = round((ecran['y0'] + ecran['y1']) / 2 * hz - ZOOM_H / 2)
-    return wz, hz, bx, by
 
 
 def mise_en_page():
@@ -1073,9 +1061,6 @@ def mise_en_page():
         'push': {'x': (R['photo_x0'] + push_x * kp) / W, 'y': (R['photo_y0'] + push_y * kp) / H},
         'groupe': {'cx': (borne_['x0'] + porte_['x1']) / 2, 'cy': SITE.get('groupe_cy', 0.72)},
     }
-    if ZOOM:
-        wz, hz, bx, by = zone_zoom(ecran_)
-        mise['zoom'] = {'x0': bx / wz, 'y0': by / hz, 'x1': (bx + ZOOM_W) / wz, 'y1': (by + ZOOM_H) / hz, 'w': ZOOM_W, 'h': ZOOM_H}
     return mise
 
 
@@ -1086,19 +1071,7 @@ if PASSE == 'borne':
     print('MISE EN PAGE borne', [round(MISE['borne'][c_] * (W if c_[0] == 'x' else H)) for c_ in ('x0', 'y0', 'x1', 'y1')],
           '| écran', [round(MISE['ecran'][c_] * (W if c_[0] == 'x' else H)) for c_ in ('x0', 'y0', 'x1', 'y1')],
           '| porte', [round(MISE['porte'][c_] * (W if c_[0] == 'x' else H)) for c_ in ('x0', 'y0', 'x1', 'y1')],
-          '| push', round(MISE['push']['x'] * W), round(MISE['push']['y'] * H),
-          '| zoom', [round(MISE['zoom'][c_] * (W if c_[0] == 'x' else H)) for c_ in ('x0', 'y0', 'x1', 'y1')] if ZOOM else 'aucun')
-
-if PASSE == 'zoom':
-    # Même caméra, même scène : seule la zone de la vue rapprochée est rendue, à l'échelle où l'écran fait ecran_px
-    # de large. Elle tient tout entière dans la borne (ni mur ni photo) : sortie opaque, sans halo ni pluie.
-    wz_, hz_, bx_, by_ = zone_zoom(MISE['ecran'])
-    scene.render.resolution_x, scene.render.resolution_y = wz_, hz_
-    scene.render.use_crop_to_border = True
-    scene.render.border_min_x, scene.render.border_max_x = (bx_ + 0.5) / wz_, (bx_ + ZOOM_W + 0.5) / wz_
-    scene.render.border_min_y, scene.render.border_max_y = 1 - (by_ + ZOOM_H - 0.5) / hz_, 1 - (by_ - 0.5) / hz_
-    scene.render.film_transparent = False
-    scene.render.image_settings.color_mode = 'RGB'
+          '| push', round(MISE['push']['x'] * W), round(MISE['push']['y'] * H))
 
 if PASSE == 'mur':
     murs_reels()
@@ -1164,8 +1137,4 @@ if PASSE == 'mur':
     lum = buf.reshape(exr.size[1], exr.size[0], 4)[::-1, :, :3]
     np.save(str(D / 'mur-passe.npy'), lum[ZY0:ZY1, ZX0:ZX1].copy())
     print('PASSE MUR', lum.shape, 'max', round(float(lum.max()), 3), '→ mur-passe.npy (lignes 1100 à 2300, colonnes 0 à 900)')
-if PASSE == 'zoom':
-    taille = tuple(bpy.data.images.load(OUT).size)
-    assert taille == (ZOOM_W, ZOOM_H), f'vue rapprochée : {taille} au lieu de {(ZOOM_W, ZOOM_H)}'
-    print('ZOOM', taille, 'image entière à cette échelle', (wz_, hz_), 'coin de la vue', (bx_, by_))
 print('RENDU', OUT, 'centre borne X =', round(KX, 3), 'objectif', round(cam_data.lens, 2), 'mm', 'décalage', round(cam_data.shift_x, 4), round(cam_data.shift_y, 4))

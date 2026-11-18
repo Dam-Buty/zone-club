@@ -181,13 +181,24 @@
   "epaisseur": 1,
   "flou": 0.6
  },
+ "approche": {
+  "_": "L'approche filmée de la borne (Rusmir, 18/11/2026 : « on veut la même chose sur le mobile » — elle remplace le zoom). Mêmes réglages de rythme que le bureau (geometrie-bureau.json). bord_exp 1 : le cadre glisse en ligne droite vers l'écran. arrivee : l'écran occupe 78 % de la largeur du cadre, centre à 47 % de la hauteur — sur un téléphone en portrait c'est là que l'interface pose son écran (kioskScreenBox), la scène gardant sa taille. Le ciel, à l'infini, ne grossit pas pendant l'approche (approche_compo.py). pluie : pour une image de 1280 px de large.",
+  "ips": 30,
+  "duree_s": 3.0,
+  "accel_s": 0.55,
+  "frein_s": 1.10,
+  "pas_hz": 1.8,
+  "pas_m": 0.005,
+  "obturateur": 0.5,
+  "sous_images": 7,
+  "bord_exp": 1,
+  "arrivee": {"largeur_ecran": 0.78, "cx": 0.5, "cy": 0.47},
+  "film": {"w": 720, "h": 1290, "crf": 25, "fichier": "storefront-mobile-borne-approche.mp4", "budget_octets": 1572864},
+  "echantillons": [64, 64],
+  "pluie": {"densite": 0.00022, "longueur": [26, 78], "pente": 0.05, "force": [0.05, 0.22], "flou": 0.7}
+ },
  "site": {
-  "_": "Ce que le site lit (borne.py → travail/mise-en-page.json → src/data/storefront-mobile.json). groupe_cy : hauteur, en fraction de l'image, sur laquelle le cadrage se centre quand la fenêtre est moins haute que l'image (entre le haut du cadre de la porte et la barre de poussée). zoom : la vue rapprochée, centrée sur l'écran de la borne — l'écran y fait ecran_px de large, la vue couvre largeur_en_ecrans × hauteur_en_ecrans largeurs d'écran.",
-  "groupe_cy": 0.72,
-  "zoom": {
-   "ecran_px": 780,
-   "largeur_en_ecrans": 2,
-   "hauteur_en_ecrans": 3
-  }
+  "_": "Ce que le site lit (borne.py → travail/mise-en-page.json → src/data/storefront-mobile.json). groupe_cy : hauteur, en fraction de l'image, sur laquelle le cadrage se centre quand la fenêtre est moins haute que l'image (entre le haut du cadre de la porte et la barre de poussée).",
+  "groupe_cy": 0.72
  }
 }

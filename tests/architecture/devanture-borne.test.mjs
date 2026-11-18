@@ -36,22 +36,19 @@ function tailleWebp(buf) {              // VP8X, VP8L ou VP8 : largeur et hauteu
   return [buf.readUInt16LE(26) & 0x3fff, buf.readUInt16LE(28) & 0x3fff];
 }
 
-test('IMAGES: la devanture mobile et la vue rapprochée ont les tailles annoncées', () => {
+test('IMAGES: la devanture mobile a la taille annoncée', () => {
   const L = JSON.parse(readFileSync(path.join(ROOT, 'src/data/storefront-mobile.json'), 'utf8'));
   assert.deepEqual(tailleWebp(readFileSync(path.join(ROOT, 'public/storefront-mobile.webp'))), [1536, 2752]);
   assert.deepEqual([L.image.w, L.image.h], [1536, 2752]);
-  assert.deepEqual(tailleWebp(readFileSync(path.join(ROOT, 'public/storefront-borne-zoom.webp'))), [L.zoom.w, L.zoom.h]);
 });
 
 test('IMAGES: la mise en page est cohérente', () => {
   const L = JSON.parse(readFileSync(path.join(ROOT, 'src/data/storefront-mobile.json'), 'utf8'));
   const dans = (a, b) => a.x0 >= b.x0 && a.x1 <= b.x1 && a.y0 >= b.y0 && a.y1 <= b.y1;
   assert.ok(dans(L.ecran, L.borne), 'l\'écran est dans la borne');
-  assert.ok(dans(L.ecran, L.zoom), 'la vue rapprochée couvre l\'écran');
   assert.ok(L.borne.x1 < L.porte.x0, 'la borne est à gauche de la porte');
   const ratio = ((L.ecran.y1 - L.ecran.y0) * L.image.h) / ((L.ecran.x1 - L.ecran.x0) * L.image.w);
   assert.ok(Math.abs(ratio - 9 / 5) < 0.03, `écran 5:9, mesuré ${ratio}`);
-  assert.ok(Math.abs((L.zoom.x1 - L.zoom.x0) * L.image.w / ((L.ecran.x1 - L.ecran.x0) * L.image.w) - 2) < 0.05, 'vue rapprochée : deux largeurs d\'écran');
 });
 
 // Relecture finale (18/11/2026) : « python3 … | tail » sous « set -e » rend le code de sortie de tail — une étape en
@@ -163,4 +160,16 @@ test('APPROCHE: le film du bureau', () => {
 test('APPROCHE: le départ du film est tenu à l\'image fixe', () => {
   const src = readFileSync(path.join(T, 'approche_compo.py'), 'utf8');
   assert.ok(src.includes('SystemExit') && src.includes('compo.png'), 'la première image est comparée à l\'image fixe, écart qui arrête la fabrique');
+});
+
+// Rusmir, 18/11/2026 : « on veut la même chose sur le mobile » — le film d'approche remplace le zoom, et sa vue
+// rapprochée disparaît de la fabrique comme du site.
+test('APPROCHE: le film du mobile, et plus de vue rapprochée', () => {
+  const L = JSON.parse(readFileSync(path.join(ROOT, 'src/data/storefront-mobile.json'), 'utf8'));
+  const a = controleFilm(L, 'storefront-mobile-borne-approche.mp4', 1572864);
+  assert.deepEqual([a.w, a.h], [720, 1290]);
+  assert.ok(Math.abs((a.ecran.x1 - a.ecran.x0) - 0.78) < 0.02 && Math.abs((a.ecran.y0 + a.ecran.y1) / 2 - 0.47) < 0.02);
+  assert.equal(L.zoom, undefined);
+  assert.ok(!existsSync(path.join(ROOT, 'public/storefront-borne-zoom.webp')));
+  assert.ok(!readFileSync(path.join(T, 'borne.py'), 'utf8').includes("PASSE == 'zoom'"));
 });

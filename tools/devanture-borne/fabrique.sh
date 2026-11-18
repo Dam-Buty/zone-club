@@ -61,10 +61,6 @@ for V in $DEVANTURES; do
         python3 "$ICI/masque.py" > "$T/masque.log"
         tail -1 "$T/masque.log"
     fi
-    if a site.zoom; then
-        echo "vue rapprochée de l'écran, pour le zoom ($ECH_BORNE échantillons)"
-        rendu rendu-zoom.log "$ECH_BORNE" "$T/zoom.png" zoom
-    fi
     if a approche; then
         command -v ffmpeg > /dev/null || { echo "ffmpeg introuvable : il encode le film d'approche (brew install ffmpeg)"; exit 1; }
         echo "film d'approche : trajet de l'appareil"

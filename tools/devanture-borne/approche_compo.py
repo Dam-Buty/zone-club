@@ -38,6 +38,15 @@ CAM0_X = (G['camera'].get('axe_px', DCX) - DCX) / PPM
 Y_NEON = 0.046                                         # l'axe des tubes est à 4,6 cm du mur (journal de borne.py)
 
 fond = Image.open(D / 'fond.png').convert('RGB')
+# Le ciel (variante dont le bâtiment est coupé par un toit) : il est à l'infini, il ne grossit donc pas quand on avance,
+# au contraire du bâtiment. C'est la bande de fond.png au-dessus de l'arête du toit, prolongée par ses bords.
+CIEL, CIEL_MARGE = None, (0, 0)
+if G.get('toit_m'):
+    _c = np.asarray(fond)[:int(R['roof_y'])]
+    CIEL_MARGE = (W // 2, H // 4)
+    CIEL = Image.fromarray(np.pad(np.pad(_c, ((0, 0), (CIEL_MARGE[0], CIEL_MARGE[0]), (0, 0)), mode='reflect'),
+                                  ((CIEL_MARGE[1], CIEL_MARGE[1]), (0, 0), (0, 0)), mode='edge'))
+AXE = G['camera'].get('axe_px', R['door_center_x'])       # colonne de l'image que vise l'appareil
 NB = json.loads((D / 'neon-bbox.json').read_text())
 
 # Le cœur des tubes, mesuré une fois sur le rendu en taille réelle : sa surface sert d'étalon, pour que le halo ait
@@ -67,6 +76,17 @@ def assemble(i):
     f = CAM[i]
     c0, r0, bw, bh = f['boite']
     base = np.asarray(fond.resize((WV, HV), Image.LANCZOS, box=(c0, r0, c0 + bw, r0 + bh))).astype(np.float32)
+    if CIEL is not None:
+        # Au-dessus de l'arête du toit : le ciel, à son échelle de départ, déplacé du seul décentrement de l'appareil.
+        arete = (R['roof_y'] - r0) * HV / bh                # ligne du cadre où passe l'arête du toit
+        n = min(HV, int(np.ceil(arete)))
+        if n > 0:
+            gauche = AXE + (f['shift_x'] * HV - WV / 2) * W / WV + CIEL_MARGE[0]
+            haut = (H / 2 + CAM[0]['shift_y'] * H) - (HV / 2 + f['shift_y'] * HV) * H / HV + CIEL_MARGE[1]
+            boite = (max(0.0, gauche), max(0.0, haut), min(float(CIEL.width), gauche + W), min(float(CIEL.height), haut + n * H / HV))
+            ciel = np.asarray(CIEL.resize((WV, n), Image.LANCZOS, box=boite)).astype(np.float32)
+            poids = np.clip(arete - np.arange(n), 0, 1)[:, None, None]      # fondu d'une ligne sur l'arête
+            base[:n] = ciel * poids + base[:n] * (1 - poids)
     # La lumière du mur, limitée comme dans compo.py (cadre de la porte, bord du toit, zone de la passe).
     lum = np.load(A / f'mur_{i:04d}.npy').astype(np.float32)
     yy, xx = np.mgrid[0:HV, 0:WV].astype(np.float32)
