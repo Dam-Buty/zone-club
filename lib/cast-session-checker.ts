@@ -18,6 +18,9 @@ async function checkExpiredSessions(): Promise<void> {
     // notifications doit aussi retrouver son film noté vu (spec 2026-11-17-cast-suivi-serveur).
     try {
       completeCastRental(db, session);
+      // Séance menée à son terme : on la clôt ici, sinon elle resterait « ouverte » à jamais et le
+      // prochain envoi de position du téléphone la mettrait à jour au lieu d'en ouvrir une nouvelle.
+      db.prepare("UPDATE cast_sessions SET ended = 1 WHERE id = ?").run(session.id);
     } catch {
       // Ni notification ni marque « notifiée » : la séance est rejouée au passage suivant.
       continue;
@@ -33,7 +36,8 @@ async function checkExpiredSessions(): Promise<void> {
       });
       markSessionNotified(session.id);
     } catch {
-      // Notification failed — will retry next interval
+      // Notification échouée : la séance est déjà close, elle n'est plus rejouée. La location, elle, est notée
+      // (sendPushNotification absorbe déjà l'échec de chaque abonnement ; seule une erreur de base arrive ici).
     }
   }
 }

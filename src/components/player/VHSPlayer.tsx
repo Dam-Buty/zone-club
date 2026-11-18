@@ -380,7 +380,7 @@ export function VHSPlayer() {
       castDurationRef.current = remoteCastDuration || video?.duration || 0;
       if (currentPlayingFilm) {
         api.castSessions
-          .create(currentPlayingFilm, castDurationRef.current, getRemoteCurrentTime())
+          .create(currentPlayingFilm, getRemoteCurrentTime(), castDurationRef.current)
           .catch(() => {});
       }
       return;
@@ -941,7 +941,7 @@ export function VHSPlayer() {
     castFilmIdRef.current = currentPlayingFilm ?? null;
     castDurationRef.current = video?.duration || 0;
     if (currentPlayingFilm) {
-      api.castSessions.create(currentPlayingFilm, video?.duration || 0, startTime).catch(() => {});
+      api.castSessions.create(currentPlayingFilm, startTime, video?.duration || 0).catch(() => {});
       if (video && video.duration > 0) {
         const progress = Math.round((startTime / video.duration) * 100);
         updateRentalProgress(currentPlayingFilm, progress, startTime).catch(() => {});

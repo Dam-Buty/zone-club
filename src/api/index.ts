@@ -507,24 +507,28 @@ export const board = {
 // ============ CAST SESSIONS ============
 
 export const castSessions = {
-  async create(filmId: number, durationSeconds: number, currentPosition: number): Promise<{ session: unknown }> {
+  // La durée est facultative : quand le téléphone ne la connaît pas (0, absente), le serveur prend celle
+  // du film. `session` vaut null sans location active.
+  async create(filmId: number, currentPosition: number, durationSeconds?: number): Promise<{ session: unknown }> {
     return request('/api/cast-sessions', {
       method: 'POST',
-      body: JSON.stringify({ filmId, durationSeconds, currentPosition }),
+      body: JSON.stringify({ filmId, currentPosition, durationSeconds }),
     });
   },
 
-  async updatePosition(filmId: number, currentPosition: number): Promise<{ ok: boolean }> {
+  async updatePosition(filmId: number, currentPosition: number, durationSeconds?: number): Promise<{ ok: boolean }> {
     return request('/api/cast-sessions', {
       method: 'PATCH',
-      body: JSON.stringify({ filmId, currentPosition }),
+      body: JSON.stringify({ filmId, currentPosition, durationSeconds }),
     });
   },
 
-  async end(filmId: number): Promise<{ ok: boolean }> {
+  // `finished` : le téléphone a vu le film se terminer sur la TV (la location est notée vue) ; sans lui,
+  // c'est un arrêt en cours de film, et `position` dit où.
+  async end(filmId: number, opts?: { position?: number; finished?: boolean }): Promise<{ ok: boolean }> {
     return request('/api/cast-sessions', {
       method: 'DELETE',
-      body: JSON.stringify({ filmId }),
+      body: JSON.stringify({ filmId, currentPosition: opts?.position, finished: opts?.finished }),
     });
   },
 };

@@ -53,6 +53,10 @@ test('LOCATION: les migrations, le retour, l\'expiration et le Cast posent leurs
   assert.match(ret, /returned_at = datetime\('now'\)/);
   const clean = rentals.slice(rentals.indexOf('export async function cleanupExpiredRentals'));
   assert.match(clean, /expired_at = expires_at/);
+  // La logique des séances vit dans lib/cast-session-store.ts, qui reçoit `markWatchStarted` en paramètre :
+  // l'enveloppe de lib/cast-sessions.ts le lui passe, le module l'appelle à l'ouverture.
   const cast = readText(path.join(ROOT, 'lib/cast-sessions.ts'));
-  assert.ok(cast.includes('markWatchStarted('), 'le Cast note aussi le lancement');
+  const store = readText(path.join(ROOT, 'lib/cast-session-store.ts'));
+  assert.ok(cast.includes('{ markWatchStarted }'), 'le Cast note aussi le lancement : l\'enveloppe fournit la fonction');
+  assert.ok(store.includes('deps.markWatchStarted('), 'le Cast note aussi le lancement : la séance l\'appelle à l\'ouverture');
 });
