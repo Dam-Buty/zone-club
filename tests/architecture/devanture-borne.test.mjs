@@ -136,3 +136,31 @@ test('MASQUE: le masque du bureau sort de la fabrique, au format de l\'image', (
   const src = readFileSync(path.join(T, 'masque.py'), 'utf8');
   for (const garde of ['SystemExit', 'rouge', 'mur ajouté']) assert.ok(src.includes(garde), garde);
 });
+
+// ----- L'approche filmée de la borne (livraison B) : un film de 3 s rendu image par image -----
+
+function controleFilm(L, fichier, budget) {
+  const a = L.approche, buf = readFileSync(path.join(ROOT, 'public', fichier));
+  assert.equal(a.src, '/' + fichier);
+  assert.deepEqual([a.duree, a.images], [3, 91]);
+  assert.equal(buf.length, a.octets);
+  assert.ok(buf.length <= budget, `${buf.length} octets pour un budget de ${budget}`);
+  assert.equal(buf.toString('latin1', 4, 8), 'ftyp');
+  assert.ok(buf.indexOf('moov') > 0 && buf.indexOf('moov') < buf.indexOf('mdat'), 'lisible dès le début du téléchargement');
+  assert.ok(!buf.includes('soun'), 'pas de piste son');
+  assert.ok(Math.abs(a.w / a.h - L.image.w / L.image.h) < 0.002, 'le film a le format de l\'image');
+  return a;
+}
+
+test('APPROCHE: le film du bureau', () => {
+  const L = JSON.parse(readFileSync(path.join(ROOT, 'src/data/storefront-desktop.json'), 'utf8'));
+  const a = controleFilm(L, 'storefront-borne-approche.mp4', 2621440);
+  assert.deepEqual([a.w, a.h], [1920, 1020]);
+  assert.ok(Math.abs((a.ecran.y1 - a.ecran.y0) - 0.94) < 0.02, 'l\'écran fait 94 % de la hauteur à l\'arrivée');
+  assert.ok(Math.abs((a.ecran.x0 + a.ecran.x1) / 2 - 0.43) < 0.02 && Math.abs((a.ecran.y0 + a.ecran.y1) / 2 - 0.5) < 0.02);
+});
+
+test('APPROCHE: le départ du film est tenu à l\'image fixe', () => {
+  const src = readFileSync(path.join(T, 'approche_compo.py'), 'utf8');
+  assert.ok(src.includes('SystemExit') && src.includes('compo.png'), 'la première image est comparée à l\'image fixe, écart qui arrête la fabrique');
+});

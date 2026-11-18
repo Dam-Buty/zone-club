@@ -2,6 +2,7 @@
 
 mobile : la devanture (WebP et JPEG), la vue rapprochée de l'écran de la borne (WebP), la mise en page.
 bureau : la devanture (JPEG, texture de la scène animée), son masque de reflets (PNG) et la mise en page.
+Pour toute variante qui a un bloc « approche » : le film d'approche de la borne (MP4), décrit dans la mise en page.
 La mise en page dit où sont la borne, son écran et la porte dans l'image, en fractions.
 
 Usage : [DEVANTURE=bureau] python3 sorties.py   (après compo.py, et la passe « zoom » de borne.py pour le mobile)
@@ -10,7 +11,9 @@ import json
 
 from PIL import Image
 
-from variante import D, ICI, VARIANTE
+import shutil
+
+from variante import D, G, ICI, VARIANTE
 
 RACINE = ICI.parent.parent
 PUBLIC, DONNEES = RACINE / 'public', RACINE / 'src' / 'data'
@@ -41,6 +44,19 @@ elif VARIANTE == 'bureau':
     donnees = 'storefront-desktop.json'
 else:
     raise SystemExit(f'sorties.py : variante « {VARIANTE} » sans sorties définies')
+
+# Le film d'approche de la borne (approche_*.py, encodé par fabrique.sh) et ce que le site doit en savoir.
+if 'approche' in G:
+    AP = G['approche']
+    film = D / 'approche' / 'film.mp4'
+    octets = film.stat().st_size
+    if octets > AP['film']['budget_octets']:
+        raise SystemExit(f"sorties.py : le film d'approche pèse {octets} octets, pour un budget de {AP['film']['budget_octets']} — monter approche.film.crf")
+    shutil.copyfile(film, PUBLIC / AP['film']['fichier'])
+    mise['approche'] = {'src': '/' + AP['film']['fichier'], 'w': AP['film']['w'], 'h': AP['film']['h'], 'duree': AP['duree_s'],
+                        'images': round(AP['ips'] * AP['duree_s']) + 1, 'octets': octets,
+                        'ecran': json.loads((D / 'approche' / 'ecran-arrivee.json').read_text())}
+    ecrits += [AP['film']['fichier']]
 
 (DONNEES / donnees).write_text(json.dumps(mise, indent=2) + '\n')
 for nom in ecrits:

@@ -28,5 +28,19 @@
   "groupe": {
     "cx": 0.246609,
     "cy": 0.72
+  },
+  "approche": {
+    "src": "/storefront-borne-approche.mp4",
+    "w": 1920,
+    "h": 1020,
+    "duree": 3.0,
+    "images": 91,
+    "octets": 2072820,
+    "ecran": {
+      "x0": 0.263549,
+      "y0": 0.03,
+      "x1": 0.596466,
+      "y1": 0.97
+    }
   }
 }

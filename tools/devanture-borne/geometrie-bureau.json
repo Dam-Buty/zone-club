@@ -192,6 +192,22 @@
   "vitre": [0, 1, 0],
   "carrosserie": [0, 0, 0.25]
  },
+ "approche": {
+  "_": "L'approche filmée de la borne (Rusmir, 18/11/2026 : plutôt qu'un zoom, une animation de 3 s qui avance jusqu'à la borne et fait apparaître l'écran). Réglages validés sur l'essai : départ franc (accel_s), arrêt en douceur (frein_s), balancement de marche (pas_m à pas_hz, éteint à l'arrêt), flou de bougé (obturateur : part de la durée d'une image, sur sous_images). bord_exp > 1 : le cadre garde le bord gauche de l'image tant que la borne y tient, puis glisse vers l'écran. arrivee : la place de l'écran dans la dernière image, réglée sur l'écran de l'interface du site (sur PC : haut de min(94dvh, 1100px), collé à gauche de la fenêtre avec sa vitrine — centre à 43 % de la largeur du cadre sur les fenêtres courantes). echantillons : passes borne, mur. pluie : pour une image de 1280 px de large.",
+  "ips": 30,
+  "duree_s": 3.0,
+  "accel_s": 0.55,
+  "frein_s": 1.10,
+  "pas_hz": 1.8,
+  "pas_m": 0.005,
+  "obturateur": 0.5,
+  "sous_images": 7,
+  "bord_exp": 2.2,
+  "arrivee": {"hauteur_ecran": 0.94, "cx": 0.43, "cy": 0.5},
+  "film": {"w": 1920, "h": 1020, "crf": 23, "fichier": "storefront-borne-approche.mp4", "budget_octets": 2621440},
+  "echantillons": [64, 64],
+  "pluie": {"densite": 0.00022, "longueur": [26, 78], "pente": 0.05, "force": [0.05, 0.22], "flou": 0.7}
+ },
  "_pluie": "La pluie figée que compo.py fait tomber devant la borne, à l'échelle de la photo : densité par pixel, longueur des traînées (px), pente, force, épaisseur (px), flou (px).",
  "pluie": {
   "densite": 0.00006,

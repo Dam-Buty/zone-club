@@ -26,6 +26,11 @@ rendu() {   # rendu <journal> <arguments de borne.py…> : Blender en tâche de 
         || { echo "échec du rendu, fin de $T/$journal :"; tail -12 "$T/$journal"; exit 1; }
 }
 
+rendu_approche() {   # rendu_approche <borne|mur> : chaque image du film d'approche, pour cette passe
+    "$BLENDER" -b --factory-startup --python-exit-code 1 -P "$ICI/approche_rendu.py" -- "$1" > "$T/approche-rendu-$1.log" 2>&1 \
+        || { echo "échec du rendu du film, fin de $T/approche-rendu-$1.log :"; tail -12 "$T/approche-rendu-$1.log"; exit 1; }
+}
+
 a() {       # a <clé> : vrai si la géométrie de la variante porte cette clé
     python3 "$ICI/variante.py" "$1" > /dev/null 2>&1
 }
@@ -59,6 +64,25 @@ for V in $DEVANTURES; do
     if a site.zoom; then
         echo "vue rapprochée de l'écran, pour le zoom ($ECH_BORNE échantillons)"
         rendu rendu-zoom.log "$ECH_BORNE" "$T/zoom.png" zoom
+    fi
+    if a approche; then
+        command -v ffmpeg > /dev/null || { echo "ffmpeg introuvable : il encode le film d'approche (brew install ffmpeg)"; exit 1; }
+        echo "film d'approche : trajet de l'appareil"
+        python3 "$ICI/approche_trajet.py" > "$T/approche-trajet.log"
+        tail -1 "$T/approche-trajet.log"
+        echo "film d'approche : la borne, image par image (un quart d'heure environ en 1920 × 1020)"
+        rendu_approche borne
+        echo "film d'approche : la lumière du mur, image par image"
+        rendu_approche mur
+        echo "film d'approche : assemblage (mur recalé, borne, halo, flou de bougé, pluie)"
+        python3 "$ICI/approche_compo.py" > "$T/approche-compo.log"
+        tail -1 "$T/approche-compo.log"
+        echo "film d'approche : encodage"
+        IPS=$(python3 "$ICI/variante.py" approche.ips)
+        CRF=$(python3 "$ICI/variante.py" approche.film.crf)
+        ffmpeg -y -loglevel error -framerate "$IPS" -i "$T/approche/film_%04d.png" \
+            -vf "scale=out_color_matrix=bt709:out_range=tv" -c:v libx264 -preset slow -crf "$CRF" -pix_fmt yuv420p \
+            -colorspace bt709 -color_primaries bt709 -color_trc bt709 -color_range tv -an -movflags +faststart "$T/approche/film.mp4"
     fi
     echo "sorties pour le site (public/ et src/data/)"
     python3 "$ICI/sorties.py"
