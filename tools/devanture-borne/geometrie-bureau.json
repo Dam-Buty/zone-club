@@ -186,6 +186,12 @@
   ],
   "_zone": "zone_px : x0, x1, y0, y1 de la passe « mur » dans l'image (le mur autour de l'enseigne de la borne)."
  },
+ "masque": {
+  "_": "Le masque de reflets de la devanture animée (rouge = néon qui vacille, vert = vitre, bleu = métal). source : le masque de la photo d'origine, transformé comme elle par masque.py. La borne y entre en aplats (passe « masque » de borne.py) : ses vitres en « vitre », sa carrosserie en « carrosserie » — valeur à régler en regardant les phares passer ; au-dessus de 0,4 le reflet est aussi fort que sur le cadre de la porte. Son néon n'a pas de rouge : il ne vacille pas (Rusmir, 18/11/2026).",
+  "source": "storefront-mask-bureau.png",
+  "vitre": [0, 1, 0],
+  "carrosserie": [0, 0, 0.25]
+ },
  "_pluie": "La pluie figée que compo.py fait tomber devant la borne, à l'échelle de la photo : densité par pixel, longueur des traînées (px), pente, force, épaisseur (px), flou (px).",
  "pluie": {
   "densite": 0.00006,

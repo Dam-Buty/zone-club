@@ -1,7 +1,7 @@
 """Encode les sorties de la fabrique pour le site, pour la variante en cours.
 
 mobile : la devanture (WebP et JPEG), la vue rapprochée de l'écran de la borne (WebP), la mise en page.
-bureau : la devanture (JPEG, texture de la scène animée) et la mise en page.
+bureau : la devanture (JPEG, texture de la scène animée), son masque de reflets (PNG) et la mise en page.
 La mise en page dit où sont la borne, son écran et la porte dans l'image, en fractions.
 
 Usage : [DEVANTURE=bureau] python3 sorties.py   (après compo.py, et la passe « zoom » de borne.py pour le mobile)
@@ -33,7 +33,11 @@ if VARIANTE == 'mobile':
 elif VARIANTE == 'bureau':
     assert abs(BUREAU_PX[0] / BUREAU_PX[1] - compo.width / compo.height) < 0.002, 'la texture du site a le format de l\'image'
     compo.resize(BUREAU_PX, Image.LANCZOS).save(PUBLIC / 'storefront.jpeg', 'JPEG', quality=88, optimize=True, progressive=True)
-    ecrits += ['storefront.jpeg']
+    # Le masque de reflets, à la moitié de la taille de l'image (moyenne exacte de 2 × 2 pixels).
+    masque = Image.open(D / 'masque.png').convert('RGB')
+    assert masque.size == compo.size and compo.width % 2 == 0 and compo.height % 2 == 0, masque.size
+    masque.reduce(2).save(PUBLIC / 'storefront-mask.png', optimize=True)
+    ecrits += ['storefront.jpeg', 'storefront-mask.png']
     donnees = 'storefront-desktop.json'
 else:
     raise SystemExit(f'sorties.py : variante « {VARIANTE} » sans sorties définies')

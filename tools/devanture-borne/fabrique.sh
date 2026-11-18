@@ -50,6 +50,12 @@ for V in $DEVANTURES; do
     echo "composition (lumière du mur, halo du néon, pluie)"
     python3 "$ICI/compo.py" "$T/borne.png" "$T/compo.png" > "$T/compo.log"
     tail -1 "$T/compo.log"
+    if a masque; then
+        echo "masque de reflets (la borne en aplats, sur le masque de la photo)"
+        rendu rendu-masque.log 16 "$T/borne-masque.png" masque
+        python3 "$ICI/masque.py" > "$T/masque.log"
+        tail -1 "$T/masque.log"
+    fi
     if a site.zoom; then
         echo "vue rapprochée de l'écran, pour le zoom ($ECH_BORNE échantillons)"
         rendu rendu-zoom.log "$ECH_BORNE" "$T/zoom.png" zoom

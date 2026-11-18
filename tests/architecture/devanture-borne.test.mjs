@@ -127,3 +127,12 @@ test('BUREAU: la devanture du site a le format de sa mise en page', () => {
   const [w, h] = tailleJpeg(readFileSync(path.join(ROOT, 'public/storefront.jpeg')));
   assert.deepEqual([w, h], [2102, 1117]);
 });
+
+test('MASQUE: le masque du bureau sort de la fabrique, au format de l\'image', () => {
+  const png = readFileSync(path.join(ROOT, 'public/storefront-mask.png'));
+  assert.deepEqual([png.readUInt32BE(16), png.readUInt32BE(20)], [2891, 1536]);
+  const g = JSON.parse(readFileSync(path.join(T, 'geometrie-bureau.json'), 'utf8'));
+  assert.deepEqual(g.masque.vitre, [0, 1, 0]);
+  const src = readFileSync(path.join(T, 'masque.py'), 'utf8');
+  for (const garde of ['SystemExit', 'rouge', 'mur ajouté']) assert.ok(src.includes(garde), garde);
+});

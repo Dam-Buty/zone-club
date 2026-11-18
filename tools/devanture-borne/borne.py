@@ -1,6 +1,6 @@
 """Devanture mobile avec la borne : la borne sous Blender, calée sur la vue mobile reculée.
 
-blender -b --factory-startup -P borne.py -- <echantillons> [<sortie.png> [borne|mur|zoom]]
+blender -b --factory-startup -P borne.py -- <echantillons> [<sortie.png> [borne|mur|zoom|masque]]
 Repère : X vers la droite (0 = centre de la porte), Y vers le mur (mur en Y = 0), Z vers le haut
 (0 = sol). 1 unité = 1 m. Échelle et position tirées de travail/repere.json (fond.py).
 """
@@ -19,7 +19,8 @@ from variante import D, G, SOURCES  # noqa: E402 — la variante en cours : sa g
 SAMPLES = int(args[0]) if len(args) > 0 else 64
 OUT = args[1] if len(args) > 1 else str(D / 'borne.png')
 # 'borne' : la borne sur fond transparent (et la mise en page lue par le site) ; 'mur' : la lumière que le mur renvoie
-# (voir « passe mur » plus bas) ; 'zoom' : la vue rapprochée de l'écran, pour le zoom du site.
+# (voir « passe mur » plus bas) ; 'zoom' : la vue rapprochée de l'écran, pour le zoom du site ; 'masque' : la borne en
+# aplats, pour le masque de reflets de la devanture animée du bureau.
 PASSE = args[2] if len(args) > 2 else 'borne'
 R = json.loads((D / 'repere.json').read_text())
 W, H, PPM = G['sortie']['w'], G['sortie']['h'], G['sortie']['px_par_m']
@@ -1114,6 +1115,44 @@ if PASSE == 'mur':
     scene.render.border_min_y, scene.render.border_max_y = 1 - ZY1 / H, 1 - ZY0 / H
     scene.render.image_settings.file_format = 'OPEN_EXR'
     scene.render.image_settings.color_depth = '32'
+
+if PASSE == 'masque':
+    # Le masque de reflets du site (devanture animée du bureau) : vert = vitre, bleu = métal, rouge = néon qui vacille.
+    # La borne y entre en aplats, sans éclairage : ses vitres en « vitre », sa carrosserie et ses pièces de métal en
+    # « carrosserie » (moins réfléchissante que l'inox de la porte), tout le reste — néon compris, il ne vacille pas
+    # (Rusmir, 18/11/2026) — en noir opaque : la borne recouvre ce que le masque de la photo portait derrière elle.
+    MQ = G['masque']
+    VITRES = {'vitre'}
+    CARROSSERIE = {'peinture', 'alu', 'alu_noir', 'acier', 'inox', 'chrome', 'touche'}
+    aplats = {}
+
+    def aplat(couleur):
+        cle = tuple(couleur)
+        if cle not in aplats:
+            m = bpy.data.materials.new('aplat')
+            m.use_nodes = True
+            m.node_tree.nodes.clear()
+            em = m.node_tree.nodes.new('ShaderNodeEmission')
+            em.inputs['Color'].default_value = (*cle, 1)
+            em.inputs['Strength'].default_value = 1.0
+            m.node_tree.links.new(em.outputs['Emission'], m.node_tree.nodes.new('ShaderNodeOutputMaterial').inputs['Surface'])
+            aplats[cle] = m
+        return aplats[cle]
+
+    for ob in scene.objects:
+        if ob.type == 'LIGHT' or ob.name.startswith('mur_'):
+            ob.hide_render = True                    # ni lumière ni mur attrape-ombres : seules les matières comptent
+        elif ob.type in ('MESH', 'CURVE'):
+            if not ob.material_slots:
+                ob.data.materials.append(None)
+            for slot in ob.material_slots:
+                nom = slot.material.name.split('.')[0] if slot.material else ''
+                slot.material = aplat(MQ['vitre'] if nom in VITRES else MQ['carrosserie'] if nom in CARROSSERIE else (0, 0, 0))
+    bg.inputs['Color'].default_value = (0, 0, 0, 1)
+    scene.view_settings.view_transform = 'Raw'       # les valeurs du masque sortent telles quelles (0,25 → 64)
+    scene.render.dither_intensity = 0.0              # sans tramage : il ajoutait ±1 partout, donc du rouge (néon) sur la borne
+    scene.cycles.use_denoising = False
+    scene.cycles.samples = 16
 
 scene.render.filepath = OUT
 bpy.ops.render.render(write_still=True)
