@@ -430,6 +430,20 @@ export interface WeeklyBonusStatus {
 export interface ApiRentalHistoryEntry extends ApiRental {
   film_title: string | null;
   film_poster_url: string | null;
+  watch_progress?: number | null;
+  rewind_claimed?: number | boolean | null;
+  returned_early?: number | boolean | null;
+  /** Dates SQLite (UTC sans fuseau) ; nulles pour les locations antérieures à leur colonne. */
+  returned_at?: string | null;
+  expired_at?: string | null;
+}
+
+/** Ce qu'un film loué et pas encore critiqué permet (« Mon compte » de la borne). */
+export interface ApiReviewEligibility {
+  film_id: number;
+  allowed: boolean;
+  reason: string | null;
+  available_at_ms: number | null;
 }
 
 export interface MeResponse {
@@ -438,6 +452,7 @@ export interface MeResponse {
   rentalHistory: ApiRentalHistoryEntry[];
   reviews: ReviewWithUser[];
   weeklyBonus: WeeklyBonusStatus;
+  reviewEligibility?: ApiReviewEligibility[];
 }
 
 export const me = {

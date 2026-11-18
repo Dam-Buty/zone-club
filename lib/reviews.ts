@@ -212,3 +212,30 @@ export function createReview(
 
     return getUserReview(userId, filmId)!;
 }
+
+export type FilmReviewEligibility = { film_id: number; allowed: boolean; reason: string | null; available_at_ms: number | null };
+
+/**
+ * Pour « Mon compte » : chaque film loué par ce visiteur et pas encore critiqué, avec ce que la règle en dit
+ * (lib/review-eligibility.ts). La borne affiche, elle n'a pas de copie de la règle.
+ */
+export function getReviewEligibilityForUser(userId: number): FilmReviewEligibility[] {
+    const rows = db.prepare(`
+        SELECT r.film_id, r.watch_progress, r.watch_started_at, f.duration_sec, f.runtime
+        FROM rentals r
+        JOIN films f ON f.id = r.film_id
+        WHERE r.user_id = ?
+          AND r.film_id NOT IN (SELECT film_id FROM reviews WHERE user_id = ?)
+    `).all(userId, userId) as (ReviewRentalFacts & { film_id: number })[];
+    const byFilm = new Map<number, ReviewRentalFacts[]>();
+    for (const row of rows) {
+        const list = byFilm.get(row.film_id) ?? [];
+        list.push(row);
+        byFilm.set(row.film_id, list);
+    }
+    const now = Date.now();
+    return [...byFilm].map(([filmId, rentals]) => {
+        const e = reviewEligibility(rentals, now);
+        return { film_id: filmId, allowed: e.allowed, reason: e.reason, available_at_ms: e.availableAtMs };
+    });
+}

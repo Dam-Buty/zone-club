@@ -61,7 +61,19 @@ export interface RentalHistoryEntry {
   /** expires_at, pas une date de retour. */
   returnedAt: number;
   isActive: boolean;
+  /** Ajouts pour « Mon compte » (spec 2026-11-17-borne-mon-compte). */
+  expiresAt: number;
+  watchProgress: number;
+  rewindClaimed: boolean;
+  returnedEarly: boolean;
+  /** returned_at : rendu par le visiteur ; null avant la colonne ou si non rendu. */
+  returnDate: number | null;
+  /** expired_at : arrivé à échéance ; null avant la colonne ou si non expiré. */
+  expiredDate: number | null;
 }
+
+/** Ce qu'un film loué et pas encore critiqué permet, par identifiant de film. */
+export type ReviewEligibilityMap = Record<number, { allowed: boolean; reason: string | null; availableAtMs: number | null }>;
 
 export interface VideoClubState {
   // Auth
@@ -186,6 +198,7 @@ export interface VideoClubState {
 
   // User reviews
   userReviews: ReviewWithUser[];
+  reviewEligibility: ReviewEligibilityMap;
   setUserReviews: (reviews: ReviewWithUser[]) => void;
 
   // Terminal
@@ -416,6 +429,7 @@ export const useStore = create<VideoClubState>()(
           rentals: [],
           rentalHistory: [],
           userReviews: [],
+          reviewEligibility: {},
           filmRentalCounts: {},
           managerVisible: false,
           chatBackdropUrl: null,
@@ -444,13 +458,22 @@ export const useStore = create<VideoClubState>()(
               returnedAt: toMs(h.expires_at) || 0,
               // SQLite renvoie 0/1 malgré le typage `boolean` de l'API.
               isActive: !!h.is_active,
+              expiresAt: toMs(h.expires_at) || 0,
+              watchProgress: h.watch_progress ?? 0,
+              rewindClaimed: !!h.rewind_claimed,
+              returnedEarly: !!h.returned_early,
+              returnDate: h.returned_at ? toMs(h.returned_at) || null : null,
+              expiredDate: h.expired_at ? toMs(h.expired_at) || null : null,
             })),
             userReviews: data.reviews || [],
+            reviewEligibility: Object.fromEntries(
+              (data.reviewEligibility || []).map((e) => [e.film_id, { allowed: e.allowed, reason: e.reason, availableAtMs: e.available_at_ms }]),
+            ),
             weeklyBonusStatus: data.weeklyBonus ?? null,
           });
         } catch {
           // Non connecté, pas d'erreur
-          set({ isAuthenticated: false, authUser: null, rentalHistory: [], userReviews: [], weeklyBonusStatus: null });
+          set({ isAuthenticated: false, authUser: null, rentalHistory: [], userReviews: [], reviewEligibility: {}, weeklyBonusStatus: null });
         }
       },
 
@@ -841,6 +864,7 @@ export const useStore = create<VideoClubState>()(
 
       // User reviews
       userReviews: [],
+      reviewEligibility: {},
       setUserReviews: (reviews) => set({ userReviews: reviews }),
 
       // Terminal

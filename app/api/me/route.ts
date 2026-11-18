@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { getUserActiveRentals, getUserRentalHistory } from '@/lib/rentals';
-import { getUserReviews } from '@/lib/reviews';
+import { getReviewEligibilityForUser, getUserReviews } from '@/lib/reviews';
 import { getUserFromSession } from '@/lib/session';
 import { canClaimWeeklyBonus } from '@/lib/bonus';
 
@@ -17,6 +17,8 @@ export async function GET() {
     const rentalHistory = getUserRentalHistory(user.id);
     const reviews = getUserReviews(user.id);
     const weeklyBonus = canClaimWeeklyBonus(user.id);
+    // « Mon compte » de la borne : ce que chaque film loué et pas encore critiqué permet.
+    const reviewEligibility = getReviewEligibilityForUser(user.id);
 
     const response = NextResponse.json({
         user: {
@@ -29,7 +31,8 @@ export async function GET() {
         activeRentals,
         rentalHistory,
         reviews,
-        weeklyBonus
+        weeklyBonus,
+        reviewEligibility
     });
     // Auth-sensitive payload: never cache. The old `private, max-age=60` was
     // leaking session data after logout — the browser kept serving the cached

@@ -410,3 +410,18 @@ test('DISTRIBUTION: « Veuillez patienter » rend la main au bout de 30 s avec u
   const notice = view.slice(view.indexOf('La borne ne répond pas'), view.indexOf('La borne ne répond pas') + 700);
   assert.ok(notice.includes('Mes locations') && notice.includes("setScene('exterior')"), 'le message mène à « Mes locations » et à « Quitter »');
 });
+
+// ===== « Mon compte » (spec 2026-11-17-borne-mon-compte) =====
+test('COMPTE: /api/me dit ce qu\'on peut encore critiquer, et le magasin garde l\'historique complet', () => {
+  const route = readText(path.join(ROOT, 'app/api/me/route.ts'));
+  assert.ok(route.includes('getReviewEligibilityForUser(') && route.includes('reviewEligibility'), 'route');
+  const store = readText(path.join(ROOT, 'src/store/index.ts'));
+  const start = store.indexOf('fetchMe: async');
+  const fetchMe = store.slice(start, store.indexOf('// User local (fallback)', start));
+  for (const k of ['reviewEligibility', 'rewindClaimed', 'returnedEarly', 'returnDate', 'expiredDate', 'watchProgress', 'expiresAt']) {
+    assert.ok(fetchMe.includes(k), `fetchMe pose ${k}`);
+  }
+  const catchBlock = fetchMe.slice(fetchMe.indexOf('catch'));
+  assert.ok(catchBlock.includes('reviewEligibility: {}'), 'remis à zéro hors connexion');
+  assert.ok(fetchMe.includes('returnedAt:'), 'le champ existant returnedAt est gardé (terminal, Michel)');
+});
