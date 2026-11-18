@@ -112,6 +112,8 @@
 >   (« Borne », « 24/7 ») en série ; liaisons entre lettres et retours peints en noir, derrière les traits ; passages
 >   derrière aux croisements ; électrodes sous capuchon ; cavalier entre les deux tubes ; deux fils haute tension qui
 >   descendent dans la borne (un tube est un circuit : il y a deux bouts).
+> - **§ 4, enseigne : capitales et luminosité (18/11/2026).** L'enseigne s'écrit **« BORNE 24/7 » en majuscules** (en
+>   minuscules le r et le n se confondaient) et le néon est **un peu moins lumineux**, pour que le verre ressorte. **[R]**
 > - **Tarif** : l'affichage suit ce que le serveur facture. **Dates du serveur** : lues en UTC.
 >   Les deux validés. **[R]**
 > - **§ 5, bouton provisoire sur mobile** : il part tel quel, on ajustera en voyant la version
