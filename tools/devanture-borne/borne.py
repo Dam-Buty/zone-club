@@ -1,6 +1,6 @@
 """Devanture mobile avec la borne : la borne sous Blender, calée sur la vue mobile reculée.
 
-blender -b --factory-startup -P borne.py -- <echantillons> [<sortie.png> [borne|mur]]
+blender -b --factory-startup -P borne.py -- <echantillons> [<sortie.png> [borne|mur|zoom]]
 Repère : X vers la droite (0 = centre de la porte), Y vers le mur (mur en Y = 0), Z vers le haut
 (0 = sol). 1 unité = 1 m. Échelle et position tirées de travail/repere.json (fond.py).
 """
@@ -17,7 +17,8 @@ ICI = Path(__file__).resolve().parent
 D = ICI / 'travail'                 # tout l'intermédiaire (ignoré par git)
 SAMPLES = int(args[0]) if len(args) > 0 else 64
 OUT = args[1] if len(args) > 1 else str(D / 'borne.png')
-# 'borne' : la borne sur fond transparent ; 'mur' : la lumière que le mur renvoie (voir « passe mur » plus bas).
+# 'borne' : la borne sur fond transparent (et la mise en page lue par le site) ; 'mur' : la lumière que le mur renvoie
+# (voir « passe mur » plus bas) ; 'zoom' : la vue rapprochée de l'écran, pour le zoom du site.
 PASSE = args[2] if len(args) > 2 else 'borne'
 G = json.loads((ICI / 'geometrie.json').read_text())
 R = json.loads((D / 'repere.json').read_text())
@@ -1026,6 +1027,74 @@ def pose_reverbere():
     return ob
 
 
+# ----- Ce que le site lit : la mise en page de l'image, et la vue rapprochée de l'écran -----
+# Le site pose ses zones d'appui et son zoom sur ces positions, en fractions de l'image (0 à 1, origine en haut à
+# gauche). Elles sont projetées par la caméra de la scène, jamais recopiées à la main.
+from bpy_extras.object_utils import world_to_camera_view as vers_image  # noqa: E402
+
+SITE = G.get('site', {})
+ZOOM = SITE.get('zoom', {'ecran_px': 780, 'largeur_en_ecrans': 2, 'hauteur_en_ecrans': 3})
+ZOOM_W, ZOOM_H = ZOOM['ecran_px'] * ZOOM['largeur_en_ecrans'], ZOOM['ecran_px'] * ZOOM['hauteur_en_ecrans']
+
+
+def cadre(points):
+    """Rectangle qui englobe, dans l'image, des points de la scène."""
+    bpy.context.view_layer.update()
+    vus = [vers_image(scene, cam, Vector(q)) for q in points]
+    xs_, ys_ = [v.x for v in vus], [1 - v.y for v in vus]
+    return {'x0': min(xs_), 'y0': min(ys_), 'x1': max(xs_), 'y1': max(ys_)}
+
+
+def zone_zoom(ecran):
+    """La vue rapprochée : centrée sur l'écran, large de deux écrans et haute de trois largeurs d'écran. Rend la taille
+    de l'image entière à cette échelle (l'écran y fait ecran_px de large) et le coin haut-gauche de la vue, en pixels."""
+    s_ = ZOOM['ecran_px'] / ((ecran['x1'] - ecran['x0']) * W)
+    wz, hz = round(W * s_), round(H * s_)
+    bx = round((ecran['x0'] + ecran['x1']) / 2 * wz - ZOOM_W / 2)
+    by = round((ecran['y0'] + ecran['y1']) / 2 * hz - ZOOM_H / 2)
+    return wz, hz, bx, by
+
+
+def mise_en_page():
+    # La borne : le corps entier, de sa façade (en saillie) au plan du mur ; son pied est sous le bord de l'image.
+    borne_ = cadre([(KX + c_ * KW / 2, y_, z_) for c_ in (-1, 1) for y_ in (FRONT, 0.0) for z_ in (0.0, KH)])
+    borne_ = {k_: min(1.0, max(0.0, v_)) for k_, v_ in borne_.items()}
+    ex0, ex1, ez0, ez1 = F['ecran']
+    ecran_ = cadre([(L(x_), FRONT + 0.019, z_) for x_ in (ex0, ex1) for z_ in (ez0, ez1)])
+    # La porte est dans la photo : ses bords viennent du calage de la photo (fond.py), son haut du cadre relevé.
+    porte_ = {'x0': R['door_left_x'] / W, 'y0': MUR['porte_px']['haut'] / H, 'x1': R['door_right_x'] / W, 'y1': 1.0}
+    kp = PPM / G['photo']['px_par_m']
+    push_x, push_y = G['photo']['plaque_push_px']
+    wz, hz, bx, by = zone_zoom(ecran_)
+    return {
+        'image': {'w': W, 'h': H}, 'borne': borne_, 'ecran': ecran_, 'porte': porte_,
+        'push': {'x': (R['photo_x0'] + push_x * kp) / W, 'y': (R['photo_y0'] + push_y * kp) / H},
+        'groupe': {'cx': (borne_['x0'] + porte_['x1']) / 2, 'cy': SITE.get('groupe_cy', 0.72)},
+        'zoom': {'x0': bx / wz, 'y0': by / hz, 'x1': (bx + ZOOM_W) / wz, 'y1': (by + ZOOM_H) / hz, 'w': ZOOM_W, 'h': ZOOM_H},
+    }
+
+
+MISE = mise_en_page()
+if PASSE == 'borne':
+    (D / 'mise-en-page.json').write_text(json.dumps(
+        {k_: {c_: (round(v_, 6) if isinstance(v_, float) else v_) for c_, v_ in r_.items()} for k_, r_ in MISE.items()}, indent=2) + '\n')
+    print('MISE EN PAGE borne', [round(MISE['borne'][c_] * (W if c_[0] == 'x' else H)) for c_ in ('x0', 'y0', 'x1', 'y1')],
+          '| écran', [round(MISE['ecran'][c_] * (W if c_[0] == 'x' else H)) for c_ in ('x0', 'y0', 'x1', 'y1')],
+          '| porte', [round(MISE['porte'][c_] * (W if c_[0] == 'x' else H)) for c_ in ('x0', 'y0', 'x1', 'y1')],
+          '| push', round(MISE['push']['x'] * W), round(MISE['push']['y'] * H),
+          '| zoom', [round(MISE['zoom'][c_] * (W if c_[0] == 'x' else H)) for c_ in ('x0', 'y0', 'x1', 'y1')])
+
+if PASSE == 'zoom':
+    # Même caméra, même scène : seule la zone de la vue rapprochée est rendue, à l'échelle où l'écran fait ecran_px
+    # de large. Elle tient tout entière dans la borne (ni mur ni photo) : sortie opaque, sans halo ni pluie.
+    wz_, hz_, bx_, by_ = zone_zoom(MISE['ecran'])
+    scene.render.resolution_x, scene.render.resolution_y = wz_, hz_
+    scene.render.use_crop_to_border = True
+    scene.render.border_min_x, scene.render.border_max_x = (bx_ + 0.5) / wz_, (bx_ + ZOOM_W + 0.5) / wz_
+    scene.render.border_min_y, scene.render.border_max_y = 1 - (by_ + ZOOM_H - 0.5) / hz_, 1 - (by_ - 0.5) / hz_
+    scene.render.film_transparent = False
+    scene.render.image_settings.color_mode = 'RGB'
+
 if PASSE == 'mur':
     murs_reels()
     for ob in scene.objects:
@@ -1051,4 +1120,8 @@ if PASSE == 'mur':
     lum = buf.reshape(exr.size[1], exr.size[0], 4)[::-1, :, :3]
     np.save(str(D / 'mur-passe.npy'), lum[1100:2300, 0:900].copy())
     print('PASSE MUR', lum.shape, 'max', round(float(lum.max()), 3), '→ mur-passe.npy (lignes 1100 à 2300, colonnes 0 à 900)')
+if PASSE == 'zoom':
+    taille = tuple(bpy.data.images.load(OUT).size)
+    assert taille == (ZOOM_W, ZOOM_H), f'vue rapprochée : {taille} au lieu de {(ZOOM_W, ZOOM_H)}'
+    print('ZOOM', taille, 'image entière à cette échelle', (wz_, hz_), 'coin de la vue', (bx_, by_))
 print('RENDU', OUT, 'centre borne X =', round(KX, 3), 'objectif', round(cam_data.lens, 2), 'mm', 'décalage', round(cam_data.shift_x, 4), round(cam_data.shift_y, 4))

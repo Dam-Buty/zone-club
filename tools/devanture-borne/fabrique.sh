@@ -1,6 +1,7 @@
 #!/bin/sh
 # Fabrique les images de la devanture mobile (la borne à côté de la porte).
 # Usage : sh tools/devanture-borne/fabrique.sh [échantillons borne] [échantillons mur]
+# Écrit public/storefront-mobile.{webp,jpeg}, public/storefront-borne-zoom.webp et src/data/storefront-mobile.json.
 # Tout l'intermédiaire va dans travail/ (ignoré par git). S'arrête à la première erreur.
 set -e
 ICI=$(cd "$(dirname "$0")" && pwd)
@@ -17,16 +18,19 @@ rendu() {   # rendu <journal> <arguments de borne.py…> : Blender en tâche de 
         || { echo "échec du rendu, fin de $T/$journal :"; tail -12 "$T/$journal"; exit 1; }
 }
 
-echo "1/6 fond (mur, toit, ciel autour de la photo)"
+echo "1/8 fond (mur, toit, ciel autour de la photo)"
 python3 "$ICI/fond.py" > "$T/fond.log"
-echo "2/6 textures (usure, autocollants, tranches tirées de TMDB)"
+echo "2/8 textures (usure, autocollants, tranches tirées de TMDB)"
 python3 "$ICI/textures.py" | tail -2
-echo "3/6 parcours des tubes du néon"
+echo "3/8 parcours des tubes du néon"
 python3 "$ICI/neon.py" | tail -1
-echo "4/6 rendu de la borne ($ECH_BORNE échantillons ; le premier rendu d'une session compile ~3 min)"
+echo "4/8 rendu de la borne ($ECH_BORNE échantillons ; le premier rendu d'une session compile ~3 min)"
 rendu rendu-borne.log "$ECH_BORNE" "$T/borne.png"
-echo "5/6 passe « mur » ($ECH_MUR échantillons)"
+echo "5/8 passe « mur » ($ECH_MUR échantillons)"
 rendu rendu-mur.log "$ECH_MUR" "$T/mur-passe.exr" mur
-echo "6/6 composition (lumière du mur, halo du néon, pluie)"
+echo "6/8 composition (lumière du mur, halo du néon, pluie)"
 python3 "$ICI/compo.py" "$T/borne.png" "$T/compo.png" | tail -1
-echo "→ $T/compo.png"
+echo "7/8 vue rapprochée de l'écran, pour le zoom ($ECH_BORNE échantillons)"
+rendu rendu-zoom.log "$ECH_BORNE" "$T/zoom.png" zoom
+echo "8/8 sorties pour le site (public/ et src/data/)"
+python3 "$ICI/sorties.py"

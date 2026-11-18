@@ -14,7 +14,12 @@
   ],
   "barre_de_poussee_px": 2200,
   "hauteur_barre_m": 1.0,
-  "decalage_px": 110
+  "decalage_px": 110,
+  "plaque_push_px": [
+   1128,
+   1970
+  ],
+  "_": "plaque_push_px : milieu du bord haut de la plaque « PUSH » de la porte, en pixels de la photo (relevé le 18/11/2026) ; l'indicateur « PUSH ▼ » du site se pose juste au-dessus."
  },
  "camera": {
   "distance_mur_m": 6.0,
@@ -164,5 +169,14 @@
   },
   "relief": 0.05,
   "reflet": 0.2
+ },
+ "site": {
+  "_": "Ce que le site lit (borne.py → travail/mise-en-page.json → src/data/storefront-mobile.json). groupe_cy : hauteur, en fraction de l'image, sur laquelle le cadrage se centre quand la fenêtre est moins haute que l'image (entre le haut du cadre de la porte et la barre de poussée). zoom : la vue rapprochée, centrée sur l'écran de la borne — l'écran y fait ecran_px de large, la vue couvre largeur_en_ecrans × hauteur_en_ecrans largeurs d'écran.",
+  "groupe_cy": 0.72,
+  "zoom": {
+   "ecran_px": 780,
+   "largeur_en_ecrans": 2,
+   "hauteur_en_ecrans": 3
+  }
  }
 }
