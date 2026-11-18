@@ -251,6 +251,20 @@ test('BORNE: les préchargements 3D sont interruptibles et la borne les interrom
   const app = readText(path.join(ROOT, 'src/App.tsx'));
   assert.ok(app.includes('pauseInteriorPreload('), 'App coupe les préchargements à l\'ouverture de la borne');
 });
+// Depuis le zoom vers la borne (18/11/2026), la devanture reste montée près d'une seconde après l'appui. Le minuteur
+// de 0,8 s qui monte la scène 3D derrière elle pouvait donc tomber PENDANT le zoom, et monter la scène que l'appui
+// venait de libérer : il consulte la vanne, refermée dès l'appui.
+test('BORNE: pendant le zoom vers la borne, la scène 3D ne se monte pas', async () => {
+  setGpu({});
+  const gate = await import('../../src/utils/interior-preload-gate.ts?scenario=zoom');
+  assert.equal(gate.isInteriorPreloadOpen(), false, 'vanne fermée avant la devanture');
+  gate.releaseInteriorPreload();
+  assert.equal(gate.isInteriorPreloadOpen(), true, 'vanne ouverte devant la devanture');
+  gate.pauseInteriorPreload();                     // appui sur la borne : le zoom commence
+  assert.equal(gate.isInteriorPreloadOpen(), false, 'vanne refermée dès l\'appui');
+  const app = readText(path.join(ROOT, 'src/App.tsx'));
+  assert.match(app, /if \(isInteriorPreloadOpen\(\)\) setInteriorPrewarm\(true\)/, 'le minuteur du préchauffage consulte la vanne');
+});
 // Mesuré le 16/11/2026 sur le build de production, débit limité à 20 Mbit/s : l'écran de la borne
 // mettait 14,3 s à s'afficher après l'appui (son code n'était demandé qu'à l'appui, derrière les
 // fichiers 3D), sur un écran noir.

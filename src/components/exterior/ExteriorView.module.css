@@ -282,6 +282,59 @@
   text-shadow: 0 0 8px rgba(180, 120, 255, 0.7);
 }
 
+/* ===== MOBILE : le zoom vers l'écran de la borne =====
+   À l'appui sur la borne, la scène reçoit la transformation de zoomTransform : l'écran de la borne
+   vient se poser là où sera celui de l'interface, en 900 ms. La vue rapprochée — un rendu net de
+   la même zone, posé sur layout.zoom — apparaît entre 35 % et 70 % du trajet ; un voile noir monte
+   sur les 180 dernières millisecondes ; à la fin, la borne s'ouvre (ExteriorView). Rien que des
+   transformations et des opacités. Avec « animations réduites », rien de tout cela ne se joue. */
+
+.mobileStageZoom {
+  transition: transform 900ms cubic-bezier(0.45, 0, 0.2, 1);
+  will-change: transform;
+}
+
+/* Pendant le zoom, plus rien ne répond : une seule transition. */
+.mobileStageZoom .mobileZone {
+  pointer-events: none;
+}
+
+.mobileStageZoom .mobileDoorIndicator {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.mobileCloseUp {
+  position: absolute;
+  z-index: 1;
+  opacity: 0;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.mobileCloseUpShown {
+  animation: fadeIn 315ms linear 315ms both;
+}
+
+.mobileChoicesLeaving {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.mobileChoicesLeaving .mobileChoice {
+  pointer-events: none;
+}
+
+.kioskVeil {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  background: #000;
+  pointer-events: none;
+  animation: fadeIn 180ms linear 720ms both;
+}
+
 /* ===== BUREAU : bouton provisoire de la borne =====
    Même néon violet que l'indicateur PUSH, mais dans un cadre : c'est un bouton, pas une
    étiquette. Il est posé sur le mur à gauche de la porte (coordonnées de .contentArea), en

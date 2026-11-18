@@ -58,3 +58,16 @@ test('DEVANTURE MOBILE: une scène porte l\'image et les zones, deux boutons en 
   assert.ok(barre.includes('safe-area-inset-bottom'), 'la barre respecte l\'encoche');
   assert.ok(tsx.includes("from '../../data/storefront-mobile.json'"), 'mise en page lue dans le fichier fabriqué');
 });
+
+test('ZOOM: câblage dans la devanture', () => {
+  const tsx = readFileSync(path.join(ROOT, 'src/components/exterior/ExteriorView.tsx'), 'utf8');
+  const app = readFileSync(path.join(ROOT, 'src/App.tsx'), 'utf8');
+  assert.ok(tsx.includes('onKioskIntent') && tsx.includes('zoomTransform('), 'intention à l\'appui, puis zoom');
+  assert.ok(tsx.includes('prefers-reduced-motion'), 'animations réduites');
+  assert.ok(tsx.includes('/storefront-borne-zoom.webp'), 'vue rapprochée');
+  const ouvrir = tsx.slice(tsx.indexOf('const openKiosk = '), tsx.indexOf('const openKiosk = ') + 900);
+  assert.ok(ouvrir.indexOf('isTransitioning') < ouvrir.indexOf('onKioskIntent'), 'le garde passe avant tout');
+  assert.ok(ouvrir.indexOf('onKioskIntent') < ouvrir.indexOf('onOpenKiosk'), 'le GPU est libéré avant l\'ouverture');
+  const jsx = app.slice(app.indexOf('<ExteriorView'), app.indexOf('<ExteriorView') + 400);
+  assert.ok(jsx.includes('onKioskIntent='), 'App branche l\'intention');
+});

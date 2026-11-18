@@ -73,6 +73,15 @@ export function releaseInteriorPreload(): void {
   for (const task of [...repeatable]) run(() => task(signal));
 }
 
+/**
+ * La vanne est-elle ouverte ? Faux avant la devanture, et dès l'appui sur la borne — alors que la
+ * devanture reste à l'écran le temps du zoom : ce qui se déclenche à retardement (le montage de la
+ * scène 3D, 0,8 s après l'affichage) le vérifie avant d'agir.
+ */
+export function isInteriorPreloadOpen(): boolean {
+  return open;
+}
+
 /** La borne s'ouvre : la vanne se referme et les téléchargements interruptibles sont coupés. */
 export function pauseInteriorPreload(): void {
   if (!open) return;

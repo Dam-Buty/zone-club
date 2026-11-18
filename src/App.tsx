@@ -2,7 +2,7 @@ import { Component, useEffect, useLayoutEffect, useState, useCallback, useRef, l
 import { useStore } from './store';
 import { preloadPosterImage } from './utils/CassetteTextureArray';
 import './utils/asset-preload'; // Side-effect import: registers the HDR/KTX2/wasm prefetch (starts once the storefront is shown)
-import { afterStorefront, hasWebGPU, pauseInteriorPreload, releaseInteriorPreload, shouldMountInterior, whileStorefront } from './utils/interior-preload-gate';
+import { afterStorefront, hasWebGPU, isInteriorPreloadOpen, pauseInteriorPreload, releaseInteriorPreload, shouldMountInterior, whileStorefront } from './utils/interior-preload-gate';
 import api, { apiFilmToFilm } from './api';
 import type { AisleType, Film } from './types';
 import './utils/perf-beacon'; // Side-effect import: mesure de terrain de l'entrée dans la boutique (POST /api/perf)
@@ -400,7 +400,9 @@ function App() {
     let cancelled = false;
     let timer = 0;
     afterStorefront(() => {
-      if (!cancelled) timer = window.setTimeout(() => setInteriorPrewarm(true), 800);
+      // La vanne est relue à l'échéance : un appui sur la borne dans ces 0,8 s l'a refermée, et la
+      // devanture reste montée le temps du zoom — la scène 3D ne doit pas se monter dessous.
+      if (!cancelled) timer = window.setTimeout(() => { if (isInteriorPreloadOpen()) setInteriorPrewarm(true); }, 800);
     });
     return () => {
       cancelled = true;
@@ -577,6 +579,13 @@ function App() {
     setInteriorPrewarm(false);
     setScene('kiosk');
   }, [setScene]);
+  // Sur mobile, la devanture zoome d'abord vers l'écran de la borne : elle prévient dès l'appui,
+  // pour que le GPU et les chargements soient libérés avant l'animation, pas après. `openKiosk`
+  // refait la même chose à la fin du zoom (sans effet, tout est déjà libéré) puis change de scène.
+  const releaseInteriorForKiosk = useCallback(() => {
+    pauseInteriorPreload();
+    setInteriorPrewarm(false);
+  }, []);
   const leaveKiosk = useCallback(() => setScene('exterior'), [setScene]);
 
   const isInterior = currentScene === 'interior';
@@ -606,6 +615,7 @@ function App() {
           <ExteriorView
             onEnter={handleEnterStore}
             onOpenKiosk={openKiosk}
+            onKioskIntent={releaseInteriorForKiosk}
             onShown={preloadKiosk}
             canEnter={webgpuSupported}
           />

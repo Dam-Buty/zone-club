@@ -3,7 +3,7 @@ import { ExteriorScene } from './scene/ExteriorScene';
 import { DoorBlockedNotice } from './DoorBlockedNotice';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { releaseInteriorPreload } from '../../utils/interior-preload-gate';
-import { stageBox, type Rect, type StorefrontLayout } from './storefront-layout';
+import { stageBox, zoomTransform, type Rect, type StorefrontLayout } from './storefront-layout';
 import storefrontLayout from '../../data/storefront-mobile.json';
 import styles from './ExteriorView.module.css';
 
@@ -19,6 +19,12 @@ const zoneStyle = (r: Rect) => ({
   height: `${(r.y1 - r.y0) * 100}%`,
 });
 
+// Vue rapprochée de l'écran de la borne, fondue sur la scène pendant le zoom (même fabrique).
+const CLOSE_UP_SRC = '/storefront-borne-zoom.webp';
+// Le zoom dure 900 ms (durées dans la feuille de style). Si sa fin ne nous parvient pas — onglet
+// passé en arrière-plan, transition coupée —, la borne s'ouvre quand même à cette échéance.
+const KIOSK_ZOOM_GUARD_MS = 1200;
+
 const readViewport = () => (
   typeof window === 'undefined' ? { w: 390, h: 844 } : { w: window.innerWidth, h: window.innerHeight }
 );
@@ -32,15 +38,17 @@ const DOOR_NOTICE_SECONDS = 15;
 
 interface ExteriorViewProps {
   onEnter: () => void;
-  /** Ouvre la borne de location (bouton provisoire, en attendant la borne modélisée du lot 3). */
+  /** Ouvre la borne de location. Sur mobile : appelé à la fin du zoom vers son écran. */
   onOpenKiosk: () => void;
+  /** Le visiteur vient d'appuyer sur la borne : appelé tout de suite, avant toute animation. */
+  onKioskIntent?: () => void;
   /** Faux quand le vidéoclub 3D ne peut pas s'ouvrir sur cet appareil (pas de WebGPU). */
   canEnter: boolean;
   /** La devanture est à l'écran (appelé à chaque affichage, avec ou sans WebGPU). */
   onShown?: () => void;
 }
 
-export function ExteriorView({ onEnter, onOpenKiosk, canEnter, onShown }: ExteriorViewProps) {
+export function ExteriorView({ onEnter, onOpenKiosk, onKioskIntent, canEnter, onShown }: ExteriorViewProps) {
   const isMobile = useIsMobile();
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<ExteriorScene | null>(null);
@@ -71,6 +79,25 @@ export function ExteriorView({ onEnter, onOpenKiosk, canEnter, onShown }: Exteri
     return () => window.removeEventListener('resize', onResize);
   }, [isStatic]);
   const stage = stageBox(LAYOUT, viewport.w, viewport.h);
+
+  // Zoom vers l'écran de la borne : la transformation donnée à la scène, et si la vue rapprochée
+  // était décodée à l'appui (sinon le zoom part sans elle). Non nul = le zoom est parti.
+  const [kioskZoom, setKioskZoom] = useState<{ transform: string; closeUp: boolean } | null>(null);
+  const [closeUpReady, setCloseUpReady] = useState(false);
+  const kioskGuardRef = useRef(0);
+  const kioskOpenedRef = useRef(false);
+
+  // La vue rapprochée n'est demandée qu'une fois la devanture affichée : elle ne retarde rien.
+  useEffect(() => {
+    if (!isStatic || !isStorefrontShown) return;
+    let cancelled = false;
+    const img = new Image();
+    img.src = CLOSE_UP_SRC;
+    img.decode().then(() => { if (!cancelled) setCloseUpReady(true); }, () => {});
+    return () => { cancelled = true; };
+  }, [isStatic, isStorefrontShown]);
+
+  useEffect(() => () => window.clearTimeout(kioskGuardRef.current), []);
 
   // Content area dimensions (for hotspot positioning) — desktop only
   const [contentArea, setContentArea] = useState({ width: '100%', height: '100%', top: '0', left: '0' });
@@ -167,7 +194,8 @@ export function ExteriorView({ onEnter, onOpenKiosk, canEnter, onShown }: Exteri
 
   const handleEnterClick = () => {
     // Le bouton existe déjà sous le rideau (clavier, lecteur d'écran) : pas d'entrée à l'aveugle.
-    if (!isStorefrontShown) return;
+    // Et le zoom vers la borne est parti : jamais la borne puis le vidéoclub.
+    if (!isStorefrontShown || kioskZoom) return;
     // Le vidéoclub ne peut pas s'ouvrir ici : la porte explique pourquoi et propose la borne.
     if (!canEnter) {
       setIsDoorBlocked(true);
@@ -184,10 +212,27 @@ export function ExteriorView({ onEnter, onOpenKiosk, canEnter, onShown }: Exteri
 
   // Porte poussée : la transition vers le vidéoclub est partie, la borne ne s'ouvre plus (elle
   // s'ouvrait, puis le visiteur était emmené à l'intérieur 0,7 s plus tard).
-  const openKiosk = () => {
-    // Sous le rideau, la zone de la borne existe déjà : pas d'ouverture à l'aveugle non plus.
-    if (isTransitioning || !isStorefrontShown) return;
+  // Fin du zoom (ou échéance de garde) : la borne s'ouvre, une seule fois.
+  const finishKioskZoom = () => {
+    if (kioskOpenedRef.current) return;
+    kioskOpenedRef.current = true;
+    window.clearTimeout(kioskGuardRef.current);
     onOpenKiosk();
+  };
+
+  const openKiosk = () => {
+    // Une seule transition : ni double appui, ni borne après la porte, ni appui sous le rideau.
+    if (isTransitioning || kioskZoom || !isStorefrontShown) return;
+    // Dès l'appui : le GPU et les chargements du vidéoclub sont libérés, avant toute animation.
+    onKioskIntent?.();
+    // Bureau (bouton provisoire) ou animations réduites : pas de zoom.
+    if (!isStatic || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      onOpenKiosk();
+      return;
+    }
+    const z = zoomTransform(LAYOUT, viewport.w, viewport.h);
+    setKioskZoom({ transform: `translate(${z.x}px, ${z.y}px) scale(${z.scale})`, closeUp: closeUpReady });
+    kioskGuardRef.current = window.setTimeout(finishKioskZoom, KIOSK_ZOOM_GUARD_MS);
   };
 
   // Bouton provisoire de la borne (bureau, en attendant sa devanture élargie) : il n'apparaît
@@ -219,8 +264,11 @@ export function ExteriorView({ onEnter, onOpenKiosk, canEnter, onShown }: Exteri
       <div className={`${styles.container} ${styles.mobileContainer} ${isTransitioning ? styles.fadeOut : ''}`}>
         {/* La scène : l'image et tout ce qui s'y accroche */}
         <div
-          className={styles.mobileStage}
-          style={{ left: stage.left, top: stage.top, width: stage.width, height: stage.height }}
+          className={`${styles.mobileStage} ${kioskZoom ? styles.mobileStageZoom : ''}`}
+          style={{ left: stage.left, top: stage.top, width: stage.width, height: stage.height, transform: kioskZoom?.transform }}
+          onTransitionEnd={(e) => {
+            if (e.target === e.currentTarget && e.propertyName === 'transform') finishKioskZoom();
+          }}
         >
           <picture>
             <source srcSet="/storefront-mobile.webp" type="image/webp" />
@@ -232,6 +280,18 @@ export function ExteriorView({ onEnter, onOpenKiosk, canEnter, onShown }: Exteri
               draggable={false}
             />
           </picture>
+
+          {/* La vue rapprochée de l'écran : en place et invisible, fondue pendant le zoom */}
+          {closeUpReady && (
+            <img
+              src={CLOSE_UP_SRC}
+              alt=""
+              aria-hidden="true"
+              className={`${styles.mobileCloseUp} ${kioskZoom?.closeUp ? styles.mobileCloseUpShown : ''}`}
+              style={zoneStyle(LAYOUT.zoom)}
+              draggable={false}
+            />
+          )}
 
           {/* La borne entière et la porte entière répondent à l'appui. Hors de l'ordre de
               tabulation : au clavier, ce sont les deux boutons du bas qui servent. */}
@@ -265,7 +325,7 @@ export function ExteriorView({ onEnter, onOpenKiosk, canEnter, onShown }: Exteri
 
         {/* Les deux choix, en bas de la fenêtre : chaque flèche pointe vers son objet */}
         {isStorefrontShown && (
-          <div className={styles.mobileChoices}>
+          <div className={`${styles.mobileChoices} ${kioskZoom ? styles.mobileChoicesLeaving : ''}`}>
             <button type="button" className={styles.mobileChoice} onClick={openKiosk}>
               <svg className={styles.mobileChoiceArrow} viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M18 18 6 6M6 15V6h9" />
@@ -294,6 +354,9 @@ export function ExteriorView({ onEnter, onOpenKiosk, canEnter, onShown }: Exteri
 
         {/* Transition overlay */}
         {isTransitioning && <div className={styles.transitionOverlay} />}
+
+        {/* Fin du zoom vers la borne : un voile noir monte, la borne s'ouvre derrière */}
+        {kioskZoom && <div className={styles.kioskVeil} aria-hidden="true" />}
       </div>
     );
   }
