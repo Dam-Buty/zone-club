@@ -118,6 +118,9 @@
 >   **[R]** Cause mesurée sur un vrai tube de la photo **[C]** : cœur non saturé (rose uni) et lueur grise au lieu d'un
 >   violet saturé. Corrigé : le gaz est rendu comme un capteur le voit (cœur brûlé à blanc, bords colorés), le mur est
 >   la peinture bleue de la photo (il renvoie un violet saturé), tube de 12 mm.
+> - **§ 9, critère de réussite atteint pour la vue mobile (18/11/2026).** Rusmir valide l'essai 10, photo d'origine
+>   et image produite côte à côte : « c'est bon pour moi je valide ». **[R]** L'essai jetable du lot 3 est clos ; restent
+>   les images définitives (mobile, vue rapprochée, PC élargie) et le branchement dans le site.
 > - **Tarif** : l'affichage suit ce que le serveur facture. **Dates du serveur** : lues en UTC.
 >   Les deux validés. **[R]**
 > - **§ 5, bouton provisoire sur mobile** : il part tel quel, on ajustera en voyant la version
