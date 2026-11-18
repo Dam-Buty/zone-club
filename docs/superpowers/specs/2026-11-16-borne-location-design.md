@@ -93,6 +93,10 @@
 >   au lieu d'un meuble de 55 cm posé devant. **[R]** L'autocollant prévu sur le flanc passe sur la façade, hors de
 >   l'écran. **[R]** Plan validé (« go ») : finir la borne sous Blender, rendre les images finales, brancher dans le
 >   site. Ajoutés **[C]** : collerette d'encastrement, enseigne néon posée à partir du rendu déjà validé de l'écran.
+> - **§ 4, hauteur de l'écran et tranches (18/11/2026).** Sur l'essai encastré : « oui ça convient » ; l'écran est
+>   jugé trop haut — tout le bloc de l'écran (écran, paiement, afficheur, fente) descend de 10 cm et son haut s'aligne
+>   sur le vitrage de la vitrine de gauche. **[R]** Les tranches des K7 des vitrines sont **tirées de TMDB** et non
+>   aléatoires **[R]** : fond pris dans l'affiche du film, titre = son logo officiel quand TMDB en a un. **[C]**
 > - **Tarif** : l'affichage suit ce que le serveur facture. **Dates du serveur** : lues en UTC.
 >   Les deux validés. **[R]**
 > - **§ 5, bouton provisoire sur mobile** : il part tel quel, on ajustera en voyant la version
