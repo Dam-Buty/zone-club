@@ -1,7 +1,7 @@
 # La borne sur la devanture du bureau, et l'approche filmée de la borne (lot 3, livraison B) — document de conception
 
 - **Date** : 18/11/2026
-- **Statut** : à approuver par Rusmir
+- **Statut** : construit le 18/11/2026 (plan `docs/superpowers/plans/2026-11-18-borne-devanture-bureau-approche.md`) ; reste le verdict visuel de Rusmir dans le navigateur. Voir « 10. Ce qui a été construit et mesuré ».
 - **Base de code** : `feat/borne-location` = `19f3e44` (worktree `../video-club-webgpu-borne`)
 - **Document parent** : `2026-11-16-borne-location-design.md` (§ 3 parcours, § 5 devanture, § 9 fabrication des images)
 - **Livraison A** (mobile, faite) : `docs/superpowers/plans/2026-11-18-borne-devanture-mobile.md`
@@ -316,3 +316,32 @@ Une seule mécanique pour les deux devantures. **[C]**
   `anim_camera.py`, `anim_rendu.py`, `anim_compo.py`, et la section « Essai de l'approche filmée » de `REPRISE.md`.
 - Mécanique du mobile : `src/components/exterior/ExteriorView.tsx`, `storefront-layout.ts`, et la section
   « Devanture mobile » d'`AGENTS.md`.
+
+## 10. Ce qui a été construit et mesuré (18/11/2026)
+
+- **Image du bureau** : refaite par la fabrique, identique à `essai3-compo.png` (écart moyen 0,0 sur 255, maximum 6).
+  `public/storefront.jpeg` 2102 × 1117 ; masque 2891 × 1536, contrôlé par superposition.
+- **Films** : bureau 1920 × 1020, 91 images, 2 072 820 octets (budget 2 621 440) ; mobile 720 × 1290, 91 images,
+  1 242 797 octets (budget 1 572 864 ; encodé en `crf 25`, à `crf 23` il frôlait le budget). Première image contre
+  l'image fixe : 0,88 (bureau) et 1,19 (mobile) niveau d'écart moyen.
+- **Arrivée** : sur PC l'écran de l'interface est collé à **gauche** de la fenêtre, avec sa vitrine (mesuré sur six
+  fenêtres) ; l'arrivée du film du bureau a donc l'écran à 43 % de la largeur du cadre, et non au milieu comme sur
+  l'essai. Sur mobile : 78 % de la largeur, centre à 47 % de la hauteur.
+- **À l'écran** (build de production, vrai Chrome, script hors dépôt) : fenêtres 1280 × 720, 1440 × 900, 1920 × 1080,
+  2560 × 1080, 2560 × 1440 et téléphone 360 × 640, 412 × 915, 412 × 700 — zones à 0 px de la mise en page ; 83 à 90
+  images présentées sur 91 ; écran filmé à 0,2 px au plus de l'écran de l'interface ; aucune capture noire ; film
+  passé par un clic (borne en 25 ms) ; double clic sans effet sur le film ; film bloqué ou animations réduites → borne
+  en moins de 70 ms ; retour puis second choix : le film rejoue. Reflets des phares : +15 sur la vitrine de la borne,
+  +20 sur sa carrosserie, +0,6 sur le mur ajouté (luminosité moyenne, sur 120 captures).
+- **Trois défauts trouvés à la vérification, corrigés** : un double clic passait le film (il ne peut plus être passé
+  dans sa première demi-seconde) ; sur un bureau sans WebGL, le clic sur la borne faisait défiler la devanture de
+  203 px (conteneur en `overflow: clip`) ; au même endroit l'écran 5:9 du film mobile ne peut pas recouvrir l'écran
+  2:3 de l'interface PC (il s'y loge, centré).
+- **Limites constatées, à juger par Rusmir** :
+  - sur une fenêtre 2560 × 1440, la boîte du film rétrécit pendant le trajet (l'écran de l'interface plafonne à
+    1100 px) et laisse autour d'elle le fond sombre de la page de la borne ;
+  - avec le décodage matériel de Chrome sur Mac, le film sort un peu plus clair que la devanture (+2 à +6 niveaux par
+    canal en moyenne ; 0,4 avec le décodage logiciel — le fichier est juste) ; le fondu de départ, porté à 250 ms,
+    l'absorbe ;
+  - de près, les traînées de pluie figées dans la photo grossissent avec le mur.
+- **Non vérifié** : un vrai téléphone, Safari, l'iPad (passe prévue juste après ce chantier, avec le Chromecast).
