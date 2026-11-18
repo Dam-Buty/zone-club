@@ -54,10 +54,12 @@ export type CastEvent =
   | { type: 'SESSION_STARTED'; deviceName: string | null; resumed: boolean }
   | { type: 'SESSION_ENDED' }
   | { type: 'LOAD_FAILED' }
-  | { type: 'MEDIA_STATUS'; filmId: number | null; playerState: 'PLAYING' | 'PAUSED' | 'BUFFERING' | 'IDLE'; idleReason: 'FINISHED' | 'CANCELLED' | 'INTERRUPTED' | 'ERROR' | null; position: number; duration: number; volume: number }
+  // `preview` : lu dans customData.preview — le média a été lancé par une prévisualisation /admin.
+  | { type: 'MEDIA_STATUS'; filmId: number | null; playerState: 'PLAYING' | 'PAUSED' | 'BUFFERING' | 'IDLE'; idleReason: 'FINISHED' | 'CANCELLED' | 'INTERRUPTED' | 'ERROR' | null; position: number; duration: number; volume: number; preview: boolean }
   | { type: 'NO_MEDIA' } | { type: 'STATUS_FAILED' }
   | { type: 'POSITION'; position: number }
-  | { type: 'RENTAL_STATE'; filmId: number; exists: boolean; watchProgress: number }
+  // `watchPosition` : la position notée par le serveur sur la location.
+  | { type: 'RENTAL_STATE'; filmId: number; exists: boolean; watchProgress: number; watchPosition: number }
   | { type: 'RENTAL_GONE'; filmId: number }
   | { type: 'COMMAND'; command: CastCommand }
   | { type: 'COMMAND_DONE' } | { type: 'COMMAND_FAILED' }
@@ -77,8 +79,8 @@ export type CastView = 'local' | 'choosing' | 'connecting' | 'loading' | 'remote
 
 export const initialCastState: CastState = {
   phase: 'idle', available: null, connected: false, deviceName: null, filmId: null,
-  // Seule une demande de prévisualisation (/admin) met le suivi à faux ; un film mémorisé ou retrouvé sur la
-  // TV est une vraie location.
+  // Le suivi est fixé par la demande faite ici, ou, pour un film retrouvé sur la TV, par son média
+  // (`preview`). Un film mémorisé est toujours suivi : seul un film suivi est mémorisé.
   tracked: true,
   position: 0, duration: 0, paused: false, volume: 1, busy: false, stopping: false,
   notice: null, resume: null, media: null,
@@ -196,10 +198,15 @@ function failRequest(state: CastState, code: 'connect_failed' | 'load_failed', c
  * ouverte) ; sinon on l'a retrouvé — page rechargée, liaison revenue — et on reprend son suivi.
  */
 function enterRemote(state: CastState, e: MediaStatus, filmId: number, opening: boolean): Step {
+  // Un film demandé ici, ou déjà le nôtre (liaison perdue puis revenue), garde son propre suivi. Un film
+  // retrouvé sans demande d'ici (page rechargée, lancé ailleurs) est suivi sauf si son média se dit
+  // prévisualisation — sinon un /admin rechargé suivrait l'aperçu sur une vraie location.
+  const ours = opening || (state.phase === 'lost' && filmId === state.filmId);
   const next: CastState = {
     ...state,
     ...tvFields(state, e, filmId === state.filmId),
     phase: 'remote', filmId, media: null, busy: false,
+    tracked: ours ? state.tracked : !e.preview,
     // Un échec annoncé ou une reprise locale de CE film ne sont plus vrais : jamais le film sur les deux écrans.
     notice: state.notice?.filmId === filmId ? null : state.notice,
     resume: state.resume?.filmId === filmId ? null : state.resume,
@@ -445,12 +452,16 @@ function onStatusFailed(state: CastState): Step {
 function onRentalState(state: CastState, e: Extract<CastEvent, { type: 'RENTAL_STATE' }>): Step {
   if (e.filmId !== state.filmId) return unchanged(state);
   switch (state.phase) {
-    case 'remote': case 'lost': case 'idle':
+    case 'remote': case 'lost': case 'idle': {
       if (!e.exists) return rentalOver(state, e.filmId);
       // Vue jusqu'au bout : fin vue par la TV avant un gel de la page, ou fin estimée par le serveur.
       if (e.watchProgress >= 100) return { state: { ...state, phase: 'ended', position: 0, busy: false, media: null }, effects: [] };
-      // Arrêtée en route pendant notre absence : la position notée par le serveur fait foi.
-      return interrupted(state, e.filmId, 'stopped_elsewhere', null);
+      // Arrêtée en route pendant notre absence. La reprise locale part de la dernière position que la machine
+      // connaît ; après un rechargement elle n'en connaît aucune (0) : celle du serveur, gardée dans l'état.
+      // La séance serveur est close sans position : le serveur garde la sienne.
+      const known = state.position > 0 ? state : { ...state, position: e.watchPosition };
+      return interrupted(known, e.filmId, 'stopped_elsewhere', null);
+    }
     case 'choosing': case 'connecting': case 'loading': case 'ended':
       return unchanged(state);
   }
@@ -531,6 +542,8 @@ function onCancel(state: CastState): Step {
  * « Arrêter » (`play` faux) ou « Sur ce téléphone » (`play` vrai) : la TV s'arrête ET la séance se termine (la
  * TV revient à son accueil). La séance serveur est close à la position connue — sinon le vérificateur
  * noterait la location vue en plein visionnage local. Les statuts tardifs sont ignorés jusqu'à la fin de séance.
+ * Position connue : celle de la TV ; après un rechargement sans statut, celle qu'un RENTAL_STATE a donnée, à
+ * défaut 0.
  */
 function leaveTv(state: CastState, play: boolean): Step {
   const filmId = state.filmId;

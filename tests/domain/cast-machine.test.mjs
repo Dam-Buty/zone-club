@@ -34,7 +34,7 @@ const SERVER_EFFECTS = ['SERVER_OPEN', 'SERVER_REPORT', 'SERVER_CLOSE', 'READ_RE
 const media = { url: 'https://s/vf.mp4', title: 'Get Out', startAt: 0, subtitles: [], activeSubtitleId: null };
 const ready = { type: 'SDK_READY', hasSession: false, rememberedFilmId: null };
 const ask = { type: 'REQUEST_CAST', filmId: 7, tracked: true, media };
-const playing = (o = {}) => ({ type: 'MEDIA_STATUS', filmId: 7, playerState: 'PLAYING', idleReason: null, position: 10, duration: 600, volume: 0.3, ...o });
+const playing = (o = {}) => ({ type: 'MEDIA_STATUS', filmId: 7, playerState: 'PLAYING', idleReason: null, position: 10, duration: 600, volume: 0.3, preview: false, ...o });
 const started = { type: 'SESSION_STARTED', deviceName: 'Salon', resumed: false };
 
 const starting = { type: 'SESSION_STARTING', deviceName: 'Salon' };
@@ -123,14 +123,15 @@ test('CAST MACHINE: reprise après rechargement, la TV joue (D6)', () => {
   assert.equal(effects[0].type, 'REQUEST_STATUS');
 });
 test('CAST MACHINE: retour après la fin, plus de séance, location à 100 % → terminé', () => {
-  const { state } = run([{ ...ready, rememberedFilmId: 7 }, { type: 'RENTAL_STATE', filmId: 7, exists: true, watchProgress: 100 }]);
+  const { state } = run([{ ...ready, rememberedFilmId: 7 }, { type: 'RENTAL_STATE', filmId: 7, exists: true, watchProgress: 100, watchPosition: 0 }]);
   assert.equal(state.phase, 'ended'); assert.equal(castOwnsFilm(state), 7);
 });
 test('CAST MACHINE: retour, plus de média, location à 40 % → repos, pause', () => {
   const { state, effects } = run([{ ...ready, hasSession: true, rememberedFilmId: 7 }, { type: 'NO_MEDIA' },
-    { type: 'RENTAL_STATE', filmId: 7, exists: true, watchProgress: 40 }]);
+    { type: 'RENTAL_STATE', filmId: 7, exists: true, watchProgress: 40, watchPosition: 812 }]);
   assert.equal(state.phase, 'idle'); assert.equal(state.notice.code, 'stopped_elsewhere');
   assert.equal(state.resume.filmId, 7); assert.equal(state.resume.play, false);
+  assert.equal(state.resume.position, 812, 'page rechargée : la position notée par le serveur');
   assert.equal(castOwnsFilm(state), null);
   assert.deepEqual(ofType(effects, 'READ_RENTAL'), [{ type: 'READ_RENTAL', filmId: 7 }]);
   // Sans position : la nôtre est périmée, le serveur garde la dernière qu'il a notée.
@@ -211,7 +212,7 @@ test('CAST MACHINE: aucun écran sans sortie', () => {
     loading: [[ready, ask, started], [{ ...ready, hasSession: true }, ask], [...toRemote, ask8], [...toLost, ask8]],
     remote: [toRemote, [{ ...ready, hasSession: true }, playing()], [...toLost, playing()]],
     ended: [toEnded, [...toRemote, playing({ position: 582 }), { type: 'NO_MEDIA' }],
-      [{ ...ready, rememberedFilmId: 7 }, { type: 'RENTAL_STATE', filmId: 7, exists: true, watchProgress: 100 }]],
+      [{ ...ready, rememberedFilmId: 7 }, { type: 'RENTAL_STATE', filmId: 7, exists: true, watchProgress: 100, watchPosition: 0 }]],
     lost: [toLost, [{ ...ready, hasSession: true, rememberedFilmId: 7 }, { type: 'STATUS_FAILED' }]],
   };
   assert.deepEqual(Object.keys(paths).sort(), PHASES.filter(p => p !== 'idle').sort(), 'toutes les phases hors repos');
@@ -437,27 +438,28 @@ test('CAST MACHINE TABLE: plus de média avant 95 % → on relit la location', (
 });
 test('CAST MACHINE TABLE: location relue en télécommande — vue, arrêtée, ou disparue', () => {
   const remote = reach('remote');
-  let r = step(remote, { type: 'RENTAL_STATE', filmId: 7, exists: true, watchProgress: 100 });
+  let r = step(remote, { type: 'RENTAL_STATE', filmId: 7, exists: true, watchProgress: 100, watchPosition: 0 });
   assert.equal(r.state.phase, 'ended'); assert.equal(r.state.filmId, 7); assert.deepEqual(r.effects, []);
-  r = step(remote, { type: 'RENTAL_STATE', filmId: 7, exists: true, watchProgress: 40 });
+  r = step(remote, { type: 'RENTAL_STATE', filmId: 7, exists: true, watchProgress: 40, watchPosition: 812 });
   assert.equal(r.state.phase, 'idle'); assert.equal(r.state.notice.code, 'stopped_elsewhere');
+  // La position vue sur la TV (10) passe avant celle du serveur.
   assert.deepEqual(r.state.resume, { filmId: 7, position: 10, play: false });
   assert.deepEqual(r.effects, [
     { type: 'SERVER_CLOSE', filmId: 7, position: null, finished: false },
     { type: 'REMEMBER_FILM', filmId: null },
   ]);
-  r = step(remote, { type: 'RENTAL_STATE', filmId: 7, exists: false, watchProgress: 0 });
+  r = step(remote, { type: 'RENTAL_STATE', filmId: 7, exists: false, watchProgress: 0, watchPosition: 0 });
   assert.equal(r.state.phase, 'idle'); assert.equal(r.state.notice.code, 'rental_over'); assert.equal(r.state.resume, null);
   assert.ok(r.effects.some(e => e.type === 'STOP_AND_END_SESSION'));
   // La location d'un autre film ne concerne pas la TV.
-  const other = step(remote, { type: 'RENTAL_STATE', filmId: 8, exists: false, watchProgress: 0 });
+  const other = step(remote, { type: 'RENTAL_STATE', filmId: 8, exists: false, watchProgress: 0, watchPosition: 0 });
   assert.equal(other.state, remote); assert.deepEqual(other.effects, []);
 });
 test('CAST MACHINE TABLE: location relue en liaison perdue', () => {
   const lost = reach('lost');
-  assert.equal(step(lost, { type: 'RENTAL_STATE', filmId: 7, exists: true, watchProgress: 100 }).state.phase, 'ended');
-  const r = step(lost, { type: 'RENTAL_STATE', filmId: 7, exists: true, watchProgress: 12 });
-  assert.equal(r.state.phase, 'idle'); assert.equal(r.state.resume.play, false);
+  assert.equal(step(lost, { type: 'RENTAL_STATE', filmId: 7, exists: true, watchProgress: 100, watchPosition: 0 }).state.phase, 'ended');
+  const r = step(lost, { type: 'RENTAL_STATE', filmId: 7, exists: true, watchProgress: 12, watchPosition: 99 });
+  assert.equal(r.state.phase, 'idle'); assert.deepEqual(r.state.resume, { filmId: 7, position: 10, play: false });
   assert.deepEqual(ofType(r.effects, 'SERVER_CLOSE'), [{ type: 'SERVER_CLOSE', filmId: 7, position: null, finished: false }]);
 });
 test('CAST MACHINE TABLE: une commande à la fois, avec accusé', () => {
@@ -702,4 +704,84 @@ test('CAST MACHINE AJOUT: vue d\'un autre film selon la phase', () => {
     assert.equal(castView(reach(phase), 8), expected[phase], phase);
     assert.equal(castView(reach(phase), null), expected[phase], `${phase}, lecteur sans film`);
   }
+});
+
+// ---------------------------------------------------------------------------------------------------------
+// Correctif 1 (arbitrages du contrôleur) : la position du serveur quand la machine n'en connaît aucune, et la
+// prévisualisation reconnue sur un film retrouvé
+// ---------------------------------------------------------------------------------------------------------
+
+const rentalAt = (watchProgress, watchPosition) => ({ type: 'RENTAL_STATE', filmId: 7, exists: true, watchProgress, watchPosition });
+
+test('CAST MACHINE CORRECTIF: après rechargement, la reprise part de la position notée par le serveur', () => {
+  let { state } = run([{ ...ready, rememberedFilmId: 7 }, rentalAt(40, 812)]);
+  assert.deepEqual(state.resume, { filmId: 7, position: 812, play: false });
+  // Même chose quand la TV, muette après le rechargement, finit par dire qu'elle ne joue plus rien.
+  ({ state } = run([{ ...ready, hasSession: true, rememberedFilmId: 7 }, { type: 'STATUS_FAILED' }, { type: 'NO_MEDIA' }, rentalAt(40, 812)]));
+  assert.equal(state.phase, 'idle'); assert.deepEqual(state.resume, { filmId: 7, position: 812, play: false });
+});
+test('CAST MACHINE CORRECTIF: une position connue de la machine passe avant celle du serveur', () => {
+  let { state } = run([...toRemote, playing({ position: 300 }), { type: 'NO_MEDIA' }, rentalAt(40, 812)]);
+  assert.deepEqual(state.resume, { filmId: 7, position: 300, play: false });
+  ({ state } = run([...toRemote, playing({ position: 300 }), { type: 'STATUS_FAILED' }, { type: 'NO_MEDIA' }, rentalAt(40, 812)]));
+  assert.deepEqual(state.resume, { filmId: 7, position: 300, play: false });
+});
+test('CAST MACHINE CORRECTIF: « Continuer sur ce téléphone » après rechargement — position donnée par le serveur, à défaut 0', () => {
+  // Liaison perdue atteinte juste après le rechargement : aucune position connue, aucune donnée par le serveur.
+  const lost = run([{ ...ready, hasSession: true, rememberedFilmId: 7 }, { type: 'STATUS_FAILED' }]).state;
+  const { state, effects } = step(lost, { type: 'USER_TO_PHONE' });
+  assert.deepEqual(state.resume, { filmId: 7, position: 0, play: true });
+  assert.ok(effects.some(e => e.type === 'STOP_AND_END_SESSION'));
+  // Position donnée plus tôt par le serveur et gardée dans l'état : c'est elle qui sert.
+  const told = step({ ...lost, position: 812 }, { type: 'USER_TO_PHONE' }).state;
+  assert.deepEqual(told.resume, { filmId: 7, position: 812, play: true });
+});
+test('CAST MACHINE CORRECTIF: film retrouvé en prévisualisation → aucun effet serveur', () => {
+  const reload = { ...ready, hasSession: true };
+  const tails = [
+    [{ type: 'TICK' }, { type: 'PAGE_HIDDEN' }, { type: 'USER_STOP' }],
+    [{ type: 'TICK' }, tvIdle('FINISHED', { preview: true }), { type: 'USER_DISMISS' }],
+    [{ type: 'NO_MEDIA' }],
+    [{ type: 'STATUS_FAILED' }, playing({ preview: true }), { type: 'USER_TO_PHONE' }],
+    [tvIdle('ERROR', { preview: true })],
+    [{ type: 'SESSION_ENDED' }],
+  ];
+  for (const tail of tails) {
+    const adopted = run([reload, playing({ preview: true })]);
+    assert.equal(adopted.state.phase, 'remote'); assert.equal(adopted.state.tracked, false);
+    const { effects } = runFrom(adopted.state, tail);
+    const leaked = [...adopted.effects, ...effects].filter(e => SERVER_EFFECTS.includes(e.type));
+    assert.deepEqual(leaked, [], `aucun effet serveur après ${tail.map(e => e.type).join(' → ')}`);
+  }
+  // Un aperçu qui prend la TV à la place de notre film : le nôtre est clos, l'aperçu n'est pas suivi.
+  const { state, effects } = run([...toRemote, playing({ filmId: 9, preview: true }), { type: 'TICK' }]);
+  assert.equal(state.filmId, 9); assert.equal(state.tracked, false);
+  assert.deepEqual(effects.filter(e => SERVER_EFFECTS.includes(e.type) && e.filmId === 9), []);
+  assert.ok(effects.some(e => e.type === 'SERVER_CLOSE' && e.filmId === 7));
+});
+test('CAST MACHINE CORRECTIF: film retrouvé hors prévisualisation → suivi', () => {
+  let { state, effects } = run([{ ...ready, hasSession: true }, playing({ preview: false }), { type: 'TICK' }]);
+  assert.equal(state.tracked, true);
+  assert.deepEqual(ofType(effects, 'REMEMBER_FILM'), [{ type: 'REMEMBER_FILM', filmId: 7 }]);
+  assert.deepEqual(ofType(effects, 'SERVER_REPORT'), [
+    { type: 'SERVER_REPORT', filmId: 7, position: 10, duration: 600 },
+    { type: 'SERVER_REPORT', filmId: 7, position: 10, duration: 600 },
+  ]);
+  // Après une prévisualisation dans la même page, un vrai film retrouvé redevient suivi.
+  ({ state, effects } = run([ready, preview, started, playing(), { type: 'USER_STOP' }, { type: 'SESSION_ENDED' }, started, playing({ filmId: 9 })]));
+  assert.equal(state.tracked, true);
+  assert.deepEqual(effects.slice(-2), [
+    { type: 'SERVER_REPORT', filmId: 9, position: 10, duration: 600 },
+    { type: 'REMEMBER_FILM', filmId: 9 },
+  ]);
+});
+test('CAST MACHINE CORRECTIF: une demande d\'ici garde son propre suivi, quel que soit le média', () => {
+  // Demande suivie, média marqué aperçu (incohérent) : la demande l'emporte.
+  let { state, effects } = run([ready, ask, started, playing({ preview: true }), { type: 'TICK' }]);
+  assert.equal(state.tracked, true);
+  assert.ok(effects.some(e => e.type === 'SERVER_OPEN') && effects.some(e => e.type === 'SERVER_REPORT'));
+  // Prévisualisation demandée ici, média non marqué : toujours rien côté serveur, y compris liaison revenue.
+  ({ state, effects } = run([ready, preview, started, playing(), { type: 'STATUS_FAILED' }, playing(), { type: 'TICK' }]));
+  assert.equal(state.phase, 'remote'); assert.equal(state.tracked, false);
+  assert.deepEqual(effects.filter(e => SERVER_EFFECTS.includes(e.type)), []);
 });
