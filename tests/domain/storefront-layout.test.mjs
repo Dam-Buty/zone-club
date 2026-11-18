@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { stageBox, kioskScreenBox, zoomTransform } from '../../src/components/exterior/storefront-layout.ts';
+import { stageBox, kioskScreenBox, zoomTransform, choiceSpans } from '../../src/components/exterior/storefront-layout.ts';
 
 const ROOT = path.resolve(import.meta.dirname, '../..');
 const L = JSON.parse(readFileSync(path.join(ROOT, 'src/data/storefront-mobile.json'), 'utf8'));
@@ -102,4 +102,68 @@ test('ZOOM: le voile final est au fond de la borne, pas noir', () => {
   const voile = css.slice(css.indexOf('.kioskVeil {'), css.indexOf('}', css.indexOf('.kioskVeil {')));
   assert.ok(voile.includes(`background: ${fond};`), 'le voile reprend ce fond');
   assert.ok(!voile.includes('#000'), 'pas de noir');
+});
+
+// Rusmir, 18/11/2026, sur les captures : « ok pour les deux boutons placés en bas, mais vu qu'ils occupent tout l'espace
+// horizontal, pourquoi pas les placer en dessous de l'image et relever le tout — la visibilité du ciel est secondaire » ;
+// et, pour le petit écran, « réduire la taille des boutons pour correspondre à ce qu'on obtient en largeur sur la
+// première image » (390 × 844, où chaque bouton a la largeur de son objet).
+const BARRE = 76;
+
+test('BARRE: l\'image se pose juste au-dessus de la barre des boutons, borne et porte entières', () => {
+  for (const [vw, vh] of FENETRES.slice(0, 4)) {
+    const s = stageBox(L, vw, vh, BARRE);
+    assert.ok(Math.abs(s.top + s.height - (vh - BARRE)) < 0.5, `${vw}x${vh} : bas de l'image à ${s.top + s.height}, barre à ${vh - BARRE}`);
+    assert.ok(s.left <= 0.5 && s.top <= 0.5 && s.left + s.width >= vw - 0.5, `${vw}x${vh} : pas de bord vide`);
+    assert.ok(Math.abs(s.width / s.height - L.image.w / L.image.h) < 1e-6, 'proportions de l\'image');
+    // L'image garde sa taille (celle de la fenêtre entière) : elle remonte, elle ne rétrécit pas.
+    assert.equal(s.width, stageBox(L, vw, vh).width, `${vw}x${vh} : même échelle qu'avant la barre`);
+    const x = (f) => s.left + f * s.width;
+    assert.ok(x(L.borne.x0) >= -4 && x(L.porte.x1) <= vw + 4, `${vw}x${vh} : ${x(L.borne.x0)} … ${x(L.porte.x1)}`);
+  }
+});
+
+test('BARRE: sans réserve, rien ne change (bureau sans WebGL en paysage : cadrage centré sur le groupe)', () => {
+  for (const [vw, vh] of FENETRES) assert.deepEqual(stageBox(L, vw, vh, 0), stageBox(L, vw, vh));
+  const s = stageBox(L, 1280, 720, BARRE);
+  assert.ok(s.top + L.porte.y0 * s.height < 80 && s.top + L.ecran.y1 * s.height < 720 - BARRE, 'paysage : haut de la porte et écran de la borne visibles');
+});
+
+test('BARRE: chaque bouton est sous son objet, à sa largeur', () => {
+  for (const [vw, vh] of FENETRES) {
+    const s = stageBox(L, vw, vh, BARRE), c = choiceSpans(L, s, vw);
+    const x = (f) => s.left + f * s.width;
+    for (const [nom, b, z] of [['borne', c.borne, L.borne], ['porte', c.porte, L.porte]]) {
+      assert.ok(b.left >= 6 - 1e-9 && b.left + b.width <= vw - 6 + 1e-9, `${vw}x${vh} ${nom} : dans la fenêtre`);
+      assert.ok(b.left >= x(z.x0) - 0.5 && b.left + b.width <= x(z.x1) + 0.5, `${vw}x${vh} ${nom} : pas plus large que son objet`);
+      assert.ok(b.width >= 120, `${vw}x${vh} ${nom} : ${b.width} px, trop étroit pour son libellé`);
+    }
+    assert.ok(c.borne.left + c.borne.width < c.porte.left, `${vw}x${vh} : les deux boutons ne se touchent pas`);
+  }
+  // Petit écran : la largeur de la borne, pas la moitié de la fenêtre (168 px avant).
+  const s = stageBox(L, 360, 640, BARRE), c = choiceSpans(L, s, 360);
+  assert.ok(Math.abs(c.borne.width - (L.borne.x1 - L.borne.x0) * s.width) < 0.5, `borne ${c.borne.width}`);
+  assert.ok(Math.abs(c.porte.width - (L.porte.x1 - L.porte.x0) * s.width) < 0.5, `porte ${c.porte.width}`);
+});
+
+test('BARRE: le zoom part de l\'image relevée et arrive toujours sur l\'écran de l\'interface', () => {
+  for (const [vw, vh] of FENETRES.slice(0, 4)) {
+    const s = stageBox(L, vw, vh, BARRE), k = kioskScreenBox(vw, vh), z = zoomTransform(L, vw, vh, BARRE);
+    const gauche = s.left + z.x + z.scale * L.ecran.x0 * s.width;
+    const haut = s.top + z.y + z.scale * L.ecran.y0 * s.height;
+    const largeur = z.scale * (L.ecran.x1 - L.ecran.x0) * s.width;
+    assert.ok(Math.abs(gauche - k.left) < 0.5 && Math.abs(haut - k.top) < 0.5 && Math.abs(largeur - k.width) < 0.5, `${vw}x${vh}`);
+  }
+});
+
+test('BARRE: câblage — bande opaque sous l\'image, sa hauteur réservée à la scène et au zoom', () => {
+  const tsx = readFileSync(path.join(ROOT, 'src/components/exterior/ExteriorView.tsx'), 'utf8');
+  const css = readFileSync(path.join(ROOT, 'src/components/exterior/ExteriorView.module.css'), 'utf8');
+  assert.ok(tsx.includes(`CHOICES_BAR_HEIGHT = ${BARRE}`), 'hauteur de la barre côté code');
+  assert.ok(css.includes(`height: calc(${BARRE}px + env(safe-area-inset-bottom))`), 'même hauteur côté feuille de style, encoche en plus');
+  assert.match(tsx, /stageBox\(LAYOUT, viewport\.w, viewport\.h, reserve\)/, 'la scène laisse la place de la barre');
+  assert.match(tsx, /zoomTransform\(LAYOUT, viewport\.w, viewport\.h, reserve\)/, 'le zoom part de la même scène');
+  assert.ok(tsx.includes('choiceSpans('), 'boutons placés sous leurs objets');
+  const barre = css.slice(css.indexOf('.mobileChoices {'), css.indexOf('}', css.indexOf('.mobileChoices {')));
+  assert.ok(/background: #[0-9a-f]{6};/.test(barre) && !barre.includes('gradient') && !barre.includes('rgba'), 'bande opaque, plus de dégradé sur l\'image');
 });

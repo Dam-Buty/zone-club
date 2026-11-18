@@ -3,7 +3,7 @@ import { ExteriorScene } from './scene/ExteriorScene';
 import { DoorBlockedNotice } from './DoorBlockedNotice';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { releaseInteriorPreload } from '../../utils/interior-preload-gate';
-import { stageBox, zoomTransform, type Rect, type StorefrontLayout } from './storefront-layout';
+import { choiceSpans, stageBox, zoomTransform, type Rect, type StorefrontLayout } from './storefront-layout';
 import storefrontLayout from '../../data/storefront-mobile.json';
 import styles from './ExteriorView.module.css';
 
@@ -25,6 +25,10 @@ const CLOSE_UP_SRC = '/storefront-borne-zoom.webp';
 // passé en arrière-plan, transition coupée —, la borne s'ouvre quand même à cette échéance,
 // comptée depuis l'affichage du zoom.
 const KIOSK_ZOOM_GUARD_MS = 1200;
+
+// Hauteur de la barre des deux boutons, sous l'image (même valeur dans la feuille de style, qui y
+// ajoute l'encoche du bas : la hauteur réelle est relue sur la barre elle-même).
+const CHOICES_BAR_HEIGHT = 76;
 
 const readViewport = () => (
   typeof window === 'undefined' ? { w: 390, h: 844 } : { w: window.innerWidth, h: window.innerHeight }
@@ -80,7 +84,19 @@ export function ExteriorView({ onEnter, onOpenKiosk, onKioskIntent, canEnter, on
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
-  const stage = stageBox(LAYOUT, viewport.w, viewport.h);
+  // La barre des deux boutons est SOUS l'image : la scène lui laisse sa hauteur et remonte
+  // d'autant (le ciel cède la place). Chaque bouton se pose sous son objet, à sa largeur.
+  const choicesRef = useRef<HTMLDivElement>(null);
+  const [reserve, setReserve] = useState(CHOICES_BAR_HEIGHT);
+  useEffect(() => {
+    const bar = choicesRef.current;
+    if (!bar) return;
+    const observer = new ResizeObserver(() => setReserve(bar.offsetHeight));
+    observer.observe(bar);
+    return () => observer.disconnect();
+  }, [isStatic]);
+  const stage = stageBox(LAYOUT, viewport.w, viewport.h, reserve);
+  const choices = choiceSpans(LAYOUT, stage, viewport.w);
 
   // Zoom vers l'écran de la borne : la transformation donnée à la scène, et si la vue rapprochée
   // était décodée à l'appui (sinon le zoom part sans elle). Non nul = le zoom est parti.
@@ -238,7 +254,7 @@ export function ExteriorView({ onEnter, onOpenKiosk, onKioskIntent, canEnter, on
       onOpenKiosk();
       return;
     }
-    const z = zoomTransform(LAYOUT, viewport.w, viewport.h);
+    const z = zoomTransform(LAYOUT, viewport.w, viewport.h, reserve);
     setKioskZoom({ transform: `translate(${z.x}px, ${z.y}px) scale(${z.scale})`, closeUp: closeUpReady });
   };
 
@@ -330,29 +346,39 @@ export function ExteriorView({ onEnter, onOpenKiosk, onKioskIntent, canEnter, on
           </div>
         </div>
 
-        {/* Les deux choix, en bas de la fenêtre : chaque flèche pointe vers son objet */}
-        {isStorefrontShown && (
-          <div className={`${styles.mobileChoices} ${kioskZoom ? styles.mobileChoicesLeaving : ''}`}>
-            <button type="button" className={styles.mobileChoice} onClick={openKiosk}>
-              <svg className={styles.mobileChoiceArrow} viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M18 18 6 6M6 15V6h9" />
-              </svg>
-              <span className={styles.mobileChoiceLabel}>
-                <span className={styles.mobileChoiceTitle}>BORNE 24/7</span>
-                <span className={styles.mobileChoiceHint}>louer sans entrer</span>
-              </span>
-            </button>
-            <button type="button" className={`${styles.mobileChoice} ${styles.mobileChoiceDoor}`} onClick={handleEnterClick}>
-              <span className={styles.mobileChoiceLabel}>
-                <span className={styles.mobileChoiceTitle}>PORTE VIDÉOCLUB</span>
-                <span className={styles.mobileChoiceHint}>entrer</span>
-              </span>
-              <svg className={styles.mobileChoiceArrow} viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M6 18 18 6M9 6h9v9" />
-              </svg>
-            </button>
-          </div>
-        )}
+        {/* Les deux choix, dans une bande sous l'image : chaque bouton est sous son objet, à sa
+            largeur, et sa flèche pointe vers lui. Présente dès le montage (sa hauteur est réservée
+            à la scène) ; sous le rideau, ses boutons ne font rien. */}
+        <div ref={choicesRef} className={`${styles.mobileChoices} ${kioskZoom ? styles.mobileChoicesLeaving : ''}`}>
+          <button
+            type="button"
+            className={styles.mobileChoice}
+            style={{ left: choices.borne.left, width: choices.borne.width }}
+            onClick={openKiosk}
+          >
+            <svg className={styles.mobileChoiceArrow} viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M18 18 6 6M6 15V6h9" />
+            </svg>
+            <span className={styles.mobileChoiceLabel}>
+              <span className={styles.mobileChoiceTitle}>BORNE 24/7</span>
+              <span className={styles.mobileChoiceHint}>louer sans entrer</span>
+            </span>
+          </button>
+          <button
+            type="button"
+            className={`${styles.mobileChoice} ${styles.mobileChoiceDoor}`}
+            style={{ left: choices.porte.left, width: choices.porte.width }}
+            onClick={handleEnterClick}
+          >
+            <span className={styles.mobileChoiceLabel}>
+              <span className={styles.mobileChoiceTitle}>PORTE VIDÉOCLUB</span>
+              <span className={styles.mobileChoiceHint}>entrer</span>
+            </span>
+            <svg className={styles.mobileChoiceArrow} viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6 18 18 6M9 6h9v9" />
+            </svg>
+          </button>
+        </div>
 
         {/* Rideau noir, levé en fondu quand la devanture est affichée */}
         <div className={`${styles.curtain} ${isStorefrontShown ? styles.curtainOpen : ''}`} aria-hidden="true" />

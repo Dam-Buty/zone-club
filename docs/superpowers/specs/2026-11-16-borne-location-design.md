@@ -126,9 +126,11 @@
 >   dans le dépôt (`tools/devanture-borne/fabrique.sh`) et refait l'image validée au pixel près ; le site
 >   affiche la devanture avec la borne, une vue rapprochée de son écran et une mise en page projetée par
 >   la caméra de la scène Blender. Choisir la borne zoome sur son écran (900 ms) puis ouvre l'interface ;
->   le GPU est libéré à l'appui, avant le zoom. **[C]**, à confirmer par Rusmir : les deux boutons
->   « BORNE 24/7 » et « PORTE VIDÉOCLUB » sont **en bas de la fenêtre** et non au-dessus de chaque
->   élément (la place y est prise par les néons « BORNE 24/7 » et « Open 24/7 ») ; un voile de 180 ms
+>   le GPU est libéré à l'appui, avant le zoom. Les deux boutons « BORNE 24/7 » et « PORTE VIDÉOCLUB »
+>   sont **en bas de la fenêtre** et non au-dessus de chaque élément (la place y est prise par les néons) :
+>   **validé par Rusmir sur les captures [R]**, avec deux demandes faites aussitôt — les boutons dans une
+>   bande **sous l'image**, qui remonte (« la visibilité du ciel est secondaire »), et chaque bouton **à la
+>   largeur de son objet**, y compris sur un petit écran. **[C]**, encore à confirmer : un voile de 180 ms
 >   termine le zoom, au fond de la borne et non noir (« pas d'écran noir à l'ouverture ») ; l'écran de la borne modélisée étant au format 5:9, le zoom vise l'écran de
 >   l'interface du téléphone. Corrigé en chemin **[C]** : la borne déjà chargée s'ouvre sans passer par
 >   le carton « Ouverture de la borne… ». **Reste du lot 3** : la devanture du bureau (plan B : photo

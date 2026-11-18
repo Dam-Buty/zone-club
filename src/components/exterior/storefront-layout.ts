@@ -32,17 +32,40 @@ const clamp = (min: number, value: number, max: number) => Math.min(max, Math.ma
  * La scène : l'image posée en « cover » dans la fenêtre, cadrée sur le groupe borne + porte.
  * Elle garde les proportions de l'image et ne laisse jamais de bord vide ; ce qui dépasse est
  * rogné autour du groupe plutôt qu'autour du centre de l'image.
+ *
+ * `reserveBottom` : hauteur laissée en bas de la fenêtre à la barre des deux boutons. L'image
+ * garde la taille qu'elle aurait sans la barre et REMONTE : sur un téléphone en portrait son bas
+ * vient au ras de la barre et c'est le ciel, en haut, qui cède la place (Rusmir, 18/11/2026 :
+ * « relever le tout, la visibilité du ciel est secondaire »).
  */
-export function stageBox(layout: StorefrontLayout, vw: number, vh: number): Box {
+export function stageBox(layout: StorefrontLayout, vw: number, vh: number, reserveBottom = 0): Box {
   const { w, h } = layout.image;
+  const areaHeight = vh - reserveBottom;
   const width = Math.max(vw, (vh * w) / h);
   const height = (width * h) / w;
   return {
     left: clamp(vw - width, vw / 2 - layout.groupe.cx * width, 0),
-    top: clamp(vh - height, vh / 2 - layout.groupe.cy * height, 0),
+    top: clamp(areaHeight - height, areaHeight / 2 - layout.groupe.cy * height, 0),
     width,
     height,
   };
+}
+
+export interface Span { left: number; width: number }
+
+/**
+ * Les deux boutons de la barre : chacun sous son objet et à sa largeur (la borne, la porte),
+ * ramené dans la fenêtre s'il en sort. Ils ne s'étalent plus sur la moitié de la fenêtre : sur un
+ * petit écran, où l'image entière tient en largeur, ils gardent la proportion qu'ils ont sur un
+ * grand.
+ */
+export function choiceSpans(layout: StorefrontLayout, stage: Box, vw: number, margin = 6): { borne: Span; porte: Span } {
+  const span = (zone: Rect): Span => {
+    const left = Math.max(margin, stage.left + zone.x0 * stage.width);
+    const right = Math.min(vw - margin, stage.left + zone.x1 * stage.width);
+    return { left, width: right - left };
+  };
+  return { borne: span(layout.borne), porte: span(layout.porte) };
 }
 
 // Constantes de KioskView.module.css (téléphone). Un test vérifie que la feuille les porte encore.
@@ -76,8 +99,8 @@ export function kioskScreenBox(vw: number, vh: number): Box {
  * Transformation CSS de la scène (`transform-origin: 0 0`, soit `translate(x, y) scale(scale)`)
  * qui amène l'écran de la borne sur celui de l'interface (`kioskScreenBox`).
  */
-export function zoomTransform(layout: StorefrontLayout, vw: number, vh: number): { scale: number; x: number; y: number } {
-  const stage = stageBox(layout, vw, vh);
+export function zoomTransform(layout: StorefrontLayout, vw: number, vh: number, reserveBottom = 0): { scale: number; x: number; y: number } {
+  const stage = stageBox(layout, vw, vh, reserveBottom);
   const target = kioskScreenBox(vw, vh);
   const scale = target.width / ((layout.ecran.x1 - layout.ecran.x0) * stage.width);
   return {

@@ -366,7 +366,13 @@ photo d'origine de la porte, un mur reconstitué à sa gauche, le toit, un ciel 
   pures testées sur cinq fenêtres). L'image, les zones d'appui (la borne entière, la porte entière)
   et l'indicateur PUSH en sont des **enfants placés en pourcentages de la scène** — plus aucune
   position en pourcentages de la fenêtre, qui ne tombait sur l'objet que pour un seul format
-  d'écran. En bas de la fenêtre, deux boutons fléchés : « BORNE 24/7 » et « PORTE VIDÉOCLUB ».
+  d'écran.
+- **La barre des deux boutons** (« BORNE 24/7 », « PORTE VIDÉOCLUB ») est une bande opaque **sous
+  l'image**, pas posée dessus : la scène lui réserve sa hauteur (`stageBox(…, reserve)`) et
+  **remonte sans rétrécir** — c'est le ciel qui cède la place (Rusmir, 18/11/2026). Chaque bouton
+  est sous son objet et **à sa largeur** (`choiceSpans`) ; ses tailles intérieures suivent sa
+  largeur (`cqw`). La hauteur de la barre est dans la feuille de style et dans `ExteriorView.tsx`
+  (`CHOICES_BAR_HEIGHT`, un test les tient égales) ; l'encoche du bas s'y ajoute, relue sur la barre.
 - **Le zoom vers la borne** : à l'appui, `onKioskIntent` part tout de suite (le GPU et les
   chargements du vidéoclub sont libérés **avant** l'animation), puis la scène reçoit la
   transformation de `zoomTransform` — l'écran de la borne vient se poser là où sera celui de
