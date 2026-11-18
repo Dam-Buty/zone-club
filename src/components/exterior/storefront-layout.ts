@@ -130,6 +130,17 @@ export function kioskScreenBoxDesktop(vw: number, vh: number): Box {
 }
 
 /**
+ * Le plus grand rectangle de proportions `ratio` (largeur / hauteur) logé dans `box`, centré. Sert
+ * quand l'écran filmé n'a pas le format de l'écran de l'interface (film du mobile, 5:9, sur un
+ * bureau retombé sur l'image fixe, dont l'interface est en 2:3).
+ */
+export function fitInside(box: Box, ratio: number): Box {
+  const width = Math.min(box.width, box.height * ratio);
+  const height = width / ratio;
+  return { left: box.left + (box.width - width) / 2, top: box.top + (box.height - height) / 2, width, height };
+}
+
+/**
  * Transformation CSS de la scène (`transform-origin: 0 0`, soit `translate(x, y) scale(scale)`)
  * qui amène un rectangle de la scène — l'écran de la borne dans la dernière image du film — sur
  * `target`, l'écran de l'interface. Le film fait lui-même l'approche : il ne reste ici qu'un petit

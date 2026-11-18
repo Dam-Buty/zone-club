@@ -3,7 +3,7 @@ import { ExteriorScene } from './scene/ExteriorScene';
 import { DoorBlockedNotice } from './DoorBlockedNotice';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { releaseInteriorPreload } from '../../utils/interior-preload-gate';
-import { approachTransform, choiceSpans, fitBox, kioskScreenBox, kioskScreenBoxDesktop, stageBox, type Rect, type StorefrontLayout } from './storefront-layout';
+import { approachTransform, choiceSpans, fitBox, fitInside, kioskScreenBox, kioskScreenBoxDesktop, stageBox, type Rect, type StorefrontLayout } from './storefront-layout';
 import { useApproachFilm } from './useApproachFilm';
 import storefrontLayout from '../../data/storefront-mobile.json';
 import desktopLayout from '../../data/storefront-desktop.json';
@@ -13,9 +13,9 @@ import styles from './ExteriorView.module.css';
 // par la fabrique des images (tools/devanture-borne/fabrique.sh) : jamais retouché à la main.
 const LAYOUT: StorefrontLayout = storefrontLayout;
 const LAYOUT_DESKTOP: StorefrontLayout = desktopLayout;
-// Le film d'approche se fond sur la devanture en 150 ms (feuille de style) ; une fois ce fondu
+// Le film d'approche se fond sur la devanture en 250 ms (feuille de style) ; une fois ce fondu
 // passé, la scène animée, désormais cachée dessous, est mise en pause.
-const FILM_FADE_IN_MS = 180;
+const FILM_FADE_IN_MS = 300;
 // Bureau : l'indicateur « PUSH » flotte au-dessus de la plaque, à cette distance (en hauteur d'image).
 const DESKTOP_PUSH_INDICATOR_RISE = 0.105;
 
@@ -229,9 +229,12 @@ export function ExteriorView({ onEnter, onOpenKiosk, onKioskIntent, canEnter, on
   if (isStatic) {
     // Pendant le film, la scène glisse de sa place vers celle où l'écran filmé de la dernière image
     // coïncide avec l'écran de l'interface. Sur un bureau retombé sur l'image fixe (pas de WebGL),
-    // l'interface garde son gabarit PC : c'est son écran-là qu'il faut viser.
+    // l'interface garde son gabarit PC : c'est son écran-là qu'il faut viser, et l'écran filmé —
+    // au format du téléphone — s'y loge, centré.
+    const filmScreen = LAYOUT.approche.ecran;
+    const filmScreenRatio = ((filmScreen.x1 - filmScreen.x0) * stage.width) / ((filmScreen.y1 - filmScreen.y0) * stage.height);
     const kioskTarget = filmPlaying && window.matchMedia('(min-width: 769px) and (pointer: fine)').matches
-      ? kioskScreenBoxDesktop(viewport.w, viewport.h)
+      ? fitInside(kioskScreenBoxDesktop(viewport.w, viewport.h), filmScreenRatio)
       : kioskScreenBox(viewport.w, viewport.h);
     const stageShift = filmPlaying ? approachTransform(stage, LAYOUT.approche.ecran, kioskTarget) : null;
     return (

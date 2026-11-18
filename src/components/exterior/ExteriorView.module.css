@@ -4,6 +4,9 @@
   width: 100vw;
   height: 100vh;
   overflow: hidden;
+  /* « clip » interdit tout défilement, programmé compris : un bouton hors champ qui prend le focus
+     (la zone de la borne, dans une fenêtre en paysage) faisait défiler la devanture. */
+  overflow: clip;
   background: #000;
 }
 
@@ -51,9 +54,12 @@
   pointer-events: none;
 }
 
+/* 250 ms : le fondu absorbe ce que l'image fixe n'a pas (un phare qui passe, l'enseigne qui
+   vacille) et le léger écart de rendu entre une vidéo et une image (mesuré le 18/11/2026 : avec le
+   décodage matériel de Chrome sur Mac, la vidéo sort un peu plus claire que l'image). */
 .approachFilmShown {
   opacity: 1;
-  transition: opacity 150ms linear;
+  transition: opacity 250ms linear;
 }
 
 .contentAreaFilm {

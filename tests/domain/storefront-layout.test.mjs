@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { stageBox, kioskScreenBox, choiceSpans, fitBox, kioskScreenBoxDesktop, approachTransform } from '../../src/components/exterior/storefront-layout.ts';
+import { stageBox, kioskScreenBox, choiceSpans, fitBox, fitInside, kioskScreenBoxDesktop, approachTransform } from '../../src/components/exterior/storefront-layout.ts';
 
 const ROOT = path.resolve(import.meta.dirname, '../..');
 const L = JSON.parse(readFileSync(path.join(ROOT, 'src/data/storefront-mobile.json'), 'utf8'));
@@ -195,6 +195,15 @@ test('APPROCHE: le crochet du film ne fait jamais attendre', () => {
   assert.ok(!/youtube|dailymotion|vimeo/i.test(src));
 });
 
+// Un double clic (habitude du bureau) ou un double appui ne doit pas escamoter le film : le second clic tombait sur
+// le conteneur, qui « passe le film ». On ne peut le passer qu'une fois qu'il joue depuis un instant.
+test('APPROCHE: un double clic ne passe pas le film', () => {
+  const src = readFileSync(path.join(ROOT, 'src/components/exterior/useApproachFilm.ts'), 'utf8');
+  assert.match(src, /export const APPROACH_SKIP_AFTER_MS = \d+/, 'délai avant de pouvoir passer le film');
+  const passer = src.slice(src.indexOf('const skip = '), src.indexOf('const skip = ') + 400);
+  assert.ok(passer.includes("'playing'") && passer.includes('APPROACH_SKIP_AFTER_MS'), 'passer : seulement pendant la lecture, après le délai');
+});
+
 test('APPROCHE: câblage du bureau et apparition de la borne', () => {
   const tsx = readFileSync(path.join(ROOT, 'src/components/exterior/ExteriorView.tsx'), 'utf8');
   const app = readFileSync(path.join(ROOT, 'src/App.tsx'), 'utf8');
@@ -224,6 +233,27 @@ test('APPROCHE MOBILE: câblage — le film remplace le zoom', () => {
   assert.ok(!css.includes('.mobileCloseUp') && !css.includes('.kioskVeil') && !css.includes('.mobileStageZoom'));
   assert.ok(!lay.includes('zoomTransform'));
   assert.ok(tsx.includes('approachTransform(stage, LAYOUT.approche.ecran, kioskTarget)'));
-  assert.match(tsx, /\(min-width: 769px\) and \(pointer: fine\)[\s\S]{0,200}kioskScreenBoxDesktop\([\s\S]{0,120}kioskScreenBox\(/, 'sans WebGL sur un bureau, la cible est l\'écran PC de l\'interface');
+  assert.match(tsx, /\(min-width: 769px\) and \(pointer: fine\)[\s\S]{0,200}fitInside\(kioskScreenBoxDesktop\([\s\S]{0,160}kioskScreenBox\(/, 'sans WebGL sur un bureau, la cible est l\'écran PC de l\'interface');
   assert.ok(tsx.includes('mobileChoicesLeaving'), 'la barre des boutons s\'efface pendant le film');
+});
+
+// Constaté à la vérification à l'écran (18/11/2026), bureau sans WebGL (devanture fixe dans une fenêtre en paysage) :
+// 1. le clic sur la borne — dont la zone dépasse le bas de la fenêtre — faisait défiler le conteneur de 203 px (le
+//    navigateur amène dans le champ le bouton qui prend le focus, même dans un conteneur « overflow: hidden ») ;
+// 2. l'écran 5:9 du film mobile ne peut pas recouvrir l'écran 2:3 de l'interface PC : calé en largeur, il débordait de
+//    135 px en bas. Il se loge désormais dedans, centré, à sa hauteur.
+test('DEVANTURE: le conteneur ne défile jamais, même quand un bouton hors champ prend le focus', () => {
+  const css = readFileSync(path.join(ROOT, 'src/components/exterior/ExteriorView.module.css'), 'utf8');
+  const bloc = css.slice(css.indexOf('.container {'), css.indexOf('}', css.indexOf('.container {')));
+  assert.ok(bloc.includes('overflow: clip'), 'overflow: clip interdit tout défilement, programmé compris');
+});
+
+test('APPROCHE: un écran d\'un autre format se loge dans la cible, centré', () => {
+  const pc = kioskScreenBoxDesktop(1280, 720);                        // 451,2 × 676,8 (2:3)
+  const b = fitInside(pc, 5 / 9);
+  assert.ok(Math.abs(b.height - pc.height) < 1e-9 && Math.abs(b.top - pc.top) < 1e-9, 'même hauteur');
+  assert.ok(Math.abs(b.width - pc.height * 5 / 9) < 1e-9 && Math.abs(b.left + b.width / 2 - (pc.left + pc.width / 2)) < 1e-9, 'centré en largeur');
+  const large = fitInside({ left: 10, top: 20, width: 100, height: 300 }, 2);    // plus large que la cible : calé en largeur
+  assert.deepEqual(large, { left: 10, top: 20 + (300 - 50) / 2, width: 100, height: 50 });
+  assert.deepEqual(fitInside(pc, 2 / 3), pc);
 });

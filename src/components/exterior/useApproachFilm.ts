@@ -18,6 +18,9 @@ export const APPROACH_START_TIMEOUT_MS = 400;
     compté depuis l'appui, un minuteur de garde tombait avant la fin). */
 export const APPROACH_GUARD_MARGIN_MS = 1500;
 
+/** Le film ne peut être passé qu'après ce délai de lecture : un double clic ne l'escamote pas. */
+export const APPROACH_SKIP_AFTER_MS = 500;
+
 export interface ApproachFilm {
   /** À poser sur la balise <video> de la scène. */
   videoRef: RefObject<HTMLVideoElement | null>;
@@ -27,7 +30,7 @@ export interface ApproachFilm {
   /** Lance le film. false = il ne peut pas partir (pas chargé, animations réduites, déjà parti) :
       à l'appelant d'ouvrir la borne directement. */
   start: () => boolean;
-  /** Clic pendant le film : va directement à l'arrivée. */
+  /** Clic pendant le film : va directement à l'arrivée (sans effet dans sa première demi-seconde). */
   skip: () => void;
 }
 
@@ -49,6 +52,7 @@ export function useApproachFilm({ url, durationMs, load, onArrive }: ApproachFil
   // minuteurs doivent lire leur valeur du moment, pas celle du rendu qui les a posés.
   const phaseRef = useRef<ApproachPhase>('idle');
   const arrivedRef = useRef(false);
+  const playingSinceRef = useRef(0);
   const timersRef = useRef<number[]>([]);
   const onArriveRef = useRef(onArrive);
   useEffect(() => { onArriveRef.current = onArrive; }, [onArrive]);
@@ -107,6 +111,7 @@ export function useApproachFilm({ url, durationMs, load, onArrive }: ApproachFil
     const shown = () => {
       if (phaseRef.current !== 'starting' || arrivedRef.current) return;
       phaseRef.current = 'playing';
+      playingSinceRef.current = performance.now();
       setPhase('playing');
       clearTimers();
       timersRef.current.push(window.setTimeout(arrive, durationMs + APPROACH_GUARD_MARGIN_MS));
@@ -127,7 +132,7 @@ export function useApproachFilm({ url, durationMs, load, onArrive }: ApproachFil
   }, [src, durationMs, arrive, clearTimers]);
 
   const skip = useCallback(() => {
-    if (phaseRef.current !== 'idle') arrive();
+    if (phaseRef.current === 'playing' && performance.now() - playingSinceRef.current >= APPROACH_SKIP_AFTER_MS) arrive();
   }, [arrive]);
 
   return { videoRef, src, phase, start, skip };
