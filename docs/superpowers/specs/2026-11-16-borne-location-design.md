@@ -114,6 +114,10 @@
 >   descendent dans la borne (un tube est un circuit : il y a deux bouts).
 > - **§ 4, enseigne : capitales et luminosité (18/11/2026).** L'enseigne s'écrit **« BORNE 24/7 » en majuscules** (en
 >   minuscules le r et le n se confondaient) et le néon est **un peu moins lumineux**, pour que le verre ressorte. **[R]**
+> - **§ 4, enseigne : « ça fait faux » (18/11/2026).** L'essai en capitales, moins lumineux, « ne fait pas assez néon ».
+>   **[R]** Cause mesurée sur un vrai tube de la photo **[C]** : cœur non saturé (rose uni) et lueur grise au lieu d'un
+>   violet saturé. Corrigé : le gaz est rendu comme un capteur le voit (cœur brûlé à blanc, bords colorés), le mur est
+>   la peinture bleue de la photo (il renvoie un violet saturé), tube de 12 mm.
 > - **Tarif** : l'affichage suit ce que le serveur facture. **Dates du serveur** : lues en UTC.
 >   Les deux validés. **[R]**
 > - **§ 5, bouton provisoire sur mobile** : il part tel quel, on ajustera en voyant la version
