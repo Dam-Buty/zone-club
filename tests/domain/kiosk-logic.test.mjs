@@ -483,12 +483,42 @@ test('DISTRIBUTION: lignes de « Mes locations », la plus proche de l\'échéan
   assert.equal(rows[1].timeLeft, 'encore 5 h 00');
   assert.deepEqual(K.rentalRows([], [], now), []);
 });
-test('DISTRIBUTION: geste retour — rien pendant l\'attente, ferme le panneau puis la liste', () => {
+test('DISTRIBUTION: geste retour — rien pendant l\'attente, ferme le panneau puis le compte', () => {
   const base = { playerOpen: false, noticeOpen: false, noticeClosable: true, authOpen: false, phrasePending: false, searchOpen: false };
   assert.equal(K.kioskBackAction({ ...base, waiting: true }), 'none');
   assert.equal(K.kioskBackAction({ ...base, waiting: true, readyOpen: true }), 'none');
-  assert.equal(K.kioskBackAction({ ...base, readyOpen: true, rentalsOpen: true }), 'close-ready');
-  assert.equal(K.kioskBackAction({ ...base, rentalsOpen: true, detailOpen: true }), 'close-rentals');
+  assert.equal(K.kioskBackAction({ ...base, readyOpen: true, accountOpen: true }), 'close-ready');
+  assert.equal(K.kioskBackAction({ ...base, accountOpen: true, detailOpen: true }), 'close-account');
   assert.equal(K.kioskBackAction({ ...base, playerOpen: true, readyOpen: true }), 'close-player');
   assert.equal(K.kioskBackAction({ ...base, noticeOpen: true, waiting: true }), 'close-notice');
+});
+
+
+// ===== « Mon compte » (spec 2026-11-17-borne-mon-compte, § 4) =====
+const hist = (o = {}) => ({ filmId: 1, title: 'Get Out', posterUrl: '/p.jpg', rentedAt: 1000, returnedAt: 5000, isActive: false,
+  expiresAt: 5000, watchProgress: 100, rewindClaimed: false, returnedEarly: false, returnDate: null, expiredDate: null, ...o });
+test('COMPTE: l\'historique — rendu, expiré ou terminé, du plus récent au plus ancien, sans les locations en cours', () => {
+  const rows = K.accountHistoryRows([
+    hist({ filmId: 1, rentedAt: 1000, returnDate: 4000, rewindClaimed: true, returnedEarly: true }),
+    hist({ filmId: 2, rentedAt: 3000, expiredDate: 6000 }),
+    hist({ filmId: 3, rentedAt: 2000 }),
+    hist({ filmId: 4, rentedAt: 9000, isActive: true }),
+    hist({ filmId: 5, rentedAt: 500, title: null }),
+  ], new Set(), {});
+  assert.deepEqual(rows.map(r => r.filmId), [2, 3, 1, 5]);
+  assert.deepEqual(rows[0].end, { kind: 'expiré', atMs: 6000 });
+  assert.deepEqual(rows[1].end, { kind: 'terminée', atMs: null });
+  assert.deepEqual(rows[2].end, { kind: 'rendu', atMs: 4000 });
+  assert.equal(rows[2].rewound, true);
+  assert.equal(rows[2].returnedEarly, true);
+  assert.equal(rows[0].rewound, false);
+  assert.equal(rows[3].title, 'Titre indisponible');
+  assert.deepEqual(K.accountHistoryRows([], new Set(), {}), []);
+});
+test('COMPTE: l\'état de la critique d\'un film', () => {
+  const elig = { 2: { allowed: true, reason: null, availableAtMs: null }, 3: { allowed: false, reason: 'Critique possible à partir du 19 novembre à 21:10', availableAtMs: 1 } };
+  assert.deepEqual(K.reviewStateFor(1, new Set([1]), elig), { kind: 'publiée' });
+  assert.deepEqual(K.reviewStateFor(2, new Set(), elig), { kind: 'possible' });
+  assert.deepEqual(K.reviewStateFor(3, new Set(), elig), { kind: 'pas-encore', reason: 'Critique possible à partir du 19 novembre à 21:10' });
+  assert.deepEqual(K.reviewStateFor(9, new Set(), elig), { kind: 'pas-encore', reason: 'Vous devez regarder au moins 80 % du film' });
 });

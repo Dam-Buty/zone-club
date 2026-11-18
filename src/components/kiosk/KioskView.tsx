@@ -8,7 +8,7 @@ import { KioskAuth } from './KioskAuth';
 import { KioskBrowse } from './KioskBrowse';
 import { KioskDetail } from './KioskDetail';
 import { KioskReady, KioskWaiting } from './KioskDistribution';
-import { KioskRentals } from './KioskRentals';
+import { KioskAccount } from './KioskAccount';
 import { KioskNotice, type KioskNoticeSpec } from './KioskNotice';
 import { KioskSearch } from './KioskSearch';
 import {
@@ -258,7 +258,10 @@ export function KioskView() {
   // ----- Distribution de la K7 (spec 2026-11-17) -----
   // « Veuillez patienter » pendant l'appel au serveur, puis le panneau « Votre K7 est prête ».
   const [distribution, setDistribution] = useState<{ phase: 'waiting' | 'ready'; filmId: number } | null>(null);
-  const [rentalsOpen, setRentalsOpen] = useState(false);
+  // « Mon compte » (spec 2026-11-17-borne-mon-compte) : ouvert par « Compte » ou depuis le panneau d'après location.
+  const [accountOpen, setAccountOpen] = useState(false);
+  // Film dont la critique s'écrit (formulaire de la tâche 6 du plan « Mon compte »).
+  const [reviewFilmId, setReviewFilmId] = useState<number | null>(null);
   const onRenting = useCallback((filmId: number | null) => {
     setDistribution(filmId === null ? null : { phase: 'waiting', filmId });
   }, []);
@@ -279,7 +282,7 @@ export function KioskView() {
           label: 'Mes locations',
           onPress: () => {
             setNotice(null);
-            setRentalsOpen(true);
+            setAccountOpen(true);
           },
         },
         // La sortie de la borne, comme « quitter » (déclaré plus bas).
@@ -409,21 +412,12 @@ export function KioskView() {
   const openAccount = () => {
     if (authVisible) return;
     if (!isAuthenticated || !authUser) {
-      requestAuth();
+      // Une fois connecté, on arrive directement sur « Mon compte ».
+      requestAuth(() => setAccountOpen(true));
       return;
     }
-    setNotice({
-      title: 'Compte',
-      body: `${authUser.username} — ${creditsLabel(credits)}`,
-      primary: { label: 'Fermer', onPress: closeNotice },
-      secondary: {
-        label: 'Se déconnecter',
-        onPress: () => {
-          closeNotice();
-          void logout();
-        },
-      },
-    });
+    // Le compte se consulte à tout moment, sans avoir à louer d'abord (Rusmir, 17/11/2026).
+    setAccountOpen(true);
   };
 
   const overlay: KioskNoticeSpec | null =
@@ -459,7 +453,7 @@ export function KioskView() {
       noticeOpen: overlay !== null,
       waiting: distribution?.phase === 'waiting',
       readyOpen: distribution?.phase === 'ready',
-      rentalsOpen,
+      accountOpen,
       noticeClosable: catalog !== 'unavailable',
       authOpen,
       phrasePending: pendingPhrase !== null,
@@ -470,7 +464,7 @@ export function KioskView() {
     if (action === 'close-player') closePlayer();
     else if (action === 'close-notice') closeNotice();
     else if (action === 'close-ready') closeReady();
-    else if (action === 'close-rentals') setRentalsOpen(false);
+    else if (action === 'close-account') setAccountOpen(false);
     else if (action === 'cancel-auth') cancelAuth();
     else if (action === 'close-trailer') setDetailTab('resume');
     else if (action === 'close-detail') closeDetail();
@@ -557,7 +551,7 @@ export function KioskView() {
                 {/* Sous la fiche détaillée, le parcours reste monté (rayon, page, position de la bande) mais caché. */}
                 <div
                   className={styles.kPane}
-                  inert={overlay !== null || distribution !== null || authVisible || mode === 'search' || detailOpen || rentalsOpen}
+                  inert={overlay !== null || distribution !== null || authVisible || mode === 'search' || detailOpen || accountOpen}
                   style={detailOpen ? { visibility: 'hidden' } : undefined}
                 >
                   {catalog === 'loading' && (
@@ -599,9 +593,18 @@ export function KioskView() {
                   </div>
                 )}
 
-                {rentalsOpen && (
+                {accountOpen && (
                   <div className={styles.kLayer} inert={overlay !== null || distribution !== null || authVisible}>
-                    <KioskRentals films={catalogue} onWatch={(filmId) => openPlayer(filmId)} onBack={() => setRentalsOpen(false)} />
+                    <KioskAccount
+                      films={catalogue}
+                      onWatch={(filmId) => openPlayer(filmId)}
+                      onReview={(filmId) => setReviewFilmId(filmId)}
+                      onLogout={() => {
+                        setAccountOpen(false);
+                        void logout();
+                      }}
+                      onBack={() => setAccountOpen(false)}
+                    />
                   </div>
                 )}
 
@@ -630,7 +633,7 @@ export function KioskView() {
                       }}
                       onRentals={() => {
                         closeReady();
-                        setRentalsOpen(true);
+                        setAccountOpen(true);
                       }}
                       onLater={closeReady}
                     />

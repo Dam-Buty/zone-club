@@ -411,6 +411,88 @@ span.kSearchPoster {
   font-size: 4.4cqw;
 }
 
+/* ----- « Mon compte » (sur le panneau de la recherche) ----- */
+
+.kAccountWho {
+  margin-top: 1.4cqw;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 3cqw;
+  font-size: 4.9cqw;
+  font-weight: 700;
+  color: #e3f1ff;
+}
+
+.kAccountCredits {
+  color: #ffb347;
+}
+
+.kAccountSection {
+  margin: 4cqw 0 1.6cqw;
+  font-size: 4.4cqw;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #9fe3ff;
+}
+
+/* Une ligne du compte : la jaquette en haut, les faits empilés à côté. */
+.kSearchRow.kAccountRow {
+  align-items: flex-start;
+}
+
+.kAccountFact,
+.kAccountReason {
+  display: flex;
+  align-items: center;
+  gap: 1.4cqw;
+  font-family: var(--k-font-text);
+  font-size: 4cqw;
+  font-weight: 500;
+  line-height: 1.25;
+  color: #d6ecff;
+}
+
+.kAccountReason {
+  color: #bfe3ff;
+  font-style: italic;
+}
+
+.kMarkOk,
+.kMarkNo {
+  flex: none;
+  width: 3.6cqw;
+  height: 3.6cqw;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.kMarkOk {
+  stroke: #6fe39a;
+}
+
+.kMarkNo {
+  stroke: #ff8a7a;
+}
+
+.kNoticeBtn.kAccountReview {
+  flex: none;
+  align-self: flex-start;
+  margin-top: 1cqw;
+  min-height: max(44px, 10cqw);
+  font-size: 4.2cqw;
+}
+
+.kNoticeBtn.kAccountLogout {
+  display: block;
+  width: 100%;
+  margin: 6cqw 0 2cqw;
+  min-height: max(44px, 11cqw);
+}
+
 /* ----- texte courant -----
    Les libellés sont dans la police étroite de l'écran ; ce qui se LIT ou se SAISIT (champs,
    consignes, messages) est dans sa version condensée ordinaire, plus confortable. */

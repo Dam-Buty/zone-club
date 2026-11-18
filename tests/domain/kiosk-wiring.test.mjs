@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
+import { existsSync } from 'node:fs';
 import { readText, walkFiles } from '../helpers/repo.mjs';
 
 const ROOT = process.cwd();
@@ -391,13 +392,18 @@ test('DISTRIBUTION: le panneau « prête » ne bloque jamais la borne', () => {
   assert.ok(!/if \(!film\) return null/.test(view), 'un film absent du catalogue ne doit pas laisser une distribution invisible');
   assert.ok(view.includes("'Titre indisponible'"), 'titre de repli');
 });
-test('DISTRIBUTION: « Mes locations » liste les locations en cours', () => {
-  const src = readText(path.join(ROOT, 'src/components/kiosk/KioskRentals.tsx'));
-  for (const copy of ['Mes locations', 'Aucune location en cours.', 'Regarder', 'Retour']) assert.ok(src.includes(copy), copy);
-  assert.ok(src.includes('rentalRows'), 'les lignes viennent de la logique testée');
-  assert.ok(src.includes('clearInterval'), 'le minuteur est nettoyé');
+test('COMPTE: « Compte » ouvre l\'écran « Mon compte » à tout moment, sans avoir à louer', () => {
+  const src = readText(path.join(ROOT, 'src/components/kiosk/KioskAccount.tsx'));
+  for (const copy of ['Mon compte', 'En cours', 'Historique', 'Se déconnecter', 'Écrire ma critique', '+1 crédit', 'Aucune location', 'Retour']) {
+    assert.ok(src.includes(copy), copy);
+  }
+  assert.ok(src.includes('rentalRows(') && src.includes('accountHistoryRows(') && src.includes('reviewStateFor('), 'lignes tirées de la logique testée');
+  assert.ok(src.includes('fetchMe'), 'données relues à l\'ouverture');
+  assert.ok(!/\bdisabled\b/.test(src), 'aucun bouton grisé');
   const view = readText(path.join(ROOT, 'src/components/kiosk/KioskView.tsx'));
-  assert.ok(view.includes('<KioskRentals'), 'monté par la borne');
+  assert.ok(view.includes('<KioskAccount'), 'monté par la borne');
+  assert.ok(!view.includes("title: 'Compte'"), 'plus de petit message « Compte »');
+  assert.ok(!existsSync(path.join(ROOT, 'src/components/kiosk/KioskRentals.tsx')), '« Mes locations » est absorbé');
 });
 // Revue finale : l'appel au serveur n'a aucun délai maximal ; pendant l'attente « Quitter » est inerte
 // et le geste retour ne fait rien. Un serveur muet ne doit pas enfermer le visiteur.

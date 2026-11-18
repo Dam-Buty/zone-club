@@ -5,6 +5,7 @@
 // Imports de type uniquement : ce module est chargé tel quel par Node dans les tests
 // (tests/domain/kiosk-logic.test.mjs), un import de valeur sans extension casserait.
 import type { AisleType, Film } from '../../types';
+import type { RentalHistoryEntry, ReviewEligibilityMap } from '../../store';
 
 // ===== Onglets =====
 
@@ -376,6 +377,61 @@ export function rentalRows(
     .sort((a, b) => a.expiresAt - b.expiresAt);
 }
 
+// ===== « Mon compte » =====
+//
+// docs/superpowers/specs/2026-11-17-borne-mon-compte-design.md, § 4 : tout l'historique, et pour chaque film
+// rendu le rembobinage, le retour anticipé et la critique. La règle des critiques est au serveur
+// (/api/me → reviewEligibility) : la borne affiche, elle n'en a pas de copie.
+
+export type KioskReviewState = { kind: 'publiée' } | { kind: 'possible' } | { kind: 'pas-encore'; reason: string };
+
+export type KioskHistoryRow = {
+  filmId: number;
+  title: string;
+  posterUrl: string | null;
+  end: { kind: 'rendu' | 'expiré' | 'terminée'; atMs: number | null };
+  rewound: boolean;
+  returnedEarly: boolean;
+  review: KioskReviewState;
+};
+
+/** L'état de la critique d'un film pour ce visiteur. Sans avis du serveur : il faut d'abord voir le film. */
+export function reviewStateFor(filmId: number, reviewedFilmIds: ReadonlySet<number>, eligibility: ReviewEligibilityMap): KioskReviewState {
+  if (reviewedFilmIds.has(filmId)) return { kind: 'publiée' };
+  const e = eligibility[filmId];
+  if (e?.allowed) return { kind: 'possible' };
+  return { kind: 'pas-encore', reason: e?.reason ?? 'Vous devez regarder au moins 80 % du film' };
+}
+
+/**
+ * Les locations terminées, la plus récente d'abord. « rendu » si le visiteur l'a rendue, « expiré » si elle est
+ * arrivée à échéance, « terminée » (sans date) pour une location antérieure à ces dates.
+ */
+export function accountHistoryRows(
+  history: ReadonlyArray<RentalHistoryEntry>,
+  reviewedFilmIds: ReadonlySet<number>,
+  eligibility: ReviewEligibilityMap,
+): KioskHistoryRow[] {
+  return history
+    .filter((h) => !h.isActive)
+    .slice()
+    .sort((a, b) => b.rentedAt - a.rentedAt)
+    .map((h) => ({
+      filmId: h.filmId,
+      title: h.title?.trim() || 'Titre indisponible',
+      posterUrl: h.posterUrl,
+      end: h.returnDate ? { kind: 'rendu', atMs: h.returnDate } : h.expiredDate ? { kind: 'expiré', atMs: h.expiredDate } : { kind: 'terminée', atMs: null },
+      rewound: !!h.rewindClaimed,
+      returnedEarly: !!h.returnedEarly,
+      review: reviewStateFor(h.filmId, reviewedFilmIds, eligibility),
+    }));
+}
+
+/** « 18 novembre » — le jour d'un retour ou d'une échéance. `timeZone` ne sert qu'aux tests. */
+export function dayLabel(ms: number, timeZone?: string): string {
+  return new Date(ms).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', timeZone });
+}
+
 // ===== Connexion =====
 
 /**
@@ -413,7 +469,7 @@ export type KioskBackAction =
   | 'close-player'
   | 'close-notice'
   | 'close-ready'
-  | 'close-rentals'
+  | 'close-account'
   | 'cancel-auth'
   | 'close-trailer'
   | 'close-detail'
@@ -442,14 +498,14 @@ export function kioskBackAction(s: {
   waiting?: boolean;
   /** Le panneau « Votre K7 est prête » est affiché. */
   readyOpen?: boolean;
-  /** L'écran « Mes locations » est ouvert. */
-  rentalsOpen?: boolean;
+  /** L'écran « Mon compte » est ouvert. */
+  accountOpen?: boolean;
 }): KioskBackAction {
   if (s.playerOpen) return 'close-player';
   if (s.noticeOpen) return s.noticeClosable ? 'close-notice' : 'none';
   if (s.waiting) return 'none';
   if (s.readyOpen) return 'close-ready';
-  if (s.rentalsOpen) return 'close-rentals';
+  if (s.accountOpen) return 'close-account';
   if (s.phrasePending) return 'none';
   if (s.authOpen) return 'cancel-auth';
   if (s.detailOpen) return s.trailerOpen ? 'close-trailer' : 'close-detail';
