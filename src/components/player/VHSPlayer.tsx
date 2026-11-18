@@ -10,9 +10,10 @@ import { useIsMobile } from '../../hooks/useIsMobile';
 import { useBackGuard } from '../../hooks/useBackGuard';
 import { buildCastSubtitleTracks, activeSubtitleId } from '../../utils/cast-subtitles';
 import { appleAirPlay, rewindOfferOnOpen, shouldStartCastOnOpen } from '../../utils/cast-on-open';
+import { REVIEW_MIN_LENGTH, REVIEW_RATING_LABELS } from '../../utils/review-rules';
 import styles from './VHSPlayer.module.css';
 
-const MIN_CONTENT_LENGTH = 500;
+const MIN_CONTENT_LENGTH = REVIEW_MIN_LENGTH;
 
 function formatCastTime(seconds: number): string {
   const h = Math.floor(seconds / 3600);
@@ -2004,9 +2005,9 @@ export function VHSPlayer() {
                 {/* Ratings row */}
                 <div className={styles.rewindRatingsRow}>
                   {[
-                    { label: 'RÉAL', value: ratingDirection, setter: setRatingDirection },
-                    { label: 'SCÉN', value: ratingScreenplay, setter: setRatingScreenplay },
-                    { label: 'JEU', value: ratingActing, setter: setRatingActing },
+                    { label: REVIEW_RATING_LABELS.direction, value: ratingDirection, setter: setRatingDirection },
+                    { label: REVIEW_RATING_LABELS.screenplay, value: ratingScreenplay, setter: setRatingScreenplay },
+                    { label: REVIEW_RATING_LABELS.acting, value: ratingActing, setter: setRatingActing },
                   ].map(({ label, value, setter }) => (
                     <div key={label} className={styles.rewindRatingGroup}>
                       <span className={styles.rewindRatingLabel}>{label}</span>
@@ -2031,7 +2032,7 @@ export function VHSPlayer() {
                     className={styles.rewindTextarea}
                     value={reviewContent}
                     onChange={(e) => setReviewContent(e.target.value)}
-                    placeholder="Votre critique (min. 500 caractères)..."
+                    placeholder={`Votre critique (au moins ${MIN_CONTENT_LENGTH} caractères)…`}
                     rows={4}
                   />
                   <span className={`${styles.rewindCharCount} ${reviewContent.length >= MIN_CONTENT_LENGTH ? styles.rewindCharValid : ''}`}>

@@ -1,6 +1,5 @@
 import { db } from './db';
-
-const MIN_REVIEW_LENGTH = 500;
+import { REVIEW_MIN_LENGTH as MIN_REVIEW_LENGTH } from '../src/utils/review-rules';
 
 export interface Review {
     id: number;

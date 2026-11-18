@@ -80,7 +80,7 @@ export function createChatTools(userId: number) {
       description: 'Propose au client d\'ecrire une critique pour un film. Affiche un formulaire pre-rempli avec une critique ecrite par toi. Utilise apres que le client a vu un film et veut donner son avis.',
       inputSchema: z.object({
         film_id: z.number().describe('L\'ID interne du film'),
-        pre_written_review: z.string().describe('Une critique ecrite par toi dans le style du client, minimum 500 caracteres. Le client pourra la modifier.'),
+        pre_written_review: z.string().describe('Une critique ecrite par toi dans le style du client, au moins 144 caracteres. Le client pourra la modifier.'),
       }),
       execute: async ({ film_id, pre_written_review }) => {
         const film = getFilmById(film_id);
