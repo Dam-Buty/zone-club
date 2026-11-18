@@ -267,8 +267,9 @@ Une seule mécanique pour les deux devantures. **[C]**
   film), écran filmé de la dernière image contre l'écran réel de l'interface (écart en pixels), aucune image noire
   d'un bout à l'autre, nombre d'images réellement présentées pendant les 3 secondes, film passé par un clic, film
   absent (fichier bloqué) → ouverture immédiate, animations réduites.
-- **Non vérifié par ce chantier** : un vrai téléphone (les essais sur le Pixel 9a sont repoussés par Rusmir) et
-  Safari. Le film est en H.264 justement parce que tous les navigateurs le lisent ; cela reste à constater.
+- **Non vérifié par ce chantier** : un vrai téléphone et Safari. Rusmir, le 18/11/2026 : les essais sur le Pixel 9a
+  et le Chromecast se font **juste après** ce chantier, avec du ménage ; l'iPad, où il n'a « pas du tout réussi » le
+  17/11, est à traiter dans la même passe. **[R]** Le film est en H.264 justement parce que tous les navigateurs le lisent ; cela reste à constater.
 - **Le verdict visuel de Rusmir** sur la devanture animée du bureau et sur les deux approches filmées, dans le
   navigateur, avant de conclure.
 
