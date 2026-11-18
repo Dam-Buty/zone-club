@@ -534,3 +534,10 @@ test('CRITIQUE (borne): le geste retour ferme le formulaire avant le compte', ()
   const base = { playerOpen: false, noticeOpen: false, noticeClosable: true, authOpen: false, phrasePending: false, searchOpen: false };
   assert.equal(K.kioskBackAction({ ...base, reviewOpen: true, accountOpen: true }), 'close-review');
 });
+test('PANNEAU: « Où voulez-vous regarder ? » dit où et comment', () => {
+  assert.equal(K.watchHereLabel({ coarsePointer: true, shortSide: 412 }), 'Sur ce téléphone');
+  assert.equal(K.watchHereLabel({ coarsePointer: true, shortSide: 820 }), 'Sur cette tablette');
+  assert.equal(K.watchHereLabel({ coarsePointer: false, shortSide: 900 }), 'Sur cet ordinateur');
+  assert.equal(K.tvMeansLabel(false), 'via Chromecast');
+  assert.equal(K.tvMeansLabel(true), 'via AirPlay');
+});

@@ -278,9 +278,9 @@ export function KioskView() {
       setDistribution(null);
       setNotice({
         title: 'La borne ne répond pas',
-        body: 'La location a peut-être été enregistrée : vérifiez dans Mes locations.',
+        body: 'La location a peut-être été enregistrée : vérifiez dans Mon compte.',
         primary: {
-          label: 'Mes locations',
+          label: 'Mon compte',
           onPress: () => {
             setNotice(null);
             setAccountOpen(true);
@@ -649,7 +649,7 @@ export function KioskView() {
                         closeReady();
                         openPlayerOnTv(filmId);
                       }}
-                      onRentals={() => {
+                      onAccount={() => {
                         closeReady();
                         setAccountOpen(true);
                       }}

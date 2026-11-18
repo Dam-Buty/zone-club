@@ -379,7 +379,7 @@ test('DISTRIBUTION: pendant l\'attente la barre du haut est inerte et le panneau
   assert.match(view, /className=\{styles\.kTop\} inert=\{[^}]*distribution/, 'barre du haut inerte pendant la distribution');
   assert.ok(view.includes('openPlayerOnTv'), '« Sur la TV »');
   const dist = readText(path.join(ROOT, 'src/components/kiosk/KioskDistribution.tsx'));
-  for (const copy of ['Veuillez patienter', 'Votre K7 est prête', 'Regarder', 'Sur la TV', 'Mes locations']) {
+  for (const copy of ['Veuillez patienter', 'Votre K7 est prête', 'Où voulez-vous regarder ?', 'Sur ma télé', 'le film démarre ici', 'Mon compte']) {
     assert.ok(dist.includes(copy), copy);
   }
   assert.ok(dist.includes('preloadCastSdk'), 'SDK préchargé à l\'affichage du panneau');
@@ -414,7 +414,7 @@ test('DISTRIBUTION: « Veuillez patienter » rend la main au bout de 30 s avec u
   const guard = view.slice(view.indexOf('KIOSK_RENT_TIMEOUT_MS)'), view.indexOf('KIOSK_RENT_TIMEOUT_MS)') + 1);
   assert.ok(guard, 'un minuteur de garde sur la phase d\'attente');
   const notice = view.slice(view.indexOf('La borne ne répond pas'), view.indexOf('La borne ne répond pas') + 700);
-  assert.ok(notice.includes('Mes locations') && notice.includes("setScene('exterior')"), 'le message mène à « Mes locations » et à « Quitter »');
+  assert.ok(notice.includes('Mon compte') && notice.includes("setScene('exterior')"), 'le message mène à « Mon compte » et à « Quitter »');
 });
 
 // ===== « Mon compte » (spec 2026-11-17-borne-mon-compte) =====
@@ -441,4 +441,10 @@ test('CRITIQUE (borne): le formulaire publie ou modifie, jamais grisé, et relit
   assert.ok(!/\bdisabled\b/.test(src), 'aucun bouton grisé');
   const view = readText(path.join(ROOT, 'src/components/kiosk/KioskView.tsx'));
   assert.ok(view.includes('<KioskReview'), 'monté par la borne');
+});
+test('PANNEAU: deux pictogrammes dessinés, et plus de « Mes locations » ni de « Sur la TV »', () => {
+  const dist = readText(path.join(ROOT, 'src/components/kiosk/KioskDistribution.tsx'));
+  assert.ok((dist.match(/<svg/g) || []).length >= 2, 'pictogrammes en SVG');
+  assert.ok(!dist.includes('Mes locations') && !dist.includes('Sur la TV'), 'anciens libellés');
+  assert.ok(dist.includes('watchHereLabel(') && dist.includes('tvMeansLabel('), 'libellés tirés de la logique testée');
 });

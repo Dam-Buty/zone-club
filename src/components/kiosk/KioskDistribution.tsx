@@ -1,6 +1,7 @@
-import { useEffect, useId, useRef } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { preloadCastSdk } from '../../hooks/useGoogleCast';
-import { readyUntilText } from './kiosk-logic';
+import { appleAirPlay } from '../../utils/cast-on-open';
+import { readyUntilText, tvMeansLabel, watchHereLabel } from './kiosk-logic';
 import styles from './KioskPanels.module.css';
 
 // La distribution de la K7 après « LOUER » confirmé
@@ -28,19 +29,47 @@ interface KioskReadyProps {
   expiresAt: number | null;
   onWatch: () => void;
   onTv: () => void;
-  onRentals: () => void;
+  onAccount: () => void;
   /** « Plus tard » : fermer sans rien lancer — le panneau ne doit jamais enfermer le visiteur. */
   onLater: () => void;
 }
 
-/** La K7 est distribuée : regarder tout de suite, l'envoyer sur la TV, ou voir ses locations. */
-export function KioskReady({ title, expiresAt, onWatch, onTv, onRentals, onLater }: KioskReadyProps) {
+/** Où regarder et comment, lus sur l'appareil (pointeur, petit côté de l'écran, AirPlay). */
+function readWatchLabels(): { here: string; tv: string } {
+  if (typeof window === 'undefined') return { here: watchHereLabel({ coarsePointer: false, shortSide: 1080 }), tv: tvMeansLabel(false) };
+  const coarsePointer = window.matchMedia('(pointer: coarse)').matches;
+  const shortSide = Math.min(window.screen.width, window.screen.height);
+  const airPlay = typeof HTMLVideoElement !== 'undefined' && appleAirPlay(navigator.userAgent, HTMLVideoElement.prototype as { webkitShowPlaybackTargetPicker?: unknown });
+  return { here: watchHereLabel({ coarsePointer, shortSide }), tv: tvMeansLabel(airPlay) };
+}
+
+/** Pictogrammes dessinés (aucun glyphe tiré d'une police) : un téléphone, une télé. */
+function HereIcon() {
+  return (
+    <svg className={styles.kReadyIcon} viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="6.5" y="2.5" width="11" height="19" rx="2" />
+      <path d="M10.5 18.5h3" />
+    </svg>
+  );
+}
+function TvIcon() {
+  return (
+    <svg className={styles.kReadyIcon} viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="2.5" y="4.5" width="19" height="13" rx="1.5" />
+      <path d="M8 21h8M12 17.5V21" />
+    </svg>
+  );
+}
+
+/** La K7 est distribuée : où la regarder — ici, ou sur la télé — et un lien vers « Mon compte ». */
+export function KioskReady({ title, expiresAt, onWatch, onTv, onAccount, onLater }: KioskReadyProps) {
   const titleId = useId();
   const watchRef = useRef<HTMLButtonElement>(null);
+  const [labels] = useState(readWatchLabels);
 
   useEffect(() => {
     watchRef.current?.focus();
-    // Le SDK du Cast se charge maintenant, pour que l'appui sur « Sur la TV » ouvre le sélecteur
+    // Le SDK du Cast se charge maintenant, pour que l'appui sur « Sur ma télé » ouvre le sélecteur
     // pendant que le navigateur tient encore cet appui pour un geste de l'utilisateur.
     void preloadCastSdk();
   }, []);
@@ -51,20 +80,27 @@ export function KioskReady({ title, expiresAt, onWatch, onTv, onRentals, onLater
         <h2 id={titleId} className={styles.kNoticeTitle}>Votre K7 est prête</h2>
         <p className={styles.kReadyFilm}>{title}</p>
         {expiresAt !== null && <p className={styles.kNoticeBody}>{readyUntilText(expiresAt)}</p>}
-        <div className={styles.kNoticeActions}>
-          <button type="button" className={styles.kNoticeBtn} onClick={onTv}>
-            Sur la TV
-          </button>
-          <button ref={watchRef} type="button" className={`${styles.kNoticeBtn} ${styles.kNoticeBtnPrimary}`} onClick={onWatch}>
-            Regarder
-          </button>
-        </div>
+        <p className={styles.kReadyQuestion}>Où voulez-vous regarder ?</p>
+        <button ref={watchRef} type="button" className={`${styles.kNoticeBtn} ${styles.kNoticeBtnPrimary} ${styles.kReadyChoice}`} onClick={onWatch}>
+          <HereIcon />
+          <span className={styles.kReadyChoiceText}>
+            <span>{labels.here}</span>
+            <small>le film démarre ici</small>
+          </span>
+        </button>
+        <button type="button" className={`${styles.kNoticeBtn} ${styles.kReadyChoice}`} onClick={onTv}>
+          <TvIcon />
+          <span className={styles.kReadyChoiceText}>
+            <span>Sur ma télé</span>
+            <small>{labels.tv}</small>
+          </span>
+        </button>
         <div className={styles.kReadyLinks}>
           <button type="button" className={styles.kReadyLink} onClick={onLater}>
             Plus tard
           </button>
-          <button type="button" className={styles.kReadyLink} onClick={onRentals}>
-            Mes locations ›
+          <button type="button" className={styles.kReadyLink} onClick={onAccount}>
+            Mon compte ›
           </button>
         </div>
       </div>

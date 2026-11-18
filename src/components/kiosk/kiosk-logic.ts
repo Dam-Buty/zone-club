@@ -531,6 +531,22 @@ export function hidesKioskInLandscape(i: { coarsePointer: boolean; landscape: bo
   return i.coarsePointer && i.landscape && i.shortSide <= PHONE_SHORT_SIDE_MAX;
 }
 
+// ===== « Où voulez-vous regarder ? » =====
+//
+// Rusmir, 17/11/2026 : « Sur la TV » et « Regarder » ne sont pas assez explicites. Chaque bouton dit où et
+// comment (spec 2026-11-17-borne-mon-compte, § 3).
+
+/** Où le film démarre si l'on choisit de le regarder ici. */
+export function watchHereLabel(i: { coarsePointer: boolean; shortSide: number }): 'Sur ce téléphone' | 'Sur cette tablette' | 'Sur cet ordinateur' {
+  if (!i.coarsePointer) return 'Sur cet ordinateur';
+  return i.shortSide <= PHONE_SHORT_SIDE_MAX ? 'Sur ce téléphone' : 'Sur cette tablette';
+}
+
+/** Par quoi le film passe sur la télé : AirPlay sur un appareil Apple qui sait le faire, sinon Chromecast. */
+export function tvMeansLabel(airPlay: boolean): 'via AirPlay' | 'via Chromecast' {
+  return airPlay ? 'via AirPlay' : 'via Chromecast';
+}
+
 // ===== Trame de la dalle =====
 
 /**

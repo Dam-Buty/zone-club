@@ -372,7 +372,54 @@ span.kSearchPoster {
   text-shadow: var(--k-text-shadow);
 }
 
-/* « Plus tard » et « Mes locations » : des boutons qui se lisent comme des liens, mais gardent une
+/* « Où voulez-vous regarder ? » : deux choix pleine largeur, chacun dit où et comment. */
+.kReadyQuestion {
+  margin-top: 4cqw;
+  font-family: var(--k-font-text);
+  font-size: 4.8cqw;
+  font-weight: 600;
+  color: #e3f1ff;
+}
+
+.kNoticeBtn.kReadyChoice {
+  display: flex;
+  align-items: center;
+  gap: 3.2cqw;
+  width: 100%;
+  margin-top: 2.6cqw;
+  min-height: max(56px, 15cqw);
+  padding: 1.6cqw 4cqw;
+  text-align: left;
+}
+
+.kReadyChoiceText {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4cqw;
+  line-height: 1.1;
+}
+
+.kReadyChoiceText small {
+  font-family: var(--k-font-text);
+  font-size: 3.7cqw;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  opacity: 0.92;
+}
+
+.kReadyIcon {
+  flex: none;
+  width: 7.6cqw;
+  height: 7.6cqw;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* « Plus tard » et « Mon compte » : des boutons qui se lisent comme des liens, mais gardent une
    zone d'appui d'au moins 44 px de haut (KIOSK_MIN_PX.tab). */
 .kReadyLinks {
   margin-top: 3.4cqw;
