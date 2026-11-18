@@ -680,9 +680,6 @@ function updateRainLayer(layer: RainLayer): void {
   layer.geometry.attributes.position.needsUpdate = true;
 }
 
-// Aspect ratio of the storefront image (5632x3072)
-const TARGET_ASPECT_RATIO = 5632 / 3072; // ~1.833
-
 export class ExteriorScene {
   private scene: THREE.Scene;
   private camera: THREE.OrthographicCamera;
@@ -694,6 +691,9 @@ export class ExteriorScene {
   private currentVehicle: Vehicle | null = null;
   private nextVehicleTime: number;
   private container: HTMLElement;
+  // Format de l'image de la devanture (largeur / hauteur), donné par sa mise en page.
+  private aspect: number;
+  private paused = false;
 
   // Rain system (multiple layers for depth)
   private rainLayers: RainLayer[];
@@ -704,7 +704,8 @@ export class ExteriorScene {
   private texturesSettled = false;
   private framesSinceSettled = 0;
 
-  constructor(container: HTMLElement, onStorefrontShown?: () => void) {
+  constructor(container: HTMLElement, aspect: number, onStorefrontShown?: () => void) {
+    this.aspect = aspect;
     this.onStorefrontShown = onStorefrontShown ?? null;
     this.startTime = Date.now();
     this.bPhaseOffset = Math.random() * Math.PI * 2;
@@ -789,16 +790,16 @@ export class ExteriorScene {
 
     // Adjust camera frustum to maintain target aspect ratio
     // This creates letterboxing (black bars) when needed
-    if (containerAspect > TARGET_ASPECT_RATIO) {
+    if (containerAspect > this.aspect) {
       // Container is wider than image - pillarbox (black bars on sides)
-      const scale = containerAspect / TARGET_ASPECT_RATIO;
+      const scale = containerAspect / this.aspect;
       this.camera.left = -scale;
       this.camera.right = scale;
       this.camera.top = 1;
       this.camera.bottom = -1;
     } else {
       // Container is taller than image - letterbox (black bars on top/bottom)
-      const scale = TARGET_ASPECT_RATIO / containerAspect;
+      const scale = this.aspect / containerAspect;
       this.camera.left = -1;
       this.camera.right = 1;
       this.camera.top = scale;
@@ -882,6 +883,20 @@ export class ExteriorScene {
       }
     }
   };
+
+  /** Arrête la boucle d'animation (la devanture est masquée) ; la dernière image reste dans le canvas. */
+  public pause() {
+    if (this.paused) return;
+    this.paused = true;
+    cancelAnimationFrame(this.animationId);
+  }
+
+  /** Reprend la boucle d'animation ; sans effet si la scène tourne. */
+  public resume() {
+    if (!this.paused) return;
+    this.paused = false;
+    this.animate();
+  }
 
   public dispose() {
     this.onStorefrontShown = null;

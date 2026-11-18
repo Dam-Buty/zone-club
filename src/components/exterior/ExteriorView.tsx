@@ -3,13 +3,17 @@ import { ExteriorScene } from './scene/ExteriorScene';
 import { DoorBlockedNotice } from './DoorBlockedNotice';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { releaseInteriorPreload } from '../../utils/interior-preload-gate';
-import { choiceSpans, stageBox, zoomTransform, type Rect, type StorefrontLayout } from './storefront-layout';
+import { choiceSpans, fitBox, stageBox, zoomTransform, type Rect, type StorefrontLayout } from './storefront-layout';
 import storefrontLayout from '../../data/storefront-mobile.json';
+import desktopLayout from '../../data/storefront-desktop.json';
 import styles from './ExteriorView.module.css';
 
-// Où sont la borne, son écran et la porte dans l'image de la devanture mobile. Écrit par la
-// fabrique des images (tools/devanture-borne/fabrique.sh) : jamais retouché à la main.
-const LAYOUT: StorefrontLayout = storefrontLayout;
+// Où sont la borne, son écran et la porte dans l'image de chaque devanture (mobile, bureau). Écrit
+// par la fabrique des images (tools/devanture-borne/fabrique.sh) : jamais retouché à la main.
+const LAYOUT = storefrontLayout satisfies StorefrontLayout;
+const LAYOUT_DESKTOP: StorefrontLayout = desktopLayout;
+// Bureau : l'indicateur « PUSH » flotte au-dessus de la plaque, à cette distance (en hauteur d'image).
+const DESKTOP_PUSH_INDICATOR_RISE = 0.105;
 
 /** Une zone de la mise en page, en pourcentages de la scène. */
 const zoneStyle = (r: Rect) => ({
@@ -37,7 +41,6 @@ const readViewport = () => (
 // Au-delà, on lève le rideau même sans devanture : une image qui n'arrive jamais ne doit pas
 // interdire l'entrée dans la boutique.
 const CURTAIN_MAX_WAIT_MS = 10000;
-const TARGET_ASPECT_RATIO = 5632 / 3072; // ~1.833
 // Décompte du message de la porte avant la bascule vers la borne.
 const DOOR_NOTICE_SECONDS = 15;
 
@@ -115,40 +118,11 @@ export function ExteriorView({ onEnter, onOpenKiosk, onKioskIntent, canEnter, on
   }, [isStatic, isStorefrontShown]);
 
 
-  // Content area dimensions (for hotspot positioning) — desktop only
-  const [contentArea, setContentArea] = useState({ width: '100%', height: '100%', top: '0', left: '0' });
+  // Bureau : la boîte de l'image dans la fenêtre (l'image entière, bandes noires autour). La scène
+  // animée y dessine la devanture ; les zones cliquables et les indicateurs s'y posent.
+  const contentBox = fitBox(LAYOUT_DESKTOP.image, viewport.w, viewport.h);
 
-  // Calculate content area based on aspect ratio and window size (desktop only)
-  const updateContentArea = useCallback(() => {
-    const windowWidth = window.innerWidth;
-    const windowHeight = window.innerHeight;
-    const windowAspect = windowWidth / windowHeight;
-
-    let width: number, height: number, top: number, left: number;
-
-    if (windowAspect > TARGET_ASPECT_RATIO) {
-      // Pillarbox (black bars on sides)
-      height = windowHeight;
-      width = windowHeight * TARGET_ASPECT_RATIO;
-      top = 0;
-      left = (windowWidth - width) / 2;
-    } else {
-      // Letterbox (black bars top/bottom)
-      width = windowWidth;
-      height = windowWidth / TARGET_ASPECT_RATIO;
-      top = (windowHeight - height) / 2;
-      left = 0;
-    }
-
-    setContentArea({
-      width: `${width}px`,
-      height: `${height}px`,
-      top: `${top}px`,
-      left: `${left}px`,
-    });
-  }, []);
-
-  // Initialize WebGL scene and content area (desktop only)
+  // Initialize WebGL scene (desktop only)
   useEffect(() => {
     if (isStatic) return;
     if (!containerRef.current) return;
@@ -156,7 +130,11 @@ export function ExteriorView({ onEnter, onOpenKiosk, onKioskIntent, canEnter, on
     // Create the exterior scene. Sans contexte WebGL (navigateur ancien, GPU sur liste noire),
     // le constructeur lève : la devanture retombe alors sur son image fixe.
     try {
-      sceneRef.current = new ExteriorScene(containerRef.current, () => setStorefrontShownFor('desktop'));
+      sceneRef.current = new ExteriorScene(
+        containerRef.current,
+        LAYOUT_DESKTOP.image.w / LAYOUT_DESKTOP.image.h,
+        () => setStorefrontShownFor('desktop'),
+      );
     } catch {
       sceneRef.current = null;
       // Bascule unique vers l'image fixe : c'est bien un second rendu qu'on veut ici, et l'échec
@@ -166,18 +144,11 @@ export function ExteriorView({ onEnter, onOpenKiosk, onKioskIntent, canEnter, on
       return;
     }
 
-    // Calculate initial content area
-    updateContentArea();
-
-    // Update on resize
-    window.addEventListener('resize', updateContentArea);
-
     return () => {
       sceneRef.current?.dispose();
       sceneRef.current = null;
-      window.removeEventListener('resize', updateContentArea);
     };
-  }, [isStatic, updateContentArea]);
+  }, [isStatic]);
 
   // Image fixe : la devanture est une <img>. decode() couvre les deux cas — image déjà en cache
   // (l'événement load est passé avant le montage) et image encore en route.
@@ -249,7 +220,7 @@ export function ExteriorView({ onEnter, onOpenKiosk, onKioskIntent, canEnter, on
     if (isTransitioning || kioskZoom || !isStorefrontShown) return;
     // Dès l'appui : le GPU et les chargements du vidéoclub sont libérés, avant toute animation.
     onKioskIntent?.();
-    // Bureau (bouton provisoire) ou animations réduites : pas de zoom.
+    // Bureau ou animations réduites : pas de zoom.
     if (!isStatic || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       onOpenKiosk();
       return;
@@ -257,20 +228,6 @@ export function ExteriorView({ onEnter, onOpenKiosk, onKioskIntent, canEnter, on
     const z = zoomTransform(LAYOUT, viewport.w, viewport.h, reserve);
     setKioskZoom({ transform: `translate(${z.x}px, ${z.y}px) scale(${z.scale})`, closeUp: closeUpReady });
   };
-
-  // Bouton provisoire de la borne (bureau, en attendant sa devanture élargie) : il n'apparaît
-  // qu'une fois la devanture à l'écran.
-  const kioskButton = (className: string) => isStorefrontShown && (
-    <button
-      type="button"
-      className={className}
-      onClick={openKiosk}
-      aria-label="Ouvrir la borne de location"
-    >
-      <span className={styles.kioskButtonTitle}>BORNE 24/7</span>
-      <span className={styles.kioskButtonHint}>louer sans entrer &#9660;</span>
-    </button>
-  );
 
   const doorNotice = isDoorBlocked && (
     <DoorBlockedNotice
@@ -394,41 +351,66 @@ export function ExteriorView({ onEnter, onOpenKiosk, onKioskIntent, canEnter, on
     );
   }
 
-  // ===== DESKTOP: WebGL scene + hover hotspot =====
+  // ===== BUREAU : la devanture animée (WebGL), la borne et la porte cliquables en entier =====
+  const push = LAYOUT_DESKTOP.push;
+  const screen = LAYOUT_DESKTOP.ecran;
   return (
     <div className={`${styles.container} ${isTransitioning ? styles.fadeOut : ''}`}>
       {/* WebGL Canvas Container */}
       <div ref={containerRef} className={styles.canvasContainer} />
 
-      {/* Content area wrapper for hotspot positioning */}
+      {/* La boîte de l'image : tout ce qui tombe sur un objet de la devanture s'y pose, en
+          pourcentages de la mise en page (src/data/storefront-desktop.json). */}
       <div
         className={styles.contentArea}
-        style={{
-          width: contentArea.width,
-          height: contentArea.height,
-          top: contentArea.top,
-          left: contentArea.left,
-        }}
+        style={{ left: contentBox.left, top: contentBox.top, width: contentBox.width, height: contentBox.height }}
       >
-        {/* Floating indicator above door */}
-        <div className={styles.doorIndicator}>
-          <span className={styles.doorIndicatorText}>PUSH</span>
-          <span className={styles.doorIndicatorArrow}>&#9660;</span>
-        </div>
-
-        {/* Door hotspot */}
+        {/* La borne entière et la porte entière répondent au clic */}
         <button
-          className={`${styles.doorHotspot} ${isHoveringDoor ? styles.doorHover : ''}`}
+          type="button"
+          className={`${styles.desktopZone} ${styles.desktopKioskZone}`}
+          style={zoneStyle(LAYOUT_DESKTOP.borne)}
+          onClick={openKiosk}
+          aria-label="Ouvrir la borne de location"
+        />
+        <button
+          type="button"
+          className={styles.desktopZone}
+          style={zoneStyle(LAYOUT_DESKTOP.porte)}
           onMouseEnter={() => setIsHoveringDoor(true)}
           onMouseLeave={() => setIsHoveringDoor(false)}
           onClick={handleEnterClick}
           aria-label="Entrer dans le vidéoclub"
+        />
+
+        {/* Au survol de la porte : la lueur et l'invitation, sur la plaque « PUSH » */}
+        <div
+          className={`${styles.doorHotspot} ${isHoveringDoor ? styles.doorHover : ''}`}
+          style={{ left: `${push.x * 100}%`, top: `${push.y * 100}%` }}
+          aria-hidden="true"
         >
           <span className={styles.enterText}>Click pour entrer</span>
-        </button>
+        </div>
 
-        {/* Borne : sur le mur, à gauche de la porte */}
-        {kioskButton(styles.kioskButton)}
+        {/* L'indicateur de la porte, au-dessus de la plaque */}
+        <div
+          className={styles.doorIndicator}
+          style={{ left: `${push.x * 100}%`, top: `${(push.y - DESKTOP_PUSH_INDICATOR_RISE) * 100}%` }}
+          aria-hidden="true"
+        >
+          <span className={styles.doorIndicatorText}>PUSH</span>
+          <span className={styles.doorIndicatorArrow}>&#9660;</span>
+        </div>
+
+        {/* L'indicateur de la borne, juste au-dessus de son écran */}
+        <div
+          className={styles.kioskIndicator}
+          style={{ left: `${((screen.x0 + screen.x1) / 2) * 100}%`, top: `${screen.y0 * 100}%` }}
+          aria-hidden="true"
+        >
+          <span className={styles.doorIndicatorText}>BORNE LOCATION</span>
+          <span className={styles.doorIndicatorArrow}>&#9660;</span>
+        </div>
       </div>
 
       {/* Rideau noir, levé en fondu quand la devanture est affichée */}

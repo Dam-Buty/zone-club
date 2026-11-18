@@ -32,24 +32,47 @@
   container-type: inline-size;
 }
 
-.doorHotspot {
+/* Bureau : la borne entière et la porte entière se cliquent. Leurs boîtes viennent de la mise en
+   page (src/data/storefront-desktop.json), comme sur mobile : plus aucune position écrite ici. */
+.desktopZone {
   position: absolute;
-  /* Position on "PUSH" sign - right side of door glass, above middle bar */
-  left: 29%;
-  top: 74%;
-  width: 2%;
-  height: 9%;
+  padding: 0;
   background: transparent;
   border: none;
+  border-radius: 4px;
   cursor: pointer;
   pointer-events: auto;
+  transition: box-shadow 0.25s ease;
+}
+
+.desktopZone:focus-visible {
+  outline: 2px solid rgba(214, 170, 255, 0.9);
+  outline-offset: -2px;
+}
+
+/* Survol de la borne : un liseré violet, discret, sur son contour. */
+.desktopKioskZone:hover,
+.desktopKioskZone:focus-visible {
+  box-shadow:
+    inset 0 0 0 2px rgba(200, 150, 255, 0.5),
+    inset 0 0 26px rgba(180, 120, 255, 0.16);
+}
+
+/* Survol de la porte : la lueur chaude sur la plaque « PUSH » (posée sur layout.push : son milieu
+   en haut), avec l'invitation à entrer. */
+.doorHotspot {
+  position: absolute;
+  width: 2%;
+  height: 9%;
+  transform: translateX(-50%);
+  pointer-events: none;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.3s ease;
+  transition: background 0.3s ease;
 }
 
-.doorHotspot:hover {
+.doorHover {
   background: radial-gradient(
     ellipse at center,
     rgba(255, 180, 100, 0.2) 0%,
@@ -80,15 +103,31 @@
 
 .doorIndicator {
   position: absolute;
-  /* Anchored to horizontal center of doorHotspot (left:29% + width:2%/2 = 30%) */
-  left: 30%;
-  top: 64%;
+  /* Centré sur la plaque « PUSH », au-dessus d'elle (position donnée par la vue). */
   transform: translateX(-50%);
   pointer-events: none;
   display: flex;
   flex-direction: column;
   align-items: center;
   animation: indicatorBob 2s ease-in-out infinite;
+}
+
+/* L'indicateur de la borne : sa pointe juste au-dessus du bord haut de l'écran. Un peu plus petit
+   que « PUSH », pour tenir dans la largeur de la borne. */
+.kioskIndicator {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.1;
+  animation: mobileIndicatorBob 2s ease-in-out infinite;
+}
+
+.kioskIndicator .doorIndicatorText,
+.kioskIndicator .doorIndicatorArrow {
+  font-size: clamp(0.66rem, 1.05cqw, 0.95rem);
 }
 
 /* ===== SHARED: indicator text + arrow (used by both desktop and mobile) ===== */
@@ -340,67 +379,6 @@
   background: linear-gradient(180deg, #23213a 0%, #191827 40%, #14131f 100%);
   pointer-events: none;
   animation: fadeIn 180ms linear 720ms both;
-}
-
-/* ===== BUREAU : bouton provisoire de la borne =====
-   Même néon violet que l'indicateur PUSH, mais dans un cadre : c'est un bouton, pas une
-   étiquette. Il est posé sur le mur à gauche de la porte (coordonnées de .contentArea), en
-   attendant la devanture élargie du bureau. Sous le rideau (z-index 8). */
-
-.kioskButton {
-  position: absolute;
-  /* Le mur à gauche de la porte ne fait que 10 % de la largeur de l'image : le bouton s'y
-     loge en entier (≈ 8,5 % de large), sans mordre sur le montant de la porte. */
-  left: 0.9%;
-  top: 58%;
-  z-index: 6;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.25em;
-  padding: 0.55em 0.7em;
-  background: rgba(13, 12, 22, 0.86);
-  border: 2px solid rgba(214, 170, 255, 0.9);
-  border-radius: 8px;
-  box-shadow:
-    0 0 8px rgba(180, 120, 255, 0.65),
-    0 0 18px rgba(180, 120, 255, 0.35),
-    inset 0 0 8px rgba(180, 120, 255, 0.3);
-  color: rgba(255, 255, 255, 0.95);
-  font-family: 'Orbitron', sans-serif;
-  font-size: clamp(0.6rem, 0.85cqw, 0.9rem);
-  cursor: pointer;
-  pointer-events: auto;
-  transition: box-shadow 0.2s ease, background 0.2s ease;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.kioskButton:hover,
-.kioskButton:focus-visible {
-  background: rgba(34, 22, 58, 0.92);
-  box-shadow:
-    0 0 10px rgba(200, 150, 255, 0.9),
-    0 0 26px rgba(180, 120, 255, 0.55),
-    inset 0 0 10px rgba(180, 120, 255, 0.4);
-  outline: none;
-}
-
-.kioskButtonTitle {
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  white-space: nowrap;
-  text-shadow:
-    0 0 10px rgba(180, 120, 255, 0.8),
-    0 0 20px rgba(180, 120, 255, 0.5);
-}
-
-.kioskButtonHint {
-  font-size: 0.68em;
-  font-weight: 500;
-  letter-spacing: 0.06em;
-  white-space: nowrap;
-  color: rgba(255, 255, 255, 0.8);
-  text-shadow: 0 0 8px rgba(180, 120, 255, 0.7);
 }
 
 /* ===== SHARED: message de la porte =====

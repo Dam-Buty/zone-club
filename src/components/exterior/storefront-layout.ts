@@ -1,10 +1,10 @@
-// Géométrie de la devanture mobile : où poser l'image dans la fenêtre, et comment zoomer vers
-// l'écran de la borne. Fonctions pures, sans aucun import de valeur : les tests `node --test` les
-// chargent telles quelles.
+// Géométrie des devantures : où poser l'image dans la fenêtre (mobile : rognée autour de la borne et
+// de la porte ; bureau : entière), et comment zoomer vers l'écran de la borne. Fonctions pures, sans
+// aucun import de valeur : les tests `node --test` les chargent telles quelles.
 //
 // Les positions viennent de la fabrique des images (`tools/devanture-borne/fabrique.sh`), qui écrit
-// `src/data/storefront-mobile.json` : tout y est en fractions de l'image (0 à 1, origine en haut à
-// gauche), projeté par la caméra de la scène Blender.
+// `src/data/storefront-mobile.json` et `src/data/storefront-desktop.json` : tout y est en fractions
+// de l'image (0 à 1, origine en haut à gauche), projeté par la caméra de la scène Blender.
 
 export interface Rect { x0: number; y0: number; x1: number; y1: number }
 
@@ -12,7 +12,7 @@ export interface StorefrontLayout {
   image: { w: number; h: number };
   /** La borne entière (son pied est sous le bord de l'image). */
   borne: Rect;
-  /** L'écran de la borne, au format 5:9. */
+  /** L'écran de la borne (5:9 sur la devanture mobile, 2:3 sur celle du bureau). */
   ecran: Rect;
   /** La porte, du haut de son cadre au bord de l'image. */
   porte: Rect;
@@ -20,8 +20,8 @@ export interface StorefrontLayout {
   push: { x: number; y: number };
   /** Point sur lequel le cadrage se centre : le milieu de l'ensemble borne + porte. */
   groupe: { cx: number; cy: number };
-  /** Zone couverte par la vue rapprochée (`/storefront-borne-zoom.webp`), et sa taille en pixels. */
-  zoom: Rect & { w: number; h: number };
+  /** Mobile seulement : zone couverte par la vue rapprochée (`/storefront-borne-zoom.webp`), et sa taille en pixels. */
+  zoom?: Rect & { w: number; h: number };
 }
 
 export interface Box { left: number; top: number; width: number; height: number }
@@ -49,6 +49,18 @@ export function stageBox(layout: StorefrontLayout, vw: number, vh: number, reser
     width,
     height,
   };
+}
+
+/**
+ * Bureau : l'image entière dans la fenêtre, centrée, sans rognage — des bandes en haut et en bas
+ * quand la fenêtre est plus haute que l'image, sur les côtés quand elle est plus large. C'est la
+ * boîte où la scène animée dessine la devanture ; les zones cliquables s'y posent en pourcentages.
+ */
+export function fitBox(image: { w: number; h: number }, vw: number, vh: number): Box {
+  const scale = Math.min(vw / image.w, vh / image.h);
+  const width = image.w * scale;
+  const height = image.h * scale;
+  return { left: (vw - width) / 2, top: (vh - height) / 2, width, height };
 }
 
 export interface Span { left: number; width: number }

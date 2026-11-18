@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { stageBox, kioskScreenBox, zoomTransform, choiceSpans } from '../../src/components/exterior/storefront-layout.ts';
+import { stageBox, kioskScreenBox, zoomTransform, choiceSpans, fitBox } from '../../src/components/exterior/storefront-layout.ts';
 
 const ROOT = path.resolve(import.meta.dirname, '../..');
 const L = JSON.parse(readFileSync(path.join(ROOT, 'src/data/storefront-mobile.json'), 'utf8'));
@@ -166,4 +166,26 @@ test('BARRE: câblage — bande opaque sous l\'image, sa hauteur réservée à l
   assert.ok(tsx.includes('choiceSpans('), 'boutons placés sous leurs objets');
   const barre = css.slice(css.indexOf('.mobileChoices {'), css.indexOf('}', css.indexOf('.mobileChoices {')));
   assert.ok(/background: #[0-9a-f]{6};/.test(barre) && !barre.includes('gradient') && !barre.includes('rgba'), 'bande opaque, plus de dégradé sur l\'image');
+});
+
+// ----- La devanture du bureau (livraison B, 18/11/2026) -----
+// Son image (5782 × 3072) et ses zones viennent de la même fabrique que le mobile : src/data/storefront-desktop.json.
+const LD = JSON.parse(readFileSync(path.join(ROOT, 'src/data/storefront-desktop.json'), 'utf8'));
+
+test('BUREAU: l\'image tient entière dans la fenêtre, centrée', () => {
+  assert.deepEqual(fitBox(LD.image, 1920, 1080), { left: 0, top: (1080 - 1920 * 3072 / 5782) / 2, width: 1920, height: 1920 * 3072 / 5782 });
+  const large = fitBox(LD.image, 2560, 1080);
+  assert.equal(large.height, 1080);
+  assert.ok(Math.abs(large.left - (2560 - 1080 * 5782 / 3072) / 2) < 1e-9 && large.top === 0);
+});
+
+test('BUREAU: câblage de la devanture', () => {
+  const tsx = readFileSync(path.join(ROOT, 'src/components/exterior/ExteriorView.tsx'), 'utf8');
+  const scene = readFileSync(path.join(ROOT, 'src/components/exterior/scene/ExteriorScene.ts'), 'utf8');
+  const css = readFileSync(path.join(ROOT, 'src/components/exterior/ExteriorView.module.css'), 'utf8');
+  assert.ok(!tsx.includes('5632') && !scene.includes('5632'), 'plus de format écrit en dur');
+  assert.ok(tsx.includes('storefront-desktop.json') && tsx.includes('fitBox('));
+  assert.ok(tsx.includes('zoneStyle(LAYOUT_DESKTOP.borne)') && tsx.includes('zoneStyle(LAYOUT_DESKTOP.porte)'), 'borne et porte entières');
+  assert.ok(tsx.includes('BORNE LOCATION'), 'indicateur de la borne');
+  assert.ok(!tsx.includes('kioskButton') && !css.includes('.kioskButton'), 'le bouton provisoire a disparu');
 });
