@@ -63,6 +63,7 @@ for V in $DEVANTURES; do
     fi
     if a approche; then
         command -v ffmpeg > /dev/null || { echo "ffmpeg introuvable : il encode le film d'approche (brew install ffmpeg)"; exit 1; }
+        command -v ffprobe > /dev/null || { echo "ffprobe introuvable : il contrôle le film d'approche (livré avec ffmpeg)"; exit 1; }
         echo "film d'approche : trajet de l'appareil"
         python3 "$ICI/approche_trajet.py" > "$T/approche-trajet.log"
         tail -1 "$T/approche-trajet.log"
@@ -76,9 +77,14 @@ for V in $DEVANTURES; do
         echo "film d'approche : encodage"
         IPS=$(python3 "$ICI/variante.py" approche.ips)
         CRF=$(python3 "$ICI/variante.py" approche.film.crf)
+        # Les images sont en sRGB : le film est étiqueté ainsi (matrice BT.709, plage réduite, transfert sRGB), par le
+        # filtre setparams — les options -color_primaries / -color_trc de ffmpeg 8 n'arrivent pas dans le fichier, et
+        # un film sans étiquette de transfert sort plus clair que l'image fixe dans Chrome sur Mac.
         ffmpeg -y -loglevel error -framerate "$IPS" -i "$T/approche/film_%04d.png" \
-            -vf "scale=out_color_matrix=bt709:out_range=tv" -c:v libx264 -preset slow -crf "$CRF" -pix_fmt yuv420p \
-            -colorspace bt709 -color_primaries bt709 -color_trc bt709 -color_range tv -an -movflags +faststart "$T/approche/film.mp4"
+            -vf "scale=out_color_matrix=bt709:out_range=tv,setparams=colorspace=bt709:color_primaries=bt709:color_trc=iec61966-2-1:range=tv" \
+            -c:v libx264 -preset slow -crf "$CRF" -pix_fmt yuv420p -an -movflags +faststart "$T/approche/film.mp4"
+        ETIQUETTES=$(ffprobe -v error -select_streams v:0 -show_entries stream=color_space,color_range,color_primaries,color_transfer -of csv=p=0 "$T/approche/film.mp4")
+        [ "$ETIQUETTES" = "tv,bt709,iec61966-2-1,bt709" ] || { echo "film d'approche : étiquettes de couleur inattendues ($ETIQUETTES), attendu tv,bt709,iec61966-2-1,bt709"; exit 1; }
     fi
     echo "sorties pour le site (public/ et src/data/)"
     python3 "$ICI/sorties.py"

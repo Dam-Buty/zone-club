@@ -623,6 +623,23 @@ function App() {
     stopKioskReveal();
     setScene('exterior');
   }, [setScene, stopKioskReveal]);
+  // Chaque retour de la borne monte une devanture NEUVE (sa clé change). Sans cela, « Quitter »
+  // cliqué pendant le fondu d'apparition retrouvait la devanture restée montée dessous : figée sur
+  // la dernière image du film, son film jamais revenu au repos — ni la borne ni la porte ne
+  // répondaient plus. La borne se quitte par le magasin (`setScene`), d'où l'effet sur la scène.
+  const [exteriorVisit, setExteriorVisit] = useState(0);
+  const wasKioskRef = useRef(false);
+  useEffect(() => {
+    if (currentScene === 'kiosk') {
+      wasKioskRef.current = true;
+      return;
+    }
+    if (!wasKioskRef.current) return;
+    wasKioskRef.current = false;
+    stopKioskReveal();
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- la sortie de la borne se constate sur la scène du magasin
+    setExteriorVisit((visit) => visit + 1);
+  }, [currentScene, stopKioskReveal]);
 
   const isInterior = currentScene === 'interior';
   const isKiosk = currentScene === 'kiosk';
@@ -649,6 +666,7 @@ function App() {
       {(currentScene === 'exterior' || kioskRevealing) && (
         <Suspense fallback={null}>
           <ExteriorView
+            key={exteriorVisit}
             onEnter={handleEnterStore}
             onOpenKiosk={openKiosk}
             onKioskIntent={releaseInteriorForKiosk}

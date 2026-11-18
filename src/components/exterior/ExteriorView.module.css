@@ -55,8 +55,7 @@
 }
 
 /* 250 ms : le fondu absorbe ce que l'image fixe n'a pas (un phare qui passe, l'enseigne qui
-   vacille) et le léger écart de rendu entre une vidéo et une image (mesuré le 18/11/2026 : avec le
-   décodage matériel de Chrome sur Mac, la vidéo sort un peu plus claire que l'image). */
+   vacille, la pluie du film). */
 .approachFilmShown {
   opacity: 1;
   transition: opacity 250ms linear;

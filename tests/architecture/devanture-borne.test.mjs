@@ -15,7 +15,8 @@ test('FABRIQUE: les scripts et les sources de la devanture sont dans le dépôt'
 });
 
 test('FABRIQUE: aucun script ne dépend du dossier de l\'essai, de ~/Downloads ni de la base locale', () => {
-  for (const f of ['fond.py', 'textures.py', 'neon.py', 'borne.py', 'compo.py', 'fabrique.sh']) {
+  for (const f of ['fond.py', 'fond_bureau.py', 'textures.py', 'neon.py', 'borne.py', 'compo.py', 'masque.py', 'variante.py', 'sorties.py',
+    'approche_trajet.py', 'approche_rendu.py', 'approche_compo.py', 'fabrique.sh']) {
     const src = readFileSync(path.join(T, f), 'utf8');
     assert.ok(!src.includes('.superpowers'), `${f} : .superpowers`);
     assert.ok(!src.includes('Downloads'), `${f} : Downloads`);
@@ -56,8 +57,10 @@ test('IMAGES: la mise en page est cohérente', () => {
 test('FABRIQUE: une étape en échec arrête la fabrique', () => {
   const sh = readFileSync(path.join(T, 'fabrique.sh'), 'utf8');
   assert.ok(sh.includes('set -e'), 'arrêt à la première erreur');
-  for (const ligne of sh.split('\n').filter((l) => /^\s*python3 /.test(l))) {
-    assert.ok(!ligne.includes('|'), `le code de sortie de python3 est masqué par un tube : ${ligne.trim()}`);
+  // Relecture finale de la livraison B : la règle vaut pour toute commande de la fabrique (ffmpeg, Blender), pas
+  // seulement python3. « || » (repli en cas d'échec) n'est pas un tube.
+  for (const ligne of sh.split('\n').filter((l) => /^\s*(python3|ffmpeg|"\$BLENDER"|[A-Z]+=\$\()/.test(l))) {
+    assert.ok(!/(^|[^|])\|([^|]|$)/.test(ligne), `le code de sortie est masqué par un tube : ${ligne.trim()}`);
   }
 });
 
@@ -136,8 +139,16 @@ test('MASQUE: le masque du bureau sort de la fabrique, au format de l\'image', (
 
 // ----- L'approche filmée de la borne (livraison B) : un film de 3 s rendu image par image -----
 
+// Ce que le fichier MP4 dit de lui-même (et non ce que la mise en page en dit) : largeur et hauteur de la piste
+// (fin de la boîte « tkhd », en 16.16), nombre d'images (« stsz »).
+function lisMp4(buf) {
+  const t = buf.indexOf('tkhd'), fin = t - 4 + buf.readUInt32BE(t - 4), s = buf.indexOf('stsz');
+  return { w: buf.readUInt32BE(fin - 8) / 65536, h: buf.readUInt32BE(fin - 4) / 65536, images: buf.readUInt32BE(s + 12) };
+}
+
 function controleFilm(L, fichier, budget) {
   const a = L.approche, buf = readFileSync(path.join(ROOT, 'public', fichier));
+  assert.deepEqual(lisMp4(buf), { w: a.w, h: a.h, images: a.images }, 'le fichier a la taille et le nombre d\'images annoncés par la mise en page');
   assert.equal(a.src, '/' + fichier);
   assert.deepEqual([a.duree, a.images], [3, 91]);
   assert.equal(buf.length, a.octets);
@@ -172,4 +183,14 @@ test('APPROCHE: le film du mobile, et plus de vue rapprochée', () => {
   assert.equal(L.zoom, undefined);
   assert.ok(!existsSync(path.join(ROOT, 'public/storefront-borne-zoom.webp')));
   assert.ok(!readFileSync(path.join(T, 'borne.py'), 'utf8').includes("PASSE == 'zoom'"));
+});
+
+// Relecture finale : les options -color_primaries / -color_trc de ffmpeg n'arrivaient pas dans le fichier, et le film
+// sortait plus clair que la devanture dans Chrome sur Mac (+2 à +6 niveaux par canal). Les images du film sont en
+// sRGB : étiqueté ainsi (filtre setparams), il s'affiche comme l'image fixe (écart 0,4). La fabrique relit les
+// étiquettes du fichier et s'arrête si elles manquent.
+test('APPROCHE: le film est étiqueté sRGB, et la fabrique le vérifie', () => {
+  const sh = readFileSync(path.join(T, 'fabrique.sh'), 'utf8');
+  assert.ok(sh.includes('setparams=') && sh.includes('color_trc=iec61966-2-1') && sh.includes('color_primaries=bt709'), 'étiquettes écrites par setparams');
+  assert.match(sh, /ffprobe[^\n]*color_transfer[\s\S]{0,400}tv,bt709,iec61966-2-1,bt709[\s\S]{0,200}exit 1/, 'étiquettes relues, échec si elles manquent');
 });

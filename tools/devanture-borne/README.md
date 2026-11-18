@@ -62,7 +62,7 @@ demi-niveau sur 255) : ne commiter des images refaites que si quelque chose a r�
 | `approche_trajet.py` | Le film d'approche : le trajet de l'appareil, image par image (il avance sans jamais tourner) → `approche/trajet.json` |
 | `approche_rendu.py` | Blender rend la borne et la lumière du mur à chaque image du trajet, avec la scène de `borne.py` inchangée |
 | `approche_compo.py` | Assemble chaque image : mur de la photo recalé (un plan : échelle et glissement exacts), ciel à part sur mobile (à l'infini, il ne grossit pas), borne, halo, flou de bougé, pluie qui tombe. Compare la première image à l'image fixe : un écart arrête la fabrique |
-| `fabrique.sh` | Enchaîne tout, par variante, et encode le film (H.264, BT.709, sans son, lisible dès le début du téléchargement) |
+| `fabrique.sh` | Enchaîne tout, par variante, et encode le film (H.264, matrice BT.709, **étiqueté sRGB** par `setparams` — sans cette étiquette Chrome sur Mac l'affiche plus clair que l'image fixe —, sans son, lisible dès le début du téléchargement), puis relit ses étiquettes par `ffprobe` |
 | `sorties.py` | L'encodage pour le site, le contrôle du poids du film (budget dans la géométrie) et la mise en page |
 
 Outils de réglage, hors fabrique : `gros_plan.py` (gros plan Cycles d'une zone de la façade),

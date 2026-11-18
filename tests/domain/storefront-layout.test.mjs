@@ -257,3 +257,12 @@ test('APPROCHE: un écran d\'un autre format se loge dans la cible, centré', ()
   assert.deepEqual(large, { left: 10, top: 20 + (300 - 50) / 2, width: 100, height: 50 });
   assert.deepEqual(fitInside(pc, 2 / 3), pc);
 });
+
+// Relecture finale (18/11/2026) : « Quitter » cliqué dans les 280 ms où la borne apparaît laissait la devanture montée
+// sans interruption (elle l'est pendant le fondu) — figée sur la dernière image du film, sa phase jamais revenue au
+// repos : ni la borne ni la porte ne répondaient plus. Chaque retour de la borne monte une devanture neuve.
+test('APPROCHE: chaque retour de la borne monte une devanture neuve', () => {
+  const app = readFileSync(path.join(ROOT, 'src/App.tsx'), 'utf8');
+  assert.match(app, /<ExteriorView\s+key=\{exteriorVisit\}/, 'la devanture porte une clé de visite');
+  assert.match(app, /currentScene === 'kiosk'[\s\S]{0,400}setExteriorVisit\(/, 'la clé change quand on quitte la borne');
+});

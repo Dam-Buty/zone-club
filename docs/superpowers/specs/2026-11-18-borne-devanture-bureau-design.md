@@ -338,10 +338,20 @@ Une seule mécanique pour les deux devantures. **[C]**
   203 px (conteneur en `overflow: clip`) ; au même endroit l'écran 5:9 du film mobile ne peut pas recouvrir l'écran
   2:3 de l'interface PC (il s'y loge, centré).
 - **Limites constatées, à juger par Rusmir** :
-  - sur une fenêtre 2560 × 1440, la boîte du film rétrécit pendant le trajet (l'écran de l'interface plafonne à
-    1100 px) et laisse autour d'elle le fond sombre de la page de la borne ;
-  - avec le décodage matériel de Chrome sur Mac, le film sort un peu plus clair que la devanture (+2 à +6 niveaux par
-    canal en moyenne ; 0,4 avec le décodage logiciel — le fichier est juste) ; le fondu de départ, porté à 250 ms,
-    l'absorbe ;
+  - **une bande sombre à droite du film, sur la plupart des fenêtres de bureau réelles** (relecture finale) : à
+    l'arrivée la boîte du film s'arrête vers `62 + 1,775 × hauteur de fenêtre` ; toute fenêtre plus large qu'environ
+    1,84:1 — un écran 16:9 une fois déduites les barres du navigateur — garde donc une bande au fond de la page de la
+    borne (172 px sur 1920 × 950, 161 px sur 1536 × 740, mesurés par le relecteur). Les fenêtres 16:9 et 16:10
+    exactes de la vérification ne la montraient pas. Sur 2560 × 1440 s'y ajoutent des bandes en haut et en bas
+    (l'écran de l'interface plafonne à 1100 px) ;
+  - sur téléphone, la barre des boutons s'efface en 0,2 s alors que la scène met environ 2 s à descendre : une bande
+    vide en bas au début du film (relecture finale) ;
   - de près, les traînées de pluie figées dans la photo grossissent avec le mur.
+- **Relecture finale (relecteur neuf), corrigée** : « Quitter » cliqué dans les 280 ms du fondu d'apparition laissait
+  une devanture figée sur le film, où plus rien ne répondait (chaque retour monte désormais une devanture neuve) ;
+  les films ne portaient pas l'étiquette de transfert que la commande croyait écrire, d'où un éclaircissement au
+  départ dans Chrome sur Mac, que j'avais attribué à tort au décodage du navigateur — étiquetés sRGB, ils
+  s'affichent comme l'image fixe (film moins devanture : 1 niveau au plus par canal, contre +2 à +6 avant).
 - **Non vérifié** : un vrai téléphone, Safari, l'iPad (passe prévue juste après ce chantier, avec le Chromecast).
+  À tester alors en premier : Safari présente-t-il la première image d'une vidéo invisible ? (Sinon le film n'y
+  serait jamais montré et la borne s'ouvrirait après 400 ms.)

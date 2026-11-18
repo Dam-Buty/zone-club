@@ -407,9 +407,15 @@ photo d'origine de la porte, un mur reconstitué à sa gauche, le toit, un ciel 
     d'écran noir.
   - ⚠️ **Le Chromium de Playwright ne lit pas le H.264** : toute vérification du film passe par le
     vrai Chrome (`chromium.launch({ channel: 'chrome' })`).
-  - ⚠️ Avec le décodage **matériel** de Chrome sur Mac, la vidéo sort un peu plus claire que la
-    même image fixe (mesuré : +2 à +6 niveaux par canal en moyenne ; 0,4 avec le décodage
-    logiciel). Le fichier est juste (BT.709, vérifié) : c'est le fondu de 250 ms qui absorbe l'écart.
+  - ⚠️ **Le film doit porter son étiquette de transfert sRGB** (`color_trc=iec61966-2-1`, écrite
+    par le filtre `setparams` : les options `-color_primaries` / `-color_trc` de ffmpeg 8
+    n'arrivent pas dans le fichier). Sans elle, Chrome sur Mac (décodage matériel) l'affichait plus
+    clair que l'image fixe : +2 à +6 niveaux par canal, un éclaircissement visible au lancement.
+    Étiqueté, il s'affiche comme elle (écart 0,4). `fabrique.sh` relit les étiquettes par `ffprobe`
+    et s'arrête si elles manquent.
+  - Chaque retour de la borne monte une devanture **neuve** (`key={exteriorVisit}` dans `App.tsx`) :
+    « Quitter » cliqué pendant le fondu d'apparition retrouvait sinon la devanture restée dessous,
+    figée sur la dernière image du film, où plus rien ne répondait.
   - Le conteneur de la devanture est en `overflow: clip` : en `hidden`, un bouton hors champ qui
     prenait le focus (la zone de la borne, fenêtre en paysage) faisait défiler la devanture.
 - Ces images sont servies en `network-only` par le service worker (elles ne sont ni sous
