@@ -92,8 +92,11 @@ lib/                         # Backend
 src/
 ├── App.tsx                  # Vrai point d'entrée : trois scènes (devanture, vidéoclub, borne), lazy loading, prefetch catalogue, PWA
 ├── api/index.ts             # Client API frontend
+├── data/storefront-mobile.json  # Mise en page de la devanture mobile — FABRIQUÉE, ne pas retoucher à la main
 ├── store/index.ts + slices/ # Zustand (manager.ts, tutorial.ts externalisés)
 ├── components/
+│   ├── exterior/            # Devanture : ExteriorView (bureau animé / scène mobile et son zoom vers la
+│   │                        # borne), storefront-layout.ts (géométrie de la scène mobile, pure et testée)
 │   ├── exterior/scene/      # ExteriorScene.ts — WebGL pur, shader vitrine, pluie, phares
 │   ├── kiosk/               # Borne de location — DOM pur, aucun rendu 3D (voir section dédiée)
 │   ├── interior/            # Scène WebGPU : Aisle, CassetteInstances, Controls, Lighting,
@@ -111,6 +114,7 @@ src/
 cinema-stream/               # Service Node autonome — chaîne HLS 24/7
 zone-discord-bot/            # Service Node autonome — présence Discord
 scripts/                     # seed, migrate, configure-radarr, cinema-cam*, entrypoint…
+tools/devanture-borne/       # Fabrique des images de la devanture mobile (Python + Blender) — voir « Extérieur »
 tests/                       # node --test — architecture, domain, cache, media, performance
 ```
 
@@ -339,7 +343,42 @@ responsabilité est donc scindée :
 plein écran, photo de devanture + masque RGB (R = néons, G = vitres, B = métal) pilotant un shader
 GLSL maison. Pluie en 3 couches de `LineSegments` avec vent et rafales, phares procéduraux
 (voitures / police / pompiers) réfléchis sur vitre, métal et flaques, letterboxing dynamique.
-Desktop uniquement — sur mobile, image statique + bouton.
+Desktop uniquement. La borne n'y est encore qu'un **bouton provisoire** posé sur le mur : la
+devanture élargie du bureau (mur prolongé, borne rendue sous sa perspective, masque de reflets)
+reste à faire.
+
+**Devanture mobile** (et repli du bureau sans WebGL) — une **image fabriquée**, vue reculée : la
+photo d'origine de la porte, un mur reconstitué à sa gauche, le toit, un ciel de pluie, et la
+**borne de location** rendue sous Blender puis raccordée à la photo (validée par Rusmir le
+18/11/2026).
+
+- **Fabrication** : `sh tools/devanture-borne/fabrique.sh` refait tout d'une commande (fond,
+  textures, parcours du néon, rendus Cycles, composition) et écrit `public/storefront-mobile.{webp,jpeg}`,
+  la vue rapprochée `public/storefront-borne-zoom.webp` et la **mise en page**
+  `src/data/storefront-mobile.json`. Prérequis et rôle de chaque script :
+  `tools/devanture-borne/README.md`. Ne jamais retoucher ces quatre sorties à la main : modifier
+  `geometrie.json` ou les scripts, puis relancer la fabrique.
+- **Mise en page** : où sont la borne, son écran, la porte et la plaque « PUSH » dans l'image, en
+  fractions (0 à 1), **projetées par la caméra de la scène Blender**. C'est la seule source des
+  positions côté site.
+- **La scène** (`ExteriorView`, `.mobileStage`) : un bloc aux proportions de l'image, posé en
+  « cover » et cadré sur l'ensemble borne + porte par `stageBox` (`storefront-layout.ts`, fonctions
+  pures testées sur cinq fenêtres). L'image, les zones d'appui (la borne entière, la porte entière)
+  et l'indicateur PUSH en sont des **enfants placés en pourcentages de la scène** — plus aucune
+  position en pourcentages de la fenêtre, qui ne tombait sur l'objet que pour un seul format
+  d'écran. En bas de la fenêtre, deux boutons fléchés : « BORNE 24/7 » et « PORTE VIDÉOCLUB ».
+- **Le zoom vers la borne** : à l'appui, `onKioskIntent` part tout de suite (le GPU et les
+  chargements du vidéoclub sont libérés **avant** l'animation), puis la scène reçoit la
+  transformation de `zoomTransform` — l'écran de la borne vient se poser là où sera celui de
+  l'interface (`kioskScreenBox`, qui reprend la formule de `KioskView.module.css` ; un test les
+  tient alignées). 900 ms ; la vue rapprochée se fond entre 35 % et 70 % du trajet, si elle était
+  décodée à l'appui ; un voile noir monte sur les 180 dernières millisecondes ; à la fin,
+  `onOpenKiosk`. Une seule transition (ni double appui, ni porte pendant le zoom) ; pas de zoom
+  avec `prefers-reduced-motion` ; un minuteur de garde, armé **une fois le zoom affiché**, ouvre la
+  borne si la fin de la transition n'arrive pas.
+- Ces images sont servies en `network-only` par le service worker (elles ne sont ni sous
+  `/models`, `/textures`, `/basis`, ni d'une extension mise en cache) : les changer ne demande pas
+  de bumper `VERSION`.
 
 **Intérieur** — WebGPU (`THREE.WebGPURenderer` + R3F + TSL). **Pas de repli WebGL.** Sans
 `navigator.gpu` le site reste ouvert : la devanture s'affiche (image fixe au besoin), la porte
@@ -478,9 +517,10 @@ Troisième scène de l'application (`currentScene === 'kiosk'`, à côté de `'e
 `'interior'`) : une seconde façon de louer, en **DOM pur**, pour tout appareil — WebGPU ou non.
 Rayons, recherche par titre, fiche, connexion / inscription / récupération, location, puis le
 **même lecteur** (`VHSPlayer`) et le même suivi de Cast que le vidéoclub. Document de conception :
-`docs/superpowers/specs/2026-11-16-borne-location-design.md` (trois lots ; seule la tranche a du
-lot 1 est construite). On y accède par un **bouton provisoire** posé sur la photo de la devanture ;
-la borne modélisée et la vue mobile « porte + borne » sont au lot 3.
+`docs/superpowers/specs/2026-11-16-borne-location-design.md` (trois lots). Sur mobile, on y accède
+par **la borne de la devanture** — la borne elle-même ou le bouton « BORNE 24/7 » —, après un zoom
+vers son écran (voir « Devanture mobile ») ; sur le bureau, par un **bouton provisoire** posé sur
+la photo, en attendant sa devanture élargie.
 
 Règles à ne pas casser — chacune a son test dans `tests/domain/kiosk-*.test.mjs` :
 
@@ -647,10 +687,18 @@ Règles à ne pas casser — chacune a son test dans `tests/domain/kiosk-*.test.
   `WebGPURenderer`), et la vanne des préchargements se referme : les `fetch` inscrits par
   `whileStorefront` sont coupés, puis relancés quand la devanture est de nouveau affichée. La scène
   ne se remonte qu'à ce moment-là (0,8 s après), jamais dans le même rendu que la devanture.
+  Sur mobile la libération part **à l'appui, avant le zoom** (`onKioskIntent`), alors que la
+  devanture reste montée près d'une seconde : le minuteur de 0,8 s relit donc la vanne à son
+  échéance (`isInteriorPreloadOpen`) et ne monte pas la scène pendant le zoom.
   ⚠️ Reste hors d'atteinte : les chargements déjà lancés par les loaders de three, qui vont à leur
   terme (`LoadingManager.abort()` existe en r187 mais oblige à purger les caches de drei).
 - **Le code de la borne est demandé dès que la devanture est affichée** (`preloadKiosk`), avant les
   fichiers 3D : demandé à l'appui, il attendait derrière eux (14,3 s d'écran noir à 20 Mbit/s).
+  Une fois arrivé, la borne est **montée directement** (`KioskMount` dans `App.tsx`), pas par
+  `React.lazy` : même chargée, une composante paresseuse passe par le repli du `Suspense`, et React
+  ne remplace pas avant ~300 ms un repli qu'il vient d'afficher — 320 ms de carton « Ouverture de
+  la borne… » mesurées entre la fin du zoom et l'écran de la borne. Le repli ne sert plus qu'à un
+  code pas encore arrivé.
 - **Le geste retour ne quitte jamais la borne.** Une seule garde (`useBackGuard`), reposée dès
   qu'elle a servi, qui ferme ce qui est ouvert selon `kioskBackAction` ; à la racine elle ne fait
   rien. On ne sort que par « quitter ». La garde n'est jamais posée dès le montage (StrictMode).

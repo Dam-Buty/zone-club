@@ -121,6 +121,20 @@
 > - **§ 9, critère de réussite atteint pour la vue mobile (18/11/2026).** Rusmir valide l'essai 10, photo d'origine
 >   et image produite côte à côte : « c'est bon pour moi je valide ». **[R]** L'essai jetable du lot 3 est clos ; restent
 >   les images définitives (mobile, vue rapprochée, PC élargie) et le branchement dans le site.
+> - **§ 3, § 5, § 9 et § 10, lot 3 — livraison A faite : la borne sur la devanture mobile (18/11/2026).**
+>   Plan : `docs/superpowers/plans/2026-11-18-borne-devanture-mobile.md`. La fabrication des images est
+>   dans le dépôt (`tools/devanture-borne/fabrique.sh`) et refait l'image validée au pixel près ; le site
+>   affiche la devanture avec la borne, une vue rapprochée de son écran et une mise en page projetée par
+>   la caméra de la scène Blender. Choisir la borne zoome sur son écran (900 ms) puis ouvre l'interface ;
+>   le GPU est libéré à l'appui, avant le zoom. **[C]**, à confirmer par Rusmir : les deux boutons
+>   « BORNE 24/7 » et « PORTE VIDÉOCLUB » sont **en bas de la fenêtre** et non au-dessus de chaque
+>   élément (la place y est prise par les néons « BORNE 24/7 » et « Open 24/7 ») ; un voile noir de
+>   180 ms termine le zoom ; l'écran de la borne modélisée étant au format 5:9, le zoom vise l'écran de
+>   l'interface du téléphone. Corrigé en chemin **[C]** : la borne déjà chargée s'ouvre sans passer par
+>   le carton « Ouverture de la borne… ». **Reste du lot 3** : la devanture du bureau (plan B : photo
+>   d'origine 5632 × 3072, mur prolongé, masque de reflets, zoom dans la scène WebGL — question ouverte :
+>   écran 5:9 de la borne contre interface 2:3 sur PC) ; la livraison 2 de la distribution (robot, vidéo
+>   de 8 s) ; les essais sur le Pixel 9a, repoussés par Rusmir.
 > - **Tarif** : l'affichage suit ce que le serveur facture. **Dates du serveur** : lues en UTC.
 >   Les deux validés. **[R]**
 > - **§ 5, bouton provisoire sur mobile** : il part tel quel, on ajustera en voyant la version
