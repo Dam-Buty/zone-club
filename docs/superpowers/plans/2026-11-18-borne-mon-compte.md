@@ -30,20 +30,20 @@
 
 ---
 
-### Task 1: Le minimum de critique passe à 144, défini une seule fois
+### Task 1: Le minimum de critique passe à 144 et les notes s'appellent par leur nom, définis une seule fois
 
 **Files:**
 - Create: `src/utils/review-rules.ts`
-- Modify: `lib/reviews.ts:3,157-158,192-193` · `src/components/review/ReviewModal.tsx:15,210,334` · `src/components/player/VHSPlayer.tsx:15,…` (constante, message, placeholder) · `src/components/manager/GenUICriticForm.tsx:19,55,79` · `lib/chat-tools.ts:83` · `lib/chat.ts:64`
+- Modify: `lib/reviews.ts:3,157-158,192-193` · `src/components/review/ReviewModal.tsx:15,71-73,210,334` · `src/components/player/VHSPlayer.tsx:15,2007-2009,…` (constante, message, placeholder, intitulés) · `src/components/manager/GenUICriticForm.tsx:19,55,60,79` · `src/components/terminal/TVTerminal.tsx:718-720` · `lib/chat-tools.ts:83` · `lib/chat.ts:64`
 - Test: `tests/domain/review-rules.test.mjs`
 
-**Interfaces:** Produces `REVIEW_MIN_LENGTH = 144` (export const).
+**Interfaces:** Produces `REVIEW_MIN_LENGTH = 144` et `REVIEW_RATING_LABELS = { direction: 'Réalisation', screenplay: 'Scénario', acting: "Jeu d'acteurs" } as const` (Rusmir, 18/11 : « on ne peut pas juste écrire scén ou jeu, il faut dire scénario et jeu d'acteurs »).
 
-- [ ] **Step 1: Tests qui échouent** — `REVIEW_MIN_LENGTH === 144` ; chacun des six fichiers ci-dessus importe ou cite `REVIEW_MIN_LENGTH` (les consignes de Michel citent « 144 ») ; aucun ne contient plus `500` dans une chaîne ou constante de critique (`/MIN_[A-Z_]*LENGTH\s*=\s*500|minimum 500|500\+|min\. 500|\/500/`).
+- [ ] **Step 1: Tests qui échouent** — `REVIEW_MIN_LENGTH === 144` ; chacun des six fichiers ci-dessus importe ou cite `REVIEW_MIN_LENGTH` (les consignes de Michel citent « 144 ») ; aucun ne contient plus `500` dans une chaîne ou constante de critique (`/MIN_[A-Z_]*LENGTH\s*=\s*500|minimum 500|500\+|min\. 500|\/500/`) ; `VHSPlayer`, `ReviewModal`, `GenUICriticForm`, `TVTerminal` lisent `REVIEW_RATING_LABELS` et ne contiennent plus `'RÉAL'`, `'SCÉN'`, `'JEU'`, `Réal:`, `Scén:`, `Jeu:`, `'Realisation'`, `'Scenario'` (les « Réal » du générique de `VHSCaseOverlay` ne sont pas des notes : hors du test).
 - [ ] **Step 2: Lancer** `node --test --test-reporter=tap tests/domain/review-rules.test.mjs` → FAIL (module absent).
 - [ ] **Step 3: Implémenter** — remplacer chaque 500 par la constante (import relatif depuis `lib/` : `../src/utils/review-rules`) ; les deux consignes de Michel en texte : « au moins 144 caractères ».
 - [ ] **Step 4: Vérifier** — test vert ; `npx tsc --noEmit -p .` sans erreur.
-- [ ] **Step 5: Commit** — `feat(critiques): 144 caractères au minimum, partout`
+- [ ] **Step 5: Commit** — `feat(critiques): 144 caractères au minimum et notes nommées en entier, partout`
 
 ---
 

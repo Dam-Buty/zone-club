@@ -141,6 +141,14 @@ le serveur (`lib/reviews.ts`), la fenêtre de critique du vidéoclub (`ReviewMod
 formulaire de Michel (`GenUICriticForm`) et la borne ; les deux consignes de Michel (`lib/chat-tools.ts`,
 `lib/chat.ts`) passent à « au moins 144 caractères ». Un test vérifie qu'il ne reste aucun « 500 » de critique. **[C]**
 
+### Intitulés des notes
+
+**[R]** (18/11) : « on ne peut pas juste écrire scén ou jeu, il faut dire scénario et jeu d'acteurs ». Les trois
+notes s'appellent **Réalisation**, **Scénario**, **Jeu d'acteurs**, définies une fois avec le minimum de 144 et
+utilisées partout où une critique s'écrit ou se lit (lecteur, terminal du canapé, fenêtre du vidéoclub, Michel,
+borne). Le formulaire du lecteur est aussi « à améliorer » (Rusmir) : au-delà des intitulés, à préciser sur le
+Pixel.
+
 ## 8. Approches considérées
 
 | Sujet | Retenu | Écarté |
