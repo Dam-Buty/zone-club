@@ -469,6 +469,7 @@ export type KioskBackAction =
   | 'close-player'
   | 'close-notice'
   | 'close-ready'
+  | 'close-review'
   | 'close-account'
   | 'cancel-auth'
   | 'close-trailer'
@@ -500,11 +501,14 @@ export function kioskBackAction(s: {
   readyOpen?: boolean;
   /** L'écran « Mon compte » est ouvert. */
   accountOpen?: boolean;
+  /** Le formulaire de critique est ouvert (par-dessus « Mon compte »). */
+  reviewOpen?: boolean;
 }): KioskBackAction {
   if (s.playerOpen) return 'close-player';
   if (s.noticeOpen) return s.noticeClosable ? 'close-notice' : 'none';
   if (s.waiting) return 'none';
   if (s.readyOpen) return 'close-ready';
+  if (s.reviewOpen) return 'close-review';
   if (s.accountOpen) return 'close-account';
   if (s.phrasePending) return 'none';
   if (s.authOpen) return 'cancel-auth';

@@ -522,3 +522,15 @@ test('COMPTE: l\'état de la critique d\'un film', () => {
   assert.deepEqual(K.reviewStateFor(3, new Set(), elig), { kind: 'pas-encore', reason: 'Critique possible à partir du 19 novembre à 21:10' });
   assert.deepEqual(K.reviewStateFor(9, new Set(), elig), { kind: 'pas-encore', reason: 'Vous devez regarder au moins 80 % du film' });
 });
+test('CRITIQUE (borne): ce qui manque pour publier', async () => {
+  // À côté du minimum de 144 (review-rules.ts) : kiosk-logic n'importe que des types.
+  const { reviewFormCheck } = await import('../../src/utils/review-rules.ts');
+  assert.equal(reviewFormCheck({ length: 143, ratings: [4, 4, 4] }), 'Encore 1 caractère');
+  assert.equal(reviewFormCheck({ length: 100, ratings: [4, 4, 4] }), 'Encore 44 caractères');
+  assert.equal(reviewFormCheck({ length: 144, ratings: [4, 0, 4] }), 'Donnez les trois notes');
+  assert.equal(reviewFormCheck({ length: 144, ratings: [1, 5, 3] }), null);
+});
+test('CRITIQUE (borne): le geste retour ferme le formulaire avant le compte', () => {
+  const base = { playerOpen: false, noticeOpen: false, noticeClosable: true, authOpen: false, phrasePending: false, searchOpen: false };
+  assert.equal(K.kioskBackAction({ ...base, reviewOpen: true, accountOpen: true }), 'close-review');
+});

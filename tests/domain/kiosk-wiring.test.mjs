@@ -431,3 +431,14 @@ test('COMPTE: /api/me dit ce qu\'on peut encore critiquer, et le magasin garde l
   assert.ok(catchBlock.includes('reviewEligibility: {}'), 'remis à zéro hors connexion');
   assert.ok(fetchMe.includes('returnedAt:'), 'le champ existant returnedAt est gardé (terminal, Michel)');
 });
+test('CRITIQUE (borne): le formulaire publie ou modifie, jamais grisé, et relit le compte', () => {
+  const src = readText(path.join(ROOT, 'src/components/kiosk/KioskReview.tsx'));
+  assert.ok(src.includes('REVIEW_MIN_LENGTH') && src.includes('REVIEW_RATING_LABELS'), 'règles partagées');
+  assert.ok(src.includes('api.reviews.create(') && src.includes('api.reviews.update('), 'création ou modification');
+  assert.ok(src.includes('reviewFormCheck('), 'ce qui manque vient de la logique testée');
+  assert.match(src, /existing \? null : .*\+1 crédit|!existing && .*\+1 crédit/s, '« +1 crédit » seulement pour une création');
+  assert.ok(src.includes('fetchMe'), 'le compte est relu après publication');
+  assert.ok(!/\bdisabled\b/.test(src), 'aucun bouton grisé');
+  const view = readText(path.join(ROOT, 'src/components/kiosk/KioskView.tsx'));
+  assert.ok(view.includes('<KioskReview'), 'monté par la borne');
+});

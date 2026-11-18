@@ -9,6 +9,7 @@ import { KioskBrowse } from './KioskBrowse';
 import { KioskDetail } from './KioskDetail';
 import { KioskReady, KioskWaiting } from './KioskDistribution';
 import { KioskAccount } from './KioskAccount';
+import { KioskReview } from './KioskReview';
 import { KioskNotice, type KioskNoticeSpec } from './KioskNotice';
 import { KioskSearch } from './KioskSearch';
 import {
@@ -454,6 +455,7 @@ export function KioskView() {
       waiting: distribution?.phase === 'waiting',
       readyOpen: distribution?.phase === 'ready',
       accountOpen,
+      reviewOpen: reviewFilmId !== null,
       noticeClosable: catalog !== 'unavailable',
       authOpen,
       phrasePending: pendingPhrase !== null,
@@ -464,6 +466,7 @@ export function KioskView() {
     if (action === 'close-player') closePlayer();
     else if (action === 'close-notice') closeNotice();
     else if (action === 'close-ready') closeReady();
+    else if (action === 'close-review') setReviewFilmId(null);
     else if (action === 'close-account') setAccountOpen(false);
     else if (action === 'cancel-auth') cancelAuth();
     else if (action === 'close-trailer') setDetailTab('resume');
@@ -594,7 +597,7 @@ export function KioskView() {
                 )}
 
                 {accountOpen && (
-                  <div className={styles.kLayer} inert={overlay !== null || distribution !== null || authVisible}>
+                  <div className={styles.kLayer} inert={overlay !== null || distribution !== null || authVisible || reviewFilmId !== null}>
                     <KioskAccount
                       films={catalogue}
                       onWatch={(filmId) => openPlayer(filmId)}
@@ -604,6 +607,21 @@ export function KioskView() {
                         void logout();
                       }}
                       onBack={() => setAccountOpen(false)}
+                    />
+                  </div>
+                )}
+
+                {reviewFilmId !== null && (
+                  <div className={styles.kLayer} inert={overlay !== null || authVisible}>
+                    <KioskReview
+                      filmId={reviewFilmId}
+                      title={
+                        catalogue.find((f) => f.id === reviewFilmId)?.title ??
+                        useStore.getState().rentalHistory.find((h) => h.filmId === reviewFilmId)?.title ??
+                        'Titre indisponible'
+                      }
+                      onDone={() => setReviewFilmId(null)}
+                      onBack={() => setReviewFilmId(null)}
                     />
                   </div>
                 )}
