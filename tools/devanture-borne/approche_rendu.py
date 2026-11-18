@@ -18,7 +18,8 @@ from variante import D as _D, G as _G  # noqa: E402
 _a = sys.argv[sys.argv.index('--') + 1:]
 _PASSE = _a[0]
 _AP = _G['approche']
-_WV, _HV = _AP['film']['w'], _AP['film']['h']
+_RENDU = _AP.get('film_hd', _AP['film'])          # les images sont rendues à la taille du plus grand film
+_WV, _HV = _RENDU['w'], _RENDU['h']
 _ANIM = _D / 'approche'
 _CAM = json.loads((_ANIM / 'trajet.json').read_text())['images']
 if len(_a) > 1:

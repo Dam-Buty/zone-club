@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { stageBox, kioskScreenBox, choiceSpans, fitBox, fitInside, kioskScreenBoxDesktop, approachTransform } from '../../src/components/exterior/storefront-layout.ts';
+import { stageBox, kioskScreenBox, choiceSpans, fitBox, fitInside, kioskScreenBoxDesktop, approachTransform, pickApproachFilm } from '../../src/components/exterior/storefront-layout.ts';
 
 const ROOT = path.resolve(import.meta.dirname, '../..');
 const L = JSON.parse(readFileSync(path.join(ROOT, 'src/data/storefront-mobile.json'), 'utf8'));
@@ -265,4 +265,18 @@ test('APPROCHE: chaque retour de la borne monte une devanture neuve', () => {
   const app = readFileSync(path.join(ROOT, 'src/App.tsx'), 'utf8');
   assert.match(app, /<ExteriorView\s+key=\{exteriorVisit\}/, 'la devanture porte une clé de visite');
   assert.match(app, /currentScene === 'kiosk'[\s\S]{0,400}setExteriorVisit\(/, 'la clé change quand on quitte la borne');
+});
+
+// Deux films pour la devanture mobile (Rusmir, 18/11/2026) : le site prend la haute définition quand l'écran en tire
+// parti, le film léger sinon — et toujours le léger quand le visiteur a demandé d'économiser ses données.
+test('APPROCHE: le film est choisi selon la définition de l\'écran', () => {
+  const a = { src: '/leger.mp4', w: 720, h: 1290, duree: 3, images: 91, octets: 1, ecran: { x0: 0, y0: 0, x1: 1, y1: 1 }, hd: { src: '/hd.mp4', w: 1080, h: 1935, octets: 2 } };
+  assert.equal(pickApproachFilm(a, 451, 2.625).src, '/hd.mp4', 'Pixel 9a : la scène fait 451 points logiques, soit 1184 points d\'écran');
+  assert.equal(pickApproachFilm(a, 471, 3).src, '/hd.mp4', 'téléphone récent');
+  assert.equal(pickApproachFilm(a, 360, 2).src, '/leger.mp4', 'petit écran : 720 points, le film léger suffit');
+  assert.equal(pickApproachFilm(a, 375, 2).src, '/leger.mp4', '750 points : à peine plus que le film léger');
+  assert.equal(pickApproachFilm(a, 451, 2.625, true).src, '/leger.mp4', 'économie de données demandée');
+  assert.equal(pickApproachFilm({ ...a, hd: undefined }, 1920, 2).src, '/leger.mp4', 'un seul film : c\'est lui');
+  const tsx = readFileSync(path.join(ROOT, 'src/components/exterior/ExteriorView.tsx'), 'utf8');
+  assert.ok(tsx.includes('pickApproachFilm(') && tsx.includes('devicePixelRatio'), 'la devanture choisit son film');
 });

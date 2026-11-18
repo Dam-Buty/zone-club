@@ -194,3 +194,19 @@ test('APPROCHE: le film est étiqueté sRGB, et la fabrique le vérifie', () => 
   assert.ok(sh.includes('setparams=') && sh.includes('color_trc=iec61966-2-1') && sh.includes('color_primaries=bt709'), 'étiquettes écrites par setparams');
   assert.match(sh, /ffprobe[^\n]*color_transfer[\s\S]{0,400}tv,bt709,iec61966-2-1,bt709[\s\S]{0,200}exit 1/, 'étiquettes relues, échec si elles manquent');
 });
+
+// Rusmir, 18/11/2026 : le film mobile en 720 × 1290 est un peu mou sur un téléphone récent (écran de 1080 points de
+// large) ; « garder le film réalisé pour les téléphones anciens ayant une faible résolution, on chargerait le film en
+// fonction de la résolution acceptée par le téléphone ». Deux films mobiles, même trajet, même cadrage.
+test('APPROCHE: le mobile a aussi un film en haute définition, même trajet', () => {
+  const L = JSON.parse(readFileSync(path.join(ROOT, 'src/data/storefront-mobile.json'), 'utf8'));
+  const hd = L.approche.hd, buf = readFileSync(path.join(ROOT, 'public/storefront-mobile-borne-approche-hd.mp4'));
+  assert.equal(hd.src, '/storefront-mobile-borne-approche-hd.mp4');
+  assert.deepEqual(lisMp4(buf), { w: 1080, h: 1936, images: L.approche.images }, 'taille et nombre d\'images lus dans le fichier');
+  assert.deepEqual([hd.w, hd.h], [1080, 1936]);                       // hauteur paire : le codage vidéo l'exige (1935 était refusé)
+  assert.equal(buf.length, hd.octets);
+  assert.ok(buf.length <= 3670016, `${buf.length} octets pour un budget de 3 670 016`);
+  assert.ok(buf.indexOf('moov') > 0 && buf.indexOf('moov') < buf.indexOf('mdat') && !buf.includes('soun'));
+  const D = JSON.parse(readFileSync(path.join(ROOT, 'src/data/storefront-desktop.json'), 'utf8'));
+  assert.equal(D.approche.hd, undefined, 'le bureau n\'a qu\'un film');
+});

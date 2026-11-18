@@ -352,6 +352,14 @@ Une seule mécanique pour les deux devantures. **[C]**
   les films ne portaient pas l'étiquette de transfert que la commande croyait écrire, d'où un éclaircissement au
   départ dans Chrome sur Mac, que j'avais attribué à tort au décodage du navigateur — étiquetés sRGB, ils
   s'affichent comme l'image fixe (film moins devanture : 1 niveau au plus par canal, contre +2 à +6 avant).
+- **Deux films pour le mobile** (Rusmir, 18/11/2026, après avoir vu le film en 720 × 1290 : « un peu moins bon niveau
+  qualité » ; « garder le film réalisé pour les téléphones anciens ayant une faible résolution, on chargerait le film
+  en fonction de la résolution acceptée par le téléphone ») **[R]** : haute définition 1080 × 1936 (2 343 995 octets)
+  et film léger 720 × 1290 (1 066 714 octets), même trajet, mêmes images ; la devanture choisit la haute définition
+  quand la scène dépasse 828 points d'écran réels de large (1,15 × 720), le film léger sinon ou si le visiteur
+  économise ses données **[C]**. Vérifié à l'écran : 360 × 640 et 412 × 700 chargent le léger, 412 × 915 la haute
+  définition ; un seul film téléchargé par visite.
+- **Verdict de Rusmir** (18/11/2026) : « ok, valide tel quel, on fera des ajustements plus tard ».
 - **Non vérifié** : un vrai téléphone, Safari, l'iPad (passe prévue juste après ce chantier, avec le Chromecast).
   À tester alors en premier : Safari présente-t-il la première image d'une vidéo invisible ? (Sinon le film n'y
   serait jamais montré et la borne s'ouvrirait après 400 ms.)

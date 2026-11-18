@@ -388,8 +388,12 @@ photo d'origine de la porte, un mur reconstitué à sa gauche, le toit, un ciel 
   images, rendu par la fabrique, où l'appareil **avance pour de bon** de la devanture jusqu'à
   l'écran de la borne (la borne est recalculée par Blender à chaque image ; le mur de la photo, un
   plan, se recale exactement ; sur mobile le ciel, à l'infini, ne grossit pas). Sa première image
-  est l'image fixe de la devanture. `public/storefront-borne-approche.mp4` (1920 × 1020) et
-  `public/storefront-mobile-borne-approche.mp4` (720 × 1290), H.264 muet.
+  est l'image fixe de la devanture. `public/storefront-borne-approche.mp4` (1920 × 1020) pour le
+  bureau ; pour le mobile **deux films du même trajet** — `storefront-mobile-borne-approche-hd.mp4`
+  (1080 × 1936) et `storefront-mobile-borne-approche.mp4` (720 × 1290, léger) —, la devanture
+  prenant la haute définition quand l'écran en tire parti (`pickApproachFilm` : largeur de la scène
+  en points d'écran réels) et le film léger sinon, ou si le visiteur économise ses données (Rusmir,
+  18/11/2026). H.264 muet ; hauteur **paire** obligatoire (1935 était refusé par l'encodeur).
   - `useApproachFilm` télécharge le film **une fois la devanture affichée** et le joue depuis la
     mémoire. Au choix de la borne : `onKioskIntent` d'abord (GPU et chargements du vidéoclub libérés
     **avant** l'animation), puis le film se fond sur la devanture dès sa première image réellement

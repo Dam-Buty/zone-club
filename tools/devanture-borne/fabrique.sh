@@ -31,6 +31,21 @@ rendu_approche() {   # rendu_approche <borne|mur> : chaque image du film d'appro
         || { echo "échec du rendu du film, fin de $T/approche-rendu-$1.log :"; tail -12 "$T/approche-rendu-$1.log"; exit 1; }
 }
 
+encode() {  # encode <film|film_hd> <sortie.mp4> : les images du trajet → un film, à la taille et à la qualité de la géométrie
+    IPS=$(python3 "$ICI/variante.py" approche.ips)
+    LARGEUR=$(python3 "$ICI/variante.py" "approche.$1.w")
+    HAUTEUR=$(python3 "$ICI/variante.py" "approche.$1.h")
+    CRF=$(python3 "$ICI/variante.py" "approche.$1.crf")
+    # Les images sont en sRGB : le film est étiqueté ainsi (matrice BT.709, plage réduite, transfert sRGB), par le
+    # filtre setparams — les options -color_primaries / -color_trc de ffmpeg 8 n'arrivent pas dans le fichier, et
+    # un film sans étiquette de transfert sort plus clair que l'image fixe dans Chrome sur Mac.
+    ffmpeg -y -loglevel error -framerate "$IPS" -i "$T/approche/film_%04d.png" \
+        -vf "scale=$LARGEUR:$HAUTEUR:flags=lanczos:out_color_matrix=bt709:out_range=tv,setparams=colorspace=bt709:color_primaries=bt709:color_trc=iec61966-2-1:range=tv" \
+        -c:v libx264 -preset slow -crf "$CRF" -pix_fmt yuv420p -an -movflags +faststart "$2"
+    ETIQUETTES=$(ffprobe -v error -select_streams v:0 -show_entries stream=color_space,color_range,color_primaries,color_transfer -of csv=p=0 "$2")
+    [ "$ETIQUETTES" = "tv,bt709,iec61966-2-1,bt709" ] || { echo "film d'approche : étiquettes de couleur inattendues ($ETIQUETTES), attendu tv,bt709,iec61966-2-1,bt709"; exit 1; }
+}
+
 a() {       # a <clé> : vrai si la géométrie de la variante porte cette clé
     python3 "$ICI/variante.py" "$1" > /dev/null 2>&1
 }
@@ -75,16 +90,10 @@ for V in $DEVANTURES; do
         python3 "$ICI/approche_compo.py" > "$T/approche-compo.log"
         tail -1 "$T/approche-compo.log"
         echo "film d'approche : encodage"
-        IPS=$(python3 "$ICI/variante.py" approche.ips)
-        CRF=$(python3 "$ICI/variante.py" approche.film.crf)
-        # Les images sont en sRGB : le film est étiqueté ainsi (matrice BT.709, plage réduite, transfert sRGB), par le
-        # filtre setparams — les options -color_primaries / -color_trc de ffmpeg 8 n'arrivent pas dans le fichier, et
-        # un film sans étiquette de transfert sort plus clair que l'image fixe dans Chrome sur Mac.
-        ffmpeg -y -loglevel error -framerate "$IPS" -i "$T/approche/film_%04d.png" \
-            -vf "scale=out_color_matrix=bt709:out_range=tv,setparams=colorspace=bt709:color_primaries=bt709:color_trc=iec61966-2-1:range=tv" \
-            -c:v libx264 -preset slow -crf "$CRF" -pix_fmt yuv420p -an -movflags +faststart "$T/approche/film.mp4"
-        ETIQUETTES=$(ffprobe -v error -select_streams v:0 -show_entries stream=color_space,color_range,color_primaries,color_transfer -of csv=p=0 "$T/approche/film.mp4")
-        [ "$ETIQUETTES" = "tv,bt709,iec61966-2-1,bt709" ] || { echo "film d'approche : étiquettes de couleur inattendues ($ETIQUETTES), attendu tv,bt709,iec61966-2-1,bt709"; exit 1; }
+        encode film "$T/approche/film.mp4"
+        if a approche.film_hd; then
+            encode film_hd "$T/approche/film-hd.mp4"
+        fi
     fi
     echo "sorties pour le site (public/ et src/data/)"
     python3 "$ICI/sorties.py"

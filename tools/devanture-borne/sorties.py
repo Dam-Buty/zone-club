@@ -54,6 +54,15 @@ if 'approche' in G:
                         'images': round(AP['ips'] * AP['duree_s']) + 1, 'octets': octets,
                         'ecran': json.loads((D / 'approche' / 'ecran-arrivee.json').read_text())}
     ecrits += [AP['film']['fichier']]
+    if 'film_hd' in AP:             # second film, en haute définition : même trajet, même cadrage, le site choisit selon l'écran
+        HD = AP['film_hd']
+        film_hd = D / 'approche' / 'film-hd.mp4'
+        octets_hd = film_hd.stat().st_size
+        if octets_hd > HD['budget_octets']:
+            raise SystemExit(f"sorties.py : le film d'approche en haute définition pèse {octets_hd} octets, pour un budget de {HD['budget_octets']} — monter approche.film_hd.crf")
+        shutil.copyfile(film_hd, PUBLIC / HD['fichier'])
+        mise['approche']['hd'] = {'src': '/' + HD['fichier'], 'w': HD['w'], 'h': HD['h'], 'octets': octets_hd}
+        ecrits += [HD['fichier']]
 
 (DONNEES / donnees).write_text(json.dumps(mise, indent=2) + '\n')
 for nom in ecrits:

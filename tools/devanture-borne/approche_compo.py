@@ -21,7 +21,8 @@ AP = G['approche']
 R = json.loads((D / 'repere.json').read_text())
 CAM = json.loads((A / 'trajet.json').read_text())['images']
 W, H, PPM = G['sortie']['w'], G['sortie']['h'], G['sortie']['px_par_m']
-WV, HV = AP['film']['w'], AP['film']['h']
+RENDU = AP.get('film_hd', AP['film'])                  # les images sont faites à la taille du plus grand film
+WV, HV = RENDU['w'], RENDU['h']
 ECART_MAX = 2.5                                        # départ du film contre l'image fixe, en niveaux sur 255 (essai : 0,88)
 if len(sys.argv) > 1:
     CHOIX = list(range(*[int(v) + k for k, v in enumerate(sys.argv[1].split('-'))])) if '-' in sys.argv[1] else [int(v) for v in sys.argv[1].split(',')]

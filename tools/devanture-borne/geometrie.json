@@ -182,7 +182,7 @@
   "flou": 0.6
  },
  "approche": {
-  "_": "L'approche filmée de la borne (Rusmir, 18/11/2026 : « on veut la même chose sur le mobile » — elle remplace le zoom). Mêmes réglages de rythme que le bureau (geometrie-bureau.json). bord_exp 1 : le cadre glisse en ligne droite vers l'écran. arrivee : l'écran occupe 78 % de la largeur du cadre, centre à 47 % de la hauteur — sur un téléphone en portrait c'est là que l'interface pose son écran (kioskScreenBox), la scène gardant sa taille. Le ciel, à l'infini, ne grossit pas pendant l'approche (approche_compo.py). pluie : pour une image de 1280 px de large.",
+  "_": "L'approche filmée de la borne (Rusmir, 18/11/2026 : « on veut la même chose sur le mobile » — elle remplace le zoom). Mêmes réglages de rythme que le bureau (geometrie-bureau.json). bord_exp 1 : le cadre glisse en ligne droite vers l'écran. arrivee : l'écran occupe 78 % de la largeur du cadre, centre à 47 % de la hauteur — sur un téléphone en portrait c'est là que l'interface pose son écran (kioskScreenBox), la scène gardant sa taille. Le ciel, à l'infini, ne grossit pas pendant l'approche (approche_compo.py). Deux films (Rusmir, 18/11/2026) : film_hd, à la définition d'un téléphone récent (1080 points de large) — c'est à sa taille que les images sont rendues (hauteur paire : le codage vidéo l'exige) — et film, léger, pour les écrans modestes, réduit depuis les mêmes images ; le site choisit selon l'écran. pluie : pour une image de 1280 px de large.",
   "ips": 30,
   "duree_s": 3.0,
   "accel_s": 0.55,
@@ -194,6 +194,7 @@
   "bord_exp": 1,
   "arrivee": {"largeur_ecran": 0.78, "cx": 0.5, "cy": 0.47},
   "film": {"w": 720, "h": 1290, "crf": 25, "fichier": "storefront-mobile-borne-approche.mp4", "budget_octets": 1572864},
+  "film_hd": {"w": 1080, "h": 1936, "crf": 23, "fichier": "storefront-mobile-borne-approche-hd.mp4", "budget_octets": 3670016},
   "echantillons": [64, 64],
   "pluie": {"densite": 0.00022, "longueur": [26, 78], "pente": 0.05, "force": [0.05, 0.22], "flou": 0.7}
  },

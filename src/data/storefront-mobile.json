@@ -35,12 +35,18 @@
     "h": 1290,
     "duree": 3.0,
     "images": 91,
-    "octets": 1242816,
+    "octets": 1066714,
     "ecran": {
       "x0": 0.11,
       "y0": 0.078186,
       "x1": 0.89,
       "y1": 0.861814
+    },
+    "hd": {
+      "src": "/storefront-mobile-borne-approche-hd.mp4",
+      "w": 1080,
+      "h": 1936,
+      "octets": 2343995
     }
   }
 }

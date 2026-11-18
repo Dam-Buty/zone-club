@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { ExteriorScene } from './scene/ExteriorScene';
 import { DoorBlockedNotice } from './DoorBlockedNotice';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { releaseInteriorPreload } from '../../utils/interior-preload-gate';
-import { approachTransform, choiceSpans, fitBox, fitInside, kioskScreenBox, kioskScreenBoxDesktop, stageBox, type Rect, type StorefrontLayout } from './storefront-layout';
+import { approachTransform, choiceSpans, fitBox, fitInside, kioskScreenBox, kioskScreenBoxDesktop, pickApproachFilm, stageBox, type Rect, type StorefrontLayout } from './storefront-layout';
 import { useApproachFilm } from './useApproachFilm';
 import storefrontLayout from '../../data/storefront-mobile.json';
 import desktopLayout from '../../data/storefront-desktop.json';
@@ -107,8 +107,17 @@ export function ExteriorView({ onEnter, onOpenKiosk, onKioskIntent, canEnter, on
   // une fois la devanture à l'écran, lancé au choix de la borne ; à son arrivée la borne s'ouvre,
   // sur l'écran filmé.
   const approach = (isStatic ? LAYOUT : LAYOUT_DESKTOP).approche;
+  // Sur mobile il existe en deux définitions : la haute quand l'écran en tire parti, la légère
+  // sinon (et si le visiteur économise ses données). Choisi une fois par devanture, à la taille de
+  // la fenêtre du moment : un redimensionnement ne relance pas un téléchargement.
+  const filmUrl = useMemo(() => {
+    const view = readViewport();
+    const width = isStatic ? stageBox(LAYOUT, view.w, view.h, CHOICES_BAR_HEIGHT).width : fitBox(LAYOUT_DESKTOP.image, view.w, view.h).width;
+    const saveData = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData === true;
+    return pickApproachFilm(approach, width, window.devicePixelRatio || 1, saveData).src;
+  }, [isStatic, approach]);
   const film = useApproachFilm({
-    url: approach.src,
+    url: filmUrl,
     durationMs: approach.duree * 1000,
     load: isStorefrontShown,
     onArrive: onOpenKiosk,

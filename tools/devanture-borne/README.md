@@ -15,7 +15,8 @@ faut pour les refaire d'une commande, avec ce que le site lit autour d'elles. De
 | `public/storefront.jpeg` | La devanture du bureau (texture de la scène animée), 2102 × 1117 |
 | `public/storefront-mask.png` | Son masque de reflets, 2891 × 1536 : rouge = néon qui vacille, vert = vitre, bleu = métal |
 | `public/storefront-borne-approche.mp4` | Film d'approche du bureau : 1920 × 1020, 3 s, 91 images (2 072 820 octets le 18/11/2026) |
-| `public/storefront-mobile-borne-approche.mp4` | Film d'approche du mobile : 720 × 1290, 3 s, 91 images (1 242 797 octets le 18/11/2026) |
+| `public/storefront-mobile-borne-approche-hd.mp4` | Film d'approche du mobile, haute définition : 1080 × 1936, 3 s, 91 images (2 343 995 octets le 18/11/2026) |
+| `public/storefront-mobile-borne-approche.mp4` | Le même, léger, pour les écrans modestes : 720 × 1290 (1 066 714 octets le 18/11/2026). Le site choisit selon l'écran |
 | `src/data/storefront-mobile.json`, `storefront-desktop.json` | Mises en page : où sont la borne, son écran, la porte et la plaque « PUSH » dans l'image, en fractions, projetés par la caméra de la scène ; et le film d'approche (fichier, taille, durée, place de l'écran dans sa dernière image) |
 
 Ne jamais retoucher ces sorties à la main : modifier la géométrie de la variante ou les scripts, puis relancer.
@@ -76,6 +77,8 @@ l'écran. Réglages dans le bloc `approche` de chaque géométrie : rythme (dép
 balancement de marche, flou de bougé, **arrivée** — la place de l'écran dans la dernière image, réglée sur
 l'écran de l'interface du site (bureau : 94 % de la hauteur du cadre, centre à 43 % de sa largeur ; mobile :
 78 % de la largeur, centre à 47 % de la hauteur) —, taille, qualité (`crf`) et budget de poids du film.
+Quand la géométrie porte un second film `film_hd` (mobile), les images sont rendues à sa taille et le film léger en
+est réduit ; les hauteurs doivent être paires (le codage vidéo l'exige).
 Changer l'arrivée, c'est aussi vérifier à l'écran que l'écran filmé tombe toujours sur l'écran de l'interface.
 
 ## Les sources (`sources/`)

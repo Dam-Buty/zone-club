@@ -22,7 +22,11 @@ export interface StorefrontLayout {
   groupe: { cx: number; cy: number };
   /** Le film d'approche de la borne : son fichier, sa taille, sa durée (s), et où est l'écran de la
       borne dans sa DERNIÈRE image (fractions du cadre du film, qui a le format de l'image). */
-  approche: { src: string; w: number; h: number; duree: number; images: number; octets: number; ecran: Rect };
+  approche: {
+    src: string; w: number; h: number; duree: number; images: number; octets: number; ecran: Rect;
+    /** Mobile : le même film en haute définition (même trajet, même cadrage), pour les écrans qui en tirent parti. */
+    hd?: { src: string; w: number; h: number; octets: number };
+  };
 }
 
 export interface Box { left: number; top: number; width: number; height: number }
@@ -127,6 +131,26 @@ export function kioskScreenBoxDesktop(vw: number, vh: number): Box {
   const width = height * KIOSK_DESKTOP_RATIO;
   const vitrine = clamp(0, vw - width - KIOSK_DESKTOP_AROUND, KIOSK_DESKTOP_VITRINE * width);
   return { left: vitrine + KIOSK_DESKTOP_LEFT, top: (vh - height) / 2, width, height };
+}
+
+// Au-delà de cette marge, le film léger serait trop agrandi : on prend la haute définition.
+const HD_FILM_MARGIN = 1.15;
+
+/**
+ * Le film d'approche à charger : la haute définition quand la scène, en points d'écran réels
+ * (`stageWidth` en points logiques × `pixelRatio`), dépasse nettement la largeur du film léger ;
+ * le film léger sinon, et toujours quand le visiteur a demandé d'économiser ses données (Rusmir,
+ * 18/11/2026 : garder le film léger pour les téléphones de faible définition).
+ */
+export function pickApproachFilm(
+  approche: StorefrontLayout['approche'],
+  stageWidth: number,
+  pixelRatio: number,
+  saveData = false,
+): { src: string; w: number; h: number } {
+  const { hd } = approche;
+  if (hd && !saveData && stageWidth * pixelRatio > approche.w * HD_FILM_MARGIN) return hd;
+  return approche;
 }
 
 /**
