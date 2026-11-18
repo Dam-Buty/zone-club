@@ -3,7 +3,25 @@ import { ExteriorScene } from './scene/ExteriorScene';
 import { DoorBlockedNotice } from './DoorBlockedNotice';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { releaseInteriorPreload } from '../../utils/interior-preload-gate';
+import { stageBox, type Rect, type StorefrontLayout } from './storefront-layout';
+import storefrontLayout from '../../data/storefront-mobile.json';
 import styles from './ExteriorView.module.css';
+
+// Où sont la borne, son écran et la porte dans l'image de la devanture mobile. Écrit par la
+// fabrique des images (tools/devanture-borne/fabrique.sh) : jamais retouché à la main.
+const LAYOUT: StorefrontLayout = storefrontLayout;
+
+/** Une zone de la mise en page, en pourcentages de la scène. */
+const zoneStyle = (r: Rect) => ({
+  left: `${r.x0 * 100}%`,
+  top: `${r.y0 * 100}%`,
+  width: `${(r.x1 - r.x0) * 100}%`,
+  height: `${(r.y1 - r.y0) * 100}%`,
+});
+
+const readViewport = () => (
+  typeof window === 'undefined' ? { w: 390, h: 844 } : { w: window.innerWidth, h: window.innerHeight }
+);
 
 // Au-delà, on lève le rideau même sans devanture : une image qui n'arrive jamais ne doit pas
 // interdire l'entrée dans la boutique.
@@ -41,6 +59,18 @@ export function ExteriorView({ onEnter, onOpenKiosk, canEnter, onShown }: Exteri
   const [storefrontShownFor, setStorefrontShownFor] = useState<'mobile' | 'desktop' | null>(null);
   const isStorefrontShown = storefrontShownFor === mode;
   const mobileImageRef = useRef<HTMLImageElement>(null);
+
+  // Image fixe : la « scène » a les proportions de l'image et la couvre en entier. L'image, les
+  // zones d'appui et l'indicateur PUSH sont ses enfants, placés en pourcentages : ils tombent sur
+  // leurs objets quelle que soit la fenêtre (barres du navigateur, paysage, repli sans WebGL).
+  const [viewport, setViewport] = useState(readViewport);
+  useEffect(() => {
+    if (!isStatic) return;
+    const onResize = () => setViewport(readViewport());
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [isStatic]);
+  const stage = stageBox(LAYOUT, viewport.w, viewport.h);
 
   // Content area dimensions (for hotspot positioning) — desktop only
   const [contentArea, setContentArea] = useState({ width: '100%', height: '100%', top: '0', left: '0' });
@@ -155,11 +185,13 @@ export function ExteriorView({ onEnter, onOpenKiosk, canEnter, onShown }: Exteri
   // Porte poussée : la transition vers le vidéoclub est partie, la borne ne s'ouvre plus (elle
   // s'ouvrait, puis le visiteur était emmené à l'intérieur 0,7 s plus tard).
   const openKiosk = () => {
-    if (isTransitioning) return;
+    // Sous le rideau, la zone de la borne existe déjà : pas d'ouverture à l'aveugle non plus.
+    if (isTransitioning || !isStorefrontShown) return;
     onOpenKiosk();
   };
 
-  // Bouton provisoire de la borne : il n'apparaît qu'une fois la devanture à l'écran.
+  // Bouton provisoire de la borne (bureau, en attendant sa devanture élargie) : il n'apparaît
+  // qu'une fois la devanture à l'écran.
   const kioskButton = (className: string) => isStorefrontShown && (
     <button
       type="button"
@@ -181,39 +213,79 @@ export function ExteriorView({ onEnter, onOpenKiosk, canEnter, onShown }: Exteri
     />
   );
 
-  // ===== MOBILE (ou repli sans WebGL) : Static storefront image + touch-friendly enter =====
+  // ===== MOBILE (ou repli sans WebGL) : la devanture fabriquée, la borne à côté de la porte =====
   if (isStatic) {
     return (
-      <div className={`${styles.container} ${isTransitioning ? styles.fadeOut : ''}`}>
-        {/* Static storefront image — portrait, full-screen */}
-        <div className={styles.mobileImageContainer}>
+      <div className={`${styles.container} ${styles.mobileContainer} ${isTransitioning ? styles.fadeOut : ''}`}>
+        {/* La scène : l'image et tout ce qui s'y accroche */}
+        <div
+          className={styles.mobileStage}
+          style={{ left: stage.left, top: stage.top, width: stage.width, height: stage.height }}
+        >
           <picture>
             <source srcSet="/storefront-mobile.webp" type="image/webp" />
             <img
               ref={mobileImageRef}
               src="/storefront-mobile.jpeg"
-              alt="Zone Club - Vidéoclub"
+              alt="Zone Club - le vidéoclub et sa borne de location"
               className={styles.mobileImage}
               draggable={false}
             />
           </picture>
+
+          {/* La borne entière et la porte entière répondent à l'appui. Hors de l'ordre de
+              tabulation : au clavier, ce sont les deux boutons du bas qui servent. */}
+          <button
+            type="button"
+            className={styles.mobileZone}
+            style={zoneStyle(LAYOUT.borne)}
+            onClick={openKiosk}
+            tabIndex={-1}
+            aria-label="Ouvrir la borne de location"
+          />
+          <button
+            type="button"
+            className={styles.mobileZone}
+            style={zoneStyle(LAYOUT.porte)}
+            onClick={handleEnterClick}
+            tabIndex={-1}
+            aria-label="Entrer dans le vidéoclub"
+          />
+
+          {/* L'indicateur PUSH, juste au-dessus de la plaque de la porte */}
+          <div
+            className={styles.mobileDoorIndicator}
+            style={{ left: `${LAYOUT.push.x * 100}%`, top: `${LAYOUT.push.y * 100}%` }}
+            aria-hidden="true"
+          >
+            <span className={styles.doorIndicatorText}>PUSH</span>
+            <span className={styles.doorIndicatorArrow}>&#9660;</span>
+          </div>
         </div>
 
-        {/* PUSH indicator + door hotspot — positioned at door handle level */}
-        <div className={styles.mobileDoorIndicator}>
-          <span className={styles.doorIndicatorText}>PUSH</span>
-          <span className={styles.doorIndicatorArrow}>&#9660;</span>
-        </div>
-
-        <button
-          className={styles.mobileDoorHotspot}
-          onClick={handleEnterClick}
-          aria-label="Entrer dans le vidéoclub"
-        >
-          <span className={styles.mobileEnterText}>Appuyez pour entrer</span>
-        </button>
-
-        {kioskButton(`${styles.kioskButton} ${styles.kioskButtonMobile}`)}
+        {/* Les deux choix, en bas de la fenêtre : chaque flèche pointe vers son objet */}
+        {isStorefrontShown && (
+          <div className={styles.mobileChoices}>
+            <button type="button" className={styles.mobileChoice} onClick={openKiosk}>
+              <svg className={styles.mobileChoiceArrow} viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M18 18 6 6M6 15V6h9" />
+              </svg>
+              <span className={styles.mobileChoiceLabel}>
+                <span className={styles.mobileChoiceTitle}>BORNE 24/7</span>
+                <span className={styles.mobileChoiceHint}>louer sans entrer</span>
+              </span>
+            </button>
+            <button type="button" className={`${styles.mobileChoice} ${styles.mobileChoiceDoor}`} onClick={handleEnterClick}>
+              <span className={styles.mobileChoiceLabel}>
+                <span className={styles.mobileChoiceTitle}>PORTE VIDÉOCLUB</span>
+                <span className={styles.mobileChoiceHint}>entrer</span>
+              </span>
+              <svg className={styles.mobileChoiceArrow} viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M6 18 18 6M9 6h9v9" />
+              </svg>
+            </button>
+          </div>
+        )}
 
         {/* Rideau noir, levé en fondu quand la devanture est affichée */}
         <div className={`${styles.curtain} ${isStorefrontShown ? styles.curtainOpen : ''}`} aria-hidden="true" />

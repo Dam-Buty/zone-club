@@ -44,3 +44,17 @@ test('ZOOM: la formule de l\'écran suit celle de KioskView.module.css', () => {
   assert.equal(kioskScreenBox(412, 915).width, 400);
   assert.equal(Math.round(kioskScreenBox(360, 640).width), Math.round((640 - 26) * 5 / 9));
 });
+
+test('DEVANTURE MOBILE: une scène porte l\'image et les zones, deux boutons en bas', () => {
+  const tsx = readFileSync(path.join(ROOT, 'src/components/exterior/ExteriorView.tsx'), 'utf8');
+  const css = readFileSync(path.join(ROOT, 'src/components/exterior/ExteriorView.module.css'), 'utf8');
+  const mobile = tsx.slice(tsx.indexOf('if (isStatic) {'), tsx.indexOf('// ===== DESKTOP'));
+  assert.ok(mobile.includes('styles.mobileStage') && tsx.includes('stageBox('), 'scène dimensionnée par stageBox');
+  assert.ok(mobile.includes('BORNE 24/7') && mobile.includes('PORTE VIDÉOCLUB'), 'les deux boutons');
+  assert.ok(!mobile.includes('kioskButtonMobile') && !mobile.includes('Appuyez pour entrer'), 'plus de bouton provisoire');
+  assert.ok(!mobile.includes('disabled'), 'pas de bouton désactivé');
+  assert.ok(!css.includes('backdrop-filter'), 'pas de backdrop-filter');
+  const barre = css.slice(css.indexOf('.mobileChoices'));
+  assert.ok(barre.includes('safe-area-inset-bottom'), 'la barre respecte l\'encoche');
+  assert.ok(tsx.includes("from '../../data/storefront-mobile.json'"), 'mise en page lue dans le fichier fabriqué');
+});
