@@ -153,8 +153,8 @@ deux ; chacune a sa géométrie et son dossier d'intermédiaire.
     **[R]**, validé le 18/11/2026. Le halo de survol et l'indicateur « PUSH ▼ » restent sur la plaque, recalés
     d'après la mise en page.
   - Un **indicateur flottant au-dessus de l'écran de la borne**, dans le style de « PUSH ▼ ». Libellé :
-    **« Borne Location »** **[R]** (18/11/2026, à la place de « LOUER ICI » proposé). La flèche « ▼ » et les capitales
-    de « PUSH ▼ » sont reprises pour que les deux indicateurs se répondent : « BORNE LOCATION ▼ ». **[C]**
+    **« BORNE LOCATION »**, en capitales **[R]** (18/11/2026, à la place de « LOUER ICI » proposé). La flèche « ▼ »
+    de « PUSH ▼ » est reprise pour que les deux indicateurs se répondent : « BORNE LOCATION ▼ ». **[C]**
 - **Le bouton provisoire disparaît**, avec son style.
 - **Zoom** (approche A) : au clic sur la borne, l'intention part tout de suite (GPU et chargements libérés), puis le
   bloc de la scène reçoit la transformation qui amène l'écran de la borne sur l'écran de l'interface du bureau ; la
