@@ -1,9 +1,9 @@
-// La devanture mobile : la scène calée sur l'image fabriquée, et le zoom vers l'écran de la borne.
+// Les devantures : la scène calée sur l'image fabriquée (mobile, bureau), et l'approche filmée vers l'écran de la borne.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { stageBox, kioskScreenBox, zoomTransform, choiceSpans, fitBox, kioskScreenBoxDesktop, approachTransform } from '../../src/components/exterior/storefront-layout.ts';
+import { stageBox, kioskScreenBox, choiceSpans, fitBox, kioskScreenBoxDesktop, approachTransform } from '../../src/components/exterior/storefront-layout.ts';
 
 const ROOT = path.resolve(import.meta.dirname, '../..');
 const L = JSON.parse(readFileSync(path.join(ROOT, 'src/data/storefront-mobile.json'), 'utf8'));
@@ -26,18 +26,7 @@ test('SCÈNE: sur téléphone, la borne et la porte sont visibles sur toute leur
   }
 });
 
-test('ZOOM: l\'écran de la borne arrive sur celui de l\'interface', () => {
-  for (const [vw, vh] of FENETRES.slice(0, 4)) {
-    const s = stageBox(L, vw, vh), k = kioskScreenBox(vw, vh), z = zoomTransform(L, vw, vh);
-    const gauche = s.left + z.x + z.scale * L.ecran.x0 * s.width;
-    const haut = s.top + z.y + z.scale * L.ecran.y0 * s.height;
-    const largeur = z.scale * (L.ecran.x1 - L.ecran.x0) * s.width;
-    assert.ok(Math.abs(gauche - k.left) < 0.5 && Math.abs(haut - k.top) < 0.5 && Math.abs(largeur - k.width) < 0.5, `${vw}x${vh}`);
-    assert.ok(z.scale > 3, 'c\'est bien un zoom');
-  }
-});
-
-test('ZOOM: la formule de l\'écran suit celle de KioskView.module.css', () => {
+test('APPROCHE MOBILE: la formule de l\'écran suit celle de KioskView.module.css', () => {
   const css = readFileSync(path.join(ROOT, 'src/components/kiosk/KioskView.module.css'), 'utf8');
   assert.ok(css.includes('min(100vw - 12px, calc((100dvh - var(--kiosk-reserve)) * 5 / 9))'), 'largeur de l\'écran');
   assert.ok(css.includes('--kiosk-reserve: 84px') && css.includes('max-height: 760px'), 'réserve');
@@ -48,7 +37,7 @@ test('ZOOM: la formule de l\'écran suit celle de KioskView.module.css', () => {
 test('DEVANTURE MOBILE: une scène porte l\'image et les zones, deux boutons en bas', () => {
   const tsx = readFileSync(path.join(ROOT, 'src/components/exterior/ExteriorView.tsx'), 'utf8');
   const css = readFileSync(path.join(ROOT, 'src/components/exterior/ExteriorView.module.css'), 'utf8');
-  const mobile = tsx.slice(tsx.indexOf('if (isStatic) {'), tsx.indexOf('// ===== DESKTOP'));
+  const mobile = tsx.slice(tsx.indexOf('if (isStatic) {'), tsx.indexOf('// ===== BUREAU'));
   assert.ok(mobile.includes('styles.mobileStage') && tsx.includes('stageBox('), 'scène dimensionnée par stageBox');
   assert.ok(mobile.includes('BORNE 24/7') && mobile.includes('PORTE VIDÉOCLUB'), 'les deux boutons');
   assert.ok(!mobile.includes('kioskButtonMobile') && !mobile.includes('Appuyez pour entrer'), 'plus de bouton provisoire');
@@ -59,27 +48,18 @@ test('DEVANTURE MOBILE: une scène porte l\'image et les zones, deux boutons en 
   assert.ok(tsx.includes("from '../../data/storefront-mobile.json'"), 'mise en page lue dans le fichier fabriqué');
 });
 
-test('ZOOM: câblage dans la devanture', () => {
+test('APPROCHE: câblage dans la devanture — l\'intention d\'abord, jamais de minuteur à l\'appui', () => {
   const tsx = readFileSync(path.join(ROOT, 'src/components/exterior/ExteriorView.tsx'), 'utf8');
   const app = readFileSync(path.join(ROOT, 'src/App.tsx'), 'utf8');
-  assert.ok(tsx.includes('onKioskIntent') && tsx.includes('zoomTransform('), 'intention à l\'appui, puis zoom');
-  assert.ok(tsx.includes('prefers-reduced-motion'), 'animations réduites');
-  assert.ok(tsx.includes('/storefront-borne-zoom.webp'), 'vue rapprochée');
   const ouvrir = tsx.slice(tsx.indexOf('const openKiosk = '), tsx.indexOf('const openKiosk = ') + 900);
   assert.ok(ouvrir.indexOf('isTransitioning') < ouvrir.indexOf('onKioskIntent'), 'le garde passe avant tout');
-  assert.ok(ouvrir.indexOf('onKioskIntent') < ouvrir.indexOf('onOpenKiosk'), 'le GPU est libéré avant l\'ouverture');
+  assert.ok(ouvrir.indexOf('onKioskIntent') < ouvrir.indexOf('film.start()'), 'le GPU est libéré avant le film');
+  assert.ok(ouvrir.indexOf('film.start()') < ouvrir.indexOf('onOpenKiosk'), 'sans film, la borne s\'ouvre aussitôt');
+  // Leçon du zoom (18/11/2026) : un minuteur de garde armé à l'appui tombait avant la fin de l'animation, le rendu
+  // qui la lance démontant aussi la scène 3D. Les minuteurs du film vivent dans son crochet, armés à la lecture.
+  assert.ok(!ouvrir.includes('setTimeout'), 'aucun minuteur armé dans le gestionnaire de l\'appui');
   const jsx = app.slice(app.indexOf('<ExteriorView'), app.indexOf('<ExteriorView') + 400);
   assert.ok(jsx.includes('onKioskIntent='), 'App branche l\'intention');
-});
-
-// Constaté à la vérification à l'écran (18/11/2026) : le rendu qui lance le zoom démonte aussi la scène 3D quand elle
-// était montée, ce qui prend plusieurs centaines de millisecondes. Compté depuis l'appui, le minuteur de garde tombait
-// avant la fin du zoom et le coupait.
-test('ZOOM: le minuteur de garde part avec le zoom, pas avec l\'appui', () => {
-  const tsx = readFileSync(path.join(ROOT, 'src/components/exterior/ExteriorView.tsx'), 'utf8');
-  const ouvrir = tsx.slice(tsx.indexOf('const openKiosk = '), tsx.indexOf('const openKiosk = ') + 900);
-  assert.ok(!ouvrir.includes('setTimeout'), 'aucun minuteur armé dans le gestionnaire de l\'appui');
-  assert.match(tsx, /useEffect\(\(\) => \{\s*if \(!kioskZoom\) return;[\s\S]{0,400}KIOSK_ZOOM_GUARD_MS/, 'armé dans un effet, une fois le zoom affiché');
 });
 
 // Relecture finale (18/11/2026) : page chargée dans une fenêtre de bureau, puis fenêtre rétrécie d'un coup sous 769 px —
@@ -92,16 +72,16 @@ test('SCÈNE: la fenêtre est suivie avant même que la devanture mobile soit af
   assert.ok(!tsx.slice(i - 160, i).includes('isStatic'), 'l\'écouteur n\'attend pas l\'image fixe');
 });
 
-// Décision de Rusmir du 16/11/2026 : « pas d'écran noir à l'ouverture de la borne ». Le voile qui termine le zoom
-// prend donc le fond de la borne (celui de KioskView et de son repli), pas du noir.
-test('ZOOM: le voile final est au fond de la borne, pas noir', () => {
+// Décision de Rusmir du 16/11/2026 : « pas d'écran noir à l'ouverture de la borne ». La borne apparaît en fondu sur
+// la devanture, restée dessous (App) ; et ce qui entoure le film, quand sa boîte bouge, a le fond de la page de la
+// borne, pas du noir.
+test('APPROCHE: pas de noir entre la devanture, le film et la borne', () => {
   const css = readFileSync(path.join(ROOT, 'src/components/exterior/ExteriorView.module.css'), 'utf8');
   const kiosk = readFileSync(path.join(ROOT, 'src/components/kiosk/KioskView.module.css'), 'utf8');
-  const fond = 'linear-gradient(180deg, #23213a 0%, #191827 40%, #14131f 100%)';
-  assert.ok(kiosk.includes(`background: ${fond};`), 'fond de la borne (KioskView.module.css, .root)');
-  const voile = css.slice(css.indexOf('.kioskVeil {'), css.indexOf('}', css.indexOf('.kioskVeil {')));
-  assert.ok(voile.includes(`background: ${fond};`), 'le voile reprend ce fond');
-  assert.ok(!voile.includes('#000'), 'pas de noir');
+  const autour = css.slice(css.indexOf('.containerFilm {'), css.indexOf('}', css.indexOf('.containerFilm {')));
+  assert.ok(autour.includes('background: #0d0c16') && kiosk.includes('#0d0c16'), 'fond de la page de la borne autour du film');
+  const app = readFileSync(path.join(ROOT, 'src/App.tsx'), 'utf8');
+  assert.match(app, /\(currentScene === 'exterior' \|\| kioskRevealing\)/, 'la devanture reste sous la borne le temps du fondu');
 });
 
 // Rusmir, 18/11/2026, sur les captures : « ok pour les deux boutons placés en bas, mais vu qu'ils occupent tout l'espace
@@ -146,23 +126,12 @@ test('BARRE: chaque bouton est sous son objet, à sa largeur', () => {
   assert.ok(Math.abs(c.porte.width - (L.porte.x1 - L.porte.x0) * s.width) < 0.5, `porte ${c.porte.width}`);
 });
 
-test('BARRE: le zoom part de l\'image relevée et arrive toujours sur l\'écran de l\'interface', () => {
-  for (const [vw, vh] of FENETRES.slice(0, 4)) {
-    const s = stageBox(L, vw, vh, BARRE), k = kioskScreenBox(vw, vh), z = zoomTransform(L, vw, vh, BARRE);
-    const gauche = s.left + z.x + z.scale * L.ecran.x0 * s.width;
-    const haut = s.top + z.y + z.scale * L.ecran.y0 * s.height;
-    const largeur = z.scale * (L.ecran.x1 - L.ecran.x0) * s.width;
-    assert.ok(Math.abs(gauche - k.left) < 0.5 && Math.abs(haut - k.top) < 0.5 && Math.abs(largeur - k.width) < 0.5, `${vw}x${vh}`);
-  }
-});
-
-test('BARRE: câblage — bande opaque sous l\'image, sa hauteur réservée à la scène et au zoom', () => {
+test('BARRE: câblage — bande opaque sous l\'image, sa hauteur réservée à la scène', () => {
   const tsx = readFileSync(path.join(ROOT, 'src/components/exterior/ExteriorView.tsx'), 'utf8');
   const css = readFileSync(path.join(ROOT, 'src/components/exterior/ExteriorView.module.css'), 'utf8');
   assert.ok(tsx.includes(`CHOICES_BAR_HEIGHT = ${BARRE}`), 'hauteur de la barre côté code');
   assert.ok(css.includes(`height: calc(${BARRE}px + env(safe-area-inset-bottom))`), 'même hauteur côté feuille de style, encoche en plus');
   assert.match(tsx, /stageBox\(LAYOUT, viewport\.w, viewport\.h, reserve\)/, 'la scène laisse la place de la barre');
-  assert.match(tsx, /zoomTransform\(LAYOUT, viewport\.w, viewport\.h, reserve\)/, 'le zoom part de la même scène');
   assert.ok(tsx.includes('choiceSpans('), 'boutons placés sous leurs objets');
   const barre = css.slice(css.indexOf('.mobileChoices {'), css.indexOf('}', css.indexOf('.mobileChoices {')));
   assert.ok(/background: #[0-9a-f]{6};/.test(barre) && !barre.includes('gradient') && !barre.includes('rgba'), 'bande opaque, plus de dégradé sur l\'image');
@@ -234,4 +203,27 @@ test('APPROCHE: câblage du bureau et apparition de la borne', () => {
   assert.match(tsx, /onKioskIntent\?\.\(\);[\s\S]{0,600}film\.start\(\)/, 'l\'intention part avant le film');
   assert.ok(tsx.includes('.pause()') && tsx.includes('film.skip'));
   assert.ok(app.includes('KIOSK_REVEAL_MS') && app.includes('kiosk-reveal'));
+});
+
+// ----- Le film d'approche sur la devanture mobile : il remplace le zoom (Rusmir, 18/11/2026) -----
+
+test('APPROCHE MOBILE: l\'écran filmé arrive sur l\'écran de l\'interface', () => {
+  for (const [vw, vh] of [[360, 640], [390, 844], [412, 915], [412, 700]]) {
+    const s = stageBox(L, vw, vh, 76), k = kioskScreenBox(vw, vh), e = L.approche.ecran, z = approachTransform(s, e, k);
+    assert.ok(Math.abs(s.left + z.x + z.scale * e.x0 * s.width - k.left) < 0.01 && Math.abs(s.top + z.y + z.scale * e.y0 * s.height - k.top) < 0.01);
+    assert.ok(Math.abs(z.scale * (e.y1 - e.y0) * s.height - k.height) / k.height < 0.03, `${vw}×${vh} : écran 5:9`);
+    assert.ok(z.scale > 0.75 && z.scale < 1.35, `${vw}×${vh} : petit ajustement (${z.scale})`);
+  }
+});
+
+test('APPROCHE MOBILE: câblage — le film remplace le zoom', () => {
+  const tsx = readFileSync(path.join(ROOT, 'src/components/exterior/ExteriorView.tsx'), 'utf8');
+  const css = readFileSync(path.join(ROOT, 'src/components/exterior/ExteriorView.module.css'), 'utf8');
+  const lay = readFileSync(path.join(ROOT, 'src/components/exterior/storefront-layout.ts'), 'utf8');
+  for (const mort of ['kioskZoom', 'closeUpReady', 'CLOSE_UP_SRC', 'storefront-borne-zoom', 'KIOSK_ZOOM_GUARD_MS', 'kioskVeil']) assert.ok(!tsx.includes(mort), mort);
+  assert.ok(!css.includes('.mobileCloseUp') && !css.includes('.kioskVeil') && !css.includes('.mobileStageZoom'));
+  assert.ok(!lay.includes('zoomTransform'));
+  assert.ok(tsx.includes('approachTransform(stage, LAYOUT.approche.ecran, kioskTarget)'));
+  assert.match(tsx, /\(min-width: 769px\) and \(pointer: fine\)[\s\S]{0,200}kioskScreenBoxDesktop\([\s\S]{0,120}kioskScreenBox\(/, 'sans WebGL sur un bureau, la cible est l\'écran PC de l\'interface');
+  assert.ok(tsx.includes('mobileChoicesLeaving'), 'la barre des boutons s\'efface pendant le film');
 });

@@ -1,6 +1,6 @@
 // Géométrie des devantures : où poser l'image dans la fenêtre (mobile : rognée autour de la borne et
-// de la porte ; bureau : entière), et comment zoomer vers l'écran de la borne. Fonctions pures, sans
-// aucun import de valeur : les tests `node --test` les chargent telles quelles.
+// de la porte ; bureau : entière), et où amener l'écran de la borne à la fin du film d'approche.
+// Fonctions pures, sans aucun import de valeur : les tests `node --test` les chargent telles quelles.
 //
 // Les positions viennent de la fabrique des images (`tools/devanture-borne/fabrique.sh`), qui écrit
 // `src/data/storefront-mobile.json` et `src/data/storefront-desktop.json` : tout y est en fractions
@@ -22,9 +22,7 @@ export interface StorefrontLayout {
   groupe: { cx: number; cy: number };
   /** Le film d'approche de la borne : son fichier, sa taille, sa durée (s), et où est l'écran de la
       borne dans sa DERNIÈRE image (fractions du cadre du film, qui a le format de l'image). */
-  approche?: { src: string; w: number; h: number; duree: number; images: number; octets: number; ecran: Rect };
-  /** Mobile seulement : zone couverte par la vue rapprochée (`/storefront-borne-zoom.webp`), et sa taille en pixels. */
-  zoom?: Rect & { w: number; h: number };
+  approche: { src: string; w: number; h: number; duree: number; images: number; octets: number; ecran: Rect };
 }
 
 export interface Box { left: number; top: number; width: number; height: number }
@@ -107,21 +105,6 @@ export function kioskScreenBox(vw: number, vh: number): Box {
     top: short ? KIOSK_TOP_SHORT : KIOSK_TOP_TALL,
     width,
     height: width / KIOSK_SCREEN_RATIO,
-  };
-}
-
-/**
- * Transformation CSS de la scène (`transform-origin: 0 0`, soit `translate(x, y) scale(scale)`)
- * qui amène l'écran de la borne sur celui de l'interface (`kioskScreenBox`).
- */
-export function zoomTransform(layout: StorefrontLayout, vw: number, vh: number, reserveBottom = 0): { scale: number; x: number; y: number } {
-  const stage = stageBox(layout, vw, vh, reserveBottom);
-  const target = kioskScreenBox(vw, vh);
-  const scale = target.width / ((layout.ecran.x1 - layout.ecran.x0) * stage.width);
-  return {
-    scale,
-    x: target.left - stage.left - scale * layout.ecran.x0 * stage.width,
-    y: target.top - stage.top - scale * layout.ecran.y0 * stage.height,
   };
 }
 

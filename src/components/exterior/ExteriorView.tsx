@@ -3,7 +3,7 @@ import { ExteriorScene } from './scene/ExteriorScene';
 import { DoorBlockedNotice } from './DoorBlockedNotice';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { releaseInteriorPreload } from '../../utils/interior-preload-gate';
-import { approachTransform, choiceSpans, fitBox, kioskScreenBoxDesktop, stageBox, zoomTransform, type Rect, type StorefrontLayout } from './storefront-layout';
+import { approachTransform, choiceSpans, fitBox, kioskScreenBox, kioskScreenBoxDesktop, stageBox, type Rect, type StorefrontLayout } from './storefront-layout';
 import { useApproachFilm } from './useApproachFilm';
 import storefrontLayout from '../../data/storefront-mobile.json';
 import desktopLayout from '../../data/storefront-desktop.json';
@@ -11,7 +11,7 @@ import styles from './ExteriorView.module.css';
 
 // Où sont la borne, son écran et la porte dans l'image de chaque devanture (mobile, bureau). Écrit
 // par la fabrique des images (tools/devanture-borne/fabrique.sh) : jamais retouché à la main.
-const LAYOUT = storefrontLayout satisfies StorefrontLayout;
+const LAYOUT: StorefrontLayout = storefrontLayout;
 const LAYOUT_DESKTOP: StorefrontLayout = desktopLayout;
 // Le film d'approche se fond sur la devanture en 150 ms (feuille de style) ; une fois ce fondu
 // passé, la scène animée, désormais cachée dessous, est mise en pause.
@@ -26,13 +26,6 @@ const zoneStyle = (r: Rect) => ({
   width: `${(r.x1 - r.x0) * 100}%`,
   height: `${(r.y1 - r.y0) * 100}%`,
 });
-
-// Vue rapprochée de l'écran de la borne, fondue sur la scène pendant le zoom (même fabrique).
-const CLOSE_UP_SRC = '/storefront-borne-zoom.webp';
-// Le zoom dure 900 ms (durées dans la feuille de style). Si sa fin ne nous parvient pas — onglet
-// passé en arrière-plan, transition coupée —, la borne s'ouvre quand même à cette échéance,
-// comptée depuis l'affichage du zoom.
-const KIOSK_ZOOM_GUARD_MS = 1200;
 
 // Hauteur de la barre des deux boutons, sous l'image (même valeur dans la feuille de style, qui y
 // ajoute l'encoche du bas : la hauteur réelle est relue sur la barre elle-même).
@@ -50,7 +43,7 @@ const DOOR_NOTICE_SECONDS = 15;
 
 interface ExteriorViewProps {
   onEnter: () => void;
-  /** Ouvre la borne de location. Appelé à la fin du film d'approche (bureau) ou du zoom (mobile). */
+  /** Ouvre la borne de location. Appelé à la fin du film d'approche, ou tout de suite s'il ne peut pas jouer. */
   onOpenKiosk: () => void;
   /** Le visiteur vient d'appuyer sur la borne : appelé tout de suite, avant toute animation. */
   onKioskIntent?: () => void;
@@ -105,34 +98,19 @@ export function ExteriorView({ onEnter, onOpenKiosk, onKioskIntent, canEnter, on
   const stage = stageBox(LAYOUT, viewport.w, viewport.h, reserve);
   const choices = choiceSpans(LAYOUT, stage, viewport.w);
 
-  // Zoom vers l'écran de la borne : la transformation donnée à la scène, et si la vue rapprochée
-  // était décodée à l'appui (sinon le zoom part sans elle). Non nul = le zoom est parti.
-  const [kioskZoom, setKioskZoom] = useState<{ transform: string; closeUp: boolean } | null>(null);
-  const [closeUpReady, setCloseUpReady] = useState(false);
-  const kioskOpenedRef = useRef(false);
-
-  // La vue rapprochée n'est demandée qu'une fois la devanture affichée : elle ne retarde rien.
-  useEffect(() => {
-    if (!isStatic || !isStorefrontShown) return;
-    let cancelled = false;
-    const img = new Image();
-    img.src = CLOSE_UP_SRC;
-    img.decode().then(() => { if (!cancelled) setCloseUpReady(true); }, () => {});
-    return () => { cancelled = true; };
-  }, [isStatic, isStorefrontShown]);
-
 
   // Bureau : la boîte de l'image dans la fenêtre (l'image entière, bandes noires autour). La scène
   // animée y dessine la devanture ; les zones cliquables et les indicateurs s'y posent.
   const contentBox = fitBox(LAYOUT_DESKTOP.image, viewport.w, viewport.h);
 
-  // Le film d'approche de la borne (bureau) : téléchargé une fois la devanture affichée, lancé au
-  // clic sur la borne ; à son arrivée la borne s'ouvre, sur l'écran filmé.
-  const approach = LAYOUT_DESKTOP.approche;
+  // Le film d'approche de la borne — celui de la devanture affichée (mobile ou bureau) : téléchargé
+  // une fois la devanture à l'écran, lancé au choix de la borne ; à son arrivée la borne s'ouvre,
+  // sur l'écran filmé.
+  const approach = (isStatic ? LAYOUT : LAYOUT_DESKTOP).approche;
   const film = useApproachFilm({
-    url: isStatic ? undefined : approach?.src,
-    durationMs: (approach?.duree ?? 0) * 1000,
-    load: isStorefrontShown && !isStatic,
+    url: approach.src,
+    durationMs: approach.duree * 1000,
+    load: isStorefrontShown,
     onArrive: onOpenKiosk,
   });
   const filmPlaying = film.phase === 'playing';
@@ -207,8 +185,8 @@ export function ExteriorView({ onEnter, onOpenKiosk, onKioskIntent, canEnter, on
 
   const handleEnterClick = () => {
     // Le bouton existe déjà sous le rideau (clavier, lecteur d'écran) : pas d'entrée à l'aveugle.
-    // Et le film ou le zoom vers la borne est parti : jamais la borne puis le vidéoclub.
-    if (!isStorefrontShown || kioskZoom || film.phase !== 'idle') return;
+    // Et le film vers la borne est parti : jamais la borne puis le vidéoclub.
+    if (!isStorefrontShown || film.phase !== 'idle') return;
     // Le vidéoclub ne peut pas s'ouvrir ici : la porte explique pourquoi et propose la borne.
     if (!canEnter) {
       setIsDoorBlocked(true);
@@ -225,41 +203,18 @@ export function ExteriorView({ onEnter, onOpenKiosk, onKioskIntent, canEnter, on
 
   // Porte poussée : la transition vers le vidéoclub est partie, la borne ne s'ouvre plus (elle
   // s'ouvrait, puis le visiteur était emmené à l'intérieur 0,7 s plus tard).
-  // Fin du zoom (ou échéance de garde) : la borne s'ouvre, une seule fois.
-  const finishKioskZoom = useCallback(() => {
-    if (kioskOpenedRef.current) return;
-    kioskOpenedRef.current = true;
-    onOpenKiosk();
-  }, [onOpenKiosk]);
-
-  // Le minuteur de garde est armé une fois le zoom affiché, pas à l'appui : le rendu qui lance le
-  // zoom démonte aussi la scène 3D, ce qui peut prendre plusieurs centaines de millisecondes —
-  // compté depuis l'appui, il tombait avant la fin du zoom et le coupait.
-  useEffect(() => {
-    if (!kioskZoom) return;
-    const guard = window.setTimeout(finishKioskZoom, KIOSK_ZOOM_GUARD_MS);
-    return () => window.clearTimeout(guard);
-  }, [kioskZoom, finishKioskZoom]);
-
   const openKiosk = () => {
     // Une seule transition : ni double appui, ni borne après la porte, ni appui sous le rideau.
-    if (isTransitioning || kioskZoom || film.phase !== 'idle' || !isStorefrontShown) return;
+    if (isTransitioning || film.phase !== 'idle' || !isStorefrontShown) return;
     // Dès l'appui : le GPU et les chargements du vidéoclub sont libérés, avant toute animation.
     onKioskIntent?.();
-    // Bureau : le film d'approche. S'il ne peut pas partir (pas encore téléchargé, animations
-    // réduites), la borne s'ouvre tout de suite : elle ne se fait jamais attendre.
-    if (!isStatic) {
-      if (!film.start()) onOpenKiosk();
-      return;
-    }
-    // Mobile, animations réduites : pas de zoom.
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      onOpenKiosk();
-      return;
-    }
-    const z = zoomTransform(LAYOUT, viewport.w, viewport.h, reserve);
-    setKioskZoom({ transform: `translate(${z.x}px, ${z.y}px) scale(${z.scale})`, closeUp: closeUpReady });
+    // Le film d'approche. S'il ne peut pas partir (pas encore téléchargé, animations réduites), la
+    // borne s'ouvre tout de suite : elle ne se fait jamais attendre.
+    if (!film.start()) onOpenKiosk();
   };
+
+  // Pendant le film, un appui n'importe où mène directement à l'arrivée.
+  const skipFilm = film.phase !== 'idle' ? film.skip : undefined;
 
   const doorNotice = isDoorBlocked && (
     <DoorBlockedNotice
@@ -272,14 +227,28 @@ export function ExteriorView({ onEnter, onOpenKiosk, onKioskIntent, canEnter, on
 
   // ===== MOBILE (ou repli sans WebGL) : la devanture fabriquée, la borne à côté de la porte =====
   if (isStatic) {
+    // Pendant le film, la scène glisse de sa place vers celle où l'écran filmé de la dernière image
+    // coïncide avec l'écran de l'interface. Sur un bureau retombé sur l'image fixe (pas de WebGL),
+    // l'interface garde son gabarit PC : c'est son écran-là qu'il faut viser.
+    const kioskTarget = filmPlaying && window.matchMedia('(min-width: 769px) and (pointer: fine)').matches
+      ? kioskScreenBoxDesktop(viewport.w, viewport.h)
+      : kioskScreenBox(viewport.w, viewport.h);
+    const stageShift = filmPlaying ? approachTransform(stage, LAYOUT.approche.ecran, kioskTarget) : null;
     return (
-      <div className={`${styles.container} ${styles.mobileContainer} ${isTransitioning ? styles.fadeOut : ''}`}>
+      <div
+        className={`${styles.container} ${styles.mobileContainer} ${isTransitioning ? styles.fadeOut : ''} ${filmPlaying ? styles.containerFilm : ''}`}
+        onClick={skipFilm}
+      >
         {/* La scène : l'image et tout ce qui s'y accroche */}
         <div
-          className={`${styles.mobileStage} ${kioskZoom ? styles.mobileStageZoom : ''}`}
-          style={{ left: stage.left, top: stage.top, width: stage.width, height: stage.height, transform: kioskZoom?.transform }}
-          onTransitionEnd={(e) => {
-            if (e.target === e.currentTarget && e.propertyName === 'transform') finishKioskZoom();
+          className={`${styles.mobileStage} ${filmPlaying ? styles.mobileStageFilm : ''}`}
+          style={{
+            left: stage.left,
+            top: stage.top,
+            width: stage.width,
+            height: stage.height,
+            transform: stageShift ? `translate(${stageShift.x}px, ${stageShift.y}px) scale(${stageShift.scale})` : undefined,
+            transitionDuration: stageShift ? `${LAYOUT.approche.duree}s` : undefined,
           }}
         >
           <picture>
@@ -293,17 +262,17 @@ export function ExteriorView({ onEnter, onOpenKiosk, onKioskIntent, canEnter, on
             />
           </picture>
 
-          {/* La vue rapprochée de l'écran : en place et invisible, fondue pendant le zoom */}
-          {closeUpReady && (
-            <img
-              src={CLOSE_UP_SRC}
-              alt=""
-              aria-hidden="true"
-              className={`${styles.mobileCloseUp} ${kioskZoom?.closeUp ? styles.mobileCloseUpShown : ''}`}
-              style={zoneStyle(LAYOUT.zoom)}
-              draggable={false}
-            />
-          )}
+          {/* Le film d'approche : en place et invisible, calé sur l'image ; il se fond dès sa
+              première image affichée. Muet, servi par le site. */}
+          <video
+            ref={film.videoRef}
+            src={film.src ?? undefined}
+            className={`${styles.approachFilm} ${filmPlaying ? styles.approachFilmShown : ''}`}
+            muted
+            playsInline
+            preload="auto"
+            aria-hidden="true"
+          />
 
           {/* La borne entière et la porte entière répondent à l'appui. Hors de l'ordre de
               tabulation : au clavier, ce sont les deux boutons du bas qui servent. */}
@@ -338,7 +307,7 @@ export function ExteriorView({ onEnter, onOpenKiosk, onKioskIntent, canEnter, on
         {/* Les deux choix, dans une bande sous l'image : chaque bouton est sous son objet, à sa
             largeur, et sa flèche pointe vers lui. Présente dès le montage (sa hauteur est réservée
             à la scène) ; sous le rideau, ses boutons ne font rien. */}
-        <div ref={choicesRef} className={`${styles.mobileChoices} ${kioskZoom ? styles.mobileChoicesLeaving : ''}`}>
+        <div ref={choicesRef} className={`${styles.mobileChoices} ${filmPlaying ? styles.mobileChoicesLeaving : ''}`}>
           <button
             type="button"
             className={styles.mobileChoice}
@@ -376,9 +345,6 @@ export function ExteriorView({ onEnter, onOpenKiosk, onKioskIntent, canEnter, on
 
         {/* Transition overlay */}
         {isTransitioning && <div className={styles.transitionOverlay} />}
-
-        {/* Fin du zoom vers la borne : un voile au fond de la borne monte, la borne s'ouvre derrière */}
-        {kioskZoom && <div className={styles.kioskVeil} aria-hidden="true" />}
       </div>
     );
   }
@@ -388,13 +354,13 @@ export function ExteriorView({ onEnter, onOpenKiosk, onKioskIntent, canEnter, on
   const screen = LAYOUT_DESKTOP.ecran;
   // Pendant le film, sa boîte glisse de celle de la devanture vers celle où l'écran filmé de la
   // dernière image coïncide avec l'écran de l'interface.
-  const filmShift = filmPlaying && approach
+  const filmShift = filmPlaying
     ? approachTransform(contentBox, approach.ecran, kioskScreenBoxDesktop(viewport.w, viewport.h))
     : null;
   return (
     <div
       className={`${styles.container} ${isTransitioning ? styles.fadeOut : ''} ${filmPlaying ? styles.containerFilm : ''}`}
-      onClick={film.phase !== 'idle' ? film.skip : undefined}
+      onClick={skipFilm}
     >
       {/* WebGL Canvas Container */}
       <div ref={containerRef} className={`${styles.canvasContainer} ${sceneHidden ? styles.canvasHidden : ''}`} />
@@ -409,7 +375,7 @@ export function ExteriorView({ onEnter, onOpenKiosk, onKioskIntent, canEnter, on
           width: contentBox.width,
           height: contentBox.height,
           transform: filmShift ? `translate(${filmShift.x}px, ${filmShift.y}px) scale(${filmShift.scale})` : undefined,
-          transitionDuration: filmShift && approach ? `${approach.duree}s` : undefined,
+          transitionDuration: filmShift ? `${approach.duree}s` : undefined,
         }}
       >
         {/* Le film d'approche : en place et invisible, calé sur l'image ; il se fond dès sa

@@ -72,7 +72,11 @@ export function useApproachFilm({ url, durationMs, load, onArrive }: ApproachFil
       .catch(() => {});
     return () => {
       cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      // La devanture change (mobile ↔ bureau) ou s'en va : ce film-là n'est plus jouable.
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+        setSrc(null);
+      }
     };
   }, [load, url]);
 
