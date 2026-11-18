@@ -95,3 +95,35 @@ test('VARIANTES: la géométrie du mobile porte ses réglages de pluie, de fond 
   assert.equal(g.facade.ecran_image, 'gyro-face.png');
   assert.deepEqual(g.pluie, { densite: 0.00016, longueur: [10, 34], pente: 0.06, force: [0.05, 0.22], epaisseur: 1, flou: 0.6 });
 });
+
+// ----- La devanture du bureau (livraison B) -----
+
+function tailleJpeg(buf) {                // premier marqueur SOF0..SOF2 : hauteur puis largeur
+  for (let i = 2; i < buf.length;) {
+    const m = buf[i + 1], n = buf.readUInt16BE(i + 2);
+    if (m >= 0xc0 && m <= 0xc2) return [buf.readUInt16BE(i + 7), buf.readUInt16BE(i + 5)];
+    i += 2 + n;
+  }
+  throw new Error('JPEG sans SOF');
+}
+
+test('BUREAU: sources, géométrie et mise en page', () => {
+  for (const f of ['geometrie-bureau.json', 'fond_bureau.py', 'sources/storefront-bureau.jpeg', 'sources/ecran-bureau.png']) assert.ok(existsSync(path.join(T, f)), f);
+  const g = JSON.parse(readFileSync(path.join(T, 'geometrie-bureau.json'), 'utf8'));
+  assert.deepEqual([g.sortie.w, g.sortie.h, g.sortie.px_par_m], [5782, 3072, 1104]);
+  assert.equal(g.borne.ecart_porte_m, 0.16);
+  assert.equal(g.site.zoom, undefined);
+  const L = JSON.parse(readFileSync(path.join(ROOT, 'src/data/storefront-desktop.json'), 'utf8'));
+  assert.deepEqual([L.image.w, L.image.h], [5782, 3072]);
+  const dans = (a, b) => a.x0 >= b.x0 && a.x1 <= b.x1 && a.y0 >= b.y0 && a.y1 <= b.y1;
+  assert.ok(dans(L.ecran, L.borne) && L.borne.x1 < L.porte.x0);
+  const ratio = ((L.ecran.y1 - L.ecran.y0) * L.image.h) / ((L.ecran.x1 - L.ecran.x0) * L.image.w);
+  assert.ok(Math.abs(ratio - 3 / 2) < 0.03, `écran 2:3, mesuré ${ratio}`);
+  assert.ok(L.push.x > L.porte.x0 && L.push.x < L.porte.x1 && L.zoom === undefined);
+  assert.ok(Math.abs(L.borne.x0 * 5782 - 91) < 6 && Math.abs(L.ecran.x0 * 5782 - 679) < 6 && Math.abs(L.ecran.y0 * 3072 - 1817) < 6, 'positions de l\'essai validé');
+});
+
+test('BUREAU: la devanture du site a le format de sa mise en page', () => {
+  const [w, h] = tailleJpeg(readFileSync(path.join(ROOT, 'public/storefront.jpeg')));
+  assert.deepEqual([w, h], [2102, 1117]);
+});

@@ -1035,8 +1035,8 @@ def pose_reverbere():
 from bpy_extras.object_utils import world_to_camera_view as vers_image  # noqa: E402
 
 SITE = G.get('site', {})
-ZOOM = SITE.get('zoom', {'ecran_px': 780, 'largeur_en_ecrans': 2, 'hauteur_en_ecrans': 3})
-ZOOM_W, ZOOM_H = ZOOM['ecran_px'] * ZOOM['largeur_en_ecrans'], ZOOM['ecran_px'] * ZOOM['hauteur_en_ecrans']
+ZOOM = SITE.get('zoom')              # la vue rapprochée : seulement pour les variantes qui en ont une
+ZOOM_W, ZOOM_H = (ZOOM['ecran_px'] * ZOOM['largeur_en_ecrans'], ZOOM['ecran_px'] * ZOOM['hauteur_en_ecrans']) if ZOOM else (0, 0)
 
 
 def cadre(points):
@@ -1067,13 +1067,15 @@ def mise_en_page():
     porte_ = {'x0': R['door_left_x'] / W, 'y0': MUR['porte_px']['haut'] / H, 'x1': R['door_right_x'] / W, 'y1': 1.0}
     kp = PPM / G['photo']['px_par_m']
     push_x, push_y = G['photo']['plaque_push_px']
-    wz, hz, bx, by = zone_zoom(ecran_)
-    return {
+    mise = {
         'image': {'w': W, 'h': H}, 'borne': borne_, 'ecran': ecran_, 'porte': porte_,
         'push': {'x': (R['photo_x0'] + push_x * kp) / W, 'y': (R['photo_y0'] + push_y * kp) / H},
         'groupe': {'cx': (borne_['x0'] + porte_['x1']) / 2, 'cy': SITE.get('groupe_cy', 0.72)},
-        'zoom': {'x0': bx / wz, 'y0': by / hz, 'x1': (bx + ZOOM_W) / wz, 'y1': (by + ZOOM_H) / hz, 'w': ZOOM_W, 'h': ZOOM_H},
     }
+    if ZOOM:
+        wz, hz, bx, by = zone_zoom(ecran_)
+        mise['zoom'] = {'x0': bx / wz, 'y0': by / hz, 'x1': (bx + ZOOM_W) / wz, 'y1': (by + ZOOM_H) / hz, 'w': ZOOM_W, 'h': ZOOM_H}
+    return mise
 
 
 MISE = mise_en_page()
@@ -1084,7 +1086,7 @@ if PASSE == 'borne':
           '| écran', [round(MISE['ecran'][c_] * (W if c_[0] == 'x' else H)) for c_ in ('x0', 'y0', 'x1', 'y1')],
           '| porte', [round(MISE['porte'][c_] * (W if c_[0] == 'x' else H)) for c_ in ('x0', 'y0', 'x1', 'y1')],
           '| push', round(MISE['push']['x'] * W), round(MISE['push']['y'] * H),
-          '| zoom', [round(MISE['zoom'][c_] * (W if c_[0] == 'x' else H)) for c_ in ('x0', 'y0', 'x1', 'y1')])
+          '| zoom', [round(MISE['zoom'][c_] * (W if c_[0] == 'x' else H)) for c_ in ('x0', 'y0', 'x1', 'y1')] if ZOOM else 'aucun')
 
 if PASSE == 'zoom':
     # Même caméra, même scène : seule la zone de la vue rapprochée est rendue, à l'échelle où l'écran fait ecran_px

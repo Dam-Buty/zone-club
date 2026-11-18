@@ -1,0 +1,202 @@
+{
+ "_": "Devanture du bureau avec la borne (validée par Rusmir le 18/11/2026). La photo d'origine (5632 × 3072) est élargie de elargissement_px de mur à gauche ; sous couture_px, l'image glisse de decalage_px + elargissement_px vers la droite.",
+ "fond": "fond_bureau.py",
+ "sortie": {
+  "w": 5782,
+  "h": 3072,
+  "px_par_m": 1104
+ },
+ "photo": {
+  "fichier": "storefront-bureau.jpeg",
+  "px_par_m": 1104,
+  "decalage_px": 747,
+  "couture_px": 866,
+  "porte_px": [
+   590,
+   1864,
+   916
+  ],
+  "barre_de_poussee_px": 2570,
+  "hauteur_barre_m": 1.0,
+  "_": "Échelle : barre de poussée (1,0 m, ligne 2570) et milieu du « 24/7 » de la porte (2,247 m, ligne 1193) → 1104 px/m. porte_px : bords gauche et droit du cadre, haut du cadre (photo d'origine). decalage_px : 747 = bord droit de l'image dans l'intervalle entre les affiches « Scream » et « The Shining » (x 4876-4893 de la photo) ; il reste 8 cm de mur à gauche de la borne. couture_px : sous cette ligne (juste au-dessus du cadre de la vitrine) l'image glisse ; au-dessus, l'enseigne VIDEOCLUB ne bouge pas.",
+  "plaque_push_px": [
+   1692,
+   2290
+  ],
+  "elargissement_px": 150,
+  "_elargissement": "Rusmir, 18/11/2026 (« go pour B ») : l'image est élargie de 150 px de mur à gauche (format 5782 × 3072 = 1,882 au lieu de 1,833), sans rien couper de plus à droite ; l'enseigne VIDEOCLUB reste centrée (sa bande glisse de 75 px)."
+ },
+ "camera": {
+  "distance_mur_m": 6.0,
+  "hauteur_oeil_m": 1.5,
+  "axe_px": 3713,
+  "_": "L'appareil de la photo d'origine : au milieu de la photo (colonne 2816), donc colonne 3713 de la nouvelle image."
+ },
+ "borne": {
+  "largeur_m": 1.05,
+  "hauteur_m": 2.05,
+  "profondeur_m": 0.55,
+  "ecart_porte_m": 0.16,
+  "saillie_m": 0.1,
+  "_": "Encastrée dans le mur (Rusmir, 18/11/2026) : seule la saillie dépasse du mur ; le corps (profondeur_m) continue derrière.",
+  "_ecart": "Rusmir, 18/11/2026, sur l'essai 2 : « la borne est trop collée à la porte, alors qu'on voit le mur derrière éloigné de 10 cm de plus sur la gauche en profondeur dans le vidéoclub » — la borne est encastrée, son corps continue derrière la façade : il ne peut pas se trouver là où l'on voit l'intérieur du vidéoclub. 16 cm entre la borne et le cadre de la porte (6 cm avant)."
+ },
+ "toit_m": null,
+ "enseigne": {
+  "lignes_photo": [
+   250,
+   700
+  ],
+  "agrandissement": 1.3
+ },
+ "facade": {
+  "ecran_image": "ecran-bureau.png",
+  "_": "Façade en coordonnées locales (m) : x de -0,525 (gauche) à +0,525, z depuis le sol. Rectangles [x0, x1, z0, z1]. Ajouté le 17/11 au soir (paiement CB). Le 17/11 au soir : lecteur 85 × 45 mm (fente 60 mm, la carte entre par son petit côté de 54 mm), pavé inox 95 × 90 mm à touches de 17 mm (fiches de pavés 16 touches : 81 à 100 mm), étiquette CB +30 %. Le 18/11 : bloc de l'écran descendu de 10 cm (Rusmir : écran trop haut), son haut aligné sur le vitrage visible de la vitrine de gauche.",
+  "vitrine_g": [
+   -0.47,
+   -0.19,
+   0.3,
+   1.745
+  ],
+  "boitier": [
+   -0.06,
+   0.4,
+   0.78,
+   1.7
+  ],
+  "ecran": [
+   -0.01,
+   0.35,
+   1.14,
+   1.68
+  ],
+  "etiquette_cb": [
+   -0.055,
+   0.14,
+   1.068,
+   1.1252
+  ],
+  "lecteur_cb": [
+   0.0,
+   0.085,
+   1.015,
+   1.06
+  ],
+  "clavier": [
+   0.1925,
+   0.2875,
+   0.985,
+   1.075
+  ],
+  "fente": [
+   0.05,
+   0.28,
+   0.855,
+   0.89
+  ],
+  "etiquette_fente": [
+   0.08,
+   0.25,
+   0.815,
+   0.8405
+  ],
+  "vitrine_d": [
+   -0.06,
+   0.4,
+   0.3,
+   0.72
+  ],
+  "bandeau": [
+   -0.47,
+   0.47,
+   1.86,
+   2.0
+  ],
+  "afficheur": [
+   0.083,
+   0.247,
+   0.92,
+   0.952
+  ]
+ },
+ "enseigne_borne": {
+  "_": "Néon « Borne 24/7 » au-dessus de la borne (Rusmir, 18/11/2026) : un vrai néon en verre — deux tubes continus (« BORNE », « 24/7 ») en série, liaisons occultées entre les lettres, passages derrière aux croisements, électrodes et fils. Écriture validée, en capitales (les minuscules r et n se confondaient) ; ni cadre ni panneau.",
+  "texte": "BORNE 24/7",
+  "police": "/System/Library/Fonts/Supplemental/SignPainter.ttc",
+  "police_index": 0,
+  "largeur_texte_m": 0.97,
+  "tube_diam_m": 0.012,
+  "ecarts": {
+   "9": 0.075
+  },
+  "emission": 16.0,
+  "halo": 0.2,
+  "couleur_lumiere": [
+   0.9,
+   0.12,
+   1.0
+  ],
+  "alignement": "Le « 24/7 » est centré en hauteur sur celui de « Open 24/7 » (2,247 m, mesuré sur la photo) — Rusmir, 18/11/2026.",
+  "face_m": 0.046,
+  "hauteur_247_m": 2.2473,
+  "exposition_gaz": 14.0,
+  "profil_gaz": 3.0,
+  "couleur_gaz": [
+   1.0,
+   0.16,
+   0.85
+  ]
+ },
+ "mur": {
+  "_": "Passe « mur » (lancer de rayons) : ce que le mur mouillé renvoie du néon et d'un réverbère, ajouté au mur de la photo.",
+  "albedo": [
+   0.014,
+   0.004,
+   0.16
+  ],
+  "rugosite_sec": 0.17,
+  "rugosite_mouille": 0.09,
+  "gain": 1.0,
+  "porte_px": {
+   "gauche": 1472,
+   "haut": 916
+  },
+  "reverbere": {
+   "_": "Blanc chaud, comme le reflet de la vitre de l'écran. Position : X depuis le centre de la porte, Y depuis le mur (négatif = côté rue), Z hauteur.",
+   "position_m": [
+    -9.4,
+    -24.0,
+    5.1
+   ],
+   "diametre_m": 0.5,
+   "puissance_w": 50,
+   "couleur": [
+    1.0,
+    0.95,
+    0.84
+   ]
+  },
+  "relief": 0.05,
+  "reflet": 0.2,
+  "zone_px": [
+   0,
+   1650,
+   800,
+   2300
+  ],
+  "_zone": "zone_px : x0, x1, y0, y1 de la passe « mur » dans l'image (le mur autour de l'enseigne de la borne)."
+ },
+ "_pluie": "La pluie figée que compo.py fait tomber devant la borne, à l'échelle de la photo : densité par pixel, longueur des traînées (px), pente, force, épaisseur (px), flou (px).",
+ "pluie": {
+  "densite": 0.00006,
+  "longueur": [22, 80],
+  "pente": 0.05,
+  "force": [0.08, 0.36],
+  "epaisseur": 2,
+  "flou": 1.1
+ },
+ "site": {
+  "_": "Ce que le site lit (borne.py → travail-bureau/mise-en-page.json → src/data/storefront-desktop.json). groupe_cy : sans effet sur le bureau (l'image tient entière dans la fenêtre), gardé pour que les deux mises en page aient les mêmes champs.",
+  "groupe_cy": 0.72
+ }
+}
