@@ -1,5 +1,6 @@
 import { db } from "./db";
 import { findFinishedCastSessions } from "./cast-completion";
+import { markWatchStarted } from "./rental-marks";
 
 interface CastSession {
   id: number;
@@ -36,6 +37,9 @@ export function createCastSession(
       "SELECT id FROM rentals WHERE user_id = ? AND film_id = ? AND is_active = 1 ORDER BY id DESC LIMIT 1",
     )
     .get(userId, filmId) as { id: number } | undefined;
+
+  // Un film lancé directement sur la TV compte comme lancé (garde de temps des critiques).
+  if (rental) markWatchStarted(db, rental.id);
 
   const result = db
     .prepare(

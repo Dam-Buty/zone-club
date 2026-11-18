@@ -1,4 +1,5 @@
 import { db } from './db';
+import { markWatchStarted } from './rental-marks';
 import { createRentalSymlinks, deleteRentalSymlinks, getStreamingUrl, isDirectMediaUrl } from './symlinks';
 import { getFilmById, getFilmTier, parseFilm, type Film } from './films';
 import { RENTAL_COSTS, RENTAL_DURATIONS } from '../src/types';
@@ -320,6 +321,9 @@ export function updateWatchProgress(userId: number, filmId: number, progress: nu
 
     if (!rental) throw new Error('Location active non trouvée');
 
+    // Premier lancement : noté avant toute écriture de position ou de progression (voir rental-marks.ts).
+    markWatchStarted(db, rental.id);
+
     // Always update position if provided (position can go backward on rewind)
     if (position !== undefined) {
         const clampedPosition = Math.max(0, Number(position) || 0);
@@ -483,7 +487,7 @@ export async function returnFilm(userId: number, filmId: number): Promise<{ earl
     await deleteRentalSymlinks(rental.symlink_uuid);
 
     db.transaction(() => {
-        db.prepare('UPDATE rentals SET is_active = 0, returned_early = ? WHERE id = ?')
+        db.prepare("UPDATE rentals SET is_active = 0, returned_early = ?, returned_at = datetime('now') WHERE id = ?")
             .run(isEarlyReturn ? 1 : 0, rental.id);
 
         if (isEarlyReturn) {
@@ -543,7 +547,7 @@ export async function cleanupExpiredRentals(): Promise<number> {
 
     for (const rental of expiredRentals) {
         await deleteRentalSymlinks(rental.symlink_uuid);
-        db.prepare('UPDATE rentals SET is_active = 0 WHERE id = ?').run(rental.id);
+        db.prepare('UPDATE rentals SET is_active = 0, expired_at = expires_at WHERE id = ?').run(rental.id);
     }
 
     return expiredRentals.length;
