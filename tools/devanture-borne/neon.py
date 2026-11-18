@@ -31,10 +31,9 @@ from scipy.ndimage import gaussian_filter1d
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from neon_graphe import composantes, graphe  # noqa: E402
 
-ICI = Path(__file__).resolve().parent
-D = ICI / 'travail'                 # tout l'intermédiaire (ignoré par git)
-D.mkdir(exist_ok=True)
-E = json.loads((ICI / 'geometrie.json').read_text())['enseigne_borne']
+from variante import D, G  # noqa: E402 — la variante en cours
+
+E = G['enseigne_borne']
 DIAM = E['tube_diam_m']
 ENTRAXE = DIAM + 0.0015               # entre le plan de face et le plan arrière
 FACE = E.get('face_m', 0.046)         # du mur à l'axe des tubes de face (supports de tube courants : 44 mm)

@@ -14,13 +14,13 @@ import bpy
 
 args = sys.argv[sys.argv.index('--') + 1:]
 ICI = Path(__file__).resolve().parent
-D = ICI / 'travail'                 # tout l'intermédiaire (ignoré par git)
+sys.path.insert(0, str(ICI))         # Blender ne connaît pas le dossier du script
+from variante import D, G, SOURCES  # noqa: E402 — la variante en cours : sa géométrie, son dossier d'intermédiaire
 SAMPLES = int(args[0]) if len(args) > 0 else 64
 OUT = args[1] if len(args) > 1 else str(D / 'borne.png')
 # 'borne' : la borne sur fond transparent (et la mise en page lue par le site) ; 'mur' : la lumière que le mur renvoie
 # (voir « passe mur » plus bas) ; 'zoom' : la vue rapprochée de l'écran, pour le zoom du site.
 PASSE = args[2] if len(args) > 2 else 'borne'
-G = json.loads((ICI / 'geometrie.json').read_text())
 R = json.loads((D / 'repere.json').read_text())
 W, H, PPM = G['sortie']['w'], G['sortie']['h'], G['sortie']['px_par_m']
 T = D / 'tex'
@@ -51,10 +51,11 @@ scene.render.use_border = True
 scene.render.use_crop_to_border = False
 kx0, kx1 = R['kiosk_left_x'], R['kiosk_right_x']
 top_y = R['ground_y'] - G['borne']['hauteur_m'] * PPM
-scene.render.border_min_x = max(0.0, (kx0 - 70) / W)
-scene.render.border_max_x = min(1.0, (kx1 + 130) / W)
+ECH = PPM / 549                      # les marges en pixels ont été réglées sur la vue mobile (549 px/m)
+scene.render.border_min_x = max(0.0, (kx0 - 70 * ECH) / W)
+scene.render.border_max_x = min(1.0, (kx1 + 130 * ECH) / W)
 scene.render.border_min_y = 0.0
-scene.render.border_max_y = min(1.0, (H - (top_y - 330)) / H)
+scene.render.border_max_y = min(1.0, (H - (top_y - 330 * ECH)) / H)
 
 # ----- monde : nuit, ciel de pluie -----
 world = bpy.data.worlds.new('nuit')
@@ -73,12 +74,13 @@ cam_data.sensor_fit = 'VERTICAL'
 cam_data.sensor_height = 36
 cam_data.lens = 36 * cam_d / frame_h_m
 center_z = (R['ground_y'] - H / 2) / PPM
-cam_data.shift_x = (W / 2 - R['door_center_x']) / H
+AXE = G['camera'].get('axe_px', R['door_center_x'])     # colonne de l'image que vise l'appareil (mobile : la porte)
+cam_data.shift_x = (W / 2 - AXE) / H
 cam_data.shift_y = (center_z - eye) / frame_h_m
 cam_data.clip_end = 100
 cam = bpy.data.objects.new('camera', cam_data)
 scene.collection.objects.link(cam)
-cam.location = (0.0, -cam_d, eye)
+cam.location = ((AXE - R['door_center_x']) / PPM, -cam_d, eye)
 cam.rotation_euler = (math.radians(90), 0, 0)
 scene.camera = cam
 
@@ -578,7 +580,7 @@ box('robot_voyant', L(CX + 0.016), L(CX + 0.021), YR + 0.0172, YR + 0.018, ZB - 
 print('CASIERS', k7_count, 'grand casier', rk_g['n_slots'], 'cases x', len(rk_g['rows']), 'rangées ; petit', rk_d['n_slots'], 'x', len(rk_d['rows']))
 
 # L'écran : la vraie interface de la borne, sous une vitre brillante.
-screen_img = image(ICI / 'sources' / 'gyro-face.png')
+screen_img = image(SOURCES / F['ecran_image'])
 E_ = F['ecran']
 ecx, ecz = (E_[0] + E_[1]) / 2, (E_[2] + E_[3]) / 2
 plane('ecran', L(ecx), FRONT + 0.019, ecz, E_[1] - E_[0], E_[3] - E_[2], emissive('ecran', screen_img, strength=1.0))
@@ -1105,8 +1107,9 @@ if PASSE == 'mur':
     pose_reverbere()
     bg.inputs['Color'].default_value = (0, 0, 0, 1)
     scene.render.film_transparent = False
-    scene.render.border_min_x, scene.render.border_max_x = 0.0, min(1.0, 900 / W)
-    scene.render.border_min_y, scene.render.border_max_y = 1 - 2300 / H, 1 - 1100 / H
+    ZX0, ZX1, ZY0, ZY1 = MUR.get('zone_px', (0, 900, 1100, 2300))      # la zone du mur autour de la borne, dans l'image
+    scene.render.border_min_x, scene.render.border_max_x = ZX0 / W, min(1.0, ZX1 / W)
+    scene.render.border_min_y, scene.render.border_max_y = 1 - ZY1 / H, 1 - ZY0 / H
     scene.render.image_settings.file_format = 'OPEN_EXR'
     scene.render.image_settings.color_depth = '32'
 
@@ -1118,7 +1121,7 @@ if PASSE == 'mur':
     buf = np.empty(exr.size[0] * exr.size[1] * 4, np.float32)
     exr.pixels.foreach_get(buf)
     lum = buf.reshape(exr.size[1], exr.size[0], 4)[::-1, :, :3]
-    np.save(str(D / 'mur-passe.npy'), lum[1100:2300, 0:900].copy())
+    np.save(str(D / 'mur-passe.npy'), lum[ZY0:ZY1, ZX0:ZX1].copy())
     print('PASSE MUR', lum.shape, 'max', round(float(lum.max()), 3), '→ mur-passe.npy (lignes 1100 à 2300, colonnes 0 à 900)')
 if PASSE == 'zoom':
     taille = tuple(bpy.data.images.load(OUT).size)

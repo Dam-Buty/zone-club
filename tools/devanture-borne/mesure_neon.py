@@ -3,14 +3,14 @@ haut du « E » de VIDEOCLUB) : couleur moyenne selon la distance à l'axe, en m
 Usage : python3 mesure_neon.py <compo.png>"""
 import json
 import sys
-from pathlib import Path
 
 import numpy as np
 from PIL import Image
 
-ICI = Path(__file__).resolve().parent
-D = str(ICI / 'travail')
-G = json.load(open(ICI / 'geometrie.json')); R = json.load(open(D + '/repere.json')); nd = json.load(open(D + '/neon-borne.json'))
+from variante import D as _D, G, SOURCES  # la variante en cours
+
+D = str(_D)
+R = json.load(open(D + '/repere.json')); nd = json.load(open(D + '/neon-borne.json'))
 E, PPM, cam = G['enseigne_borne'], G['sortie']['px_par_m'], G['camera']
 
 
@@ -37,7 +37,7 @@ SX, SZ = KX - nd['centre_m'][0], E['hauteur_247_m'] - nd['milieu_247_m']
 xs = R['door_center_x'] + (SX + top[:, 0]) * k * PPM
 ys = R['ground_y'] - (cam['hauteur_oeil_m'] + (SZ + top[:, 1] - cam['hauteur_oeil_m']) * k) * PPM
 x0, x1, yt = int(xs.min()) + 6, int(xs.max()) - 8, int(ys.min())
-ref = coupe(ICI / 'sources' / 'storefront-mobile.jpeg', 520, 600, 300, 372)
+ref = coupe(SOURCES / 'storefront-mobile.jpeg', 520, 600, 300, 372)
 moi = coupe(sys.argv[1], x0, x1, yt - 50, yt + 12)
 print(f'barre du haut du E : colonnes {x0} à {x1}, ligne {yt}')
 for d in (0, 1, 2, 3, 4, 5, 6, 8, 10, 14, 18, 24, 32):

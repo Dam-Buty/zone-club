@@ -10,10 +10,8 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 
-ICI = Path(__file__).resolve().parent
-D = ICI / 'travail'                 # tout l'intermédiaire (ignoré par git)
-D.mkdir(exist_ok=True)
-SRC = ICI / 'sources'
+from variante import CACHE, D, G, SOURCES as SRC  # la variante en cours ; le cache TMDB est commun
+
 T = D / 'tex'
 T.mkdir(exist_ok=True)
 rng = np.random.default_rng(2007)
@@ -136,8 +134,7 @@ rng.shuffle(list(range(315)))
 fonts = [f for f in ['/System/Library/Fonts/Supplemental/DIN Condensed Bold.ttf', '/System/Library/Fonts/Supplemental/Impact.ttf',
                      '/System/Library/Fonts/Supplemental/Futura.ttc', '/System/Library/Fonts/Avenir Next Condensed.ttc'] if Path(f).exists()]
 N, LW, LH = 96, 512, 80
-CACHE = D / 'tmdb-cache'
-CACHE.mkdir(exist_ok=True)
+CACHE.mkdir(parents=True, exist_ok=True)
 NET = {'ok': 0}
 
 
@@ -374,7 +371,7 @@ Image.fromarray((grime * 255).astype(np.uint8)).save(T / 'crasse.png')
 
 # ----- usure LOCALISÉE de la façade : là où vont les mains, les clés et les cartes -----
 # R = rayure profonde (le métal apparaît), G = éraflure claire de la peinture, B = gras des mains (poli).
-F = json.loads((ICI / 'geometrie.json').read_text())['facade']
+F = G['facade']
 PXM = 2048                                                            # 2 px par mm : lisible en gros plan
 FW, FH = round(1.05 * PXM), round(2.05 * PXM)
 X, Z = np.meshgrid((np.arange(FW) + 0.5) / PXM - 0.525, 2.05 - (np.arange(FH) + 0.5) / PXM)

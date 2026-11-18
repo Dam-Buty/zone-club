@@ -12,7 +12,8 @@ from pathlib import Path
 import bpy
 
 ICI = Path(__file__).resolve().parent
-D = ICI / 'travail'
+sys.path.insert(0, str(ICI))
+from variante import D  # noqa: E402 — la variante en cours (variable DEVANTURE)
 src = (ICI / 'borne.py').read_text()
 assert src.count("bpy.ops.wm.read_factory_settings(use_empty=True)") == 1
 assert src.count("bpy.ops.render.render(write_still=True)") == 1

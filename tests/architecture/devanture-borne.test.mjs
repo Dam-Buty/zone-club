@@ -74,3 +74,24 @@ test('FABRIQUE: le logo de chaque tranche est figé, et la fabrique n\'interroge
   assert.ok(!src.includes('api.themoviedb.org') && !src.includes('TMDB_API_KEY'), 'ni API ni clé');
   assert.ok(src.includes('SystemExit'), 'une image attendue qui manque arrête la fabrique');
 });
+
+// Livraison B (18/11/2026) : la fabrique fait deux devantures (mobile, bureau). Chaque script prend sa géométrie et
+// son dossier d'intermédiaire dans variante.py, plus aucun chemin écrit en dur.
+test('VARIANTES: chaque script lit sa géométrie et son dossier par variante.py', () => {
+  assert.ok(existsSync(path.join(T, 'variante.py')));
+  for (const f of ['fond.py', 'textures.py', 'neon.py', 'borne.py', 'compo.py', 'sorties.py']) {
+    const src = readFileSync(path.join(T, f), 'utf8');
+    assert.ok(src.includes('variante'), `${f} : variante`);
+    assert.ok(!src.includes("'geometrie.json'") && !src.includes("/ 'travail'"), `${f} : chemin en dur`);
+  }
+  const sh = readFileSync(path.join(T, 'fabrique.sh'), 'utf8');
+  assert.ok(sh.includes('DEVANTURE='), 'la fabrique boucle sur les variantes');
+  assert.ok(readFileSync(path.join(T, '.gitignore'), 'utf8').includes('travail-*/'));
+});
+
+test('VARIANTES: la géométrie du mobile porte ses réglages de pluie, de fond et d\'écran', () => {
+  const g = JSON.parse(readFileSync(path.join(T, 'geometrie.json'), 'utf8'));
+  assert.equal(g.fond, 'fond.py');
+  assert.equal(g.facade.ecran_image, 'gyro-face.png');
+  assert.deepEqual(g.pluie, { densite: 0.00016, longueur: [10, 34], pente: 0.06, force: [0.05, 0.22], epaisseur: 1, flou: 0.6 });
+});

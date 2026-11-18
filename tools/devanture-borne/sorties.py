@@ -4,12 +4,11 @@ la borne (WebP) et la mise en page (où sont la borne, son écran et la porte da
 Usage : python3 sorties.py   (après compo.py et la passe « zoom » de borne.py)
 """
 import json
-from pathlib import Path
 
 from PIL import Image
 
-ICI = Path(__file__).resolve().parent
-D = ICI / 'travail'
+from variante import D, ICI  # la variante en cours
+
 RACINE = ICI.parent.parent
 PUBLIC, DONNEES = RACINE / 'public', RACINE / 'src' / 'data'
 

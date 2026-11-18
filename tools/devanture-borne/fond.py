@@ -7,19 +7,16 @@ toit, ciel de pluie avec la lune. Écrit travail/fond.png et travail/repere.json
 Usage : python3 fond.py
 """
 import json
-from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageFilter
 
-ICI = Path(__file__).resolve().parent
-D = ICI / 'travail'                 # tout l'intermédiaire (ignoré par git)
-D.mkdir(exist_ok=True)
-G = json.loads((ICI / 'geometrie.json').read_text())
+from variante import D, G, SOURCES  # la variante en cours : sa géométrie, son dossier d'intermédiaire
+
 W, H, PPM = G['sortie']['w'], G['sortie']['h'], G['sortie']['px_par_m']
 rng = np.random.default_rng(1984)
 
-photo = Image.open(ICI / 'sources' / G['photo']['fichier']).convert('RGB')
+photo = Image.open(SOURCES / G['photo']['fichier']).convert('RGB')
 k = PPM / G['photo']['px_par_m']
 pw, ph = round(photo.width * k), round(photo.height * k)
 x0, y0 = W - pw + G['photo'].get('decalage_px', 0), H - ph

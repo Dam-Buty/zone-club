@@ -157,7 +157,9 @@ def composantes(noeuds, aretes):
 
 
 if __name__ == '__main__':
-    E = json.loads((Path(__file__).resolve().parent / 'geometrie.json').read_text())['enseigne_borne']
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from variante import G
+    E = G['enseigne_borne']
     noeuds, aretes, half, mask = graphe(E)
     degre = [0] * len(noeuds)
     for e in aretes:

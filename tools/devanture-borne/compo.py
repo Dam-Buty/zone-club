@@ -8,7 +8,6 @@ Le recadrage facultatif isole la borne (colonnes 140 à 1000, lignes 1100 à la 
 """
 import json
 import sys
-from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
@@ -49,9 +48,9 @@ if sys.argv[1] == '--halo':
     Image.fromarray(halo(r_[..., :3], core_, float(sys.argv[4])).astype(np.uint8)).save(sys.argv[3])
     sys.exit(0)
 
-ICI = Path(__file__).resolve().parent
-D = ICI / 'travail'                 # tout l'intermédiaire (ignoré par git)
-HALO[0] = json.loads((ICI / 'geometrie.json').read_text()).get('enseigne_borne', {}).get('halo', HALO[0])
+from variante import D, G as GEO  # noqa: E402 — la variante en cours : sa géométrie, son dossier d'intermédiaire
+
+HALO[0] = GEO.get('enseigne_borne', {}).get('halo', HALO[0])
 fond = Image.open(D / 'fond.png').convert('RGBA')
 rendu = Image.open(sys.argv[1]).convert('RGBA')
 assert rendu.size == fond.size, (rendu.size, fond.size)
@@ -60,11 +59,11 @@ assert rendu.size == fond.size, (rendu.size, fond.size)
 # la photo. Elle s'arrête au cadre de la porte, qui est une photo, et au bord du toit.
 passe = D / 'mur-passe.npy'
 if passe.exists():
-    GEO = json.loads((ICI / 'geometrie.json').read_text())
     M, REP = GEO.get('mur', {}), json.loads((D / 'repere.json').read_text())
-    lum = np.load(passe)                                   # lumière linéaire, lignes 1100 à 2300, colonnes 0 à 900
+    lum = np.load(passe)                                   # lumière linéaire sur la zone de la passe « mur »
+    ZX0, _zx1, ZY0, _zy1 = M.get('zone_px', (0, 900, 1100, 2300))
     hh, ww = lum.shape[:2]
-    yy, xx = np.mgrid[1100:1100 + hh, 0:ww].astype(np.float32)
+    yy, xx = np.mgrid[ZY0:ZY0 + hh, ZX0:ZX0 + ww].astype(np.float32)
 
     def step(v, a, b):                                     # 1 avant a, 0 après b
         s_ = np.clip((b - v) / (b - a), 0, 1)
@@ -72,8 +71,8 @@ if passe.exists():
     pg, ph = M['porte_px']['gauche'], M['porte_px']['haut']
     masque = np.maximum(step(xx, pg - 26, pg - 6), step(yy, ph - 22, ph - 4)) * (1 - step(yy, REP['roof_y'] + 2, REP['roof_y'] + 12))
     base = np.asarray(fond.convert('RGB')).astype(np.float32)
-    zone = (base[1100:1100 + hh, 0:ww] / 255) ** 2.2 + lum * masque[..., None] * M.get('gain', 1.0)
-    base[1100:1100 + hh, 0:ww] = np.clip(zone, 0, 1) ** (1 / 2.2) * 255
+    zone = (base[ZY0:ZY0 + hh, ZX0:ZX0 + ww] / 255) ** 2.2 + lum * masque[..., None] * M.get('gain', 1.0)
+    base[ZY0:ZY0 + hh, ZX0:ZX0 + ww] = np.clip(zone, 0, 1) ** (1 / 2.2) * 255
     fond = Image.fromarray(base.astype(np.uint8)).convert('RGBA')
     print('mur : lumière ajoutée, max linéaire', round(float((lum * masque[..., None]).max()), 3))
 fond.alpha_composite(rendu)
@@ -94,11 +93,12 @@ opaque = (ra[..., 3] > 128)[..., None]
 r = np.random.default_rng(17)
 layer = Image.new('L', (W, H), 0)
 d = ImageDraw.Draw(layer)
-for _ in range(int(W * H * 0.00016)):
+PL = GEO['pluie']                                         # traînées à l'échelle de la photo de la variante
+for _ in range(int(W * H * PL['densite'])):
     x, y = r.random() * W, r.random() * H
-    length = r.uniform(10, 34)
-    d.line([(x, y), (x + length * 0.06, y + length)], fill=int(255 * r.uniform(0.05, 0.22)), width=1)
-rain = np.asarray(layer.filter(ImageFilter.GaussianBlur(0.6))).astype(float)[..., None] / 255
+    length = r.uniform(*PL['longueur'])
+    d.line([(x, y), (x + length * PL['pente'], y + length)], fill=int(255 * r.uniform(*PL['force'])), width=PL['epaisseur'])
+rain = np.asarray(layer.filter(ImageFilter.GaussianBlur(PL['flou']))).astype(float)[..., None] / 255
 img = img + rain * opaque * np.array([150, 165, 190])
 
 out = Image.fromarray(np.clip(img, 0, 255).astype(np.uint8))

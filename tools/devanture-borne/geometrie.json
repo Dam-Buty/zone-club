@@ -1,5 +1,6 @@
 {
  "_": "Devanture mobile avec la borne (vue reculée, validée le 18/11/2026). Échelle commune au fond 2D et à la scène Blender.",
+ "fond": "fond.py",
  "sortie": {
   "w": 1536,
   "h": 2752,
@@ -42,6 +43,7 @@
   "agrandissement": 1.3
  },
  "facade": {
+  "ecran_image": "gyro-face.png",
   "_": "Façade en coordonnées locales (m) : x de -0,525 (gauche) à +0,525, z depuis le sol. Rectangles [x0, x1, z0, z1]. Ajouté le 17/11 au soir (paiement CB). Le 17/11 au soir : lecteur 85 × 45 mm (fente 60 mm, la carte entre par son petit côté de 54 mm), pavé inox 95 × 90 mm à touches de 17 mm (fiches de pavés 16 touches : 81 à 100 mm), étiquette CB +30 %. Le 18/11 : bloc de l'écran descendu de 10 cm (Rusmir : écran trop haut), son haut aligné sur le vitrage visible de la vitrine de gauche.",
   "vitrine_g": [
    -0.47,
@@ -169,6 +171,15 @@
   },
   "relief": 0.05,
   "reflet": 0.2
+ },
+ "_pluie": "La pluie figée que compo.py fait tomber devant la borne, à l'échelle de la photo : densité par pixel, longueur des traînées (px), pente, force, épaisseur (px), flou (px).",
+ "pluie": {
+  "densite": 0.00016,
+  "longueur": [10, 34],
+  "pente": 0.06,
+  "force": [0.05, 0.22],
+  "epaisseur": 1,
+  "flou": 0.6
  },
  "site": {
   "_": "Ce que le site lit (borne.py → travail/mise-en-page.json → src/data/storefront-mobile.json). groupe_cy : hauteur, en fraction de l'image, sur laquelle le cadrage se centre quand la fenêtre est moins haute que l'image (entre le haut du cadre de la porte et la barre de poussée). zoom : la vue rapprochée, centrée sur l'écran de la borne — l'écran y fait ecran_px de large, la vue couvre largeur_en_ecrans × hauteur_en_ecrans largeurs d'écran.",
