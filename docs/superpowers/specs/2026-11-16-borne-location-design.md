@@ -106,6 +106,12 @@
 >   derrière renvoie la lumière du néon et celle d'un réverbère, de façon réaliste **[R]** : calculé par lancer de
 >   rayons dans Blender (passe « mur » ajoutée au mur de la photo) **[C]**. Le néon « LOCATION 24/7 » de l'écran de la
 >   borne reste tel quel. **[R]**
+> - **§ 4, l'enseigne doit être un VRAI néon (18/11/2026).** Rusmir : l'essai précédent « ressemble à l'enseigne mais
+>   n'est pas réaliste » — un néon est en verre, transparent, « tout attaché », sans vide entre les lettres, avec « un
+>   petit fil discret qui descend vers la borne ». **[R]** Retenu après étude du métier **[C]** : deux tubes continus
+>   (« Borne », « 24/7 ») en série ; liaisons entre lettres et retours peints en noir, derrière les traits ; passages
+>   derrière aux croisements ; électrodes sous capuchon ; cavalier entre les deux tubes ; deux fils haute tension qui
+>   descendent dans la borne (un tube est un circuit : il y a deux bouts).
 > - **Tarif** : l'affichage suit ce que le serveur facture. **Dates du serveur** : lues en UTC.
 >   Les deux validés. **[R]**
 > - **§ 5, bouton provisoire sur mobile** : il part tel quel, on ajustera en voyant la version
