@@ -72,13 +72,14 @@ export function ExteriorView({ onEnter, onOpenKiosk, onKioskIntent, canEnter, on
   // Image fixe : la « scène » a les proportions de l'image et la couvre en entier. L'image, les
   // zones d'appui et l'indicateur PUSH sont ses enfants, placés en pourcentages : ils tombent sur
   // leurs objets quelle que soit la fenêtre (barres du navigateur, paysage, repli sans WebGL).
+  // La fenêtre est suivie en permanence, bureau compris : rétrécie d'un coup sous 769 px, la
+  // devanture passe à l'image fixe, et la scène doit déjà connaître la nouvelle fenêtre.
   const [viewport, setViewport] = useState(readViewport);
   useEffect(() => {
-    if (!isStatic) return;
     const onResize = () => setViewport(readViewport());
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
-  }, [isStatic]);
+  }, []);
   const stage = stageBox(LAYOUT, viewport.w, viewport.h);
 
   // Zoom vers l'écran de la borne : la transformation donnée à la scène, et si la vue rapprochée
@@ -361,7 +362,7 @@ export function ExteriorView({ onEnter, onOpenKiosk, onKioskIntent, canEnter, on
         {/* Transition overlay */}
         {isTransitioning && <div className={styles.transitionOverlay} />}
 
-        {/* Fin du zoom vers la borne : un voile noir monte, la borne s'ouvre derrière */}
+        {/* Fin du zoom vers la borne : un voile au fond de la borne monte, la borne s'ouvre derrière */}
         {kioskZoom && <div className={styles.kioskVeil} aria-hidden="true" />}
       </div>
     );

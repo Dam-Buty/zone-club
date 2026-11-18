@@ -81,3 +81,25 @@ test('ZOOM: le minuteur de garde part avec le zoom, pas avec l\'appui', () => {
   assert.ok(!ouvrir.includes('setTimeout'), 'aucun minuteur armé dans le gestionnaire de l\'appui');
   assert.match(tsx, /useEffect\(\(\) => \{\s*if \(!kioskZoom\) return;[\s\S]{0,400}KIOSK_ZOOM_GUARD_MS/, 'armé dans un effet, une fois le zoom affiché');
 });
+
+// Relecture finale (18/11/2026) : page chargée dans une fenêtre de bureau, puis fenêtre rétrécie d'un coup sous 769 px —
+// la devanture passait à l'image fixe avec une scène calculée sur l'ancienne fenêtre (porte hors champ), parce que la
+// fenêtre n'était suivie qu'une fois la devanture mobile affichée.
+test('SCÈNE: la fenêtre est suivie avant même que la devanture mobile soit affichée', () => {
+  const tsx = readFileSync(path.join(ROOT, 'src/components/exterior/ExteriorView.tsx'), 'utf8');
+  const i = tsx.indexOf('const onResize = ');
+  assert.ok(i > 0, 'écouteur de la taille de la fenêtre');
+  assert.ok(!tsx.slice(i - 160, i).includes('isStatic'), 'l\'écouteur n\'attend pas l\'image fixe');
+});
+
+// Décision de Rusmir du 16/11/2026 : « pas d'écran noir à l'ouverture de la borne ». Le voile qui termine le zoom
+// prend donc le fond de la borne (celui de KioskView et de son repli), pas du noir.
+test('ZOOM: le voile final est au fond de la borne, pas noir', () => {
+  const css = readFileSync(path.join(ROOT, 'src/components/exterior/ExteriorView.module.css'), 'utf8');
+  const kiosk = readFileSync(path.join(ROOT, 'src/components/kiosk/KioskView.module.css'), 'utf8');
+  const fond = 'linear-gradient(180deg, #23213a 0%, #191827 40%, #14131f 100%)';
+  assert.ok(kiosk.includes(`background: ${fond};`), 'fond de la borne (KioskView.module.css, .root)');
+  const voile = css.slice(css.indexOf('.kioskVeil {'), css.indexOf('}', css.indexOf('.kioskVeil {')));
+  assert.ok(voile.includes(`background: ${fond};`), 'le voile reprend ce fond');
+  assert.ok(!voile.includes('#000'), 'pas de noir');
+});

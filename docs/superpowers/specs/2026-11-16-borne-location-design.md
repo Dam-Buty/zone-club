@@ -128,8 +128,8 @@
 >   la caméra de la scène Blender. Choisir la borne zoome sur son écran (900 ms) puis ouvre l'interface ;
 >   le GPU est libéré à l'appui, avant le zoom. **[C]**, à confirmer par Rusmir : les deux boutons
 >   « BORNE 24/7 » et « PORTE VIDÉOCLUB » sont **en bas de la fenêtre** et non au-dessus de chaque
->   élément (la place y est prise par les néons « BORNE 24/7 » et « Open 24/7 ») ; un voile noir de
->   180 ms termine le zoom ; l'écran de la borne modélisée étant au format 5:9, le zoom vise l'écran de
+>   élément (la place y est prise par les néons « BORNE 24/7 » et « Open 24/7 ») ; un voile de 180 ms
+>   termine le zoom, au fond de la borne et non noir (« pas d'écran noir à l'ouverture ») ; l'écran de la borne modélisée étant au format 5:9, le zoom vise l'écran de
 >   l'interface du téléphone. Corrigé en chemin **[C]** : la borne déjà chargée s'ouvre sans passer par
 >   le carton « Ouverture de la borne… ». **Reste du lot 3** : la devanture du bureau (plan B : photo
 >   d'origine 5632 × 3072, mur prolongé, masque de reflets, zoom dans la scène WebGL — question ouverte :

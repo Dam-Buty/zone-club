@@ -2,481 +2,577 @@
  {
   "tmdb_id": 280,
   "title": "Terminator 2 : Le Jugement dernier",
-  "poster_url": "https://image.tmdb.org/t/p/w500/mRtFOHF93zW4kTp4JOYrH71vxBh.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/mRtFOHF93zW4kTp4JOYrH71vxBh.jpg",
+  "logo_path": "/otVBjzpBNhaVHhZMFbF1OaW3CU0.png"
  },
  {
   "tmdb_id": 103,
   "title": "Taxi Driver",
-  "poster_url": "https://image.tmdb.org/t/p/w500/iyHQrfNsjZlfHJ8hyhNi0yAFnZa.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/iyHQrfNsjZlfHJ8hyhNi0yAFnZa.jpg",
+  "logo_path": "/eFWogujVuBwpayMKlFuiGOM6zUx.png"
  },
  {
   "tmdb_id": 11647,
   "title": "Infernal Affairs II",
-  "poster_url": "https://image.tmdb.org/t/p/w500/mZYXlzeocYYCnNjPqTk85wsn8zQ.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/mZYXlzeocYYCnNjPqTk85wsn8zQ.jpg",
+  "logo_path": "/uWyh5LWd4Q5h03VKdFBPkpG4HMv.png"
  },
  {
   "tmdb_id": 58,
   "title": "Pirates des Caraïbes : Le Secret du coffre maudit",
-  "poster_url": "https://image.tmdb.org/t/p/w500/bzOlMYEfNmgCDnFHj3zL3RBqwau.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/bzOlMYEfNmgCDnFHj3zL3RBqwau.jpg",
+  "logo_path": "/yJ23g63QY3GHtXAI61wqcPmw2C5.png"
  },
  {
   "tmdb_id": 508,
   "title": "Love Actually",
-  "poster_url": "https://image.tmdb.org/t/p/w500/rJAML5icaPEkj8CU4wLHjpL4RWd.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/rJAML5icaPEkj8CU4wLHjpL4RWd.jpg",
+  "logo_path": "/cx9EPO7yystRhSqpB7YGVhDsmUm.png"
  },
  {
   "tmdb_id": 23168,
   "title": "The Town",
-  "poster_url": "https://image.tmdb.org/t/p/w500/9bxCsEzPk21yiPzoU0PV3MTT9ke.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/9bxCsEzPk21yiPzoU0PV3MTT9ke.jpg",
+  "logo_path": "/6hgAWJdjRO9AVbE3NhubDQLCz1I.png"
  },
  {
   "tmdb_id": 10528,
   "title": "Sherlock Holmes",
-  "poster_url": "https://image.tmdb.org/t/p/w500/6Zy0qTt35xuBE4XnIoXOKtRm715.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/6Zy0qTt35xuBE4XnIoXOKtRm715.jpg",
+  "logo_path": "/fuVkbIGbx8AMPnMxCPfSDMwXH8i.png"
  },
  {
   "tmdb_id": 1850,
   "title": "Man on the Moon",
-  "poster_url": "https://image.tmdb.org/t/p/w500/fp0D25MiuYoJmpl2ZTi9ahoaiZQ.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/fp0D25MiuYoJmpl2ZTi9ahoaiZQ.jpg",
+  "logo_path": "/liKmgVdMMemnP1tZ3B0DTV2dXY4.png"
  },
  {
   "tmdb_id": 862,
   "title": "Toy Story",
-  "poster_url": "https://image.tmdb.org/t/p/w500/4cWLRhub0yY9VJpdw0nqoTPYyiN.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/4cWLRhub0yY9VJpdw0nqoTPYyiN.jpg",
+  "logo_path": "/fCyduKmikHt0aJnEn9FEBTAmNTn.png"
  },
  {
   "tmdb_id": 10086,
   "title": "C'est arrivé près de chez vous",
-  "poster_url": "https://image.tmdb.org/t/p/w500/3h7PYinvLGVL6tjUGzmmDycMEmm.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/3h7PYinvLGVL6tjUGzmmDycMEmm.jpg",
+  "logo_path": "/wXWMemRR2iewfwGS5ErehJJIPVp.png"
  },
  {
   "tmdb_id": 2330,
   "title": "Taxi",
-  "poster_url": "https://image.tmdb.org/t/p/w500/5d16tJ2DLImAwCY2w0LYZjgWZA1.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/5d16tJ2DLImAwCY2w0LYZjgWZA1.jpg",
+  "logo_path": "/mVinoQLMxzfsE2RnaCoXCZUivyl.png"
  },
  {
   "tmdb_id": 319,
   "title": "True Romance",
-  "poster_url": "https://image.tmdb.org/t/p/w500/e5B8YvuUrFTtaBOcPbFGBqTgWsx.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/e5B8YvuUrFTtaBOcPbFGBqTgWsx.jpg",
+  "logo_path": "/b5gF6WEp232dn8VyRMn7bCBQpMY.png"
  },
  {
   "tmdb_id": 1893,
   "title": "Star Wars, épisode I - La Menace fantôme",
-  "poster_url": "https://image.tmdb.org/t/p/w500/fpEC910v5DrMvZteRNlKzXeHiHY.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/fpEC910v5DrMvZteRNlKzXeHiHY.jpg",
+  "logo_path": "/kew3bmV7a0HCnuGJFpgOoJJhi5Q.png"
  },
  {
   "tmdb_id": 1891,
   "title": "L'Empire contre-attaque",
-  "poster_url": "https://image.tmdb.org/t/p/w500/qDvctAykmNWAmi9G2GrVrwWx3pr.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/qDvctAykmNWAmi9G2GrVrwWx3pr.jpg",
+  "logo_path": "/vHjIGQUmf0Glxlj3RnonJK8PhQy.png"
  },
  {
   "tmdb_id": 396535,
   "title": "Dernier train pour Busan",
-  "poster_url": "https://image.tmdb.org/t/p/w500/9FiRluXOwGJZhb1BPSvJYO7SB7y.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/9FiRluXOwGJZhb1BPSvJYO7SB7y.jpg",
+  "logo_path": "/nKb49k9QZ6cNfac6KJXbOhASNQo.png"
  },
  {
   "tmdb_id": 11423,
   "title": "Memories of Murder",
-  "poster_url": "https://image.tmdb.org/t/p/w500/fz5NYI8PUmPplu3UA70AOqEDJL7.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/fz5NYI8PUmPplu3UA70AOqEDJL7.jpg",
+  "logo_path": "/9cMqZJFiM1S6zeFrbRus8MONXm4.png"
  },
  {
   "tmdb_id": 15077,
   "title": "Election 2",
-  "poster_url": "https://image.tmdb.org/t/p/w500/pgOq4J5xdCZmQ7an1mUz4z5KpW7.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/pgOq4J5xdCZmQ7an1mUz4z5KpW7.jpg",
+  "logo_path": "/6Jmhb3QGsQ0BHUQmo1jS0B6HkDP.png"
  },
  {
   "tmdb_id": 786,
   "title": "Presque Célèbre",
-  "poster_url": "https://image.tmdb.org/t/p/w500/m7KGEQ5aYQjYV4aJ6f7SnSSrSqV.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/m7KGEQ5aYQjYV4aJ6f7SnSSrSqV.jpg",
+  "logo_path": "/gyZoOpyoVupwwoMv312OVFrjV07.png"
  },
  {
   "tmdb_id": 264660,
   "title": "Ex Machina",
-  "poster_url": "https://image.tmdb.org/t/p/w500/gXUnFIZdLsGnZp2AxKjQIVm5jEM.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/gXUnFIZdLsGnZp2AxKjQIVm5jEM.jpg",
+  "logo_path": "/cWzJWqNc1E3MMZXfCS6qrzS6cTJ.png"
  },
  {
   "tmdb_id": 524,
   "title": "Casino",
-  "poster_url": "https://image.tmdb.org/t/p/w500/4a0I37pYcdFY6HeutalHQTGs0sl.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/4a0I37pYcdFY6HeutalHQTGs0sl.jpg",
+  "logo_path": "/Aozl6IvcXDfJhOcY8EkF0sOeHrG.png"
  },
  {
   "tmdb_id": 522627,
   "title": "The Gentlemen",
-  "poster_url": "https://image.tmdb.org/t/p/w500/86UEvw3t8amtxepQRtBiQHkk954.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/86UEvw3t8amtxepQRtBiQHkk954.jpg",
+  "logo_path": "/e7lsq7MIK9PEegMvgvTd8hl2gG0.png"
  },
  {
   "tmdb_id": 6075,
   "title": "L'Impasse",
-  "poster_url": "https://image.tmdb.org/t/p/w500/njR0D7etFCIwloL2d4XJEob4bW4.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/njR0D7etFCIwloL2d4XJEob4bW4.jpg",
+  "logo_path": "/qI3jugdZdh5hlebnZuex8TTTP6D.png"
  },
  {
   "tmdb_id": 22,
   "title": "Pirates des Caraïbes : La Malédiction du Black Pearl",
-  "poster_url": "https://image.tmdb.org/t/p/w500/jFmc6zbnx6mSoxejECYvdi3IHIs.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/jFmc6zbnx6mSoxejECYvdi3IHIs.jpg",
+  "logo_path": "/x38S7rdz13RSAvMuzdwltgozxvV.png"
  },
  {
   "tmdb_id": 1100988,
   "title": "28 Ans plus tard",
-  "poster_url": "https://image.tmdb.org/t/p/w500/3ACUg2j2ZsgrwT1RnaBmni8mOuI.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/3ACUg2j2ZsgrwT1RnaBmni8mOuI.jpg",
+  "logo_path": "/kxJGuT7I6BTZvus2A7zvAAh3Ld8.png"
  },
  {
   "tmdb_id": 194662,
   "title": "Birdman",
-  "poster_url": "https://image.tmdb.org/t/p/w500/aQiFgaz5e3f0d6t0vjNWsHj53Jy.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/aQiFgaz5e3f0d6t0vjNWsHj53Jy.jpg",
+  "logo_path": "/vdcLJCTx1d02hv2SKKdd6JAOnFi.png"
  },
  {
   "tmdb_id": 9426,
   "title": "La Mouche",
-  "poster_url": "https://image.tmdb.org/t/p/w500/g5y4oa3vKKbuUBhiNLeoupVB02E.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/g5y4oa3vKKbuUBhiNLeoupVB02E.jpg",
+  "logo_path": "/aQax2GtWXrpXIlYPO3sexA9qKMk.png"
  },
  {
   "tmdb_id": 550,
   "title": "Fight Club",
-  "poster_url": "https://image.tmdb.org/t/p/w500/t1i10ptOivG4hV7erkX3tmKpiqm.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/t1i10ptOivG4hV7erkX3tmKpiqm.jpg",
+  "logo_path": "/4qaXec1TKGA34J8JjOqEuXH1waE.png"
  },
  {
   "tmdb_id": 134,
   "title": "O'Brother",
-  "poster_url": "https://image.tmdb.org/t/p/w500/aKa7tck9DEiZsoPDvqa9gK0vqcq.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/aKa7tck9DEiZsoPDvqa9gK0vqcq.jpg",
+  "logo_path": "/nEFjj7yXySToozzyhpV74PnEwP4.png"
  },
  {
   "tmdb_id": 335,
   "title": "Il était une fois dans l'Ouest",
-  "poster_url": "https://image.tmdb.org/t/p/w500/xjXKy5b2M3fDelAQItIswcDNvwm.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/xjXKy5b2M3fDelAQItIswcDNvwm.jpg",
+  "logo_path": "/dLXfCvuwF01mz61HBC1ITAF1Jtr.png"
  },
  {
   "tmdb_id": 419430,
   "title": "Get Out",
-  "poster_url": "https://image.tmdb.org/t/p/w500/8WzjAhgc4HvpN3Y6LLCc6AbpIhF.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/8WzjAhgc4HvpN3Y6LLCc6AbpIhF.jpg",
+  "logo_path": "/xVVLyv6ZGc5HcSesm2DqmY6iTTZ.png"
  },
  {
   "tmdb_id": 380,
   "title": "Rain Man",
-  "poster_url": "https://image.tmdb.org/t/p/w500/kdYcB7ydyJdNfPbvsFponC0qb57.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/kdYcB7ydyJdNfPbvsFponC0qb57.jpg",
+  "logo_path": "/rYKX9NUy2LC0bhFCVWF2Lnd8iAe.png"
  },
  {
   "tmdb_id": 9479,
   "title": "L'Étrange Noël de monsieur Jack",
-  "poster_url": "https://image.tmdb.org/t/p/w500/41hibKUdlEo6Qy8BZmc5GOenB8y.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/41hibKUdlEo6Qy8BZmc5GOenB8y.jpg",
+  "logo_path": "/c3fJ98YNRHCUInChi3kihTJ3a0E.png"
  },
  {
   "tmdb_id": 1381,
   "title": "The Fountain",
-  "poster_url": "https://image.tmdb.org/t/p/w500/7k6MWSt20fq3tsEy7V97lCzhog9.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/7k6MWSt20fq3tsEy7V97lCzhog9.jpg",
+  "logo_path": "/3b7XBTInNrqij2KFVfjkC25ZBvx.png"
  },
  {
   "tmdb_id": 8872,
   "title": "Wayne's World",
-  "poster_url": "https://image.tmdb.org/t/p/w500/R8Q9qIl51SHtcX5oWSBbz4YhQV.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/R8Q9qIl51SHtcX5oWSBbz4YhQV.jpg",
+  "logo_path": "/znlyIvAYMQPEpVQdCOBoY5YfY8F.png"
  },
  {
   "tmdb_id": 15449,
   "title": "La Tour Montparnasse Infernale",
-  "poster_url": "https://image.tmdb.org/t/p/w500/heukySMm3v6NCV4lCqbyVK3ArGt.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/heukySMm3v6NCV4lCqbyVK3ArGt.jpg",
+  "logo_path": "/xaq8cPDCYG1W71Xmo6ksBfx6QJK.png"
  },
  {
   "tmdb_id": 9559,
   "title": "Un monde parfait",
-  "poster_url": "https://image.tmdb.org/t/p/w500/w4nWADc0RPllaxe2s3mNH5b1GHW.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/w4nWADc0RPllaxe2s3mNH5b1GHW.jpg",
+  "logo_path": "/tx5GglnTpTFJrUElXrYIP7bCvnt.png"
  },
  {
   "tmdb_id": 2440,
   "title": "JSA (Joint Security Area)",
-  "poster_url": "https://image.tmdb.org/t/p/w500/rudBOKESMvmbN3SKd2Ta3l9GlrS.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/rudBOKESMvmbN3SKd2Ta3l9GlrS.jpg",
+  "logo_path": "/4qD2zVAUknxAfcWgYU6uYNISMp2.png"
  },
  {
   "tmdb_id": 289,
   "title": "Casablanca",
-  "poster_url": "https://image.tmdb.org/t/p/w500/5tVekU5MvJjws4MDr3lXYL8tLjf.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/5tVekU5MvJjws4MDr3lXYL8tLjf.jpg",
+  "logo_path": "/vd83rmEElEMgcOC90kZ985sKXqV.png"
  },
  {
   "tmdb_id": 578,
   "title": "Les Dents de la Mer",
-  "poster_url": "https://image.tmdb.org/t/p/w500/wuRf6gkX0JUJsu1MeECPubhMRdd.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/wuRf6gkX0JUJsu1MeECPubhMRdd.jpg",
+  "logo_path": "/chaMdavWwiwgGXaXf7qfPawYzEf.png"
  },
  {
   "tmdb_id": 240,
   "title": "Le Parrain, 2e partie",
-  "poster_url": "https://image.tmdb.org/t/p/w500/fATmEcLwO3tTiisa8gYxhV3x4sS.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/fATmEcLwO3tTiisa8gYxhV3x4sS.jpg",
+  "logo_path": "/8dcpHIwihrM32VSswdRwEmfRsTm.png"
  },
  {
   "tmdb_id": 8467,
   "title": "Dumb & Dumber",
-  "poster_url": "https://image.tmdb.org/t/p/w500/cLHVGuK1iXeJzNKtHUibfnNeUIH.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/cLHVGuK1iXeJzNKtHUibfnNeUIH.jpg",
+  "logo_path": "/qtwpalDWUgUGbhOtRqZ3yXAv7WM.png"
  },
  {
   "tmdb_id": 782,
   "title": "Bienvenue à Gattaca",
-  "poster_url": "https://image.tmdb.org/t/p/w500/a9KIIpkR6sXGHLJiXse9A7p7l9k.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/a9KIIpkR6sXGHLJiXse9A7p7l9k.jpg",
+  "logo_path": "/kZlUf4nsbfXnzxW8DPMMvBWZbic.png"
  },
  {
   "tmdb_id": 37165,
   "title": "The Truman Show",
-  "poster_url": "https://image.tmdb.org/t/p/w500/cOkoQaOPZBxqxQYlGu2i0o00sLn.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/cOkoQaOPZBxqxQYlGu2i0o00sLn.jpg",
+  "logo_path": "/dD0oQGYGTm4oJqte5eCuRtjQtV7.png"
  },
  {
   "tmdb_id": 333339,
   "title": "Ready Player One",
-  "poster_url": "https://image.tmdb.org/t/p/w500/832ngDVXhOVp6HBnuMMeeWTrGXN.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/832ngDVXhOVp6HBnuMMeeWTrGXN.jpg",
+  "logo_path": "/qp3Fgk3U1I65QX1axdnCsLuXTQP.png"
  },
  {
   "tmdb_id": 1549,
   "title": "L'Esquive",
-  "poster_url": "https://image.tmdb.org/t/p/w500/qEKHkYrpUKLqdIteCyo1Af2G13U.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/qEKHkYrpUKLqdIteCyo1Af2G13U.jpg",
+  "logo_path": "/5q6Co5pvRwS172Lov2VicT8KdO4.png"
  },
  {
   "tmdb_id": 12,
   "title": "Le Monde de Nemo",
-  "poster_url": "https://image.tmdb.org/t/p/w500/8zR2vXoXfdlknEYjfHvCbb1rJbI.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/8zR2vXoXfdlknEYjfHvCbb1rJbI.jpg",
+  "logo_path": "/5z0RJkKu3bMqOyHwbENJD9kv7a3.png"
  },
  {
   "tmdb_id": 489,
   "title": "Will Hunting",
-  "poster_url": "https://image.tmdb.org/t/p/w500/dMxqv6b08mQCikVPZL4UBl2MuHR.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/dMxqv6b08mQCikVPZL4UBl2MuHR.jpg",
+  "logo_path": "/8D2OndqcRpIte3Fx6AYRTf8Uls8.png"
  },
  {
   "tmdb_id": 11171,
   "title": "Mysterious Skin",
-  "poster_url": "https://image.tmdb.org/t/p/w500/qqiXCXZd893oiP9Tk5Y5FcwCnw3.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/qqiXCXZd893oiP9Tk5Y5FcwCnw3.jpg",
+  "logo_path": "/kAh9G6wboSsItKMkgxqwfgvWrmK.png"
  },
  {
   "tmdb_id": 11229,
   "title": "Freeway",
-  "poster_url": "https://image.tmdb.org/t/p/w500/m0pAARUq3foDWFsrUmlYDHtNPE9.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/m0pAARUq3foDWFsrUmlYDHtNPE9.jpg",
+  "logo_path": "/8S3HNGGQA7F5X02HFgIE3foK0H2.png"
  },
  {
   "tmdb_id": 773,
   "title": "Little Miss Sunshine",
-  "poster_url": "https://image.tmdb.org/t/p/w500/pUPR2pgiVfWMkHcE0SqaE4skDl9.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/pUPR2pgiVfWMkHcE0SqaE4skDl9.jpg",
+  "logo_path": "/qY9ilvkZxpv1NXJbvsqpciPSHj.png"
  },
  {
   "tmdb_id": 601,
   "title": "E.T. l'extra-terrestre",
-  "poster_url": "https://image.tmdb.org/t/p/w500/5jl5sfhTeAlp60rM9GxoDA2dmX9.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/5jl5sfhTeAlp60rM9GxoDA2dmX9.jpg",
+  "logo_path": "/4IUWmiRIvPzTM8LnLRgr4p5Xh65.png"
  },
  {
   "tmdb_id": 4232,
   "title": "Scream",
-  "poster_url": "https://image.tmdb.org/t/p/w500/mPnPfZg3TicnTAiSiOgYfnwluOz.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/mPnPfZg3TicnTAiSiOgYfnwluOz.jpg",
+  "logo_path": "/3PUi0PHLQEFvnEg9wbu18IF9hAX.png"
  },
  {
   "tmdb_id": 4824,
   "title": "Le Chacal",
-  "poster_url": "https://image.tmdb.org/t/p/w500/hEG17xmDYBvazhjBzgMkghrmaYm.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/hEG17xmDYBvazhjBzgMkghrmaYm.jpg",
+  "logo_path": "/vPchL4dNfr7tL12fGWnBa0WxByN.png"
  },
  {
   "tmdb_id": 68718,
   "title": "Django Unchained",
-  "poster_url": "https://image.tmdb.org/t/p/w500/vRXUnWrXUgXRoX0BaEcuNMfyeQt.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/vRXUnWrXUgXRoX0BaEcuNMfyeQt.jpg",
+  "logo_path": "/bZZRaGy96yxfRx4PiZMWorN8lzv.png"
  },
  {
   "tmdb_id": 2667,
   "title": "Le Projet Blair Witch",
-  "poster_url": "https://image.tmdb.org/t/p/w500/uSx9GZIdrYv8MQtDq6eaT0kYfTY.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/uSx9GZIdrYv8MQtDq6eaT0kYfTY.jpg",
+  "logo_path": "/5tr9uJnMUtEDXmbQd31x6SWcrko.png"
  },
  {
   "tmdb_id": 12703,
   "title": "The Brown Bunny",
-  "poster_url": "https://image.tmdb.org/t/p/w500/iybx1dVbrWvYCLgg7o7batfOxe0.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/iybx1dVbrWvYCLgg7o7batfOxe0.jpg",
+  "logo_path": "/lIJ07vDSW7tAd1IP68wWSMZsKKb.png"
  },
  {
   "tmdb_id": 3049,
   "title": "Ace Ventura, détective chiens et chats",
-  "poster_url": "https://image.tmdb.org/t/p/w500/tquh5DEbgRPFBHukUp9mcPbjEBb.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/tquh5DEbgRPFBHukUp9mcPbjEBb.jpg",
+  "logo_path": "/sLysn9W4XquRKkTFCd07jw6QTWX.png"
  },
  {
   "tmdb_id": 101,
   "title": "Léon",
-  "poster_url": "https://image.tmdb.org/t/p/w500/efqJtlo5J1hBNFmbwyjyAR9Mpr2.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/efqJtlo5J1hBNFmbwyjyAR9Mpr2.jpg",
+  "logo_path": "/dfB3NRwoF1oQ4fQ0RHOfSK5ETyq.png"
  },
  {
   "tmdb_id": 137,
   "title": "Un jour sans fin",
-  "poster_url": "https://image.tmdb.org/t/p/w500/49ThJPqijvMmBCPuwVK2FDayi0N.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/49ThJPqijvMmBCPuwVK2FDayi0N.jpg",
+  "logo_path": "/4vH0x7G6C5zOGoqDPcqxPlMuoQ5.png"
  },
  {
   "tmdb_id": 9323,
   "title": "Ghost in the Shell",
-  "poster_url": "https://image.tmdb.org/t/p/w500/f4RuGi7MO7GcEtnEpQO4wqaBBUk.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/f4RuGi7MO7GcEtnEpQO4wqaBBUk.jpg",
+  "logo_path": "/jWpOgi37DI1Yyck8d0lGfPwJhx7.png"
  },
  {
   "tmdb_id": 10313,
   "title": "Les Chèvres du Pentagone",
-  "poster_url": "https://image.tmdb.org/t/p/w500/4w4iC4sRg7hcP9t130gtOuzJJUU.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/4w4iC4sRg7hcP9t130gtOuzJJUU.jpg",
+  "logo_path": "/745nTHcG66mwREVFsW2Bt1oZ3CU.png"
  },
  {
   "tmdb_id": 9398,
   "title": "Zoolander",
-  "poster_url": "https://image.tmdb.org/t/p/w500/pXZAUyMwann7BeVEjb19CPlz30w.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/pXZAUyMwann7BeVEjb19CPlz30w.jpg",
+  "logo_path": "/jVrscMLHCP3LCAJqciZOYX5PYHI.png"
  },
  {
   "tmdb_id": 16130,
   "title": "La Classe américaine",
-  "poster_url": "https://image.tmdb.org/t/p/w500/iQKZwYLsaJIATKeS5t4yVoKzMxV.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/iQKZwYLsaJIATKeS5t4yVoKzMxV.jpg",
+  "logo_path": "/zSFQbdwZQYALHg2mh5AF8SxrMuj.png"
  },
  {
   "tmdb_id": 9450,
   "title": "Les virtuoses",
-  "poster_url": "https://image.tmdb.org/t/p/w500/dCh84SzqrIbdYygR1xhOfXbrZPc.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/dCh84SzqrIbdYygR1xhOfXbrZPc.jpg",
+  "logo_path": "/A9lvJGcKSEigMYfP2rPLDNy2ZBd.png"
  },
  {
   "tmdb_id": 11075,
   "title": "Audition",
-  "poster_url": "https://image.tmdb.org/t/p/w500/zsPmvIKtlrFsDT6ROAoHBkGB9Gy.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/zsPmvIKtlrFsDT6ROAoHBkGB9Gy.jpg",
+  "logo_path": "/qmsugEJYAPJfmIRE32LSgJI7bGz.png"
  },
  {
   "tmdb_id": 311,
   "title": "Il était une fois en Amérique",
-  "poster_url": "https://image.tmdb.org/t/p/w500/qfuO1yue5bQnocFiOUM07dwLdmo.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/qfuO1yue5bQnocFiOUM07dwLdmo.jpg",
+  "logo_path": "/tcblfdLwwl7bZDioiQiSTj9fQwa.png"
  },
  {
   "tmdb_id": 8367,
   "title": "Robin des Bois, prince des voleurs",
-  "poster_url": "https://image.tmdb.org/t/p/w500/rOdM5PqRLLMjS8DaN5dnsU4b5Fp.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/rOdM5PqRLLMjS8DaN5dnsU4b5Fp.jpg",
+  "logo_path": "/wNdIIFVcF6XpnQjp0B9fmbPHkZ8.png"
  },
  {
   "tmdb_id": 603,
   "title": "Matrix",
-  "poster_url": "https://image.tmdb.org/t/p/w500/pEoqbqtLc4CcwDUDqxmEDSWpWTZ.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/pEoqbqtLc4CcwDUDqxmEDSWpWTZ.jpg",
+  "logo_path": "/iBrE6JgSbNbWjLuYKdDpEDl9rlU.png"
  },
  {
   "tmdb_id": 9298,
   "title": "Ali G",
-  "poster_url": "https://image.tmdb.org/t/p/w500/dneu7r2wXy0aZ9Mme8Yu62Alcuc.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/dneu7r2wXy0aZ9Mme8Yu62Alcuc.jpg",
+  "logo_path": "/515G8NCH7cS4A0BwHqKr69J1y1S.png"
  },
  {
   "tmdb_id": 1429,
   "title": "La 25ème Heure",
-  "poster_url": "https://image.tmdb.org/t/p/w500/24HzIjo9GKN43zLRI6Z3d13zDwO.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/24HzIjo9GKN43zLRI6Z3d13zDwO.jpg",
+  "logo_path": "/uJEyQQk4rzG9uzBE2eu9LqXJYyd.png"
  },
  {
   "tmdb_id": 600,
   "title": "Full Metal Jacket",
-  "poster_url": "https://image.tmdb.org/t/p/w500/cShwwkz4gBBIRj8yFy8TP2tEWZ4.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/cShwwkz4gBBIRj8yFy8TP2tEWZ4.jpg",
+  "logo_path": "/qXsNpeRDUbL08KgjBlSugHYrvOt.png"
  },
  {
   "tmdb_id": 176,
   "title": "Saw",
-  "poster_url": "https://image.tmdb.org/t/p/w500/3fhUaMnlY72GGuBlzEeKA4brZAb.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/3fhUaMnlY72GGuBlzEeKA4brZAb.jpg",
+  "logo_path": "/bBmH8MuzbPVrDTTXrnvGNM7MBvs.png"
  },
  {
   "tmdb_id": 763,
   "title": "Braindead",
-  "poster_url": "https://image.tmdb.org/t/p/w500/wUG6zZA4qv9SPZcHTDTOGEqPX5a.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/wUG6zZA4qv9SPZcHTDTOGEqPX5a.jpg",
+  "logo_path": "/wcbfbBzC78o54W5kcwXHCKNy7B.png"
  },
  {
   "tmdb_id": 141,
   "title": "Donnie Darko",
-  "poster_url": "https://image.tmdb.org/t/p/w500/z3gIuT4e4tjCKYEYJChcBI44U21.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/z3gIuT4e4tjCKYEYJChcBI44U21.jpg",
+  "logo_path": "/vOOgU2N9DrL96DBIP0m8hwQUD49.png"
  },
  {
   "tmdb_id": 105,
   "title": "Retour vers le futur",
-  "poster_url": "https://image.tmdb.org/t/p/w500/iCgFtDUZxN8iUzNBCisjUrBmg2q.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/iCgFtDUZxN8iUzNBCisjUrBmg2q.jpg",
+  "logo_path": "/qBgFS7Lln11vQ3zRtISUmKCDyrL.png"
  },
  {
   "tmdb_id": 67,
   "title": "Paradise Now",
-  "poster_url": "https://image.tmdb.org/t/p/w500/vYA42i4XCfYmMBCNi1pYAv8eIyK.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/vYA42i4XCfYmMBCNi1pYAv8eIyK.jpg",
+  "logo_path": null
  },
  {
   "tmdb_id": 27327,
   "title": "Phantom of the Paradise",
-  "poster_url": "https://image.tmdb.org/t/p/w500/xsaafr6i1jAc9nv6lzhAVoHT6e0.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/xsaafr6i1jAc9nv6lzhAVoHT6e0.jpg",
+  "logo_path": "/ryzLFNzuoO5WOIsn1v9YfSW4xdg.png"
  },
  {
   "tmdb_id": 9340,
   "title": "Les Goonies",
-  "poster_url": "https://image.tmdb.org/t/p/w500/7EcRgdCjQriST92SzIenogw77kJ.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/7EcRgdCjQriST92SzIenogw77kJ.jpg",
+  "logo_path": "/mFhGWiadxBCUHTKjpan70vrhs2l.png"
  },
  {
   "tmdb_id": 1892,
   "title": "Le Retour du Jedi",
-  "poster_url": "https://image.tmdb.org/t/p/w500/tEQlCGiiWvMvfD7Sz8d99Pouy39.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/tEQlCGiiWvMvfD7Sz8d99Pouy39.jpg",
+  "logo_path": "/syXVQAuBRxA7SAUYTr1Tc7WUvah.png"
  },
  {
   "tmdb_id": 11621,
   "title": "Porco Rosso",
-  "poster_url": "https://image.tmdb.org/t/p/w500/o5QGUhhOICBR4C9ZZqBAeocrVde.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/o5QGUhhOICBR4C9ZZqBAeocrVde.jpg",
+  "logo_path": "/fPQ6RHRWTRDMaeuxiJ1SDkh3xud.png"
  },
  {
   "tmdb_id": 9532,
   "title": "Destination finale",
-  "poster_url": "https://image.tmdb.org/t/p/w500/zZCD9aZ1lvQt3OCn77fHbh45two.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/zZCD9aZ1lvQt3OCn77fHbh45two.jpg",
+  "logo_path": "/4OtEy2T82nttBE9xEHlnWdA16Ys.png"
  },
  {
   "tmdb_id": 1255,
   "title": "The Host",
-  "poster_url": "https://image.tmdb.org/t/p/w500/1KYJYiITzU8rhiJ7CsCJ5I3U89s.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/1KYJYiITzU8rhiJ7CsCJ5I3U89s.jpg",
+  "logo_path": "/cIW3ppQFTOzHHEqTCi0bftyPcnc.png"
  },
  {
   "tmdb_id": 607,
   "title": "Men in Black",
-  "poster_url": "https://image.tmdb.org/t/p/w500/rd0VCTHFFIE7BbZfy0aEIkOYxGA.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/rd0VCTHFFIE7BbZfy0aEIkOYxGA.jpg",
+  "logo_path": "/mTevhilEOa7dqILrE9YQnNhkIQ7.png"
  },
  {
   "tmdb_id": 49018,
   "title": "Insidious",
-  "poster_url": "https://image.tmdb.org/t/p/w500/mmyqYYJTMtCBlUNr0JAp5R59X8H.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/mmyqYYJTMtCBlUNr0JAp5R59X8H.jpg",
+  "logo_path": "/g3u7E0mBdR2IPMOBqHVHCzbUjss.png"
  },
  {
   "tmdb_id": 23483,
   "title": "Kick-Ass",
-  "poster_url": "https://image.tmdb.org/t/p/w500/nHg8x8eSkf802zzXTsAPNww2XZn.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/nHg8x8eSkf802zzXTsAPNww2XZn.jpg",
+  "logo_path": "/pDLmFlKLIZD2LvJdDknOPU5ts4q.png"
  },
  {
   "tmdb_id": 285923,
   "title": "Grindhouse",
-  "poster_url": "https://image.tmdb.org/t/p/w500/27VqpSq8Go7j2uYp9wqAF3VPhQ9.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/27VqpSq8Go7j2uYp9wqAF3VPhQ9.jpg",
+  "logo_path": "/lmfBhe8LaxVzj0Uw4gSSAgU9DTG.png"
  },
  {
   "tmdb_id": 37136,
   "title": "Y a-t-il un flic pour sauver la reine ?",
-  "poster_url": "https://image.tmdb.org/t/p/w500/bQsieGMAodtLhVP13JznizC553.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/bQsieGMAodtLhVP13JznizC553.jpg",
+  "logo_path": "/s6hCqi5lCuU3LedOjrpxADwjueN.png"
  },
  {
   "tmdb_id": 1538,
   "title": "Collatéral",
-  "poster_url": "https://image.tmdb.org/t/p/w500/x6OIJWkwe6Kj4pQXTkhhBb7gluA.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/x6OIJWkwe6Kj4pQXTkhhBb7gluA.jpg",
+  "logo_path": "/hRJVvPkHZZtGMHegZnl53CimXVZ.png"
  },
  {
   "tmdb_id": 37094,
   "title": "Chute libre",
-  "poster_url": "https://image.tmdb.org/t/p/w500/11Ar6C286Uw7iYaSuMXb73iPCLB.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/11Ar6C286Uw7iYaSuMXb73iPCLB.jpg",
+  "logo_path": "/4BNOIjxxaMfQCIGOL0h3eMhobw.png"
  },
  {
   "tmdb_id": 640,
   "title": "Arrête-moi si tu peux",
-  "poster_url": "https://image.tmdb.org/t/p/w500/nafyoqVGi87AwaV51GSJ0pk97gs.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/nafyoqVGi87AwaV51GSJ0pk97gs.jpg",
+  "logo_path": "/aNeWNklGaYdTQntyQfXD2MAcmug.png"
  },
  {
   "tmdb_id": 9495,
   "title": "The Crow",
-  "poster_url": "https://image.tmdb.org/t/p/w500/cMy05QAP5BEhlrEZ0Ylr66zj0P3.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/cMy05QAP5BEhlrEZ0Ylr66zj0P3.jpg",
+  "logo_path": "/rD9rucnGR3R3PXLDHCct0QtEhc8.png"
  },
  {
   "tmdb_id": 48769,
   "title": "Papy fait de la résistance",
-  "poster_url": "https://image.tmdb.org/t/p/w500/6teVZPk7JW0aePF7yzCBRKFNPSD.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/6teVZPk7JW0aePF7yzCBRKFNPSD.jpg",
+  "logo_path": "/rYHx70VU5bw86jJpZ16nCgYAWhn.png"
  },
  {
   "tmdb_id": 40177,
   "title": "Les Démons de Jésus",
-  "poster_url": "https://image.tmdb.org/t/p/w500/3MgZNv5SHPPa4W7WCSCMBuk3nbh.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/3MgZNv5SHPPa4W7WCSCMBuk3nbh.jpg",
+  "logo_path": "/qvRh0u7UQO2LLMQipMzJ1dTIB7o.png"
  },
  {
   "tmdb_id": 1809,
   "title": "Les Lois de l'attraction",
-  "poster_url": "https://image.tmdb.org/t/p/w500/eU1Pmi8ViTKhpvKvPKZPHs5DXb6.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/eU1Pmi8ViTKhpvKvPKZPHs5DXb6.jpg",
+  "logo_path": "/A1utb70ZYyaLZer8ayPSVzMo2xu.png"
  },
  {
   "tmdb_id": 197,
   "title": "Braveheart",
-  "poster_url": "https://image.tmdb.org/t/p/w500/jMDUKicyulag7KeTWVrblElCMZq.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/jMDUKicyulag7KeTWVrblElCMZq.jpg",
+  "logo_path": "/sPCE2ZXvtD9fyZXxAsptJuutWe6.png"
  },
  {
   "tmdb_id": 8736,
   "title": "Dikkenek",
-  "poster_url": "https://image.tmdb.org/t/p/w500/kqI4z9Hzw2GqwzLpYYGO29xqb7K.jpg"
+  "poster_url": "https://image.tmdb.org/t/p/w500/kqI4z9Hzw2GqwzLpYYGO29xqb7K.jpg",
+  "logo_path": "/qqxe0AWqmVwSesqxprHZcWPNMhC.png"
  }
 ]

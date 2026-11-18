@@ -372,7 +372,8 @@ photo d'origine de la porte, un mur reconstitué à sa gauche, le toit, un ciel 
   transformation de `zoomTransform` — l'écran de la borne vient se poser là où sera celui de
   l'interface (`kioskScreenBox`, qui reprend la formule de `KioskView.module.css` ; un test les
   tient alignées). 900 ms ; la vue rapprochée se fond entre 35 % et 70 % du trajet, si elle était
-  décodée à l'appui ; un voile noir monte sur les 180 dernières millisecondes ; à la fin,
+  décodée à l'appui ; un voile **au fond de la borne** (pas noir : « pas d'écran noir à l'ouverture
+  de la borne ») monte sur les 180 dernières millisecondes ; à la fin,
   `onOpenKiosk`. Une seule transition (ni double appui, ni porte pendant le zoom) ; pas de zoom
   avec `prefers-reduced-motion` ; un minuteur de garde, armé **une fois le zoom affiché**, ouvre la
   borne si la fin de la transition n'arrive pas.

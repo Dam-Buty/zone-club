@@ -53,3 +53,24 @@ test('IMAGES: la mise en page est cohérente', () => {
   assert.ok(Math.abs(ratio - 9 / 5) < 0.03, `écran 5:9, mesuré ${ratio}`);
   assert.ok(Math.abs((L.zoom.x1 - L.zoom.x0) * L.image.w / ((L.ecran.x1 - L.ecran.x0) * L.image.w) - 2) < 0.05, 'vue rapprochée : deux largeurs d\'écran');
 });
+
+// Relecture finale (18/11/2026) : « python3 … | tail » sous « set -e » rend le code de sortie de tail — une étape en
+// échec laissait la fabrique continuer sur l'intermédiaire d'un passage précédent, jusqu'à écraser les images du site.
+test('FABRIQUE: une étape en échec arrête la fabrique', () => {
+  const sh = readFileSync(path.join(T, 'fabrique.sh'), 'utf8');
+  assert.ok(sh.includes('set -e'), 'arrêt à la première erreur');
+  for (const ligne of sh.split('\n').filter((l) => /^\s*python3 /.test(l))) {
+    assert.ok(!ligne.includes('|'), `le code de sortie de python3 est masqué par un tube : ${ligne.trim()}`);
+  }
+});
+
+// Relecture finale : seule la liste des films était figée ; le logo de chaque tranche était rechoisi chez TMDB à
+// chaque fabrication (selon des votes qui bougent), et sans réseau la fabrique écrivait des tranches dégradées.
+test('FABRIQUE: le logo de chaque tranche est figé, et la fabrique n\'interroge plus l\'API de TMDB', () => {
+  const tr = JSON.parse(readFileSync(path.join(T, 'sources/tranches.json'), 'utf8'));
+  for (const t of tr) assert.ok(t.logo_path === null || /^\/[\w-]+\.png$/.test(t.logo_path), `${t.title} : ${t.logo_path}`);
+  assert.ok(tr.filter((t) => t.logo_path).length >= 90, 'presque toutes les tranches portent le logo du film');
+  const src = readFileSync(path.join(T, 'textures.py'), 'utf8');
+  assert.ok(!src.includes('api.themoviedb.org') && !src.includes('TMDB_API_KEY'), 'ni API ni clé');
+  assert.ok(src.includes('SystemExit'), 'une image attendue qui manque arrête la fabrique');
+});

@@ -1,8 +1,8 @@
 """Devanture mobile avec la borne : textures de la borne (autocollants usés, tranches de K7, bandeau, usure).
 
 Usage : python3 textures.py   → travail/tex/
-Les films des tranches sont figés dans sources/tranches.json ; leurs affiches et logos viennent de TMDB (clé lue dans
-le .env de la racine du dépôt) et restent dans travail/tmdb-cache/.
+Les films des tranches, leur affiche et leur logo sont figés dans sources/tranches.json ; les images sont téléchargées
+une fois chez TMDB (sans clé) et restent dans travail/tmdb-cache/. Une image attendue qui manque arrête la fabrique.
 """
 import json
 from pathlib import Path
@@ -123,83 +123,68 @@ wear(anar, np.ones((anar.height, anar.width)), fade=0.22, seed=40, n_scratch=60,
 # jaquette qui se prolonge sur la tranche) ; le titre est le logo officiel du film quand TMDB en a un (français
 # d'abord), sinon le titre en lettres. Tout est gardé dans tmdb-cache/ : un second passage ne touche plus au réseau.
 import io  # noqa: E402
-import re  # noqa: E402
 import time  # noqa: E402
 import subprocess  # noqa: E402
 
 # Les 96 films sont figés dans sources/tranches.json, dans l'ordre du tirage d'origine (fait le 18/11/2026 parmi les
 # 315 films alors disponibles du catalogue). On rejoue ce tirage à blanc pour que la suite de nombres au hasard — donc
 # les étiquettes, l'usure et les rayures de chaque tranche — reste celle de l'image validée.
-films = [(f['tmdb_id'], f['title'], f['poster_url']) for f in json.loads((SRC / 'tranches.json').read_text())]
+# Le logo retenu pour chaque film est figé lui aussi (logo_path ; null = titre en lettres) : rechoisi chez TMDB à
+# chaque fabrication, selon des votes qui bougent, il pouvait changer d'un mois à l'autre.
+films = [(f['tmdb_id'], f['title'], f['poster_url'], f['logo_path']) for f in json.loads((SRC / 'tranches.json').read_text())]
 rng.shuffle(list(range(315)))
 fonts = [f for f in ['/System/Library/Fonts/Supplemental/DIN Condensed Bold.ttf', '/System/Library/Fonts/Supplemental/Impact.ttf',
                      '/System/Library/Fonts/Supplemental/Futura.ttc', '/System/Library/Fonts/Avenir Next Condensed.ttc'] if Path(f).exists()]
 N, LW, LH = 96, 512, 80
 CACHE = D / 'tmdb-cache'
 CACHE.mkdir(exist_ok=True)
-_env = ICI.parent.parent / '.env'
-_m = re.search(r'^TMDB_API_KEY=(.*)$', _env.read_text(), re.M) if _env.exists() else None
-TMDB_KEY = _m.group(1).strip().strip('"') if _m else ''      # jamais affichée, jamais écrite ailleurs
-NET = {'ok': 0, 'fails': 0}
+NET = {'ok': 0}
 
 
 def fetch(url, dest):
-    """Télécharge une fois, puis relit le cache. Après trois échecs sans aucun succès, on n'insiste plus (hors ligne).
+    """Télécharge une fois, puis relit le cache. Un téléchargement impossible ARRÊTE la fabrique : sans cela elle
+    écrivait dans le site des tranches dégradées (titre en lettres, fond uni), sans rien dire.
     Par curl : le Python de cette machine refuse la chaîne de certificats (CERTIFICATE_VERIFY_FAILED) que curl
-    accepte ; la vérification n'est pas désactivée. L'URL passe par l'entrée standard (-K -), pas par la ligne de
-    commande : elle peut porter la clé de l'API."""
+    accepte ; la vérification n'est pas désactivée."""
     if dest.exists():
         return dest.read_bytes()
-    if NET['ok'] == 0 and NET['fails'] >= 3:
-        return None
     tmp = dest.with_suffix(dest.suffix + '.part')
     res = subprocess.run(['curl', '-sf', '--max-time', '20', '-A', 'devanture-borne/1.0', '-o', str(tmp), '-K', '-'],
                          input=f'url = "{url}"\n', text=True, capture_output=True)
     if res.returncode != 0 or not tmp.exists() or tmp.stat().st_size == 0:
         tmp.unlink(missing_ok=True)
-        NET['fails'] += 1
-        return None
+        raise SystemExit(f'textures.py : téléchargement impossible ({url}) — réseau coupé ou image retirée de TMDB ; '
+                         f'la fabrique s\'arrête plutôt que de produire des tranches dégradées.')
     tmp.rename(dest)
     NET['ok'] += 1
     time.sleep(0.03)
     return dest.read_bytes()
 
 
-def tmdb_logo(tmdb_id):
-    """Logo-titre du film : français d'abord, puis anglais, puis sans langue. None s'il n'y en a pas."""
-    meta = CACHE / f'{tmdb_id}-images.json'
-    if not meta.exists() and not TMDB_KEY:
-        return None
-    raw = fetch(f'https://api.themoviedb.org/3/movie/{tmdb_id}/images?include_image_language=fr,en,null&api_key={TMDB_KEY}', meta)
+def ouvre(data, mode, quoi):
+    """Une image téléchargée ; illisible, elle arrête la fabrique (même raison que fetch)."""
     try:
-        logos = json.loads(raw).get('logos', []) if raw else []
-    except ValueError:
+        return Image.open(io.BytesIO(data)).convert(mode)
+    except Exception as err:
+        raise SystemExit(f'textures.py : {quoi} illisible ({err}) — vider travail/tmdb-cache/ et relancer.')
+
+
+def tmdb_logo(tmdb_id, logo_path):
+    """Logo-titre du film, figé dans tranches.json (choisi le 18/11/2026 : français d'abord, puis anglais, puis sans
+    langue, le mieux noté). None si le film n'en a pas : son titre est alors écrit en lettres."""
+    if not logo_path:
         return None
-    for lang in ('fr', 'en', None):
-        cands = [lg for lg in logos if lg.get('iso_639_1') == lang]
-        if not cands:
-            continue
-        best = max(cands, key=lambda lg: (lg.get('vote_average', 0), lg.get('width', 0)))
-        data = fetch('https://image.tmdb.org/t/p/w300' + re.sub(r'\.svg$', '.png', best['file_path']), CACHE / f'{tmdb_id}-logo.png')
-        try:
-            return Image.open(io.BytesIO(data)).convert('RGBA') if data else None
-        except Exception:
-            return None
-    return None
+    return ouvre(fetch('https://image.tmdb.org/t/p/w300' + logo_path, CACHE / f'{tmdb_id}-logo.png'), 'RGBA', f'logo du film {tmdb_id}')
 
 
 spine_stats = {'logo': 0, 'texte': 0, 'sans affiche': 0}
 
 
-def spine(tmdb_id, title, poster_url, i):
+def spine(tmdb_id, title, poster_url, logo_path, i):
     """Une tranche de 512 × 80 (le haut de la K7 à gauche, le titre se lit de gauche à droite)."""
-    data = fetch(poster_url.replace('/w500/', '/w185/'), CACHE / f'{tmdb_id}-poster.jpg') if poster_url else None
     poster = None
-    if data:
-        try:
-            poster = Image.open(io.BytesIO(data)).convert('RGB')
-        except Exception:
-            poster = None
+    if poster_url:
+        poster = ouvre(fetch(poster_url.replace('/w500/', '/w185/'), CACHE / f'{tmdb_id}-poster.jpg'), 'RGB', f'affiche du film {tmdb_id}')
     if poster is None:
         spine_stats['sans affiche'] += 1
         bg = np.zeros((LH, LW, 3)) + np.array([18.0, 18.0, 22.0])
@@ -207,7 +192,7 @@ def spine(tmdb_id, title, poster_url, i):
         w, h = poster.size
         band = poster.crop((int(w * 0.30), 0, int(w * 0.70), h)).resize((LH, LW), Image.LANCZOS).filter(ImageFilter.GaussianBlur(7))
         bg = np.asarray(band.rotate(90, expand=True)).astype(float)
-    logo = tmdb_logo(tmdb_id) if poster is not None else None
+    logo = tmdb_logo(tmdb_id, logo_path) if poster is not None else None
     zone = (58, LW - 84)                                      # place du titre, avant l'étiquette du vidéoclub
     if logo is not None and logo.split()[3].getbbox():
         logo = logo.crop(logo.split()[3].getbbox())
@@ -255,8 +240,8 @@ def spine(tmdb_id, title, poster_url, i):
 
 atlas = Image.new('RGB', (LW, N * LH))
 for i in range(N):
-    tmdb_id, title, poster_url = films[i % len(films)]
-    atlas.paste(spine(tmdb_id, title, poster_url, i), (0, i * LH))
+    tmdb_id, title, poster_url, logo_path = films[i % len(films)]
+    atlas.paste(spine(tmdb_id, title, poster_url, logo_path, i), (0, i * LH))
 atlas.save(T / 'tranches.png')
 print('TRANCHES', N, 'tranches :', spine_stats, '| réseau :', NET, '| fichiers en cache :', len(list(CACHE.iterdir())))
 

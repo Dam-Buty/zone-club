@@ -286,7 +286,7 @@
 /* ===== MOBILE : le zoom vers l'écran de la borne =====
    À l'appui sur la borne, la scène reçoit la transformation de zoomTransform : l'écran de la borne
    vient se poser là où sera celui de l'interface, en 900 ms. La vue rapprochée — un rendu net de
-   la même zone, posé sur layout.zoom — apparaît entre 35 % et 70 % du trajet ; un voile noir monte
+   la même zone, posé sur layout.zoom — apparaît entre 35 % et 70 % du trajet ; un voile au fond de la borne monte
    sur les 180 dernières millisecondes ; à la fin, la borne s'ouvre (ExteriorView). Rien que des
    transformations et des opacités. Avec « animations réduites », rien de tout cela ne se joue. */
 
@@ -327,11 +327,13 @@
   pointer-events: none;
 }
 
+/* Le fond de la borne (KioskView.module.css, .root — un test les tient égaux), pas du noir : « pas
+   d'écran noir à l'ouverture de la borne ». La borne apparaît ensuite sur ce même fond. */
 .kioskVeil {
   position: absolute;
   inset: 0;
   z-index: 10;
-  background: #000;
+  background: linear-gradient(180deg, #23213a 0%, #191827 40%, #14131f 100%);
   pointer-events: none;
   animation: fadeIn 180ms linear 720ms both;
 }
