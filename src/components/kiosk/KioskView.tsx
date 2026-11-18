@@ -412,6 +412,8 @@ export function KioskView() {
   }, [pendingAction]);
   const openAccount = () => {
     if (authVisible) return;
+    // Le compte se pose au même niveau que la recherche : on la ferme d'abord, sinon il s'ouvrirait dessous.
+    closeSearch();
     if (!isAuthenticated || !authUser) {
       // Une fois connecté, on arrive directement sur « Mon compte ».
       requestAuth(() => setAccountOpen(true));

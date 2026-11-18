@@ -448,3 +448,16 @@ test('PANNEAU: deux pictogrammes dessinés, et plus de « Mes locations » ni de
   assert.ok(!dist.includes('Mes locations') && !dist.includes('Sur la TV'), 'anciens libellés');
   assert.ok(dist.includes('watchHereLabel(') && dist.includes('tvMeansLabel('), 'libellés tirés de la logique testée');
 });
+// Relecture finale : une critique publiée doit pouvoir se modifier depuis « Mon compte » (spec § 5), et « Compte »
+// appuyé pendant la recherche ne doit pas ouvrir le compte sous elle.
+test('COMPTE: une critique publiée se modifie depuis « Mon compte », sans « +1 crédit »', () => {
+  const src = readText(path.join(ROOT, 'src/components/kiosk/KioskAccount.tsx'));
+  const pub = src.slice(src.indexOf("state.kind === 'publiée'"), src.indexOf("state.kind === 'possible'"));
+  assert.ok(pub.includes('Modifier ma critique') && pub.includes('onClick={onWrite}'), 'bouton « Modifier ma critique »');
+  assert.ok(!pub.includes('+1 crédit'), 'pas de crédit pour une modification');
+});
+test('COMPTE: « Compte » pendant la recherche ferme la recherche avant d\'ouvrir le compte', () => {
+  const view = readText(path.join(ROOT, 'src/components/kiosk/KioskView.tsx'));
+  const fn = view.slice(view.indexOf('const openAccount'), view.indexOf('const openAccount') + 700);
+  assert.ok(/closeSearch\(\)|setMode\('browse'\)/.test(fn), 'la recherche se ferme');
+});

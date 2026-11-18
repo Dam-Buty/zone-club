@@ -29,10 +29,16 @@ function Mark({ ok }: { ok: boolean }) {
 
 function ReviewLine({ state, onWrite }: { state: KioskReviewState; onWrite: () => void }) {
   if (state.kind === 'publiée') {
+    // Une seule critique par film et par visiteur, mais elle se modifie toujours (spec § 5) — sans crédit.
     return (
-      <span className={styles.kAccountFact}>
-        <Mark ok /> Critique publiée
-      </span>
+      <>
+        <span className={styles.kAccountFact}>
+          <Mark ok /> Critique publiée
+        </span>
+        <button type="button" className={`${styles.kNoticeBtn} ${styles.kAccountReview}`} onClick={onWrite}>
+          Modifier ma critique
+        </button>
+      </>
     );
   }
   if (state.kind === 'possible') {
