@@ -147,6 +147,11 @@ vidéo, donc pas de son.
   entre la vitrine et la fente : le transfert caché évite de modéliser tout le chemin. Le carter est
   dans la **grande vitrine de gauche** ; la fente est dans la **colonne de droite**, sous le pavé : le
   trajet caché va donc de gauche à droite, derrière la colonne qui porte les autocollants.
+- **Révision du 18/11/2026 [C]** : le portique est placé **devant** le casier (entre la vitre et les tranches), et non
+  à l'arrière, où les K7 le cacheraient — il doit se voir (« on peut observer la K7 être récupérée »). La borne étant
+  désormais encastrée (10 cm de saillie), la grande vitrine gagne la profondeur nécessaire (32 cm). Le chariot porte
+  un plateau à hauteur de tablette et un tiroir à deux doigts qui tire la K7 dessus. Première image clé (robot au
+  repos) montrée à Rusmir le 18/11.
 - **Validation avant d'animer** : quelques images clés du carter et du robot (au repos, saisie, K7
   sortie) sont soumises à Rusmir avant tout travail d'animation. **[C]**
 - **La fente** : la K7 sort couchée, tranche en avant (la fente de 20 × 3 cm a les cotes de la tranche

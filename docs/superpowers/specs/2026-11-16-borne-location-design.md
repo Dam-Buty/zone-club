@@ -88,6 +88,11 @@
 >   l'ardoise 10 % plus grande. Défauts de dalle de 2007 ajoutés : fourmillement visible, allumage
 >   du rétroéclairage, fuites de lumière, rémanence, animations à 25 i/s, angle de vue piloté par
 >   l'inclinaison du téléphone. Rejeté par lui : le bandeau « Fiche du film » sur la jaquette.
+> - **§ 4 et § 5, borne encastrée (18/11/2026).** Vue d'ensemble de l'essai du lot 3 montrée à Rusmir : « le raccord me
+>   convient » ; la borne est **encastrée dans le mur et ne dépasse que d'une dizaine de centimètres** (10 cm retenus),
+>   au lieu d'un meuble de 55 cm posé devant. **[R]** L'autocollant prévu sur le flanc passe sur la façade, hors de
+>   l'écran. **[R]** Plan validé (« go ») : finir la borne sous Blender, rendre les images finales, brancher dans le
+>   site. Ajoutés **[C]** : collerette d'encastrement, enseigne néon posée à partir du rendu déjà validé de l'écran.
 > - **Tarif** : l'affichage suit ce que le serveur facture. **Dates du serveur** : lues en UTC.
 >   Les deux validés. **[R]**
 > - **§ 5, bouton provisoire sur mobile** : il part tel quel, on ajustera en voyant la version
