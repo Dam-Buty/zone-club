@@ -97,6 +97,10 @@
 >   jugé trop haut — tout le bloc de l'écran (écran, paiement, afficheur, fente) descend de 10 cm et son haut s'aligne
 >   sur le vitrage de la vitrine de gauche. **[R]** Les tranches des K7 des vitrines sont **tirées de TMDB** et non
 >   aléatoires **[R]** : fond pris dans l'affiche du film, titre = son logo officiel quand TMDB en a un. **[C]**
+> - **§ 4, enseigne de la borne (18/11/2026).** Au-dessus de la borne, l'enseigne dit **« Borne 24/7 »** et non plus
+>   « Location 24/7 », avec **la même écriture et le même effet néon que « Open 24/7 » au-dessus de la porte**,
+>   modélisée dans Blender (tubes, cadre, panneau) — à valider par Rusmir sur l'essai 6. **[R]** Police retenue pour
+>   le tracé des tubes : SignPainter (système) **[C]**.
 > - **Tarif** : l'affichage suit ce que le serveur facture. **Dates du serveur** : lues en UTC.
 >   Les deux validés. **[R]**
 > - **§ 5, bouton provisoire sur mobile** : il part tel quel, on ajustera en voyant la version
