@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { stageBox, kioskScreenBox, zoomTransform, choiceSpans, fitBox } from '../../src/components/exterior/storefront-layout.ts';
+import { stageBox, kioskScreenBox, zoomTransform, choiceSpans, fitBox, kioskScreenBoxDesktop, approachTransform } from '../../src/components/exterior/storefront-layout.ts';
 
 const ROOT = path.resolve(import.meta.dirname, '../..');
 const L = JSON.parse(readFileSync(path.join(ROOT, 'src/data/storefront-mobile.json'), 'utf8'));
@@ -188,4 +188,50 @@ test('BUREAU: câblage de la devanture', () => {
   assert.ok(tsx.includes('zoneStyle(LAYOUT_DESKTOP.borne)') && tsx.includes('zoneStyle(LAYOUT_DESKTOP.porte)'), 'borne et porte entières');
   assert.ok(tsx.includes('BORNE LOCATION'), 'indicateur de la borne');
   assert.ok(!tsx.includes('kioskButton') && !css.includes('.kioskButton'), 'le bouton provisoire a disparu');
+});
+
+// ----- L'approche filmée de la borne (livraison B) -----
+// Rusmir, 18/11/2026 : plutôt qu'un zoom, un film de 3 s où l'on avance jusqu'à la borne ; à la dernière image
+// l'écran filmé est là où se trouve l'écran de l'interface, qui apparaît en fondu par-dessus.
+
+test('APPROCHE: l\'écran de l\'interface du bureau, aux positions mesurées à l\'écran le 18/11/2026', () => {
+  const cas = [[1280, 720, 341.7, 21.6, 451.2, 676.8], [1440, 900, 411.7, 27, 564, 846], [1920, 1080, 481.6, 32.4, 676.8, 1015.2],
+    [2560, 1080, 481.6, 32.4, 676.8, 1015.2], [2560, 1440, 516.7, 170, 733.3, 1100], [1024, 768, 360.4, 23, 481.3, 721.9]];
+  for (const [vw, vh, left, top, width, height] of cas) {
+    const b = kioskScreenBoxDesktop(vw, vh);
+    for (const [k, v] of [['left', left], ['top', top], ['width', width], ['height', height]]) assert.ok(Math.abs(b[k] - v) < 0.6, `${vw}×${vh} ${k} : ${b[k]} au lieu de ${v}`);
+  }
+});
+
+test('APPROCHE: la formule du bureau suit KioskView.module.css', () => {
+  const css = readFileSync(path.join(ROOT, 'src/components/kiosk/KioskView.module.css'), 'utf8');
+  for (const morceau of ['calc(min(94dvh, 1100px) * 2 / 3)', 'width: calc(var(--ks-w) * 0.62)', 'padding: 0 26px', 'gap: 20px', 'padding: 13px', 'border-left: 3px solid']) assert.ok(css.includes(morceau), morceau);
+});
+
+test('APPROCHE: l\'écran filmé arrive sur l\'écran de l\'interface (bureau)', () => {
+  for (const [vw, vh] of [[1920, 1080], [2560, 1440], [1280, 720], [2560, 1080]]) {
+    const stage = fitBox(LD.image, vw, vh), cible = kioskScreenBoxDesktop(vw, vh), e = LD.approche.ecran, z = approachTransform(stage, e, cible);
+    assert.ok(Math.abs(stage.left + z.x + z.scale * e.x0 * stage.width - cible.left) < 0.01);
+    assert.ok(Math.abs(stage.top + z.y + z.scale * e.y0 * stage.height - cible.top) < 0.01);
+    assert.ok(Math.abs(z.scale * (e.x1 - e.x0) * stage.width - cible.width) < 0.01);
+    assert.ok(Math.abs(z.scale * (e.y1 - e.y0) * stage.height - cible.height) / cible.height < 0.03, `${vw}×${vh} : même proportion d'écran`);
+  }
+  const z = approachTransform(fitBox(LD.image, 1920, 1080), LD.approche.ecran, kioskScreenBoxDesktop(1920, 1080));
+  assert.ok(z.scale > 1 && z.scale < 1.12, `sur 1920 × 1080 le film ne fait qu'un petit ajustement (${z.scale})`);
+});
+
+test('APPROCHE: le crochet du film ne fait jamais attendre', () => {
+  const src = readFileSync(path.join(ROOT, 'src/components/exterior/useApproachFilm.ts'), 'utf8');
+  for (const m of ['prefers-reduced-motion', 'APPROACH_START_TIMEOUT_MS', 'APPROACH_GUARD_MARGIN_MS', 'createObjectURL', 'revokeObjectURL', "'ended'", "'error'", 'requestVideoFrameCallback']) assert.ok(src.includes(m), m);
+  assert.ok(!/youtube|dailymotion|vimeo/i.test(src));
+});
+
+test('APPROCHE: câblage du bureau et apparition de la borne', () => {
+  const tsx = readFileSync(path.join(ROOT, 'src/components/exterior/ExteriorView.tsx'), 'utf8');
+  const app = readFileSync(path.join(ROOT, 'src/App.tsx'), 'utf8');
+  assert.ok(tsx.includes('useApproachFilm(') && tsx.includes('approachTransform(') && tsx.includes('kioskScreenBoxDesktop('));
+  assert.match(tsx, /<video[\s\S]{0,300}muted[\s\S]{0,200}playsInline/);
+  assert.match(tsx, /onKioskIntent\?\.\(\);[\s\S]{0,600}film\.start\(\)/, 'l\'intention part avant le film');
+  assert.ok(tsx.includes('.pause()') && tsx.includes('film.skip'));
+  assert.ok(app.includes('KIOSK_REVEAL_MS') && app.includes('kiosk-reveal'));
 });

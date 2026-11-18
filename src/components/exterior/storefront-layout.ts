@@ -20,6 +20,9 @@ export interface StorefrontLayout {
   push: { x: number; y: number };
   /** Point sur lequel le cadrage se centre : le milieu de l'ensemble borne + porte. */
   groupe: { cx: number; cy: number };
+  /** Le film d'approche de la borne : son fichier, sa taille, sa durée (s), et où est l'écran de la
+      borne dans sa DERNIÈRE image (fractions du cadre du film, qui a le format de l'image). */
+  approche?: { src: string; w: number; h: number; duree: number; images: number; octets: number; ecran: Rect };
   /** Mobile seulement : zone couverte par la vue rapprochée (`/storefront-borne-zoom.webp`), et sa taille en pixels. */
   zoom?: Rect & { w: number; h: number };
 }
@@ -119,5 +122,41 @@ export function zoomTransform(layout: StorefrontLayout, vw: number, vh: number, 
     scale,
     x: target.left - stage.left - scale * layout.ecran.x0 * stage.width,
     y: target.top - stage.top - scale * layout.ecran.y0 * stage.height,
+  };
+}
+
+// Constantes de KioskView.module.css (bureau : « min-width: 769px » et pointeur fin). Un test vérifie
+// que la feuille les porte encore ; les positions ont été mesurées à l'écran le 18/11/2026.
+const KIOSK_DESKTOP_HEIGHT = 0.94; // « min(94dvh, 1100px) »
+const KIOSK_DESKTOP_MAX_HEIGHT = 1100;
+const KIOSK_DESKTOP_RATIO = 2 / 3;
+const KIOSK_DESKTOP_VITRINE = 0.62; // la vitrine à gauche de l'écran : 0,62 × la largeur de l'écran
+const KIOSK_DESKTOP_LEFT = 62; // bordure 3 + marge 26 + écart 20 + cadre 13
+const KIOSK_DESKTOP_AROUND = 104; // tout ce qui entoure vitrine et écran : 2 × (3 + 26) + 20 + 2 × 13
+
+/**
+ * Où sera l'écran de KioskView sur un bureau. Le corps de la borne est collé à GAUCHE de la
+ * fenêtre : sa vitrine, puis l'écran (2:3, haut de 94 % de la fenêtre, 1100 px au plus), centré en
+ * hauteur. Sur une fenêtre étroite la vitrine cède de la place avant l'écran.
+ */
+export function kioskScreenBoxDesktop(vw: number, vh: number): Box {
+  const height = Math.min(KIOSK_DESKTOP_HEIGHT * vh, KIOSK_DESKTOP_MAX_HEIGHT);
+  const width = height * KIOSK_DESKTOP_RATIO;
+  const vitrine = clamp(0, vw - width - KIOSK_DESKTOP_AROUND, KIOSK_DESKTOP_VITRINE * width);
+  return { left: vitrine + KIOSK_DESKTOP_LEFT, top: (vh - height) / 2, width, height };
+}
+
+/**
+ * Transformation CSS de la scène (`transform-origin: 0 0`, soit `translate(x, y) scale(scale)`)
+ * qui amène un rectangle de la scène — l'écran de la borne dans la dernière image du film — sur
+ * `target`, l'écran de l'interface. Le film fait lui-même l'approche : il ne reste ici qu'un petit
+ * ajustement, d'une fenêtre à l'autre.
+ */
+export function approachTransform(stage: Box, ecran: Rect, target: Box): { scale: number; x: number; y: number } {
+  const scale = target.width / ((ecran.x1 - ecran.x0) * stage.width);
+  return {
+    scale,
+    x: target.left - stage.left - scale * ecran.x0 * stage.width,
+    y: target.top - stage.top - scale * ecran.y0 * stage.height,
   };
 }

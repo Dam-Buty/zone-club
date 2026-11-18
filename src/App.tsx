@@ -57,6 +57,9 @@ const KioskViewLazy = lazy(() => loadKiosk().catch(() => loadKiosk()).then(m => 
  * borne… » entre la fin du zoom de la devanture et l'écran de la borne. Le choix est fait une
  * fois, au montage : changer de composant en cours de route remonterait la borne.
  */
+// Durée du fondu par lequel la borne apparaît sur la devanture (film d'approche ou ouverture directe).
+const KIOSK_REVEAL_MS = 280;
+
 function KioskMount() {
   const [Kiosk] = useState(() => KioskViewLoaded ?? KioskViewLazy);
   return <Kiosk />;
@@ -589,11 +592,26 @@ function App() {
   // cours sont coupés (la vanne se referme) et la scène est démontée, son GPU libéré — qu'elle
   // ait été prête ou encore en préparation. Tout repart quand la devanture est de nouveau
   // affichée ; un temps de chargement à la porte, après un passage par la borne, est accepté.
+  //
+  // La borne APPARAÎT sur la devanture : elle monte en fondu (kiosk-reveal) par-dessus la devanture,
+  // qui reste montée dessous le temps de ce fondu — figée sur la dernière image du film d'approche,
+  // où l'écran de la borne est exactement à la place de celui de l'interface. Jamais d'écran noir.
+  const [kioskRevealing, setKioskRevealing] = useState(false);
+  const kioskRevealTimerRef = useRef<number | null>(null);
+  const stopKioskReveal = useCallback(() => {
+    if (kioskRevealTimerRef.current !== null) window.clearTimeout(kioskRevealTimerRef.current);
+    kioskRevealTimerRef.current = null;
+    setKioskRevealing(false);
+  }, []);
+  useEffect(() => stopKioskReveal, [stopKioskReveal]);
   const openKiosk = useCallback(() => {
     pauseInteriorPreload();
     setInteriorPrewarm(false);
+    if (kioskRevealTimerRef.current !== null) window.clearTimeout(kioskRevealTimerRef.current);
+    setKioskRevealing(true);
+    kioskRevealTimerRef.current = window.setTimeout(stopKioskReveal, KIOSK_REVEAL_MS);
     setScene('kiosk');
-  }, [setScene]);
+  }, [setScene, stopKioskReveal]);
   // Sur mobile, la devanture zoome d'abord vers l'écran de la borne : elle prévient dès l'appui,
   // pour que le GPU et les chargements soient libérés avant l'animation, pas après. `openKiosk`
   // refait la même chose à la fin du zoom (sans effet, tout est déjà libéré) puis change de scène.
@@ -601,7 +619,10 @@ function App() {
     pauseInteriorPreload();
     setInteriorPrewarm(false);
   }, []);
-  const leaveKiosk = useCallback(() => setScene('exterior'), [setScene]);
+  const leaveKiosk = useCallback(() => {
+    stopKioskReveal();
+    setScene('exterior');
+  }, [setScene, stopKioskReveal]);
 
   const isInterior = currentScene === 'interior';
   const isKiosk = currentScene === 'kiosk';
@@ -625,7 +646,7 @@ function App() {
       )}
 
       {/* Devanture — par-dessus la scène intérieure tant qu'on n'est pas entré */}
-      {currentScene === 'exterior' && (
+      {(currentScene === 'exterior' || kioskRevealing) && (
         <Suspense fallback={null}>
           <ExteriorView
             onEnter={handleEnterStore}
@@ -642,10 +663,14 @@ function App() {
           masquer la borne le temps que son chunk arrive. */}
       {isKiosk && (
         <KioskBoundary onLeave={leaveKiosk}>
-          {/* Jamais d'écran noir : tant que le code de la borne n'est pas là, son fond l'est. */}
-          <Suspense fallback={<KioskOpening />}>
-            <KioskMount />
-          </Suspense>
+          {/* Jamais d'écran noir : la borne apparaît en fondu sur la devanture (voir openKiosk) ; tant
+              que son code n'est pas là, c'est son fond qui apparaît. */}
+          <style>{`@keyframes kiosk-reveal { from { opacity: 0 } to { opacity: 1 } }`}</style>
+          <div style={{ animation: `kiosk-reveal ${KIOSK_REVEAL_MS}ms ease-out both` }}>
+            <Suspense fallback={<KioskOpening />}>
+              <KioskMount />
+            </Suspense>
+          </div>
           <Suspense fallback={null}>
             {isPlayerOpen && <VHSPlayer />}
             <ActiveCastIndicator />

@@ -30,6 +30,60 @@
   position: absolute;
   pointer-events: none;
   container-type: inline-size;
+  transform-origin: 0 0;
+}
+
+/* ===== BUREAU : le film d'approche de la borne =====
+   Au clic sur la borne, un film de 3 s (rendu par la fabrique des images) se fond sur la devanture
+   dès que sa première image est affichée : on avance jusqu'à l'écran de la borne. Pendant qu'il
+   joue, sa boîte glisse (approachTransform) pour que l'écran filmé de la dernière image tombe sur
+   l'écran de l'interface ; la durée de ce glissement est celle du film (donnée par la vue). À
+   l'arrivée la borne apparaît en fondu par-dessus (App). Un clic pendant le film y mène tout de
+   suite. Avec « animations réduites », rien de tout cela ne se joue. */
+
+.approachFilm {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.approachFilmShown {
+  opacity: 1;
+  transition: opacity 150ms linear;
+}
+
+.contentAreaFilm {
+  transition-property: transform;
+  transition-timing-function: cubic-bezier(0.45, 0, 0.3, 1);
+  will-change: transform;
+}
+
+/* Pendant le film plus rien ne répond : une seule transition (le clic passe au conteneur, qui
+   mène à l'arrivée). Les indicateurs s'effacent. */
+.contentAreaFilm .desktopZone {
+  pointer-events: none;
+}
+
+.contentAreaFilm .doorIndicator,
+.contentAreaFilm .kioskIndicator,
+.contentAreaFilm .doorHotspot {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+/* Autour du film quand sa boîte ne couvre plus toute la fenêtre (écrans très larges ou très
+   hauts) : le fond de la page de la borne, pas le noir des bandes. */
+.containerFilm {
+  background: #0d0c16;
+  cursor: pointer;
+}
+
+.canvasHidden {
+  visibility: hidden;
 }
 
 /* Bureau : la borne entière et la porte entière se cliquent. Leurs boîtes viennent de la mise en

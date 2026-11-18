@@ -3,7 +3,8 @@ import { ExteriorScene } from './scene/ExteriorScene';
 import { DoorBlockedNotice } from './DoorBlockedNotice';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { releaseInteriorPreload } from '../../utils/interior-preload-gate';
-import { choiceSpans, fitBox, stageBox, zoomTransform, type Rect, type StorefrontLayout } from './storefront-layout';
+import { approachTransform, choiceSpans, fitBox, kioskScreenBoxDesktop, stageBox, zoomTransform, type Rect, type StorefrontLayout } from './storefront-layout';
+import { useApproachFilm } from './useApproachFilm';
 import storefrontLayout from '../../data/storefront-mobile.json';
 import desktopLayout from '../../data/storefront-desktop.json';
 import styles from './ExteriorView.module.css';
@@ -12,6 +13,9 @@ import styles from './ExteriorView.module.css';
 // par la fabrique des images (tools/devanture-borne/fabrique.sh) : jamais retouché à la main.
 const LAYOUT = storefrontLayout satisfies StorefrontLayout;
 const LAYOUT_DESKTOP: StorefrontLayout = desktopLayout;
+// Le film d'approche se fond sur la devanture en 150 ms (feuille de style) ; une fois ce fondu
+// passé, la scène animée, désormais cachée dessous, est mise en pause.
+const FILM_FADE_IN_MS = 180;
 // Bureau : l'indicateur « PUSH » flotte au-dessus de la plaque, à cette distance (en hauteur d'image).
 const DESKTOP_PUSH_INDICATOR_RISE = 0.105;
 
@@ -46,7 +50,7 @@ const DOOR_NOTICE_SECONDS = 15;
 
 interface ExteriorViewProps {
   onEnter: () => void;
-  /** Ouvre la borne de location. Sur mobile : appelé à la fin du zoom vers son écran. */
+  /** Ouvre la borne de location. Appelé à la fin du film d'approche (bureau) ou du zoom (mobile). */
   onOpenKiosk: () => void;
   /** Le visiteur vient d'appuyer sur la borne : appelé tout de suite, avant toute animation. */
   onKioskIntent?: () => void;
@@ -122,6 +126,28 @@ export function ExteriorView({ onEnter, onOpenKiosk, onKioskIntent, canEnter, on
   // animée y dessine la devanture ; les zones cliquables et les indicateurs s'y posent.
   const contentBox = fitBox(LAYOUT_DESKTOP.image, viewport.w, viewport.h);
 
+  // Le film d'approche de la borne (bureau) : téléchargé une fois la devanture affichée, lancé au
+  // clic sur la borne ; à son arrivée la borne s'ouvre, sur l'écran filmé.
+  const approach = LAYOUT_DESKTOP.approche;
+  const film = useApproachFilm({
+    url: isStatic ? undefined : approach?.src,
+    durationMs: (approach?.duree ?? 0) * 1000,
+    load: isStorefrontShown && !isStatic,
+    onArrive: onOpenKiosk,
+  });
+  const filmPlaying = film.phase === 'playing';
+  // La scène animée est sous le film : une fois celui-ci fondu, elle s'arrête et se cache (la boîte
+  // du film bouge un peu pendant le trajet, la devanture figée dépasserait autour).
+  const [sceneHidden, setSceneHidden] = useState(false);
+  useEffect(() => {
+    if (!filmPlaying) return;
+    const timer = window.setTimeout(() => {
+      sceneRef.current?.pause();
+      setSceneHidden(true);
+    }, FILM_FADE_IN_MS);
+    return () => window.clearTimeout(timer);
+  }, [filmPlaying]);
+
   // Initialize WebGL scene (desktop only)
   useEffect(() => {
     if (isStatic) return;
@@ -181,8 +207,8 @@ export function ExteriorView({ onEnter, onOpenKiosk, onKioskIntent, canEnter, on
 
   const handleEnterClick = () => {
     // Le bouton existe déjà sous le rideau (clavier, lecteur d'écran) : pas d'entrée à l'aveugle.
-    // Et le zoom vers la borne est parti : jamais la borne puis le vidéoclub.
-    if (!isStorefrontShown || kioskZoom) return;
+    // Et le film ou le zoom vers la borne est parti : jamais la borne puis le vidéoclub.
+    if (!isStorefrontShown || kioskZoom || film.phase !== 'idle') return;
     // Le vidéoclub ne peut pas s'ouvrir ici : la porte explique pourquoi et propose la borne.
     if (!canEnter) {
       setIsDoorBlocked(true);
@@ -217,11 +243,17 @@ export function ExteriorView({ onEnter, onOpenKiosk, onKioskIntent, canEnter, on
 
   const openKiosk = () => {
     // Une seule transition : ni double appui, ni borne après la porte, ni appui sous le rideau.
-    if (isTransitioning || kioskZoom || !isStorefrontShown) return;
+    if (isTransitioning || kioskZoom || film.phase !== 'idle' || !isStorefrontShown) return;
     // Dès l'appui : le GPU et les chargements du vidéoclub sont libérés, avant toute animation.
     onKioskIntent?.();
-    // Bureau ou animations réduites : pas de zoom.
-    if (!isStatic || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    // Bureau : le film d'approche. S'il ne peut pas partir (pas encore téléchargé, animations
+    // réduites), la borne s'ouvre tout de suite : elle ne se fait jamais attendre.
+    if (!isStatic) {
+      if (!film.start()) onOpenKiosk();
+      return;
+    }
+    // Mobile, animations réduites : pas de zoom.
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       onOpenKiosk();
       return;
     }
@@ -354,17 +386,44 @@ export function ExteriorView({ onEnter, onOpenKiosk, onKioskIntent, canEnter, on
   // ===== BUREAU : la devanture animée (WebGL), la borne et la porte cliquables en entier =====
   const push = LAYOUT_DESKTOP.push;
   const screen = LAYOUT_DESKTOP.ecran;
+  // Pendant le film, sa boîte glisse de celle de la devanture vers celle où l'écran filmé de la
+  // dernière image coïncide avec l'écran de l'interface.
+  const filmShift = filmPlaying && approach
+    ? approachTransform(contentBox, approach.ecran, kioskScreenBoxDesktop(viewport.w, viewport.h))
+    : null;
   return (
-    <div className={`${styles.container} ${isTransitioning ? styles.fadeOut : ''}`}>
+    <div
+      className={`${styles.container} ${isTransitioning ? styles.fadeOut : ''} ${filmPlaying ? styles.containerFilm : ''}`}
+      onClick={film.phase !== 'idle' ? film.skip : undefined}
+    >
       {/* WebGL Canvas Container */}
-      <div ref={containerRef} className={styles.canvasContainer} />
+      <div ref={containerRef} className={`${styles.canvasContainer} ${sceneHidden ? styles.canvasHidden : ''}`} />
 
       {/* La boîte de l'image : tout ce qui tombe sur un objet de la devanture s'y pose, en
           pourcentages de la mise en page (src/data/storefront-desktop.json). */}
       <div
-        className={styles.contentArea}
-        style={{ left: contentBox.left, top: contentBox.top, width: contentBox.width, height: contentBox.height }}
+        className={`${styles.contentArea} ${filmPlaying ? styles.contentAreaFilm : ''}`}
+        style={{
+          left: contentBox.left,
+          top: contentBox.top,
+          width: contentBox.width,
+          height: contentBox.height,
+          transform: filmShift ? `translate(${filmShift.x}px, ${filmShift.y}px) scale(${filmShift.scale})` : undefined,
+          transitionDuration: filmShift && approach ? `${approach.duree}s` : undefined,
+        }}
       >
+        {/* Le film d'approche : en place et invisible, calé sur l'image ; il se fond dès sa
+            première image affichée. Muet, servi par le site. */}
+        <video
+          ref={film.videoRef}
+          src={film.src ?? undefined}
+          className={`${styles.approachFilm} ${filmPlaying ? styles.approachFilmShown : ''}`}
+          muted
+          playsInline
+          preload="auto"
+          aria-hidden="true"
+        />
+
         {/* La borne entière et la porte entière répondent au clic */}
         <button
           type="button"
