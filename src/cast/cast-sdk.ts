@@ -5,7 +5,7 @@
 // Les membres sont écrits en propriétés (`nom: (…) => …`) : la garde « un seul appel d'initialisation du SDK
 // dans src/ » compte les parenthèses ouvrantes après son nom (tests/domain/cast-service-wiring.test.mjs).
 
-import type { CastMediaLike } from './cast-wire';
+import type { CastMediaLike } from './cast-wire.ts';
 
 const GOOGLE_CAST_SDK_URL = 'https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1';
 /** Au-delà, le navigateur n'a pas de Cast (Firefox, Safari) : le SDK ne se déclarera jamais. */
@@ -16,6 +16,7 @@ type OnError = (error: unknown) => void;
 
 /** `chrome.cast.media.Media` : la séance média, qui porte les commandes avec accusé et la fin du film (F3). */
 export interface CafMedia extends CastMediaLike {
+  mediaSessionId?: number;
   activeTrackIds?: number[] | null;
   getEstimatedTime: () => number;
   addUpdateListener: (listener: (isAlive: boolean) => void) => void;
@@ -133,6 +134,11 @@ export function castNamespaces(): { framework: CafFramework; chromeCast: CafChro
 }
 
 let castSdkPromise: Promise<boolean> | null = null;
+
+/** Réservé aux tests : oublie le chargement passé (appelé par la remise à neuf du service). */
+export function __resetCastSdkForTests(): void {
+  castSdkPromise = null;
+}
 
 /** Charge le script du SDK une fois ; vrai quand il s'est déclaré disponible. Ne rejette jamais. */
 export function loadCastSdk(): Promise<boolean> {

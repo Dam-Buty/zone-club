@@ -27,12 +27,17 @@ export interface CastLoadData {
   activeTrackIds: number[];
 }
 
-/** Ce que le service lit d'un `chrome.cast.media.Media`. */
+/**
+ * Ce que le service lit d'un statut de lecture : un `chrome.cast.media.Media` du SDK (horloge `getEstimatedTime`),
+ * ou une entrée brute de la réponse à GET_STATUS (`currentTime`), seule source après un rechargement tant que le
+ * SDK n'a pas recréé son objet (F2).
+ */
 export interface CastMediaLike {
   playerState?: string;
   idleReason?: string | null;
   media?: { duration?: number | null; customData?: unknown } | null;
   getEstimatedTime?: () => number;
+  currentTime?: number;
 }
 
 /** La piste demandée, sinon l'autre, sinon l'adresse de la location ; une adresse vide n'est pas une source. */
@@ -76,7 +81,7 @@ export function mediaStatusEvent(media: CastMediaLike | null, volume: number): C
     filmId: filmIdOf(custom),
     playerState,
     idleReason: playerState === 'IDLE' ? idleReasonOf(media.idleReason) : null,
-    position: finiteOrZero(media.getEstimatedTime?.()),
+    position: finiteOrZero(typeof media.getEstimatedTime === 'function' ? media.getEstimatedTime() : media.currentTime),
     duration: finiteOrZero(media.media?.duration),
     volume: Number.isFinite(volume) ? Math.min(1, Math.max(0, volume)) : 1,
     preview: isRecord(custom) && custom.preview === true,

@@ -64,6 +64,17 @@ test('CAST FIL: lecture en cours — position estimée, volume du récepteur, pr
     position: 125.4, duration: 600, volume: 0.28, preview: true,
   });
 });
+test('CAST FIL: une entrée brute de la réponse à GET_STATUS donne le même événement que l\'objet du SDK', () => {
+  // Après un rechargement le SDK n'a pas encore d'objet média (F2) : la réponse brute porte currentTime, pas
+  // getEstimatedTime().
+  const raw = { mediaSessionId: 3, playerState: 'PLAYING', currentTime: 1234.5, media: { duration: 5400, customData: { filmId: 7 } } };
+  assert.deepEqual(mediaStatusEvent(raw, 0.28), {
+    type: 'MEDIA_STATUS', filmId: 7, playerState: 'PLAYING', idleReason: null,
+    position: 1234.5, duration: 5400, volume: 0.28, preview: false,
+  });
+  // L'horloge du SDK, quand elle existe, prime sur la dernière position reçue.
+  assert.equal(mediaStatusEvent({ ...raw, getEstimatedTime: () => 1240 }, 1).position, 1240);
+});
 test('CAST FIL: ce que la TV dit mal ne devient jamais une valeur fausse', () => {
   // État inconnu (LOADING…) : en attente. Raison d'arrêt hors IDLE ou inconnue : aucune.
   const loading = mediaStatusEvent({ playerState: 'LOADING', idleReason: 'FINISHED', media: { customData: { filmId: 3 } } }, 1);

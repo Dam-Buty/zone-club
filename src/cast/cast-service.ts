@@ -20,17 +20,18 @@
 // voulues : un port serveur qui rejette (l'envoi suivant rattrape) et un message illisible sur le canal média
 // (le délai de la demande de statut conclut).
 
+// Imports avec l'extension : Node charge ce fichier tel quel devant un faux SDK (tests/domain/cast-service.test.mjs).
 import {
   castReduce, initialCastState, CAST_ACK_TIMEOUT_MS, CAST_REPORT_EVERY_MS, CAST_STATUS_TIMEOUT_MS,
-} from './cast-machine';
-import type { CastCommand, CastEffect, CastEvent, CastMediaRequest, CastState } from './cast-machine';
-import { loadRequestData, mediaStatusEvent } from './cast-wire';
-import type { CastLoadData } from './cast-wire';
-import { castNamespaces, loadCastSdk } from './cast-sdk';
+} from './cast-machine.ts';
+import type { CastCommand, CastEffect, CastEvent, CastMediaRequest, CastState } from './cast-machine.ts';
+import { loadRequestData, mediaStatusEvent } from './cast-wire.ts';
+import type { CastLoadData, CastMediaLike } from './cast-wire.ts';
+import { __resetCastSdkForTests, castNamespaces, loadCastSdk } from './cast-sdk.ts';
 import type {
   CafCastSession, CafChromeCast, CafContext, CafContextEvent, CafFramework, CafLoadRequest, CafMedia,
   CafRemotePlayer, CafRemotePlayerController,
-} from './cast-sdk';
+} from './cast-sdk.ts';
 
 /** Ce que le service demande au reste de l'application (la tranche du store les branche sur l'API et sur lui). */
 export interface CastPorts {
@@ -44,7 +45,7 @@ export interface CastPorts {
 
 const MEDIA_NAMESPACE = 'urn:x-cast:com.google.cast.media';
 /** Après l'initialisation, une séance se reprend en quelques ms (F2) : passé ce délai, `hasSession` est définitif. */
-const CAST_RESUME_SETTLE_MS = 500;
+export const CAST_RESUME_SETTLE_MS = 500;
 /** Position de la télécommande : au plus une fois par seconde (spec § 5.3). */
 const POSITION_EVERY_MS = 1000;
 
@@ -69,8 +70,8 @@ let sdk: Sdk | null = null;
 let settled = false;
 /** La séance média courante : commandes, position, sous-titres. Null quand la TV n'a pas de média connu. */
 let media: CafMedia | null = null;
-const watchedSessions = new WeakSet<CafCastSession>();
-const watchedMedia = new WeakSet<CafMedia>();
+let watchedSessions = new WeakSet<CafCastSession>();
+let watchedMedia = new WeakSet<CafMedia>();
 
 const phaseTimers: Partial<Record<PhaseTimer, ReturnType<typeof setTimeout>>> = {};
 /** Échéance de la demande de statut en attente ; null : aucune demande sans réponse. */
@@ -95,7 +96,7 @@ export function initCast(p: CastPorts): void {
   listenToPage();
   void loadCastSdk().then((loaded) => {
     if (loaded) setUpSdk();
-    else sendCast({ type: 'SDK_UNAVAILABLE' });
+    else sdkMissing();
   });
 }
 
@@ -114,6 +115,33 @@ export function subscribeCast(listener: (s: CastState) => void): () => void {
 /** Charge le script du SDK sans démarrer le service (8 s au plus). */
 export function preloadCastSdk(): Promise<boolean> {
   return loadCastSdk();
+}
+
+/**
+ * Réservé aux tests (tests/domain/cast-service.test.mjs) : remet le service dans l'état d'une page neuve. Le
+ * service est un module unique ; sans cela, chaque cas hériterait du précédent.
+ */
+export function __resetCastForTests(): void {
+  clearPhaseTimer('connect');
+  clearPhaseTimer('load');
+  clearStatusDeadline();
+  if (tickLoop !== null) clearInterval(tickLoop);
+  if (positionLoop !== null) clearInterval(positionLoop);
+  tickLoop = null;
+  positionLoop = null;
+  ports = null;
+  state = initialCastState;
+  listeners.clear();
+  queue.length = 0;
+  dispatching = false;
+  sdk = null;
+  settled = false;
+  media = null;
+  watchedSessions = new WeakSet<CafCastSession>();
+  watchedMedia = new WeakSet<CafMedia>();
+  statusRequestId = 0;
+  serverQueue = Promise.resolve();
+  __resetCastSdkForTests();
 }
 
 export function sendCast(event: CastEvent): void {
@@ -203,10 +231,13 @@ function sdkReadyEvent(): CastEvent {
 
 /**
  * Ce que dit la TV. Avant SDK_READY, au repos, il est retenu : SDK_READY le résume (`hasSession`) et sa demande
- * de statut ramène le reste — sinon la machine quitterait le repos et ignorerait SDK_READY.
+ * de statut ramène le reste — sinon la machine quitterait le repos et ignorerait SDK_READY. Un statut
+ * (`MEDIA_STATUS`, `NO_MEDIA`) qui part vers la machine répond à la demande de statut en attente : l'échéance
+ * n'est levée qu'ici, jamais sur une réponse dont la machine n'aurait rien reçu.
  */
 function fromTv(event: CastEvent): void {
   if (state.available === null && state.phase === 'idle') return;
+  if (event.type === 'MEDIA_STATUS' || event.type === 'NO_MEDIA') clearStatusDeadline();
   sendCast(event);
 }
 
@@ -232,7 +263,7 @@ function runEffect(effect: CastEffect): void {
 function setUpSdk(): void {
   const found = castNamespaces();
   if (!found) {
-    sendCast({ type: 'SDK_UNAVAILABLE' });
+    sdkMissing();
     return;
   }
   const { framework, chromeCast } = found;
@@ -251,13 +282,22 @@ function setUpSdk(): void {
     controller.addEventListener(framework.RemotePlayerEventType.VOLUME_LEVEL_CHANGED, onVolumeChanged);
   } catch {
     sdk = null;
-    sendCast({ type: 'SDK_UNAVAILABLE' });
+    sdkMissing();
     return;
   }
   setTimeout(() => {
     settled = true;
     if (sdkReadyDue()) sendCast(sdkReadyEvent());
   }, CAST_RESUME_SETTLE_MS);
+}
+
+/**
+ * Le SDK ne viendra pas. Une demande l'attendait pour ouvrir le sélecteur : elle échoue d'abord (« Impossible de
+ * joindre… », « Réessayer »), puis le Cast est marqué indisponible — sinon elle disparaîtrait sans un mot.
+ */
+function sdkMissing(): void {
+  if (state.phase === 'choosing') sendCast({ type: 'PICKER_FAILED' });
+  sendCast({ type: 'SDK_UNAVAILABLE' });
 }
 
 function currentSession(): CafCastSession | null {
@@ -342,30 +382,33 @@ function watchSession(session: CafCastSession): void {
   }
 }
 
-/** Une séance média (chargée ici, retrouvée par GET_STATUS, lancée ailleurs) : écoutée une fois, rapportée. */
+/**
+ * Une séance média (chargée ici, retrouvée par GET_STATUS, lancée ailleurs) devient la courante : elle porte les
+ * commandes et la fin du film. Écoutée une fois — marquée seulement si l'écouteur a pu être posé —, rapportée.
+ */
 function adoptMedia(next: CafMedia | null): void {
   if (!next) return;
-  clearStatusDeadline();
   media = next;
   if (!watchedMedia.has(next)) {
-    watchedMedia.add(next);
     try {
       next.addUpdateListener((isAlive) => onMediaUpdate(next, isAlive));
     } catch {
       sendCast({ type: 'STATUS_FAILED' });
       return;
     }
+    watchedMedia.add(next);
   }
   reportMedia(next);
 }
 
 /**
- * Chaque statut de la séance média. Fin du film (F3) : IDLE / FINISHED, séance morte, durée encore lisible sur
- * l'objet média. Une séance qui meurt sans dire IDLE n'a plus de média à montrer.
+ * Chaque statut d'une séance média. Seule la courante parle : un ancien objet (film remplacé, séance arrêtée) peut
+ * encore se dire en lecture ou mourir, et ce n'est plus vrai de la TV. Fin du film (F3) : IDLE / FINISHED, séance
+ * morte, durée encore lisible sur l'objet. La courante qui meurt sans dire IDLE n'a plus de média à montrer.
  */
 function onMediaUpdate(updated: CafMedia, isAlive: boolean): void {
-  clearStatusDeadline();
-  if (!isAlive && media === updated) media = null;
+  if (updated !== media) return;
+  if (!isAlive) media = null;
   if (!isAlive && updated.playerState !== 'IDLE') {
     fromTv({ type: 'NO_MEDIA' });
     return;
@@ -384,8 +427,13 @@ function reportMedia(from: CafMedia): void {
   fromTv(event);
 }
 
-/** La séance média que le SDK tient pour `session`. Pas encore d'objet : MEDIA_SESSION l'annoncera. */
+/**
+ * La séance média que le SDK tient pour `session`. Pas encore d'objet : MEDIA_SESSION l'annoncera. Une séance qui
+ * n'est plus la courante (finie entre la réponse et ce tour) ne parle plus : son dernier « en lecture » rouvrirait
+ * la télécommande juste après « La diffusion… s'est arrêtée ».
+ */
 function adoptSessionMedia(session: CafCastSession): void {
+  if (session !== currentSession()) return;
   let found: CafMedia | null;
   try {
     found = session.getMediaSession();
@@ -397,21 +445,36 @@ function adoptSessionMedia(session: CafCastSession): void {
 }
 
 /**
- * Réponse à GET_STATUS sur le canal média. Liste vide : plus de média sur la TV. Sinon le SDK met à jour (ou
- * crée, après un rechargement) la séance média et l'annonce ; on la relit aussi au tour suivant, au cas où il
- * ne dirait rien d'un statut inchangé. Seule une réponse attendue compte : hors demande, la séance média parle.
+ * Réponse à GET_STATUS sur le canal média, lue telle quelle : après un rechargement le SDK n'a pas encore d'objet
+ * média (F2), seule la réponse brute dit ce que joue la TV. Liste vide : plus de média. Sinon, sa première entrée
+ * fait le statut ; l'objet du SDK, quand il existe, est repris au tour suivant pour les commandes et la fin du
+ * film. Seule une réponse attendue compte : hors demande, la séance média courante parle.
  */
 function onMediaMessage(session: CafCastSession, message: unknown): void {
   if (statusDeadline === null) return;
   const status = mediaStatusList(message);
   if (status === null) return;                       // autre message ou illisible : l'échéance tranchera
-  clearStatusDeadline();
   if (status.length === 0) {
     media = null;
     fromTv({ type: 'NO_MEDIA' });
     return;
   }
+  const entry = statusEntry(status[0]);
+  if (entry === null) return;                        // entrée illisible : l'échéance tranchera
+  fromTv(mediaStatusEvent(entry, receiverVolume()));
   setTimeout(() => adoptSessionMedia(session), 0);
+}
+
+/**
+ * Une entrée brute du statut. Le récepteur peut omettre `media` quand il n'a pas changé : on reprend celui de la
+ * séance média courante, si c'est la même.
+ */
+function statusEntry(entry: unknown): CastMediaLike | null {
+  if (typeof entry !== 'object' || entry === null) return null;
+  const raw = entry as CastMediaLike & { mediaSessionId?: unknown };
+  const sameMedia = media !== null && raw.mediaSessionId !== undefined && raw.mediaSessionId === media.mediaSessionId;
+  if ((raw.media === undefined || raw.media === null) && sameMedia) return { ...raw, media: media?.media };
+  return raw;
 }
 
 function mediaStatusList(message: unknown): unknown[] | null {
