@@ -101,6 +101,11 @@
 >   « Location 24/7 », avec **la même écriture et le même effet néon que « Open 24/7 » au-dessus de la porte**,
 >   modélisée dans Blender (tubes, cadre, panneau) — à valider par Rusmir sur l'essai 6. **[R]** Police retenue pour
 >   le tracé des tubes : SignPainter (système) **[C]**.
+> - **§ 4, enseigne de la borne, suite (18/11/2026).** Écriture **validée**. **[R]** Le cadre est supprimé : il ne
+>   reste que « Borne 24/7 », posée sur le mur et **alignée en hauteur sur l'écriture de la porte**. **[R]** Le mur
+>   derrière renvoie la lumière du néon et celle d'un réverbère, de façon réaliste **[R]** : calculé par lancer de
+>   rayons dans Blender (passe « mur » ajoutée au mur de la photo) **[C]**. Le néon « LOCATION 24/7 » de l'écran de la
+>   borne reste tel quel. **[R]**
 > - **Tarif** : l'affichage suit ce que le serveur facture. **Dates du serveur** : lues en UTC.
 >   Les deux validés. **[R]**
 > - **§ 5, bouton provisoire sur mobile** : il part tel quel, on ajustera en voyant la version
