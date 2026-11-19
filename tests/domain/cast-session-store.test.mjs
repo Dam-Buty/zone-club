@@ -298,3 +298,66 @@ test('CAST SÉANCE A2: la route de déconnexion clôt les séances AVANT d\'effa
   const wrapper = readText(path.join(ROOT, 'lib/cast-sessions.ts'));
   assert.ok(/export function endAllCastSessions\(/.test(wrapper) && wrapper.includes('closeOpenCastSessions('), 'l\'enveloppe passe la vraie base');
 });
+
+// Relecture finale, B2 : retour dans la minute qui suit la fin du film, téléphone verrouillé. Le vérificateur ne
+// passe que toutes les 60 s : la location est encore sous 100 %, le client conclut « s'est arrêtée » et clôt sans
+// `finished` — ce qui empêchait toute complétion. (a) une clôture sans `finished` d'une séance dont la fin estimée est
+// passée vaut une fin ; (b) /api/me complète les séances échues du visiteur avant de lire ses locations.
+const past = () => new Date(Date.now() - 90_000).toISOString();
+const future = () => new Date(Date.now() + 3_600_000).toISOString();
+
+test('CAST SÉANCE B2: clôture sans « finished » d\'une séance dont la fin estimée est passée → film vu', () => {
+  const { db, u, f, rent, rental, sessions } = freshDb({ filmDuration: 6840 });
+  const { deps } = makeDeps();
+  const r = rent();
+  openCastSession(db, { userId: u, filmId: f, position: 6000 }, deps);
+  db.prepare('UPDATE cast_sessions SET estimated_end_at = ?').run(past());
+  closeCastSession(db, { userId: u, filmId: f, finished: false, position: 6100 }, deps);
+  const after = rental(r);
+  assert.equal(after.watch_progress, 100); assert.equal(after.watch_position, 0); assert.ok(after.watch_completed_at);
+  assert.equal(sessions()[0].ended, 1);
+});
+test('CAST SÉANCE B2: fin estimée encore à venir → un arrêt reste un arrêt', () => {
+  const { db, u, f, rent, rental } = freshDb({ filmDuration: 6840 });
+  const { deps } = makeDeps();
+  const r = rent();
+  openCastSession(db, { userId: u, filmId: f, position: 100 }, deps);
+  db.prepare('UPDATE cast_sessions SET estimated_end_at = ?').run(future());
+  closeCastSession(db, { userId: u, filmId: f, finished: false, position: 300 }, deps);
+  assert.equal(rental(r).watch_progress, 30); assert.equal(rental(r).watch_completed_at, null);
+});
+test('CAST SÉANCE B2: les séances échues du visiteur sont complétées et closes, les autres non', async () => {
+  const { completeDueCastSessions } = await import('../../lib/cast-session-store.ts');
+  const { db, u, f, rent, rental, sessions } = freshDb({ filmDuration: 6840 });
+  const { deps } = makeDeps();
+  const r = rent();
+  const f2 = db.prepare("INSERT INTO films (tmdb_id, title, duration_sec) VALUES (2, 'Us', 6960)").run().lastInsertRowid;
+  const r2 = db.prepare(`INSERT INTO rentals (user_id, film_id, symlink_uuid, expires_at, is_active, watch_progress, watch_position)
+    VALUES (?, ?, 'u2', datetime('now', '+1 day'), 1, 55, 3000)`).run(u, f2).lastInsertRowid;
+  const other = db.prepare("INSERT INTO users (username, password_hash, recovery_phrase_hash) VALUES ('o', 'x', 'y')").run().lastInsertRowid;
+  const ro = db.prepare(`INSERT INTO rentals (user_id, film_id, symlink_uuid, expires_at, is_active, watch_progress, watch_position)
+    VALUES (?, ?, 'o1', datetime('now', '+1 day'), 1, 10, 600)`).run(other, f).lastInsertRowid;
+  const due = openCastSession(db, { userId: u, filmId: f, position: 6000 }, deps);
+  const running = openCastSession(db, { userId: u, filmId: f2, position: 100 }, deps);
+  const otherDue = openCastSession(db, { userId: other, filmId: f, position: 100 }, deps);
+  db.prepare('UPDATE cast_sessions SET estimated_end_at = ? WHERE id IN (?, ?)').run(past(), due.id, otherDue.id);
+  db.prepare('UPDATE cast_sessions SET estimated_end_at = ? WHERE id = ?').run(future(), running.id);
+  assert.equal(completeDueCastSessions(db, u, deps), 1, 'une séance échue pour ce visiteur');
+  assert.equal(rental(r).watch_progress, 100); assert.equal(rental(r).watch_position, 0);
+  assert.equal(rental(r2).watch_progress, 55, 'la séance en cours ne touche pas sa location');
+  assert.equal(rental(ro).watch_progress, 10, 'un autre visiteur n\'est pas touché');
+  const ended = Object.fromEntries(sessions().map((s) => [s.id, s.ended]));
+  assert.deepEqual(ended, { [due.id]: 1, [running.id]: 0, [otherDue.id]: 0 });
+  // Rejouable : plus rien d'échu.
+  assert.equal(completeDueCastSessions(db, u, deps), 0);
+});
+test('CAST SÉANCE B2: /api/me complète les séances échues AVANT de lire les locations', () => {
+  const src = readText(path.join(ROOT, 'app/api/me/route.ts'));
+  const complete = src.indexOf('completeDueCastSessionsFor(');
+  const read = src.indexOf('getUserActiveRentals(user.id)');
+  assert.ok(complete > 0 && read > complete, 'complétion avant lecture');
+  // Une base en panne ne prive pas le visiteur de son profil.
+  assert.ok(src.slice(src.lastIndexOf('try {', complete), read).includes('catch'), 'la complétion est gardée');
+  const wrapper = readText(path.join(ROOT, 'lib/cast-sessions.ts'));
+  assert.ok(/export function completeDueCastSessionsFor\(/.test(wrapper) && wrapper.includes('completeDueCastSessions('), 'l\'enveloppe passe la vraie base');
+});

@@ -3,6 +3,7 @@ import { completeCastRental, findFinishedCastSessions } from "./cast-completion"
 import {
   closeCastSession,
   closeOpenCastSessions,
+  completeDueCastSessions,
   hasActiveRental,
   openCastSession,
   reportCastSession,
@@ -78,6 +79,11 @@ export function endCastSession(
 /** Déconnexion : toutes les séances ouvertes du visiteur sont closes, ses locations intactes. */
 export function endAllCastSessions(userId: number): number {
   return closeOpenCastSessions(db, userId);
+}
+
+/** Avant de lire le profil : les séances échues du visiteur sont notées vues et closes (voir cast-session-store). */
+export function completeDueCastSessionsFor(userId: number): number {
+  return completeDueCastSessions(db, userId, { completeCastRental });
 }
 
 export function getExpiredUnnotifiedSessions(): (CastSession & {

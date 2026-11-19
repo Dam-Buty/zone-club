@@ -4,6 +4,7 @@ import { getUserActiveRentals, getUserRentalHistory } from '@/lib/rentals';
 import { getReviewEligibilityForUser, getUserReviews } from '@/lib/reviews';
 import { getUserFromSession } from '@/lib/session';
 import { canClaimWeeklyBonus } from '@/lib/bonus';
+import { completeDueCastSessionsFor } from '@/lib/cast-sessions';
 
 export async function GET() {
     const cookieStore = await cookies();
@@ -11,6 +12,15 @@ export async function GET() {
 
     if (!user) {
         return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
+    }
+
+    // Un film fini sur la TV pendant que le téléphone dormait : sa séance de Cast est échue, mais le vérificateur ne
+    // passe que toutes les 60 s. Complétée ici, AVANT de lire les locations, le téléphone qui revient lit 100 % et
+    // propose « BE KIND REWIND » au lieu de conclure à un arrêt. Une base en panne ne prive pas du profil.
+    try {
+        completeDueCastSessionsFor(user.id);
+    } catch (err) {
+        console.error('me: complétion des séances de Cast échues impossible', err);
     }
 
     const activeRentals = getUserActiveRentals(user.id);

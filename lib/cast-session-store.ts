@@ -141,19 +141,31 @@ export function reportCastSession(
   return true;
 }
 
+type Completion = { completeCastRental(db: Db, session: { rental_id: number | null; user_id: number; film_id: number }): boolean };
+
+/**
+ * Vrai si la fin estimée de la séance est passée. `estimated_end_at` est en ISO (« T ») : la comparaison passe par
+ * `datetime()` des deux côtés, sinon une séance finie le jour même ne l'est qu'après minuit UTC (voir cast-completion).
+ */
+function isDue(db: Db, sessionId: number): boolean {
+  return db.prepare("SELECT 1 FROM cast_sessions WHERE id = ? AND datetime(estimated_end_at) <= datetime('now')").get(sessionId) !== undefined;
+}
+
 /**
  * Clôt la séance ouverte du visiteur pour ce film. `finished` : le téléphone a vu le film se terminer sur
  * la TV — la location est notée vue (100 %, position 0), même si le vérificateur a déjà clos la séance
  * (l'opération est rejouable). Sans `finished` (arrêt en cours de film), la location n'est pas touchée :
- * seule la dernière position connue est notée sur la séance, si on la donne.
+ * seule la dernière position connue est notée sur la séance, si on la donne — SAUF si la fin estimée de la séance
+ * est passée : le vérificateur l'aurait notée vue à son prochain passage (toutes les 60 s), et le téléphone qui revient
+ * dans la minute, ne voyant pas encore 100 %, concluait à un arrêt et empêchait toute complétion. Elle vaut une fin.
  */
 export function closeCastSession(
   db: Db,
   i: { userId: number; filmId: number; position?: number | null; finished: boolean },
-  deps: { completeCastRental(db: Db, session: { rental_id: number | null; user_id: number; film_id: number }): boolean },
+  deps: Completion,
 ): void {
-  if (i.finished) {
-    const open = findOpenSession(db, i.userId, i.filmId);
+  const open = findOpenSession(db, i.userId, i.filmId);
+  if (i.finished || (open !== undefined && isDue(db, open.id))) {
     deps.completeCastRental(db, { rental_id: open?.rental_id ?? null, user_id: i.userId, film_id: i.filmId });
   }
   if (typeof i.position === 'number' && Number.isFinite(i.position)) {
@@ -173,4 +185,21 @@ export function closeCastSession(
  */
 export function closeOpenCastSessions(db: Db, userId: number): number {
   return db.prepare('UPDATE cast_sessions SET ended = 1 WHERE user_id = ? AND ended = 0').run(userId).changes;
+}
+
+/**
+ * Les séances ouvertes de ce visiteur dont la fin estimée est passée : la location est notée vue (100 %, position 0)
+ * et la séance close — ce que le vérificateur ferait à son prochain passage. Appelé par `GET /api/me` AVANT de lire
+ * les locations : le téléphone qui revient juste après la fin du film lit 100 % et propose « BE KIND REWIND », au lieu
+ * de conclure à un arrêt. Rend le nombre de séances complétées ; rejouable.
+ */
+export function completeDueCastSessions(db: Db, userId: number, deps: Completion): number {
+  const due = db
+    .prepare("SELECT id, rental_id, film_id FROM cast_sessions WHERE user_id = ? AND ended = 0 AND datetime(estimated_end_at) <= datetime('now')")
+    .all(userId) as { id: number; rental_id: number | null; film_id: number }[];
+  for (const s of due) {
+    deps.completeCastRental(db, { rental_id: s.rental_id, user_id: userId, film_id: s.film_id });
+    db.prepare('UPDATE cast_sessions SET ended = 1 WHERE id = ?').run(s.id);
+  }
+  return due.length;
 }
