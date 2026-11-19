@@ -2,7 +2,7 @@
 // libellé qui se prennent sans React. Testé tel quel dans tests/domain/cast-labels.test.mjs.
 //
 // Imports de type uniquement : Node charge ce module sans transformation dans les tests.
-import type { CastPhase } from './cast-machine';
+import type { CastNotice, CastPhase } from './cast-machine';
 
 /**
  * Ce que dit un texte qui nomme la télé quand son nom est inconnu : juste après un rechargement de page, `deviceName`
@@ -60,6 +60,40 @@ export function continueHereLabel(here: string): string {
 /** Le retour de la télécommande : la TV continue de jouer, le visiteur retourne là d'où il est venu. */
 export function castBackLabel(from: 'kiosk' | 'store'): string {
   return from === 'kiosk' ? '← Retour à la borne' : '← Retour au vidéoclub';
+}
+
+/** Sous-titre du panneau « recopie d'écran » quand le navigateur n'a pas de Cast : la seule raison de l'ouvrir d'office. */
+export const CAST_UNAVAILABLE_TEXT = "Le Cast n'est pas disponible sur ce navigateur.";
+
+/**
+ * Ce que le lecteur montre pour un message du Cast (`cast.notice`) : une ligne sous son en-tête, avec « Réessayer » quand
+ * un nouvel essai a un sens (`retry`) ; ou, Cast absent du navigateur (`mirroring`), le panneau « recopie d'écran » avec
+ * ce texte pour sous-titre. Un échec de connexion n'est pas une absence de Cast : il garde sa ligne (D7).
+ */
+export function castNoticeView(code: CastNotice, deviceName: string | null): { text: string; retry: boolean; mirroring: boolean } {
+  const tv = castDeviceLabel(deviceName);
+  switch (code) {
+    case 'stopped_elsewhere': return { text: `La diffusion sur ${tv} s'est arrêtée`, retry: false, mirroring: false };
+    case 'tv_error': return { text: "La télé n'a pas pu lire le film", retry: true, mirroring: false };
+    case 'rental_over': return { text: 'Location terminée', retry: false, mirroring: false };
+    case 'connect_failed': return { text: `Impossible de joindre ${tv}`, retry: true, mirroring: false };
+    case 'load_failed': return { text: `Le film n'a pas pu démarrer sur ${tv}`, retry: true, mirroring: false };
+    case 'no_source': return { text: "Ce film n'a pas de source vidéo à envoyer sur la télé", retry: false, mirroring: false };
+    case 'unavailable': return { text: CAST_UNAVAILABLE_TEXT, retry: false, mirroring: true };
+  }
+}
+
+/**
+ * La TV joue un autre film que celui du lecteur : le bandeau qui le dit, et la question posée avant de le remplacer.
+ * Titre inconnu (la borne ne charge pas tous les rayons) : « Un film », en minuscule au milieu de la question.
+ */
+export function castOtherFilmText(title: string | null, deviceName: string | null): { banner: string; confirm: string } {
+  const tv = castDeviceLabel(deviceName);
+  const named = title !== null && title.trim() !== '' ? title.trim() : null;
+  return {
+    banner: `${named ?? 'Un film'} est en cours sur ${tv}`,
+    confirm: `Remplacer ${named ?? 'un film'} sur ${tv} ?`,
+  };
 }
 
 /** « 4:07 », « 1:02:05 ». Un temps que la TV n'a pas donné (NaN, négatif) s'affiche 0:00. */

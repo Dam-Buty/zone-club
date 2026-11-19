@@ -4,7 +4,7 @@ import type { VideoClubState } from '../index'
 import { castOwnsFilm, initialCastState } from '../../cast/cast-machine'
 import type { CastEvent, CastState } from '../../cast/cast-machine'
 import { castMediaRequest, rentalGoneFilm, settle } from '../../cast/cast-wire'
-import { getCastState, initCast, sendCast, subscribeCast } from '../../cast/cast-service'
+import { getCastState, initCast, sendCast, setCastSubtitle, subscribeCast } from '../../cast/cast-service'
 import type { CastPorts } from '../../cast/cast-service'
 import { buildCastSubtitleTracks } from '../../utils/cast-subtitles'
 
@@ -40,6 +40,11 @@ export interface CastSlice {
   castCancel: () => void
   /** Ferme le message du Cast ; film terminé : rembobiné ou éjecté, la puce disparaît. */
   castDismiss: () => void
+  /**
+   * Bascule les sous-titres de la TV pendant qu'elle joue, sans recharger le film (`null` les coupe). Vrai quand la TV a
+   * accusé réception ; faux sans média, sur refus ou sans réponse (la liaison est alors revérifiée par le service).
+   */
+  castSubtitle: (trackId: number | null) => Promise<boolean>
   /**
    * La reprise locale de `filmId` demandée par le Cast (arrêt, « Continuer sur ce téléphone »), prise une seule fois.
    * `position` null : inconnue, le lecteur reprend à celle de la location. `play` : lancer la lecture (sinon en pause).
@@ -187,6 +192,8 @@ export const createCastSlice: StateCreator<VideoClubState, [['zustand/persist', 
       }
       ask({ type: 'USER_DISMISS' })
     },
+
+    castSubtitle: (trackId) => setCastSubtitle(trackId),
 
     takeCastResume: (filmId) => {
       const resume = get().cast.resume

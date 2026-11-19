@@ -12,7 +12,7 @@ const occurrences = (text, needle) => text.split(needle).length - 1;
 
 // Un second appel coupe sans bruit le canal des commandes : la télécommande n'obéit plus alors que le SDK se dit
 // connecté (D1, mesuré le 18/11/2026).
-test('CAST SERVICE: setOptions( n\'apparaît qu\'une fois dans src/, dans le service', { todo: 'vert à la tâche 6 (suppression de useGoogleCast)' }, () => {
+test('CAST SERVICE: setOptions( n\'apparaît qu\'une fois dans src/, dans le service', () => {
   const hits = [];
   for (const file of walkFiles(path.join(ROOT, 'src'), new Set(['.ts', '.tsx']))) {
     const count = occurrences(readText(file), 'setOptions(');

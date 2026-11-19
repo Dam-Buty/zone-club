@@ -139,4 +139,5 @@ export interface PersonDetail {
 export type SceneType = 'exterior' | 'interior' | 'kiosk';
 
 // Player types
-export type PlayerState = 'playing' | 'paused' | 'seeking' | 'rewinding' | 'fastforwarding' | 'casting' | 'awaitingCast';
+// Lecture locale seulement : ce que fait le Cast se lit dans la tranche `cast` du magasin (castView).
+export type PlayerState = 'playing' | 'paused' | 'seeking' | 'rewinding' | 'fastforwarding';

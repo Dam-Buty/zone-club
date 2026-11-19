@@ -52,7 +52,6 @@ test('CAST STORE: aucun fichier de src/ hors du service et de la tranche n\'impo
   for (const file of walkFiles(path.join(ROOT, 'src'), new Set(['.ts', '.tsx']))) {
     const rel = toPosix(path.relative(ROOT, file));
     if (rel.startsWith('src/cast/') || rel === SLICE) continue;
-    // `useGoogleCast.ts` (retiré à la tâche 6) a son propre `preloadCastSdk` et n'importe pas le service.
     assert.ok(!/from\s+['"][^'"]*cast-service/.test(readText(file)), `${rel} ne doit pas importer cast-service`);
   }
   assert.ok(/from\s+['"][^'"]*cast\/cast-service/.test(read(SLICE)), 'la tranche importe le service');
@@ -77,7 +76,7 @@ test('CAST STORE: initCast d\'abord, une seule fois, avant tout sendCast', () =>
   assert.ok(start.indexOf('initCast(') < start.indexOf('subscribeCast('), 'initCast précède l\'abonnement');
   // Une seule inscription au magasin et au service pour toute la page, quel que soit le nombre d'appels.
   assert.ok(/if\s*\(\s*started\s*\)\s*return/.test(start), 'startCast est idempotent');
-  for (const action of ['castToggle', 'castSeekBy', 'castVolume', 'castStop', 'castToPhone', 'castRetry', 'castCancel']) {
+  for (const action of ['castToggle', 'castSeekBy', 'castVolume', 'castStop', 'castToPhone', 'castRetry', 'castCancel', 'castSubtitle']) {
     assert.ok(slice.includes(`${action}:`), `la tranche expose ${action}`);
   }
   assert.ok(slice.includes('takeCastResume:') && slice.includes('castDismiss:'), 'la tranche expose takeCastResume et castDismiss');
@@ -120,16 +119,28 @@ test('CAST STORE: openPlayer reçoit son origine et son invite, sans casser les 
   assert.ok(!close.includes('playerFrom') && !close.includes('playerAsk'), 'closePlayer laisse l\'origine et l\'invite');
 });
 
-test('CAST STORE: les anciens accès restent le temps du vieux lecteur, marqués périmés', () => {
-  // Ils ne sont retirés qu'aux tâches 6 (lecteur) et 7 (borne) : le vieux lecteur et la borne s'en servent encore.
+test('CAST STORE: les accès du vieux lecteur sont partis, celui de la borne reste marqué périmé', () => {
+  // Le lecteur lit la machine (tâche 6) : plus rien n'écrit l'état du Cast hors de la tranche.
   const store = read(STORE);
-  for (const [name, task] of [['castOnOpen', 6], ['clearCastOnOpen', 6], ['setActiveCastFilmId', 6], ['endCast', 6], ['openPlayerOnTv', 7]]) {
-    const re = new RegExp(`@deprecated retiré à la tâche ${task}[^*]*\\*/\\s*${name}:`);
-    assert.ok(re.test(store), `${name} doit porter « @deprecated retiré à la tâche ${task} »`);
+  for (const name of ['castOnOpen', 'clearCastOnOpen', 'setActiveCastFilmId', 'endCast']) {
+    assert.ok(!new RegExp(`\\b${name}\\b`).test(store), `${name} doit avoir quitté le magasin`);
   }
-  // La règle de la borne reste jusqu'à la tâche 6 (le vieux lecteur la consulte), et le dit.
-  assert.ok(/@deprecated retiré à la tâche 6[^*]*\*\/\s*export function shouldStartCastOnOpen\b/.test(read('src/utils/cast-on-open.ts')),
-    'shouldStartCastOnOpen doit porter « @deprecated retiré à la tâche 6 »');
+  assert.ok(!read('src/utils/cast-on-open.ts').includes('shouldStartCastOnOpen'), 'la règle du drapeau de la borne est partie');
+  // La borne s'en sert encore jusqu'à la tâche 7.
+  assert.ok(/@deprecated retiré à la tâche 7[^*]*\*\/\s*openPlayerOnTv:/.test(store), 'openPlayerOnTv doit porter « @deprecated retiré à la tâche 7 »');
+  // Seule la tranche écrit activeCastFilmId : le magasin n'en garde que le type et la valeur de départ.
+  assert.equal(store.split('activeCastFilmId:').length - 1, 2, 'activeCastFilmId : son type et sa valeur de départ, rien d\'autre');
+  assert.ok(!read('src/components/player/VHSPlayer.tsx').includes('activeCastFilmId'), 'le lecteur ne lit ni n\'écrit activeCastFilmId');
+});
+
+test('CAST STORE: « Sur la TV » de la borne lance le Cast dans l\'appui, puis ouvre le lecteur sans invite', () => {
+  // Le sélecteur d'appareils exige l'activation de l'appui de la borne : castFilm d'abord, sans attente.
+  const store = read(STORE);
+  const body = between(store, 'openPlayerOnTv: (filmId) => {', 'closePlayer:');
+  assert.ok(!/\bawait\b|\basync\b|\.then\(/.test(body), 'aucune attente');
+  const cast = body.indexOf('castFilm(filmId)');
+  const open = body.indexOf("openPlayer(filmId, { from: 'kiosk', ask: false })");
+  assert.ok(cast >= 0 && open > cast, 'castFilm(filmId) puis openPlayer(filmId, { from: \'kiosk\', ask: false })');
 });
 
 test('CAST STORE: activeCastFilmId est écrit par la tranche, la déconnexion et la location surveillées', () => {

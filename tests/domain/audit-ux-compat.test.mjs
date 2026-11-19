@@ -262,16 +262,20 @@ test('SUB-01: VHSPlayer must CORS-enable the video for remote subtitle tracks', 
 });
 
 test('SUB-02: cast must side-load the WebVTT tracks on the receiver', () => {
-  const hook = readText(path.join(ROOT, 'src/hooks/useGoogleCast.ts'));
+  // Depuis la refonte du Cast (tâche 6), le chargement vit dans le service et la tranche du magasin construit les
+  // pistes ; le lecteur ne fait que passer son choix de sous-titres.
+  const service = readText(path.join(ROOT, 'src/cast/cast-service.ts'));
+  const slice = readText(path.join(ROOT, 'src/store/slices/cast.ts'));
   const player = readText(path.join(ROOT, 'src/components/player/VHSPlayer.tsx'));
 
   // Le <track> local ne traverse pas le réseau : sans `mediaInfo.tracks` et
   // `activeTrackIds`, la TV reçoit le MP4 nu et n'affiche aucun sous-titre.
-  assert.ok(hook.includes('mediaInfo.tracks'), 'castMedia must declare mediaInfo.tracks');
-  assert.ok(hook.includes('request.activeTrackIds'), 'LoadRequest must carry activeTrackIds');
-  assert.ok(hook.includes('EditTracksInfoRequest'), 'Language switch during cast must use editTracksInfo');
-  assert.ok(player.includes('buildCastSubtitleTracks'), 'VHSPlayer must build the cast subtitle tracks');
-  assert.ok(player.includes('subtitles: castSubtitles'), 'VHSPlayer must pass the tracks to castMedia');
+  assert.ok(service.includes('info.tracks'), 'the cast load must declare mediaInfo.tracks');
+  assert.ok(service.includes('load.activeTrackIds'), 'LoadRequest must carry activeTrackIds');
+  assert.ok(service.includes('EditTracksInfoRequest'), 'Language switch during cast must use editTracksInfo');
+  assert.ok(slice.includes('buildCastSubtitleTracks'), 'the cast slice must build the cast subtitle tracks');
+  assert.ok(player.includes('subtitle: subtitleTrack'), 'VHSPlayer must pass its subtitle choice to castFilm');
+  assert.ok(player.includes('buildCastSubtitleTracks') && player.includes('castSubtitle('), 'VHSPlayer switches the TV subtitles during cast');
 });
 
 // ===== Cross-cutting: No localhost/hardcoded URLs anywhere in frontend =====

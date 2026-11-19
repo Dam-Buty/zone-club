@@ -162,25 +162,16 @@ export interface VideoClubState extends CastSlice {
   playerFrom: 'kiosk' | 'store';
   playerAsk: boolean;
   /**
-   * « Sur la TV » de la borne : ouvre le lecteur en lui demandant de lancer aussitôt le Cast
-   * (`castOnOpen`, consommé une fois par le lecteur ; jamais persisté). La borne appellera `castFilm` elle-même.
+   * « Sur la TV » de la borne : lance le Cast (`castFilm`, dans l'appui) puis ouvre le lecteur, qui montre l'attente.
+   * La borne appellera `castFilm` elle-même.
    * @deprecated retiré à la tâche 7
    */
   openPlayerOnTv: (filmId: number) => void;
-  /** @deprecated retiré à la tâche 6 */
-  castOnOpen: number | null;
-  /** @deprecated retiré à la tâche 6 */
-  clearCastOnOpen: () => void;
   closePlayer: () => void;
 
-  // Film suivi par la TV : écrit par la tranche `cast` (le film joué ou « la télé ne répond plus »), sinon null.
-  // Lu par la puce et la fiche de la K7 (`castView` et `cast` pour le reste).
+  // Film suivi par la TV : écrit par la seule tranche `cast` (le film joué ou « la télé ne répond plus »), sinon
+  // null. Lu par la fiche de la K7 (`castView` et `cast` pour le reste).
   activeCastFilmId: number | null;
-  // Plus personne ne devrait écrire `activeCastFilmId` : la tranche le fait, d'après la machine du service.
-  /** @deprecated retiré à la tâche 6 */
-  setActiveCastFilmId: (filmId: number | null) => void;
-  /** @deprecated retiré à la tâche 6 */
-  endCast: () => void;
 
   // Targeting (pour le hover via raycasting central)
   targetedFilmId: number | null;
@@ -789,33 +780,20 @@ export const useStore = create<VideoClubState>()(
       playerAsk: true,
       previewRental: null,
       previewFilm: null,
-      openPreviewPlayer: (film, rental) => set((state) => ({
+      openPreviewPlayer: (film, rental) => set({
         isPlayerOpen: true,
         currentPlayingFilm: film.id,
         previewFilm: film,
         previewRental: rental,
-        // Un cast de preview sur un AUTRE film ne doit pas être repris : le
-        // player auto-détecte `activeCastFilmId` et repasserait en télécommande
-        // sur l'ancien film. Même film = on garde la session en cours.
-        activeCastFilmId: state.activeCastFilmId === film.id ? state.activeCastFilmId : null,
         managerVisible: false,
         chatBackdropUrl: null,
-      })),
+      }),
       activeCastFilmId: null,
-      setActiveCastFilmId: (filmId) => set({ activeCastFilmId: filmId }),
-      // End cast — clears activeCastFilmId. Call this when the cast genuinely
-      // ends (user taps Stop/Eject on phone, receiver disconnects, film ends).
-      // Do NOT call this when the player just closes — the cast on the TV
-      // is independent of the player overlay and should keep going.
-      endCast: () => set({ activeCastFilmId: null }),
       openPlayer: (filmId, opts) => {
-        // Always allow opening — even if another film is already casting.
-        // The player overlay will read activeCastFilmId on mount and:
-        //   - if it matches `filmId` → auto-resume in remote-control mode
-        //   - if it differs → user is opening a different film; we still
-        //     show the player (the K7 overlay already shows the cast-busy
-        //     state separately). The previous silent return left users
-        //     wondering why the "Watch" button did nothing.
+        // Always allow opening — even if another film is already casting. The
+        // player reads the Cast machine (`castView`): this film on the TV → the
+        // remote control; another film → local player with its banner. The
+        // previous silent return left users wondering why "Watch" did nothing.
         set({
           isPlayerOpen: true,
           currentPlayingFilm: filmId,
@@ -829,16 +807,14 @@ export const useStore = create<VideoClubState>()(
           chatBackdropUrl: null,
         });
       },
-      castOnOpen: null,
       openPlayerOnTv: (filmId) => {
-        set({ castOnOpen: filmId });
-        get().openPlayer(filmId);
+        // Dans cet ordre et sans attente : le sélecteur d'appareils exige l'activation de l'appui de la borne.
+        get().castFilm(filmId);
+        get().openPlayer(filmId, { from: 'kiosk', ask: false });
       },
-      clearCastOnOpen: () => set({ castOnOpen: null }),
-      // closePlayer no longer wipes activeCastFilmId. The cast continues on
-      // the receiver independent of whether the player overlay is open, and
-      // we want the next openPlayer to find the active cast and auto-enter
-      // remote-control mode without forcing the user to manually re-cast.
+      // closePlayer leaves the Cast alone: the film continues on the TV
+      // without the player, and the next openPlayer finds it through the
+      // Cast machine (remote control) without re-casting.
       closePlayer: () => set({
         isPlayerOpen: false,
         currentPlayingFilm: null,

@@ -91,9 +91,9 @@ test('CAST PANNEAUX: la feuille de style porte toutes les classes que le composa
   const used = new Set([...read(PANELS).matchAll(/styles\.(\w+)/g)].map((m) => m[1]));
   assert.ok(used.size > 10, 'le composant emploie des classes de la feuille');
   for (const name of used) assert.ok(new RegExp(`\\.${name}\\b`).test(css), `.${name} manque dans CastPanels.module.css`);
-  // Les anciennes classes restent dans VHSPlayer.module.css jusqu'à la tâche 6 : on COPIE, on ne déplace pas encore.
+  // Depuis la tâche 6 ces classes n'existent plus qu'ici : le lecteur n'en garde aucune copie.
   const oldCss = read('src/components/player/VHSPlayer.module.css');
-  for (const name of ['castingOverlay', 'awaitingCancelBtn', 'nowPlayingTransport']) assert.ok(oldCss.includes(`.${name}`), `.${name} reste dans l'ancien lecteur`);
+  for (const name of ['castingOverlay', 'awaitingCancelBtn', 'nowPlayingTransport']) assert.ok(!oldCss.includes(`.${name}`), `.${name} a quitté la feuille du lecteur`);
   // Pas de bouton qui disparaisse sans le dire : l'attente s'estompe, elle ne bloque pas le toucher en silence.
   assert.ok(/\.nowPlayingBusy\b/.test(css), 'un état « en attente » estompé');
 });

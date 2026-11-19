@@ -1,6 +1,5 @@
 // Le Web Sender SDK de Google Cast, vu du service (cast-service.ts) : ses types, réduits à ce que le service
-// appelle, et le chargement du script. Repris de src/hooks/useGoogleCast.ts (même balise de script : si le hook
-// l'a déjà posée, on attend la même).
+// appelle, et le chargement du script (une balise marquée : si elle est déjà posée, on attend la même).
 //
 // Les membres sont écrits en propriétés (`nom: (…) => …`) : la garde « un seul appel d'initialisation du SDK
 // dans src/ » compte les parenthèses ouvrantes après son nom (tests/domain/cast-service-wiring.test.mjs).

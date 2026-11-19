@@ -1,5 +1,5 @@
-/* Panneaux du Cast : attente, télécommande, liaison perdue (CastPanels.tsx).
-   Copiés de VHSPlayer.module.css, que l'ancien lecteur lit encore : la tâche 6 retirera les originaux. Même rendu. */
+/* Panneaux du Cast : attente, télécommande, liaison perdue (CastPanels.tsx). Le lecteur y prend aussi les classes des
+   boutons STFR / STEN et de leur message d'échec, qu'il pose dans la rangée des sous-titres de la télécommande. */
 
 /* ===== Fond commun ===== */
 .castingOverlay {
@@ -266,8 +266,11 @@
   box-shadow: 0 0 12px rgba(0, 255, 247, 0.15);
 }
 
+/* Le message d'échec d'une bascule de sous-titres passe à la ligne, sous les deux boutons. */
 .nowPlayingSubtitleRow {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 10px;
   margin-top: 18px;
 }
@@ -276,6 +279,14 @@
   border-color: var(--color-neon-cyan);
   background: rgba(0, 255, 247, 0.12);
   box-shadow: 0 0 10px rgba(0, 255, 247, 0.25);
+}
+.nowPlayingError {
+  flex-basis: 100%;
+  max-width: 340px;
+  font-family: 'VT323', 'Courier New', monospace;
+  font-size: 0.9rem;
+  color: rgba(255, 150, 160, 0.95);
+  text-align: center;
 }
 
 /* Trois boutons (retour, ici, arrêter) : sur un téléphone en portrait ils ne tiennent pas sur une ligne. */
