@@ -73,8 +73,20 @@ export function castStartAt(rental: Pick<CastRentalLike, 'watchProgress' | 'watc
 }
 
 /**
+ * La piste de sous-titres à activer au chargement. Un choix du visiteur est honoré tel quel : « off » coupe, une
+ * langue absente ne donne rien (jamais une autre à sa place). Sans choix, comme le lecteur d'avant : le français
+ * s'il existe, sinon la première langue disponible, sinon aucune.
+ */
+export function castSubtitleId(subtitles: CastMediaRequest['subtitles'], asked: 'off' | 'fr' | 'en' | undefined): number | null {
+  if (asked === 'off') return null;
+  if (asked !== undefined) return subtitles.find((track) => track.language === asked)?.id ?? null;
+  return (subtitles.find((track) => track.language === 'fr') ?? subtitles[0])?.id ?? null;
+}
+
+/**
  * Le média que la machine garde entre le sélecteur et le chargement. Rien sans source : la location n'a aucune
- * piste lisible, il n'y a rien à envoyer à la TV et la tranche le dit au visiteur.
+ * piste lisible, il n'y a rien à envoyer à la TV et la tranche le dit au visiteur. `subtitle` : le choix du visiteur,
+ * absent s'il n'en a pas fait (voir castSubtitleId).
  */
 export function castMediaRequest(i: {
   rental: CastRentalLike | null | undefined;
@@ -82,7 +94,7 @@ export function castMediaRequest(i: {
   title: string | null | undefined;
   startAt?: number;
   subtitles: CastMediaRequest['subtitles'];
-  activeSubtitleId: number | null;
+  subtitle?: 'off' | 'fr' | 'en';
 }): CastMediaRequest | null {
   const url = castSourceFor(i.rental, i.audio);
   if (!url) return null;
@@ -91,7 +103,7 @@ export function castMediaRequest(i: {
     title: i.title?.trim() || CAST_FALLBACK_TITLE,
     startAt: castStartAt(i.rental, i.startAt),
     subtitles: i.subtitles,
-    activeSubtitleId: i.activeSubtitleId,
+    activeSubtitleId: castSubtitleId(i.subtitles, i.subtitle),
   };
 }
 
@@ -112,6 +124,32 @@ export function rentalGoneFilm(i: {
   const had = i.before.some((r) => r.filmId === owned);
   const has = i.after.some((r) => r.filmId === owned);
   return had && !has ? owned : null;
+}
+
+/**
+ * Au-delà, un appel au serveur est abandonné (il continue en tâche de fond, sa réponse est perdue). Le service range
+ * tous ses appels dans UNE file, chacun après la fin du précédent : un port qui ne se règle jamais la bloquerait
+ * pour toute la vie de la page.
+ */
+export const CAST_SERVER_GIVE_UP_MS = 10000;
+
+/**
+ * Un appel qui se règle toujours : sa réponse, ou `fallback` s'il échoue, lève ou dépasse CAST_SERVER_GIVE_UP_MS.
+ * Les erreurs s'arrêtent ici (le prochain envoi rattrape ; voir « Règle » du service). Une réponse tardive est perdue.
+ */
+export function settle<T>(call: () => Promise<T>, fallback: T): Promise<T> {
+  return new Promise<T>((resolve) => {
+    const timer = setTimeout(() => resolve(fallback), CAST_SERVER_GIVE_UP_MS);
+    const done = (value: T): void => {
+      clearTimeout(timer);
+      resolve(value);
+    };
+    try {
+      call().then(done, () => done(fallback));
+    } catch {
+      done(fallback);
+    }
+  });
 }
 
 export function loadRequestData(filmId: number, media: CastMediaRequest, tracked: boolean): CastLoadData {

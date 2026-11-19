@@ -6,6 +6,7 @@
  * Le lecteur doit-il lancer le Cast maintenant ? Seulement s'il est ouvert, a sa location, sur le
  * film demandé — et pas sur un appareil Apple : la TV y passe par AirPlay, dont le sélecteur exige
  * un appui direct ; le lecteur s'ouvre alors normalement et son invite « Regarder sur TV » s'en charge.
+ * @deprecated retiré à la tâche 6
  */
 export function shouldStartCastOnOpen(i: {
   castOnOpen: number | null;

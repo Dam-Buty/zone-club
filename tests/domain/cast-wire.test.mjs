@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { castMediaRequest, castSourceFor, castStartAt, loadRequestData, mediaStatusEvent, rentalGoneFilm } from '../../src/cast/cast-wire.ts';
+import {
+  CAST_SERVER_GIVE_UP_MS, castMediaRequest, castSourceFor, castStartAt, castSubtitleId, loadRequestData, mediaStatusEvent,
+  rentalGoneFilm, settle,
+} from '../../src/cast/cast-wire.ts';
 
 // Le fil entre la machine du Cast et le SDK (src/cast/cast-wire.ts) : ce que le service envoie à la TV, et ce
 // qu'il comprend de ce qu'elle répond. Pur, sans import de valeur : Node le charge tel quel.
@@ -105,6 +108,7 @@ const rental = (o = {}) => ({
   videoUrl: 'v', streamingUrls: { vf: 'https://s/vf.mp4', vo: 'https://s/vo.mp4' }, watchProgress: 40, watchPosition: 1234, ...o,
 });
 const subs = [{ id: 1, url: 'https://s/fr.vtt', language: 'fr', label: 'Français' }];
+const subsEn = { id: 2, url: 'https://s/en.vtt', language: 'en', label: 'English' };
 
 test('CAST FIL: le départ par défaut est la position de la location, 0 si elle est vue jusqu\'au bout', () => {
   assert.equal(castStartAt(rental(), undefined), 1234);
@@ -123,15 +127,15 @@ test('CAST FIL: un départ demandé prime, même 0 ; un départ illisible vaut �
 });
 
 test('CAST FIL: la demande de Cast d\'un film = source, titre, départ, sous-titres', () => {
-  const media = castMediaRequest({ rental: rental(), audio: 'vo', title: 'Get Out', subtitles: subs, activeSubtitleId: 1 });
+  const media = castMediaRequest({ rental: rental(), audio: 'vo', title: 'Get Out', subtitles: subs, subtitle: 'fr' });
   assert.deepEqual(media, { url: 'https://s/vo.mp4', title: 'Get Out', startAt: 1234, subtitles: subs, activeSubtitleId: 1 });
-  assert.equal(castMediaRequest({ rental: rental(), audio: 'vf', title: 'Get Out', startAt: 5, subtitles: [], activeSubtitleId: null }).startAt, 5);
+  assert.equal(castMediaRequest({ rental: rental(), audio: 'vf', title: 'Get Out', startAt: 5, subtitles: [] }).startAt, 5);
 });
 test('CAST FIL: sans source il n\'y a pas de demande ; sans titre, le nom du club', () => {
-  assert.equal(castMediaRequest({ rental: rental({ videoUrl: '', streamingUrls: { vf: null, vo: null } }), audio: 'vf', title: 'x', subtitles: [], activeSubtitleId: null }), null);
-  assert.equal(castMediaRequest({ rental: null, audio: 'vf', title: 'x', subtitles: [], activeSubtitleId: null }), null);
-  assert.equal(castMediaRequest({ rental: rental(), audio: 'vf', title: null, subtitles: [], activeSubtitleId: null }).title, 'Zone Club');
-  assert.equal(castMediaRequest({ rental: rental(), audio: 'vf', title: '   ', subtitles: [], activeSubtitleId: null }).title, 'Zone Club');
+  assert.equal(castMediaRequest({ rental: rental({ videoUrl: '', streamingUrls: { vf: null, vo: null } }), audio: 'vf', title: 'x', subtitles: [] }), null);
+  assert.equal(castMediaRequest({ rental: null, audio: 'vf', title: 'x', subtitles: [] }), null);
+  assert.equal(castMediaRequest({ rental: rental(), audio: 'vf', title: null, subtitles: [] }).title, 'Zone Club');
+  assert.equal(castMediaRequest({ rental: rental(), audio: 'vf', title: '   ', subtitles: [] }).title, 'Zone Club');
 });
 
 // La location qui disparaît pendant un Cast arrête la TV ; pendant que les locations ne sont pas encore chargées,
@@ -154,4 +158,80 @@ test('CAST FIL: rien à arrêter sans film sur la TV, ni pour une prévisualisat
   assert.equal(rentalGoneFilm(own({ owned: null })), null);
   // Une prévisualisation n'a pas de location : celle, réelle, du même film qui s'éteint ne l'arrête pas.
   assert.equal(rentalGoneFilm(own({ tracked: false })), null);
+});
+
+// Sous-titres : sans choix du visiteur, ceux du lecteur d'avant — français s'ils existent, sinon la première langue
+// disponible, sinon aucun. Seules les URL absolues sont déclarées à la TV (buildCastSubtitleTracks) : testé avec https.
+test('CAST FIL: sans choix, le français s\'il existe', () => {
+  assert.equal(castSubtitleId([...subs, subsEn], undefined), 1);
+  assert.equal(castSubtitleId([subsEn, ...subs], undefined), 1, 'l\'ordre des pistes ne compte pas');
+  assert.equal(castMediaRequest({ rental: rental(), audio: 'vf', title: 'x', subtitles: [...subs, subsEn] }).activeSubtitleId, 1);
+});
+test('CAST FIL: sans choix et sans français, la première langue disponible', () => {
+  assert.equal(castSubtitleId([subsEn], undefined), 2);
+  assert.equal(castMediaRequest({ rental: rental(), audio: 'vo', title: 'x', subtitles: [subsEn] }).activeSubtitleId, 2);
+});
+test('CAST FIL: sans choix et sans sous-titres, aucun', () => {
+  assert.equal(castSubtitleId([], undefined), null);
+  assert.equal(castMediaRequest({ rental: rental(), audio: 'vf', title: 'x', subtitles: [] }).activeSubtitleId, null);
+});
+test('CAST FIL: « off » demandé coupe les sous-titres, même si le français existe', () => {
+  assert.equal(castSubtitleId([...subs, subsEn], 'off'), null);
+  assert.equal(castMediaRequest({ rental: rental(), audio: 'vf', title: 'x', subtitles: [...subs, subsEn], subtitle: 'off' }).activeSubtitleId, null);
+});
+test('CAST FIL: une langue demandée est honorée, et jamais remplacée par une autre', () => {
+  assert.equal(castSubtitleId([...subs, subsEn], 'en'), 2);
+  assert.equal(castSubtitleId([...subs, subsEn], 'fr'), 1);
+  assert.equal(castSubtitleId([subsEn], 'fr'), null, 'français demandé, absent : aucun, pas l\'anglais');
+});
+
+// ---------------------------------------------------------------------------------------------------------
+// settle : un appel serveur qui se règle toujours (src/store/slices/cast.ts en entoure chaque port)
+// ---------------------------------------------------------------------------------------------------------
+
+const flush = () => new Promise((resolve) => setImmediate(resolve));
+const pending = () => new Promise(() => {});
+
+test('CAST FIL: settle rend la réponse quand elle arrive', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  assert.equal(await settle(() => Promise.resolve('réponse'), 'repli'), 'réponse');
+});
+test('CAST FIL: settle se règle sur un rejet', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  assert.equal(await settle(() => Promise.reject(new Error('503')), 'repli'), 'repli');
+});
+test('CAST FIL: settle se règle sur une exception synchrone', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  assert.equal(await settle(() => { throw new Error('boum'); }, 'repli'), 'repli');
+});
+test('CAST FIL: settle abandonne à 10 000 ms, pas avant', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  assert.equal(CAST_SERVER_GIVE_UP_MS, 10000);
+  let settled = false;
+  const result = settle(pending, 'repli').then((value) => { settled = true; return value; });
+  t.mock.timers.tick(CAST_SERVER_GIVE_UP_MS - 1);
+  await flush();
+  assert.equal(settled, false, 'à 9 999 ms l\'appel est encore attendu');
+  t.mock.timers.tick(1);
+  assert.equal(await result, 'repli');
+});
+test('CAST FIL: une réponse qui arrive après l\'échéance n\'y change rien', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let answer;
+  const result = settle(() => new Promise((resolve) => { answer = resolve; }), 'repli');
+  t.mock.timers.tick(CAST_SERVER_GIVE_UP_MS);
+  assert.equal(await result, 'repli');
+  answer('trop tard');
+  await flush();
+  assert.equal(await result, 'repli');
+});
+test('CAST FIL: une réponse à temps lève l\'échéance', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let answer;
+  const result = settle(() => new Promise((resolve) => { answer = resolve; }), 'repli');
+  t.mock.timers.tick(CAST_SERVER_GIVE_UP_MS - 1);
+  answer('à temps');
+  assert.equal(await result, 'à temps');
+  t.mock.timers.tick(10);                                  // l'échéance ne part plus
+  assert.equal(await result, 'à temps');
 });

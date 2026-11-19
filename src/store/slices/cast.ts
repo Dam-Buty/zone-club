@@ -3,22 +3,15 @@ import api from '../../api'
 import type { VideoClubState } from '../index'
 import { castOwnsFilm, initialCastState } from '../../cast/cast-machine'
 import type { CastEvent, CastState } from '../../cast/cast-machine'
-import { castMediaRequest, rentalGoneFilm } from '../../cast/cast-wire'
+import { castMediaRequest, rentalGoneFilm, settle } from '../../cast/cast-wire'
 import { getCastState, initCast, sendCast, subscribeCast } from '../../cast/cast-service'
 import type { CastPorts } from '../../cast/cast-service'
-import { activeSubtitleId, buildCastSubtitleTracks } from '../../utils/cast-subtitles'
+import { buildCastSubtitleTracks } from '../../utils/cast-subtitles'
 
 // Tranche « Cast » du magasin (docs/superpowers/specs/2026-11-18-cast-refonte-design.md, § 5.3) : le SEUL endroit
 // de l'application qui parle au service (src/cast/cast-service.ts). Elle publie son état, lui branche l'API et le
 // magasin (les ports), et traduit les gestes du visiteur en événements de la machine. Les composants lisent `cast`
 // et demandent par les actions ci-dessous ; aucun n'écrit l'état du Cast.
-
-/**
- * Au-delà, un appel au serveur est abandonné (il continue en tâche de fond, sa réponse est perdue). Le service range
- * tous ses appels dans UNE file, chacun après la fin du précédent : un port qui ne se règle jamais la bloquerait
- * pour toute la vie de la page.
- */
-export const CAST_SERVER_GIVE_UP_MS = 10000
 
 export interface CastSlice {
   /** Ce que fait le Cast, tel que la machine le dit. Jamais persisté : il porte l'adresse du film et des drapeaux passagers. */
@@ -30,8 +23,9 @@ export interface CastSlice {
   /**
    * « Regarder sur TV ». À appeler DIRECTEMENT dans le gestionnaire de l'appui : le sélecteur d'appareils exige son
    * activation, aucune attente ne doit précéder l'envoi. Sans source, un message `no_source` et rien d'autre.
-   * `startAt` : par défaut la position de la location, 0 si elle est vue jusqu'au bout. `audio` : 'vf' ;
-   * `subtitle` : 'off'.
+   * `startAt` : par défaut la position de la location, 0 si elle est vue jusqu'au bout. `audio` : 'vf', avec repli
+   * sur 'vo' si la location n'a que celle-là. `subtitle` : sans choix, comme le lecteur d'avant — le français s'il
+   * existe, sinon la première langue disponible, sinon aucun ; 'off' les coupe.
    */
   castFilm: (filmId: number, opts?: { audio?: 'vf' | 'vo'; subtitle?: 'off' | 'fr' | 'en'; startAt?: number }) => void
   castToggle: () => void
@@ -63,25 +57,6 @@ function titleOf(s: VideoClubState, filmId: number): string | null {
   if (s.previewFilm?.id === filmId) return s.previewFilm.title
   const film = Object.values(s.films).flat().find((f) => f.id === filmId)
   return film?.title ?? s.rentalHistory.find((h) => h.filmId === filmId)?.title ?? null
-}
-
-/**
- * Un appel serveur qui se règle toujours : sa réponse, ou `fallback` s'il échoue, lève ou dépasse l'échéance. Les
- * erreurs s'arrêtent ici (le prochain envoi, dans 10 s, rattrape ; voir « Règle » du service).
- */
-function settle<T>(call: () => Promise<T>, fallback: T): Promise<T> {
-  return new Promise<T>((resolve) => {
-    const timer = setTimeout(() => resolve(fallback), CAST_SERVER_GIVE_UP_MS)
-    const done = (value: T): void => {
-      clearTimeout(timer)
-      resolve(value)
-    }
-    try {
-      call().then(done, () => done(fallback))
-    } catch {
-      done(fallback)
-    }
-  })
 }
 
 /** Les ports du service : l'API, le magasin, la mémoire du film. Chacun se règle (voir `settle`). */
@@ -184,7 +159,7 @@ export const createCastSlice: StateCreator<VideoClubState, [['zustand/persist', 
         title: titleOf(s, filmId),
         startAt: opts?.startAt,
         subtitles: tracks,
-        activeSubtitleId: activeSubtitleId(tracks, opts?.subtitle ?? 'off'),
+        subtitle: opts?.subtitle,
       })
       if (!media) {
         noSource = { code: 'no_source', filmId, deviceName: null }

@@ -87,9 +87,23 @@ test('CAST STORE: chaque port se règle, avec une échéance nommée', () => {
   // Le service range ses appels serveur dans une seule file : un port qui ne se règle jamais la bloquerait pour
   // la vie de la page.
   const slice = read(SLICE);
-  assert.ok(/CAST_SERVER_GIVE_UP_MS\s*=\s*10000\b|CAST_SERVER_GIVE_UP_MS\s*=\s*10_000\b/.test(slice), 'échéance nommée de 10 000 ms');
-  for (const port of ['serverOpen', 'serverReport', 'serverClose', 'readRental', 'remember', 'remembered']) {
-    assert.ok(slice.includes(`${port}:`) || slice.includes(`${port}(`), `port ${port}`);
+  const wire = read('src/cast/cast-wire.ts');
+  assert.ok(/export const CAST_SERVER_GIVE_UP_MS\s*=\s*10000\b/.test(wire), 'échéance nommée de 10 000 ms, dans cast-wire (testée)');
+  assert.ok(/import[^;]*\bsettle\b[^;]*from\s+'\.\.\/\.\.\/cast\/cast-wire'/.test(slice), 'la tranche prend `settle` de cast-wire');
+  assert.ok(!/function settle\b/.test(slice), 'la tranche n\'a pas sa propre copie de settle');
+  // Chaque port serveur passe par `settle` : un seul qui l'oublie, et la file du service est à la merci d'un appel muet.
+  const ports = between(slice, 'function createPorts', 'export const createCastSlice');
+  const portBodies = {
+    serverOpen: between(ports, 'serverOpen:', 'serverReport:'),
+    serverReport: between(ports, 'serverReport:', 'serverClose:'),
+    serverClose: between(ports, 'serverClose:', 'readRental:'),
+    readRental: between(ports, 'readRental:', 'remember:'),
+  };
+  for (const [port, body] of Object.entries(portBodies)) {
+    assert.ok(body.includes('settle('), `le port ${port} passe par settle(`);
+  }
+  for (const port of ['remember', 'remembered']) {
+    assert.ok(ports.includes(`${port}:`), `port ${port}`);
   }
   assert.ok(slice.includes('castSessions.create(') && slice.includes('castSessions.updatePosition(') && slice.includes('castSessions.end('), 'les trois appels de séance');
   // La position du Cast tient aussi la progression de la location (spec § 5.1 : « progression + séance »).
@@ -113,7 +127,9 @@ test('CAST STORE: les anciens accès restent le temps du vieux lecteur, marqués
     const re = new RegExp(`@deprecated retiré à la tâche ${task}[^*]*\\*/\\s*${name}:`);
     assert.ok(re.test(store), `${name} doit porter « @deprecated retiré à la tâche ${task} »`);
   }
-  assert.ok(read('src/utils/cast-on-open.ts').includes('shouldStartCastOnOpen'), 'la règle de la borne reste jusqu\'à la tâche 6');
+  // La règle de la borne reste jusqu'à la tâche 6 (le vieux lecteur la consulte), et le dit.
+  assert.ok(/@deprecated retiré à la tâche 6[^*]*\*\/\s*export function shouldStartCastOnOpen\b/.test(read('src/utils/cast-on-open.ts')),
+    'shouldStartCastOnOpen doit porter « @deprecated retiré à la tâche 6 »');
 });
 
 test('CAST STORE: activeCastFilmId est écrit par la tranche, la déconnexion et la location surveillées', () => {
