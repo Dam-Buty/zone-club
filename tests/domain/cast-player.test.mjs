@@ -73,17 +73,19 @@ test('CAST LECTEUR: le service démarre au montage, la demande part dans la pile
 
 test('CAST LECTEUR: jamais de lecture locale lancée d\'office, jamais sur les deux écrans', () => {
   const src = read(PLAYER);
-  assert.match(src, /autoPlay=\{view === 'local' && !showMobileRemotePrompt && rewindPhase === 'none' && !castFailedHere\}/, 'autoPlay seulement en local, invite répondue, sans lancement raté');
+  // La règle est localAutoPlay (cast-on-open, testée) : la vidéo a la main, invite répondue, sans lancement raté (B4, B5, B9).
+  assert.match(src, /autoPlay=\{localAutoPlay\(\{ view, prompt: showMobileRemotePrompt, rewind: rewindPhase !== 'none', castHeld: castFailedHere, pending: castPendingHere \}\)\}/, 'autoPlay seulement quand la vidéo a la main, invite répondue, sans lancement raté');
   // L'invite est calculée dès le premier rendu : la vidéo ne doit pas partir avant elle.
-  assert.match(src, /useState\(\(\) => isMobile && view === 'local' && \(playerAsk \|\| castFailedHere\)\)/, 'invite à l\'ouverture');
-  assert.ok(callback(src, 'handleWatchHere').includes('.play()'), '« Continuer sur smartphone » lance la lecture');
+  assert.match(src, /useState\(\(\) => isMobile && playsHere\(view\) && \(playerAsk \|\| castFailedHere\)\)/, 'invite à l\'ouverture');
+  assert.ok(callback(src, 'handleWatchHere').includes('.play()'), '« Continuer sur ce téléphone » lance la lecture');
 });
 
 // Relecture de la tâche 6 (arbitrage H) : les trois gardes ci-dessous échouent sur le code d'avant le correctif 1.
 test('CAST LECTEUR: la vidéo locale se tait dès que la TV a le film, le prend OU vient de le finir', () => {
   const src = read(PLAYER);
   // Fin vue par la TV : « BE KIND REWIND » ne doit pas couvrir une vidéo qui joue avec le son (page rechargée).
-  assert.match(src, /const tvOwnsFilm = view !== 'local' && view !== 'other-on-tv';/, 'tvOwnsFilm compte aussi la vue « ended »');
+  // playsHere (cast-on-open, testée) : seules « local » et « other-on-tv » laissent la main à la vidéo d'ici — « ended » non.
+  assert.match(src, /const tvOwnsFilm = !playsHere\(view\);/, 'tvOwnsFilm compte aussi la vue « ended »');
   const at = src.indexOf('if (!tvOwnsFilm) return;');
   assert.ok(at > 0, 'un effet se règle sur tvOwnsFilm');
   assert.ok(src.slice(at, at + 300).includes('.pause()'), 'et met la vidéo locale en pause');
@@ -171,4 +173,22 @@ test('CAST LECTEUR A3: ouvert sans location, il se ferme lui-même et Échap fon
   const noVideo = keys.indexOf('if (!video) return;');
   assert.ok(escape > 0 && noVideo > escape, 'Échap est traité avant le garde « pas de vidéo »');
   assert.ok(keys.slice(escape, noVideo).includes('handleEject()'), 'Échap éjecte');
+});
+
+// Relecture finale, B4 / B5 / B9 / B13 : la lecture automatique suit une règle pure (cast-on-open) ; le Cast connu
+// indisponible retient la vidéo comme un lancement raté ; le film mémorisé attendu aussi ; l'invite dit l'appareil.
+test('CAST LECTEUR B4 / B5 / B9: lecture automatique par la règle testée, film mémorisé attendu compris', () => {
+  const src = read(PLAYER);
+  assert.match(src, /autoPlay=\{localAutoPlay\(\{ view, prompt: showMobileRemotePrompt, rewind: rewindPhase !== 'none', castHeld: castFailedHere, pending: castPendingHere \}\)\}/, 'autoPlay = localAutoPlay');
+  assert.match(src, /const castPendingHere = useStore\(state => castPending\(state\.cast, state\.currentPlayingFilm, state\.lastCastFilmId\)\);/, 'castPending lu dans la machine, avec le film mémorisé');
+  assert.match(src, /const castFailedHere = noticeHere !== null && noticeHoldsPlayback\(noticeHere\.code\);/, 'Cast raté OU absent : même règle');
+  assert.match(src, /useState\(\(\) => isMobile && playsHere\(view\) && \(playerAsk \|\| castFailedHere\)\)/, 'invite à l\'ouverture, même règle pour un autre film sur la TV');
+  assert.match(src, /const tvOwnsFilm = !playsHere\(view\);/, 'la vidéo d\'ici se tait exactement quand elle ne joue pas ici');
+});
+test('CAST LECTEUR B13: l\'invite dit « Continuer sur ce téléphone / cette tablette / cet ordinateur »', () => {
+  const src = read(PLAYER);
+  assert.ok(!src.includes('Continuer sur smartphone'), 'plus de libellé en dur');
+  assert.ok(src.includes('continueHereLabel(here)'), 'le libellé des panneaux');
+  assert.ok(/const \[here\] = useState\(readHereLabel\)/.test(src), 'l\'appareil lu comme les panneaux le lisent');
+  assert.ok(/export function readHereLabel\(/.test(read('src/components/player/CastPanels.tsx')), 'une seule lecture de l\'appareil');
 });

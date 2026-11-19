@@ -588,7 +588,8 @@ export function tvChoiceLine(i: { airPlay: boolean; replacing: { title: string |
  */
 export function castBarLabel(phase: CastPhase, title: string): string | null {
   switch (phase) {
-    case 'remote': return `Ouvrir la télécommande de ${title}`;
+    // Deux-points plutôt que « de » : aucune élision à faire (« de Une Affaire… », « de Il était une fois… »).
+    case 'remote': return `Ouvrir la télécommande : ${title}`;
     case 'lost': return `${title} : la télé ne répond plus, ouvrir`;
     case 'ended': return `${title} est terminé, ouvrir`;
     case 'idle': case 'choosing': case 'connecting': case 'loading': return null;

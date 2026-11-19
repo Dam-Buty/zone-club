@@ -12,8 +12,8 @@ const DOT_COLOR = { live: '#00ff88', warn: '#ffb020' } as const;
 // dans le vidéoclub pendant que le film continue sur la TV. L'appui rouvre le lecteur sur ce
 // film, directement sur le panneau du Cast (aucune invite « Regarder sur TV ? », la TV a déjà son film).
 //
-// Le film à signaler vient de la MACHINE (`castOwnsFilm`), pas du champ dérivé du magasin (celui que lit encore la
-// fiche de la K7) : il est nul une fois le film terminé, et la puce « Film terminé » doit rester jusqu'au rembobinage.
+// Le film à signaler vient de la MACHINE (`castOwnsFilm`) : il reste désigné une fois le film terminé, et la puce
+// « Film terminé » doit rester jusqu'au rembobinage.
 //
 // Motif des mini-barres de Spotify / Netflix : la conscience permanente qu'un Cast est vivant, et un chemin en un
 // appui vers les commandes.

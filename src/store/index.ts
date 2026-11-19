@@ -191,10 +191,6 @@ export interface VideoClubState extends CastSlice {
   playerAsk: boolean;
   closePlayer: () => void;
 
-  // Film suivi par la TV : écrit par la seule tranche `cast` (le film joué ou « la télé ne répond plus »), sinon
-  // null. Lu par la fiche de la K7 (`castView` et `cast` pour le reste).
-  activeCastFilmId: number | null;
-
   // Targeting (pour le hover via raycasting central)
   targetedFilmId: number | null;
   targetedCassetteKey: string | null;
@@ -462,6 +458,9 @@ export const useStore = create<VideoClubState>()(
           filmRentalCounts: {},
           managerVisible: false,
           chatBackdropUrl: null,
+          // Le film dont le Cast courait peut-être est celui de ce compte : le visiteur suivant sur le même appareil
+          // recevrait « Location terminée » pour un film qu'il n'a pas loué.
+          lastCastFilmId: null,
         });
       },
 
@@ -817,7 +816,6 @@ export const useStore = create<VideoClubState>()(
         managerVisible: false,
         chatBackdropUrl: null,
       }),
-      activeCastFilmId: null,
       openPlayer: (filmId, opts) => {
         // Always allow opening — even if another film is already casting. The
         // player reads the Cast machine (`castView`): this film on the TV → the
@@ -836,15 +834,21 @@ export const useStore = create<VideoClubState>()(
           chatBackdropUrl: null,
         });
       },
-      // closePlayer leaves the Cast alone: the film continues on the TV
+      // closePlayer leaves the TV alone: the film continues on the TV
       // without the player, and the next openPlayer finds it through the
-      // Cast machine (remote control) without re-casting.
-      closePlayer: () => set({
-        isPlayerOpen: false,
-        currentPlayingFilm: null,
-        previewRental: null,
-        previewFilm: null,
-      }),
+      // Cast machine (remote control) without re-casting. Seuls partent avec
+      // le lecteur le message du Cast qu'il montrait et la reprise qu'il n'a
+      // pas prise (castPlayerClosed ; « Location terminée » reste).
+      closePlayer: () => {
+        const filmId = get().currentPlayingFilm;
+        set({
+          isPlayerOpen: false,
+          currentPlayingFilm: null,
+          previewRental: null,
+          previewFilm: null,
+        });
+        if (filmId !== null) get().castPlayerClosed(filmId);
+      },
 
       // Targeting
       targetedFilmId: null,

@@ -1009,3 +1009,26 @@ test('CAST MACHINE B10: « Annuler » pendant la connexion arrête aussi la séa
   assert.equal(state.stopping, true, 'les statuts tardifs du lancement annulé sont ignorés');
   assert.equal(state.connected, false);
 });
+
+test('CAST MACHINE B6: le lecteur se ferme — son message et sa reprise en attente partent, « Location terminée » reste', () => {
+  // Message d'échec pour ce film : fermé avec le lecteur.
+  const failed = run([ready, ask, { type: 'PICKER_FAILED' }]).state;
+  assert.equal(failed.notice.code, 'connect_failed');
+  assert.equal(step(failed, { type: 'PLAYER_CLOSED', filmId: 7 }).state.notice, null);
+  // … pas celui d'un autre film.
+  assert.equal(step(failed, { type: 'PLAYER_CLOSED', filmId: 8 }).state, failed);
+  // Arrêt venu d'ailleurs, lecteur ouvert sans avoir pris la reprise : message et reprise partent.
+  const stopped = run([...toRemote, tvIdle('CANCELLED')]).state;
+  assert.notEqual(stopped.resume, null);
+  let r = step(stopped, { type: 'PLAYER_CLOSED', filmId: 7 });
+  assert.equal(r.state.notice, null); assert.equal(r.state.resume, null); assert.deepEqual(r.effects, []);
+  assert.equal(r.state.phase, 'idle');
+  // « Location terminée » : la borne doit encore le montrer, lecteur fermé.
+  const over = step(reach('remote'), { type: 'RENTAL_GONE', filmId: 7 }).state;
+  r = step(over, { type: 'PLAYER_CLOSED', filmId: 7 });
+  assert.equal(r.state.notice.code, 'rental_over');
+  // Un film terminé n'est pas oublié par la fermeture : seul « ÉJECTER » ou le rembobinage l'oublient.
+  const ended = reach('ended');
+  const closed = step(ended, { type: 'PLAYER_CLOSED', filmId: 7 });
+  assert.equal(closed.state.phase, 'ended'); assert.equal(castOwnsFilm(closed.state), 7); assert.deepEqual(closed.effects, []);
+});

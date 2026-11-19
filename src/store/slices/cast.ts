@@ -53,14 +53,16 @@ export interface CastSlice {
   /** Le compte se déconnecte : la location du film qui est sur la TV disparaît avec lui. Appelé par `logout`. */
   castLoggedOut: () => void
   /**
+   * Le lecteur de `filmId` se ferme : le message du Cast qu'il montrait et la reprise de ce film qu'il n'a pas prise
+   * partent avec lui (« Location terminée » excepté : la borne le montre lecteur fermé). Appelé par `closePlayer`.
+   */
+  castPlayerClosed: (filmId: number) => void
+  /**
    * Le lecteur s'est trouvé ouvert sur `filmId` sans location (échue pendant le film, prévisualisation adoptée) : si la
    * TV a ce film, elle s'arrête et « Location terminée » reste. La machine en juge (elle ignore un autre film).
    */
   castRentalGone: (filmId: number) => void
 }
-
-/** Film à lier au suivi de la TV : celui qu'elle joue ou ne répond plus pour, sinon null (valeur de `activeCastFilmId`). */
-const remoteFilmOf = (c: CastState): number | null => (c.phase === 'remote' || c.phase === 'lost' ? castOwnsFilm(c) : null)
 
 /** Titre du film pour la TV : catalogue chargé, prévisualisation /admin, sinon l'historique (borne : rayons non chargés). */
 function titleOf(s: VideoClubState, filmId: number): string | null {
@@ -122,13 +124,9 @@ export const createCastSlice: StateCreator<VideoClubState, [['zustand/persist', 
     return noSource ? { ...service, notice: noSource } : service
   }
 
-  /**
-   * Publie l'état du service. `activeCastFilmId` (lu par la puce et la fiche de la K7) en est dérivé et réécrit à
-   * chaque changement : une écriture venue d'ailleurs (le vieux lecteur, `openPreviewPlayer`) ne survit pas à l'état
-   * suivant du service, qui fait foi.
-   */
+  /** Publie l'état du service : les composants le lisent (`castView`, `castOwnsFilm`), aucun ne l'écrit. */
   const publish = (service: CastState): void => {
-    set({ cast: shown(service), activeCastFilmId: remoteFilmOf(service) })
+    set({ cast: shown(service) })
   }
 
   /** Un geste du visiteur → un événement de la machine. Le service est démarré d'abord (idempotent). */
@@ -210,6 +208,14 @@ export const createCastSlice: StateCreator<VideoClubState, [['zustand/persist', 
       const service = getCastState()
       const owned = castOwnsFilm(service)
       if (owned !== null && service.tracked) sendCast({ type: 'RENTAL_GONE', filmId: owned })
+    },
+
+    castPlayerClosed: (filmId) => {
+      // « Pas de source » est le message de la tranche (la machine ne le connaît pas) : il part de la même façon.
+      const dropNoSource = noSource !== null && (noSource.filmId === filmId || noSource.filmId === null)
+      if (dropNoSource) noSource = null
+      sendCast({ type: 'PLAYER_CLOSED', filmId })
+      if (dropNoSource) set({ cast: shown(getCastState()) })
     },
 
     castRentalGone: (filmId) => ask({ type: 'RENTAL_GONE', filmId }),

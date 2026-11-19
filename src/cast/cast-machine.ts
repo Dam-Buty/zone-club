@@ -81,7 +81,8 @@ export type CastEvent =
   | { type: 'COMMAND_DONE' } | { type: 'COMMAND_FAILED' }
   | { type: 'TIMEOUT'; timer: 'connect' | 'load' }
   | { type: 'TICK' } | { type: 'PAGE_VISIBLE' } | { type: 'PAGE_HIDDEN' }
-  | { type: 'USER_CANCEL' } | { type: 'USER_STOP' } | { type: 'USER_TO_PHONE' } | { type: 'USER_RETRY' } | { type: 'USER_DISMISS' } | { type: 'RESUME_TAKEN' };
+  | { type: 'USER_CANCEL' } | { type: 'USER_STOP' } | { type: 'USER_TO_PHONE' } | { type: 'USER_RETRY' } | { type: 'USER_DISMISS' } | { type: 'RESUME_TAKEN' }
+  | { type: 'PLAYER_CLOSED'; filmId: number };
 export type CastEffect =
   | { type: 'OPEN_PICKER' } | { type: 'LOAD_MEDIA'; filmId: number; media: CastMediaRequest }
   | { type: 'REQUEST_STATUS' } | { type: 'SEND_COMMAND'; command: CastCommand; position: number; paused: boolean }
@@ -135,6 +136,7 @@ export function castReduce(state: CastState, event: CastEvent): Step {
     case 'USER_TO_PHONE': return leaveTv(state, true);
     case 'USER_DISMISS': return onDismiss(state);
     case 'RESUME_TAKEN': return { state: { ...state, resume: null }, effects: [] };
+    case 'PLAYER_CLOSED': return onPlayerClosed(state, event.filmId);
   }
 }
 
@@ -645,6 +647,19 @@ function leaveTv(state: CastState, play: boolean): Step {
       ...ifTracked(state, { type: 'SERVER_CLOSE', filmId, position, finished: false }, { type: 'REMEMBER_FILM', filmId: null }),
     ],
   };
+}
+
+/**
+ * Le lecteur de `filmId` se ferme : le message qu'il montrait (celui de ce film, ou sans film) et une reprise locale de
+ * ce film qu'il n'a pas prise n'ont plus d'objet — sinon ils restaient indéfiniment, et reparaissaient à une ouverture
+ * lointaine (B6). Sauf « Location terminée », que la borne montre lecteur fermé. La phase ne bouge pas : un film
+ * terminé reste signalé (« Film terminé ») jusqu'au rembobinage ou à l'éjection.
+ */
+function onPlayerClosed(state: CastState, filmId: number): Step {
+  const shown = state.notice !== null && state.notice.code !== 'rental_over' && (state.notice.filmId === filmId || state.notice.filmId === null);
+  const pending = state.resume?.filmId === filmId;
+  if (!shown && !pending) return unchanged(state);
+  return { state: { ...state, notice: shown ? null : state.notice, resume: pending ? null : state.resume }, effects: [] };
 }
 
 function onDismiss(state: CastState): Step {

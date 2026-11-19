@@ -37,7 +37,7 @@ test('REMBOBINAGE: le lecteur applique la règle une fois par ouverture et ne la
   const player = readText(path.join(process.cwd(), 'src/components/player/VHSPlayer.tsx'));
   // rewindPromptFor applique rewindOfferOnOpen, qui applique shouldOfferRewindOnOpen.
   assert.ok(player.includes('rewindPromptFor('), 'le lecteur consulte la règle');
-  assert.match(player, /autoPlay=\{[^}]*rewindPhase === 'none'/, 'pas de lecture automatique derrière la proposition');
+  assert.match(player, /autoPlay=\{localAutoPlay\(\{[^}]*rewind: rewindPhase !== 'none'/, 'pas de lecture automatique derrière la proposition');
 });
 
 // Relecture finale : la décision était prise une seule fois, parfois sur des données périmées (page
@@ -96,4 +96,31 @@ test('LECTEUR A3: ouvert sur un film sans location, données relues → il se fe
   // Une location réelle, ou une prévisualisation /admin (getRental la sert), et rien ne se ferme.
   assert.equal(playerWithoutRental({ ...open, hasRental: true }), false);
   assert.equal(playerWithoutRental({ ...open, open: false }), false);
+});
+
+// Relecture finale, B4 / B5 / B9 : quand la vidéo d'ici part-elle d'elle-même ? Une seule règle, pure.
+test('LECTEUR B5: un AUTRE film sur la TV n\'empêche pas ce film de jouer ici ; ce film sur la TV, si', async () => {
+  const { playsHere, localAutoPlay } = await import('../../src/utils/cast-on-open.ts');
+  const free = { prompt: false, rewind: false, castHeld: false, pending: false };
+  assert.equal(playsHere('local'), true);
+  assert.equal(playsHere('other-on-tv'), true, 'ce n\'est pas le même film sur deux écrans');
+  for (const view of ['choosing', 'connecting', 'loading', 'remote', 'lost', 'ended']) {
+    assert.equal(playsHere(view), false, view);
+    assert.equal(localAutoPlay({ view, ...free }), false, view);
+  }
+  assert.equal(localAutoPlay({ view: 'local', ...free }), true);
+  assert.equal(localAutoPlay({ view: 'other-on-tv', ...free }), true, '« Sur ce téléphone » d\'un second film démarre ici');
+});
+test('LECTEUR B4 / B9: une question, un Cast raté ou absent, un film mémorisé encore attendu → rien ne part seul', async () => {
+  const { localAutoPlay, noticeHoldsPlayback } = await import('../../src/utils/cast-on-open.ts');
+  const free = { prompt: false, rewind: false, castHeld: false, pending: false };
+  for (const view of ['local', 'other-on-tv']) {
+    for (const held of ['prompt', 'rewind', 'castHeld', 'pending']) {
+      assert.equal(localAutoPlay({ view, ...free, [held]: true }), false, `${view} / ${held}`);
+    }
+  }
+  // Le Cast vient d'échouer, ou manque à ce navigateur (panneau « recopie d'écran ») : le visiteur choisit.
+  for (const code of ['connect_failed', 'load_failed', 'unavailable']) assert.equal(noticeHoldsPlayback(code), true, code);
+  // Les autres messages n'attendent pas de réponse : un arrêt laisse déjà le lecteur en pause (reprise `play: false`).
+  for (const code of ['stopped_elsewhere', 'tv_error', 'rental_over', 'no_source']) assert.equal(noticeHoldsPlayback(code), false, code);
 });

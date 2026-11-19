@@ -31,7 +31,7 @@ export function KioskCastBar({ filmId, title }: KioskCastBarProps) {
   const { dot } = castChipLook(phase);
 
   return (
-    // Un lecteur d'écran entend ce que fait l'appui (« Ouvrir la télécommande de … »), pas « titre, état ».
+    // Un lecteur d'écran entend ce que fait l'appui (« Ouvrir la télécommande : … »), pas « titre, état ».
     <button
       type="button"
       className={styles.kCastBar}

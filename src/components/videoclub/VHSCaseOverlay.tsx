@@ -361,9 +361,9 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
   const hasSeenSwipeHint = useStore((state) => state.hasSeenVHSSwipeHint);
   const setHasSeenSwipeHint = useStore((state) => state.setHasSeenVHSSwipeHint);
   const tutorialStep = useStore((state) => state.tutorialStep);
-  const activeCastFilmId = useStore((state) => state.activeCastFilmId);
   const isTutorialActive = tutorialStep !== null;
-  const isCastBlocked = activeCastFilmId !== null && activeCastFilmId !== film?.id;
+  // Un autre film sur la TV ne bloque pas celui-ci : le lecteur s'ouvre en local, avec son bandeau « … est en cours
+  // sur … », et « Regarder sur TV » remplace le film de la TV après confirmation (spec Cast du 18/11, § 5.4).
 
   const [isRenting, setIsRenting] = useState(false);
   const [rentSuccess, setRentSuccess] = useState(false);
@@ -1194,24 +1194,18 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
           {renderVersionBadges()}
           {renderDesktopRewindStatus()}
           {renderDesktopExtensionButton()}
-          {isCastBlocked ? (
-            <div style={{ color: '#ff6b6b', fontSize: '0.75rem', fontFamily: "'Orbitron', monospace", textAlign: 'center', padding: '8px 0' }}>
-              DIFFUSION EN COURS — ARRÊTEZ D'ABORD
-            </div>
-          ) : (
-            <button
-              onClick={handleSitDown}
-              style={sideButtonStyle("#00fff7", "#ffffff", {
-                width: "100%",
-                justifyContent: "center",
-                background: "linear-gradient(135deg, rgba(0,255,247,0.3), rgba(0,200,255,0.3))",
-                boxShadow: "0 0 16px rgba(0,255,247,0.35)",
-                fontSize: "1.28rem",
-              })}
-            >
-              🛋️ S'INSTALLER ET REGARDER
-            </button>
-          )}
+          <button
+            onClick={handleSitDown}
+            style={sideButtonStyle("#00fff7", "#ffffff", {
+              width: "100%",
+              justifyContent: "center",
+              background: "linear-gradient(135deg, rgba(0,255,247,0.3), rgba(0,200,255,0.3))",
+              boxShadow: "0 0 16px rgba(0,255,247,0.35)",
+              fontSize: "1.28rem",
+            })}
+          >
+            🛋️ S'INSTALLER ET REGARDER
+          </button>
           {renderDesktopReturnButton()}
         </>
       );
@@ -1338,21 +1332,15 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
           {renderVersionBadges()}
           {renderMobileRewindStatus()}
           {renderMobileExtensionButton()}
-          {isCastBlocked ? (
-            <div style={{ color: '#ff6b6b', fontSize: '0.7rem', fontFamily: "'Orbitron', monospace", textAlign: 'center', padding: '6px 0' }}>
-              DIFFUSION EN COURS — ARRÊTEZ D'ABORD
-            </div>
-          ) : (
-            <button
-              onClick={handleSitDown}
-              style={mobilePillStyle("#00fff7", "#ffffff", {
-                background: "rgba(0,255,247,0.2)",
-                boxShadow: "0 0 10px rgba(0,255,247,0.3)",
-              })}
-            >
-              🛋️ S'INSTALLER
-            </button>
-          )}
+          <button
+            onClick={handleSitDown}
+            style={mobilePillStyle("#00fff7", "#ffffff", {
+              background: "rgba(0,255,247,0.2)",
+              boxShadow: "0 0 10px rgba(0,255,247,0.3)",
+            })}
+          >
+            🛋️ S'INSTALLER
+          </button>
           {returnBtn}
         </>
       );

@@ -2,17 +2,17 @@ import { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import { useStore } from '../../store';
 import { VHSEffects } from './VHSEffects';
 import { VHSControls } from './VHSControls';
-import { CastPanels } from './CastPanels';
+import { CastPanels, readHereLabel } from './CastPanels';
 import { CastNoticeLine, OtherFilmBanner } from './CastNotices';
 import { RentalTimer } from '../ui/RentalTimer';
 import api, { type ReviewsResponse } from '../../api';
 import type { PlayerState } from '../../types';
-import { castView } from '../../cast/cast-machine';
-import { CAST_UNAVAILABLE_TEXT, castDeviceLabel, castNoticeView } from '../../cast/cast-labels';
+import { castPending, castView } from '../../cast/cast-machine';
+import { CAST_UNAVAILABLE_TEXT, castDeviceLabel, castNoticeView, continueHereLabel } from '../../cast/cast-labels';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { useBackGuard } from '../../hooks/useBackGuard';
 import { buildCastSubtitleTracks, activeSubtitleId } from '../../utils/cast-subtitles';
-import { appleAirPlay, playerWithoutRental, rewindPromptFor } from '../../utils/cast-on-open';
+import { appleAirPlay, localAutoPlay, noticeHoldsPlayback, playerWithoutRental, playsHere, rewindPromptFor } from '../../utils/cast-on-open';
 import { REVIEW_MIN_LENGTH, REVIEW_RATING_LABELS } from '../../utils/review-rules';
 import styles from './VHSPlayer.module.css';
 import castStyles from './CastPanels.module.css';
@@ -71,16 +71,19 @@ export function VHSPlayer() {
   const castSubtitle = useStore(state => state.castSubtitle);
   const takeCastResume = useStore(state => state.takeCastResume);
   const castRentalGone = useStore(state => state.castRentalGone);
+  // Page rechargée : la machine ne sait pas encore si la TV joue ce film (film mémorisé) — il ne part pas ici d'office.
+  const castPendingHere = useStore(state => castPending(state.cast, state.currentPlayingFilm, state.lastCastFilmId));
   // La TV a ce film, ou le prend : les panneaux du Cast couvrent le lecteur.
   const remoteActive = view !== 'local' && view !== 'other-on-tv' && view !== 'ended';
   // La TV a ce film, le prend, ou vient de le finir : la vidéo locale se tait (jamais sur les deux écrans, et jamais
-  // sous « BE KIND REWIND »).
-  const tvOwnsFilm = view !== 'local' && view !== 'other-on-tv';
+  // sous « BE KIND REWIND »). Un AUTRE film sur la TV laisse la main à celui-ci.
+  const tvOwnsFilm = !playsHere(view);
   // Le message du Cast pour ce film (ou sans film). « Cast indisponible » est un panneau, pas une ligne.
   const noticeHere = castNotice && (castNotice.filmId === null || castNotice.filmId === currentPlayingFilm) ? castNotice : null;
   const castMissing = noticeHere !== null && castNoticeView(noticeHere.code, null).mirroring;
-  // Le lancement vers la TV vient d'échouer : le visiteur choisit (réessayer, ou regarder ici), rien ne part seul.
-  const castFailedHere = noticeHere !== null && (noticeHere.code === 'connect_failed' || noticeHere.code === 'load_failed');
+  // Le lancement vers la TV vient d'échouer, ou le Cast manque à ce navigateur (panneau « recopie d'écran ») : le
+  // visiteur choisit (réessayer, ou regarder ici), rien ne part seul.
+  const castFailedHere = noticeHere !== null && noticeHoldsPlayback(noticeHere.code);
   const isMobile = useIsMobile();
   const videoRef = useRef<HTMLVideoElement>(null);
   const [playerState, setPlayerState] = useState<PlayerState>('paused');
@@ -97,7 +100,9 @@ export function VHSPlayer() {
   // « Regarder sur TV ? » à l'ouverture : sur mobile, quand la TV n'a pas déjà ce film, si l'appelant la demande ou si le
   // dernier lancement vers la TV a échoué. Calculée dès le premier rendu (le lecteur est monté à chaque ouverture) : la
   // vidéo locale ne part pas avant elle.
-  const [showMobileRemotePrompt, setShowMobileRemotePrompt] = useState(() => isMobile && view === 'local' && (playerAsk || castFailedHere));
+  const [showMobileRemotePrompt, setShowMobileRemotePrompt] = useState(() => isMobile && playsHere(view) && (playerAsk || castFailedHere));
+  // « Continuer sur ce téléphone » (cette tablette, cet ordinateur) : l'appareil lu comme les panneaux du Cast le lisent.
+  const [here] = useState(readHereLabel);
   // « Regarder sur TV » alors qu'un autre film passe sur la TV : la question « Remplacer … ? » est posée.
   const [confirmReplace, setConfirmReplace] = useState(false);
 
@@ -849,7 +854,7 @@ export function VHSPlayer() {
     sendToTv();
   }, [handleAirPlayPicker, view, sendToTv]);
 
-  // « Continuer sur smartphone » : le visiteur a choisi ici, la lecture part maintenant (jamais avant sa réponse).
+  // « Continuer sur ce téléphone » : le visiteur a choisi ici, la lecture part maintenant (jamais avant sa réponse).
   const handleWatchHere = useCallback(() => {
     setShowMobileRemotePrompt(false);
     void videoRef.current?.play().catch(() => {});
@@ -878,8 +883,9 @@ export function VHSPlayer() {
     setShowMobileRemotePrompt(false);
   }, [tvOwnsFilm, stopRW]);
 
-  // Lancement vers la TV raté pour ce film, même vu à l'ouverture du lecteur, même au bureau : la vidéo d'ici ne part
-  // pas d'elle-même. pause() désarme aussi la lecture automatique d'un élément qui n'a encore rien joué.
+  // Lancement vers la TV raté pour ce film, ou Cast absent de ce navigateur (sous le panneau « recopie d'écran »), même
+  // vu à l'ouverture du lecteur, même au bureau : la vidéo d'ici ne part pas d'elle-même. pause() désarme aussi la
+  // lecture automatique d'un élément qui n'a encore rien joué.
   useEffect(() => {
     if (castFailedHere) videoRef.current?.pause();
   }, [castFailedHere, videoUrl]);
@@ -1333,16 +1339,17 @@ export function VHSPlayer() {
       )}
 
       {/* Video element with key to force reload on track change. La vidéo
-          locale ne part d'elle-même que si la TV n'a pas ce film, que
-          l'invite « Regarder sur TV ? » a eu sa réponse et qu'aucun lancement
-          vers la TV ne vient d'échouer : jamais le film sur les deux écrans,
-          jamais de lecture lancée d'office sous l'invite ou sous un message. */}
+          locale ne part d'elle-même que si elle a la main (la TV n'a pas ce
+          film, ou en joue un autre), qu'aucune question n'attend, qu'aucun
+          lancement vers la TV n'a échoué ou trouvé le Cast absent, et que la
+          machine sait que la TV ne joue pas ce film (localAutoPlay) : jamais
+          le film sur les deux écrans, jamais de lecture lancée d'office. */}
       <video
         key={`${audioTrack}-${videoUrl}`}
         ref={videoRef}
         className={styles.video}
         crossOrigin={hasRemoteSubtitles ? 'anonymous' : undefined}
-        autoPlay={view === 'local' && !showMobileRemotePrompt && rewindPhase === 'none' && !castFailedHere}
+        autoPlay={localAutoPlay({ view, prompt: showMobileRemotePrompt, rewind: rewindPhase !== 'none', castHeld: castFailedHere, pending: castPendingHere })}
         playsInline
         onPlay={() => {
           // La TV a ce film, le prend ou vient de le finir : la vidéo locale ne joue pas en même temps.
@@ -1425,7 +1432,7 @@ export function VHSPlayer() {
               {connectedTvLabel ? `Regarder sur ${connectedTvLabel}` : 'Regarder sur TV'}
             </button>
             <button className={styles.mobileRemoteSecondaryBtn} onClick={handleWatchHere}>
-              Continuer sur smartphone
+              {continueHereLabel(here)}
             </button>
           </div>
         </div>

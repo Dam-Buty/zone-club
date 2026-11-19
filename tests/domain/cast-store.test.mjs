@@ -126,9 +126,8 @@ test('CAST STORE: les accès du vieux lecteur sont partis, et celui de la borne 
     assert.ok(!new RegExp(`\\b${name}\\b`).test(store), `${name} doit avoir quitté le magasin`);
   }
   assert.ok(!read('src/utils/cast-on-open.ts').includes('shouldStartCastOnOpen'), 'la règle du drapeau de la borne est partie');
-  // Seule la tranche écrit activeCastFilmId : le magasin n'en garde que le type et la valeur de départ.
-  assert.equal(store.split('activeCastFilmId:').length - 1, 2, 'activeCastFilmId : son type et sa valeur de départ, rien d\'autre');
-  assert.ok(!read('src/components/player/VHSPlayer.tsx').includes('activeCastFilmId'), 'le lecteur ne lit ni n\'écrit activeCastFilmId');
+  // Relecture finale, B11 : le champ dérivé activeCastFilmId n'avait plus de lecteur — il est parti (garde plus bas).
+  assert.ok(!store.includes('activeCastFilmId'), 'activeCastFilmId a quitté le magasin');
 });
 
 test('CAST STORE: openPlayerOnTv n\'existe plus nulle part — la borne demande le Cast elle-même', () => {
@@ -140,10 +139,10 @@ test('CAST STORE: openPlayerOnTv n\'existe plus nulle part — la borne demande 
   assert.ok(!read(STORE).includes('@deprecated retiré à la tâche 7'), 'plus d\'alias périmé laissé pour la borne');
 });
 
-test('CAST STORE: activeCastFilmId est écrit par la tranche, la déconnexion et la location surveillées', () => {
+test('CAST STORE: la déconnexion et la location surveillées', () => {
   const slice = read(SLICE);
-  assert.ok(slice.includes('activeCastFilmId'), 'la tranche écrit activeCastFilmId');
-  assert.ok(slice.includes("'remote'") && slice.includes("'lost'") && slice.includes('castOwnsFilm'), 'valeur dérivée : remote ou lost');
+  // Le film que la TV signale vient de la machine (castOwnsFilm) ; plus de champ dérivé à tenir (B11).
+  assert.ok(slice.includes('castOwnsFilm'), 'le film de la TV vient de la machine');
   assert.ok(slice.includes("type: 'RENTAL_GONE'"), 'la location qui disparaît arrête le Cast');
   assert.ok(slice.includes('rentalGoneFilm('), 'la décision est la fonction pure de cast-wire');
   const store = read(STORE);
@@ -202,4 +201,31 @@ test('CAST STORE A4: la relecture des locations n\'écrit qu\'une réponse réus
   // Page à peine chargée, compte pas encore lu : la réponse du serveur fait foi.
   assert.equal(rentalsRefreshOutcome({ ...ok, accountBefore: null, accountNow: null }), 'write');
   assert.equal(rentalsRefreshOutcome({ ...ok, accountBefore: null, accountNow: 4 }), 'write');
+});
+
+// Relecture finale, B6 : `resume` et les messages d'échec restaient indéfiniment, lecteur fermé. La fermeture du
+// lecteur le dit à la machine (PLAYER_CLOSED), qui les retire — sauf « Location terminée ».
+test('CAST STORE B6: fermer le lecteur retire les messages et la reprise du Cast pour ce film', () => {
+  const close = between(read(STORE), 'closePlayer: () => {', '// Targeting');
+  assert.ok(close.includes('castPlayerClosed(filmId)'), 'closePlayer prévient la tranche');
+  assert.ok(close.indexOf('currentPlayingFilm') < close.indexOf('set({'), 'le film est lu avant d\'être effacé');
+  const slice = read(SLICE);
+  const action = between(slice, 'castPlayerClosed: (filmId) => {', 'castRentalGone:');
+  assert.ok(action.includes("type: 'PLAYER_CLOSED'"), 'la machine décide');
+  assert.ok(action.includes('noSource'), 'et le message « pas de source », tenu par la tranche, part aussi');
+});
+// Relecture finale, B7 : `lastCastFilmId` survivait au changement de compte — le visiteur suivant sur le même appareil
+// recevait « Location terminée » pour un film qu'il n'avait pas loué.
+test('CAST STORE B7: logout oublie le film mémorisé du Cast', () => {
+  const logout = between(read(STORE), 'logout: async', 'clearAuthError:');
+  assert.ok(/lastCastFilmId: null/.test(logout), 'lastCastFilmId remis à null');
+});
+// Relecture finale, B11 : la fiche de la K7 bloquait encore un autre film pendant un Cast (« DIFFUSION EN COURS —
+// ARRÊTEZ D'ABORD ») ; la spec, § 5.4 : lecteur local normal avec bandeau. Le champ dérivé qu'elle seule lisait part.
+test('CAST STORE B11: la fiche de la K7 ne bloque plus un autre film, et le champ dérivé sans lecteur est parti', () => {
+  const overlay = read('src/components/videoclub/VHSCaseOverlay.tsx');
+  assert.ok(!overlay.includes('ARRÊTEZ D\'ABORD') && !overlay.includes('isCastBlocked'), 'plus de blocage');
+  for (const file of walkFiles(path.join(ROOT, 'src'), new Set(['.ts', '.tsx']))) {
+    assert.ok(!readText(file).includes('activeCastFilmId'), `${toPosix(path.relative(ROOT, file))} ne connaît plus activeCastFilmId`);
+  }
 });

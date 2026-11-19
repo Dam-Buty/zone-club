@@ -1,6 +1,35 @@
-// Décisions du lecteur à l'ouverture d'un film, quand la TV entre en jeu : AirPlay ou Cast, et la
-// proposition de rembobiner. Fonctions pures : aucun import de valeur, chargées telles quelles par Node
-// dans les tests.
+// Décisions du lecteur à l'ouverture d'un film, quand la TV entre en jeu : AirPlay ou Cast, la lecture
+// automatique, la proposition de rembobiner. Fonctions pures : aucun import de valeur, chargées telles
+// quelles par Node dans les tests.
+import type { CastNotice, CastView } from '../cast/cast-machine';
+
+/**
+ * La vidéo d'ici a la main : la TV n'a pas ce film — repos, ou un AUTRE film sur la TV (ce n'est pas le même film
+ * sur deux écrans : lecteur local normal, avec son bandeau). Ailleurs (attente, télécommande, liaison perdue, film
+ * fini sur la TV) elle se tait.
+ */
+export function playsHere(view: CastView): boolean {
+  return view === 'local' || view === 'other-on-tv';
+}
+
+/**
+ * Le message du Cast pour ce film attend une réponse du visiteur avant que rien ne parte ici : le lancement vers la TV
+ * vient d'échouer, ou le Cast manque à ce navigateur (panneau « recopie d'écran ») — réessayer, ou regarder ici, c'est
+ * à lui de choisir. Un arrêt ou une erreur de la TV laissent déjà le lecteur en pause (reprise sans lecture).
+ */
+export function noticeHoldsPlayback(code: CastNotice): boolean {
+  return code === 'connect_failed' || code === 'load_failed' || code === 'unavailable';
+}
+
+/**
+ * La vidéo d'ici part-elle d'elle-même ? Seulement si elle a la main (`playsHere`) et que rien ne la retient : l'invite
+ * « Regarder sur TV ? » (`prompt`), « BE KIND REWIND » ou son rembobinage (`rewind`), un message qui attend une réponse
+ * (`castHeld`, voir noticeHoldsPlayback), ou la machine qui ne sait pas encore si la TV joue ce film (`pending` :
+ * `castPending`, page rechargée). Jamais de lecture lancée d'office, jamais le même film sur deux écrans.
+ */
+export function localAutoPlay(i: { view: CastView; prompt: boolean; rewind: boolean; castHeld: boolean; pending: boolean }): boolean {
+  return playsHere(i.view) && !i.prompt && !i.rewind && !i.castHeld && !i.pending;
+}
 
 /**
  * Appareil Apple dont le navigateur sait faire AirPlay — c'est-à-dire Safari : la TV y passe par

@@ -31,8 +31,11 @@ export interface CastPanelsProps {
   posterUrl?: string;
 }
 
-/** Où regarder ici, lu sur l'appareil comme la borne le fait (pointeur, petit côté de l'écran). */
-function readHereLabel(): ReturnType<typeof watchHereLabel> {
+/**
+ * Où regarder ici, lu sur l'appareil comme la borne le fait (pointeur, petit côté de l'écran). Aussi lu par l'invite du
+ * lecteur (« Continuer sur … ») : une seule lecture de l'appareil.
+ */
+export function readHereLabel(): ReturnType<typeof watchHereLabel> {
   if (typeof window === 'undefined') return watchHereLabel({ coarsePointer: false, shortSide: 1080 });
   return watchHereLabel({
     coarsePointer: window.matchMedia('(pointer: coarse)').matches,

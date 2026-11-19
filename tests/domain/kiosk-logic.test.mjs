@@ -581,7 +581,9 @@ test('CAST BORNE: « Sur ma télé » dit qu\'il remplacera le film que joue la 
   assert.equal(K.tvChoiceLine({ airPlay: true, replacing: { title: 'Dune', device: 'Salon' } }), 'via AirPlay');
 });
 test('CAST BORNE: la barre du Cast dit ce que fait l\'appui, pour un lecteur d\'écran (correctif 1)', () => {
-  assert.equal(K.castBarLabel('remote', 'Dune'), 'Ouvrir la télécommande de Dune');
+  // B14 : sans élision à faire (« de Une Affaire… ») : deux-points, le titre tel quel.
+  assert.equal(K.castBarLabel('remote', 'Dune'), 'Ouvrir la télécommande : Dune');
+  assert.equal(K.castBarLabel('remote', 'Une Affaire de famille'), 'Ouvrir la télécommande : Une Affaire de famille');
   assert.equal(K.castBarLabel('lost', 'Dune'), 'Dune : la télé ne répond plus, ouvrir');
   assert.equal(K.castBarLabel('ended', 'Dune'), 'Dune est terminé, ouvrir');
   for (const phase of ['idle', 'choosing', 'connecting', 'loading']) assert.equal(K.castBarLabel(phase, 'Dune'), null, phase);
