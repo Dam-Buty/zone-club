@@ -12,7 +12,7 @@ import { CAST_UNAVAILABLE_TEXT, castDeviceLabel, castNoticeView } from '../../ca
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { useBackGuard } from '../../hooks/useBackGuard';
 import { buildCastSubtitleTracks, activeSubtitleId } from '../../utils/cast-subtitles';
-import { appleAirPlay, rewindOfferOnOpen } from '../../utils/cast-on-open';
+import { appleAirPlay, rewindPromptFor } from '../../utils/cast-on-open';
 import { REVIEW_MIN_LENGTH, REVIEW_RATING_LABELS } from '../../utils/review-rules';
 import styles from './VHSPlayer.module.css';
 import castStyles from './CastPanels.module.css';
@@ -32,6 +32,9 @@ const SUBTITLE_LABELS: Record<Exclude<SubtitleTrack, 'off'>, { button: string; l
   fr: { button: 'STFR', label: 'Français', title: 'Sous-titres français [T]' },
   en: { button: 'STEN', label: 'English', title: 'Sous-titres anglais [T]' },
 };
+
+/** Échec d'une bascule de sous-titres sur la TV : montré dans la télécommande, effacé quand on la quitte. */
+const TV_SUBTITLE_ERROR = 'Sous-titres indisponibles sur la TV.';
 
 // Rewind state machine
 type RewindPhase = 'none' | 'prompt' | 'rewinding';
@@ -67,8 +70,16 @@ export function VHSPlayer() {
   const castDismiss = useStore(state => state.castDismiss);
   const castSubtitle = useStore(state => state.castSubtitle);
   const takeCastResume = useStore(state => state.takeCastResume);
-  // La TV a ce film, ou le prend : la vidéo locale se tait, les panneaux du Cast la couvrent.
+  // La TV a ce film, ou le prend : les panneaux du Cast couvrent le lecteur.
   const remoteActive = view !== 'local' && view !== 'other-on-tv' && view !== 'ended';
+  // La TV a ce film, le prend, ou vient de le finir : la vidéo locale se tait (jamais sur les deux écrans, et jamais
+  // sous « BE KIND REWIND »).
+  const tvOwnsFilm = view !== 'local' && view !== 'other-on-tv';
+  // Le message du Cast pour ce film (ou sans film). « Cast indisponible » est un panneau, pas une ligne.
+  const noticeHere = castNotice && (castNotice.filmId === null || castNotice.filmId === currentPlayingFilm) ? castNotice : null;
+  const castMissing = noticeHere !== null && castNoticeView(noticeHere.code, null).mirroring;
+  // Le lancement vers la TV vient d'échouer : le visiteur choisit (réessayer, ou regarder ici), rien ne part seul.
+  const castFailedHere = noticeHere !== null && (noticeHere.code === 'connect_failed' || noticeHere.code === 'load_failed');
   const isMobile = useIsMobile();
   const videoRef = useRef<HTMLVideoElement>(null);
   const [playerState, setPlayerState] = useState<PlayerState>('paused');
@@ -82,9 +93,10 @@ export function VHSPlayer() {
   const [isAirPlaySupported, setIsAirPlaySupported] = useState(false);
   const [isAirPlayAvailable, setIsAirPlayAvailable] = useState(false);
   const [isAirPlayConnected, setIsAirPlayConnected] = useState(false);
-  // « Regarder sur TV ? » à l'ouverture : sur mobile, si l'appelant la demande et que la TV n'a pas déjà ce film.
-  // Calculée dès le premier rendu (le lecteur est monté à chaque ouverture) : la vidéo locale ne part pas avant elle.
-  const [showMobileRemotePrompt, setShowMobileRemotePrompt] = useState(() => isMobile && playerAsk && view === 'local');
+  // « Regarder sur TV ? » à l'ouverture : sur mobile, quand la TV n'a pas déjà ce film, si l'appelant la demande ou si le
+  // dernier lancement vers la TV a échoué. Calculée dès le premier rendu (le lecteur est monté à chaque ouverture) : la
+  // vidéo locale ne part pas avant elle.
+  const [showMobileRemotePrompt, setShowMobileRemotePrompt] = useState(() => isMobile && view === 'local' && (playerAsk || castFailedHere));
   // « Regarder sur TV » alors qu'un autre film passe sur la TV : la question « Remplacer … ? » est posée.
   const [confirmReplace, setConfirmReplace] = useState(false);
 
@@ -210,9 +222,14 @@ export function VHSPlayer() {
   const subtitleToTv = useCallback((next: SubtitleTrack) => {
     if (view !== 'remote' || castSubtitles.length === 0) return;
     void castSubtitle(activeSubtitleId(castSubtitles, next)).then(ok => {
-      setRemoteError(ok ? null : 'Sous-titres indisponibles sur la TV.');
+      setRemoteError(ok ? null : TV_SUBTITLE_ERROR);
     });
   }, [view, castSubtitles, castSubtitle]);
+
+  // Hors de la télécommande, son message d'échec des sous-titres n'a plus d'objet : il ne reparaît pas dans l'en-tête.
+  useEffect(() => {
+    if (view !== 'remote') setRemoteError(prev => (prev === TV_SUBTITLE_ERROR ? null : prev));
+  }, [view]);
 
   // Get current video URL based on selected track
   const getVideoUrl = useCallback(() => {
@@ -801,6 +818,9 @@ export function VHSPlayer() {
   }, [currentPlayingFilm, castFilm, audioTrack, subtitleTrack, rental?.watchPosition]);
 
   const handleWatchOnTV = useCallback(() => {
+    // D'abord la vidéo d'ici se tait, quelle que soit la suite (Cast, AirPlay, message, confirmation) : sans pause(),
+    // un élément qui n'a encore rien joué garde sa lecture automatique armée, et partirait seul sous un message.
+    videoRef.current?.pause();
     setShowMobileRemotePrompt(false);
     // Appareils Apple : le SDK Cast y est bloqué, la TV passe par AirPlay (règle lue sur l'élément, voir appleAirPlay).
     if (typeof navigator !== 'undefined' && appleAirPlay(navigator.userAgent, videoRef.current as AirPlayVideoElement | null)) {
@@ -829,10 +849,10 @@ export function VHSPlayer() {
     startCast();
   }, [startCast]);
 
-  // La TV prend ce film (sélecteur, connexion, lancement, télécommande, liaison perdue) : la vidéo locale se tait,
-  // jamais le film sur les deux écrans ; l'invite n'a plus d'objet.
+  // La TV prend ce film (sélecteur, connexion, lancement, télécommande, liaison perdue) ou vient de le finir : la vidéo
+  // locale se tait — jamais le film sur les deux écrans, jamais sous « BE KIND REWIND » ; l'invite n'a plus d'objet.
   useEffect(() => {
-    if (!remoteActive) return;
+    if (!tvOwnsFilm) return;
     stopRW();
     setFfSpeed(0);
     const video = videoRef.current;
@@ -842,7 +862,18 @@ export function VHSPlayer() {
     }
     setPlayerState('paused');
     setShowMobileRemotePrompt(false);
-  }, [remoteActive, stopRW]);
+  }, [tvOwnsFilm, stopRW]);
+
+  // Lancement vers la TV raté pour ce film, même vu à l'ouverture du lecteur, même au bureau : la vidéo d'ici ne part
+  // pas d'elle-même. pause() désarme aussi la lecture automatique d'un élément qui n'a encore rien joué.
+  useEffect(() => {
+    if (castFailedHere) videoRef.current?.pause();
+  }, [castFailedHere, videoUrl]);
+
+  // La question « Remplacer … ? » tombe avec son bandeau : elle ne reparaît pas d'elle-même au film suivant sur la TV.
+  useEffect(() => {
+    if (view !== 'other-on-tv') setConfirmReplace(false);
+  }, [view]);
 
   // La TV joue ce film : la proposition de rembobinage faite à l'ouverture (fin estimée trop tôt par le serveur, film
   // en pause sur la TV) cède la place à la télécommande, qu'elle couvrirait.
@@ -862,17 +893,6 @@ export function VHSPlayer() {
     else video.pause();
   }, [castResume, currentPlayingFilm, takeCastResume, rental?.watchPosition]);
 
-  // Fin du film vue par la TV : la même proposition qu'en fin de lecture ici ; rembobinage déjà réclamé, la sortie.
-  useEffect(() => {
-    if (view !== 'ended' || rewindPhase !== 'none') return;
-    if (rental?.rewindClaimed) {
-      ejectAfterPrompt();
-      return;
-    }
-    setPendingEject(true);
-    setRewindPhase('prompt');
-  }, [view, rewindPhase, rental?.rewindClaimed, ejectAfterPrompt]);
-
   // L'invite revient quand le film n'est pas parti sur la TV : une attente (sélecteur, connexion, lancement) qui
   // retombe sur « local » — sélecteur refermé, « Annuler », connexion ou lancement raté (`connect_failed` et
   // `load_failed` arrivent toujours ainsi). La vidéo reste en pause jusqu'à la réponse.
@@ -884,9 +904,7 @@ export function VHSPlayer() {
     if (isMobile && view === 'local' && fellBack) setShowMobileRemotePrompt(true);
   }, [view, isMobile]);
 
-  // Le message du Cast pour ce film. « Cast indisponible » ouvre le panneau « recopie d'écran », qui le dit.
-  const noticeHere = castNotice && (castNotice.filmId === null || castNotice.filmId === currentPlayingFilm) ? castNotice : null;
-  const castMissing = noticeHere !== null && castNoticeView(noticeHere.code, null).mirroring;
+  // « Cast indisponible » ouvre le panneau « recopie d'écran », qui le dit.
   useEffect(() => {
     if (castMissing) openMirroringFallback('cast');
   }, [castMissing, openMirroringFallback]);
@@ -943,7 +961,7 @@ export function VHSPlayer() {
   flushPositionRef.current = () => {
     // Seule la lecture d'ici s'enregistre ici. La TV a le film, ou vient de le finir : le service tient la position, et
     // la vidéo locale, en pause depuis, écraserait la sienne (voire les 100 % d'une fin vue sur la TV).
-    if (!currentPlayingFilm || remoteActive || view === 'ended') return;
+    if (!currentPlayingFilm || tvOwnsFilm) return;
     const v = videoRef.current;
     if (v && v.duration > 0) {
       const progress = Math.round((v.currentTime / v.duration) * 100);
@@ -980,38 +998,43 @@ export function VHSPlayer() {
     return () => video.removeEventListener('ended', handleEnded);
   }, [currentPlayingFilm, stopRW, rental?.rewindClaimed, closePlayer, updateRentalProgress]);
 
-  // ===== Film already finished at opening — Rewind Prompt =====
-  // Vu jusqu'au bout ailleurs (fin de lecture, ou serveur à la fin estimée d'un Cast, téléphone éteint) :
-  // le lecteur propose de rembobiner au lieu de repartir du début. Une fois par ouverture et par film.
-  // « NON MERCI » laisse revoir le film (pendingEject faux), au lieu d'éjecter comme en fin de lecture.
+  // ===== BE KIND REWIND : fin vue par la TV, ou film déjà fini à l'ouverture =====
+  // Une seule décision (rewindPromptFor). Fin vue par la TV : ÉJECTER, ou la sortie si le rembobinage est déjà
+  // réclamé. Film vu jusqu'au bout ailleurs (fin de lecture, fin estimée d'un Cast, téléphone éteint) : proposé une
+  // fois par ouverture et par film, et « NON MERCI » laisse revoir le film (pendingEject faux).
   const rewindOfferedForRef = useRef<number | null>(null);
   useEffect(() => {
     if (!isPlayerOpen || !currentPlayingFilm) {
       rewindOfferedForRef.current = null;
       return;
     }
-    if (!rental || rewindOfferedForRef.current === currentPlayingFilm) return;
-    // Une autre proposition est déjà affichée (fin de lecture, fin du Cast) : on ne s'en mêle pas.
+    if (!rental) return;
+    // Une proposition est déjà affichée (fin de lecture, STOP, fin du Cast) : on ne s'en mêle pas.
     if (rewindPhase !== 'none') {
       rewindOfferedForRef.current = currentPlayingFilm;
       return;
     }
-    const decision = rewindOfferOnOpen({
+    const decision = rewindPromptFor({
+      tv: view === 'ended' ? 'ended' : remoteActive ? 'busy' : 'free',
+      offered: rewindOfferedForRef.current === currentPlayingFilm,
       fresh: rentalFreshFor === currentPlayingFilm,
       watchProgress: rental.watchProgress ?? 0,
       rewindClaimed: !!rental.rewindClaimed,
-      castingThisFilm: remoteActive,
     });
-    // Données pas encore relues, ou la TV a ce film : on décidera plus tard (si le Cast s'arrête, la vue
-    // redevient locale et l'effet repasse).
+    // Données pas encore relues, ou la TV a ce film : on décidera plus tard (si le Cast s'arrête, la vue redevient
+    // locale et l'effet repasse ; s'il finit, la vue passe à « ended »).
     if (decision === 'wait') return;
     rewindOfferedForRef.current = currentPlayingFilm;
     if (decision === 'skip') return;
+    if (decision === 'close') {
+      ejectAfterPrompt();
+      return;
+    }
     videoRef.current?.pause();
     setPlayerState('paused');
-    setPendingEject(false);
+    setPendingEject(decision === 'eject');
     setRewindPhase('prompt');
-  }, [isPlayerOpen, currentPlayingFilm, rental, remoteActive, rentalFreshFor, rewindPhase]);
+  }, [isPlayerOpen, currentPlayingFilm, rental, view, remoteActive, rentalFreshFor, rewindPhase, ejectAfterPrompt]);
 
   // ===== Rewind Animation =====
   const startRewind = useCallback(() => {
@@ -1101,6 +1124,7 @@ export function VHSPlayer() {
       setIsAirPlayAvailable(false);
       setIsAirPlayConnected(false);
       setShowMobileRemotePrompt(false);
+      setConfirmReplace(false);
       setRewindPhase('none');
       setRewindProgress(0);
       setPendingEject(false);
@@ -1133,6 +1157,10 @@ export function VHSPlayer() {
       setOverlayVisible(false);
     }, 4000);
   }, []);
+
+  // Une ligne du Cast est sous l'en-tête (message, bandeau d'un autre film, question « Remplacer … ? ») : l'en-tête ne se
+  // masque pas, « Réessayer », « Oui », « Non » et ✕ restent visibles et actifs sans bouger la souris.
+  const castLineShown = view === 'other-on-tv' || (noticeHere !== null && !castMissing);
 
   useEffect(() => {
     if (!isPlayerOpen || rewindPhase !== 'none' || rewindingToStart) return;
@@ -1168,7 +1196,7 @@ export function VHSPlayer() {
       // primary UI the user needs (play/pause/stop on the TV). Letting them
       // fade out after 4s of inactivity leaves only the info overlay visible,
       // which feels like "no controls at all" to the user.
-      if (checkPortraitMobile() || remoteActive) disableAutoHide();
+      if (checkPortraitMobile() || remoteActive || castLineShown) disableAutoHide();
       else enableAutoHide();
     };
 
@@ -1179,7 +1207,7 @@ export function VHSPlayer() {
       window.removeEventListener('resize', apply);
       disableAutoHide();
     };
-  }, [isPlayerOpen, rewindPhase, rewindingToStart, resetIdleTimer, isMobile, remoteActive]);
+  }, [isPlayerOpen, rewindPhase, rewindingToStart, resetIdleTimer, isMobile, remoteActive, castLineShown]);
 
   if (!isPlayerOpen || !rental) return null;
   const connectedTvLabel = tvDeviceName || (isAirPlayConnected ? 'TV AirPlay connectée' : null);
@@ -1291,19 +1319,20 @@ export function VHSPlayer() {
       )}
 
       {/* Video element with key to force reload on track change. La vidéo
-          locale ne part d'elle-même que si la TV n'a pas ce film et que
-          l'invite « Regarder sur TV ? » a eu sa réponse : jamais le film sur
-          les deux écrans, jamais de lecture lancée d'office sous l'invite. */}
+          locale ne part d'elle-même que si la TV n'a pas ce film, que
+          l'invite « Regarder sur TV ? » a eu sa réponse et qu'aucun lancement
+          vers la TV ne vient d'échouer : jamais le film sur les deux écrans,
+          jamais de lecture lancée d'office sous l'invite ou sous un message. */}
       <video
         key={`${audioTrack}-${videoUrl}`}
         ref={videoRef}
         className={styles.video}
         crossOrigin={hasRemoteSubtitles ? 'anonymous' : undefined}
-        autoPlay={view === 'local' && !showMobileRemotePrompt && rewindPhase === 'none'}
+        autoPlay={view === 'local' && !showMobileRemotePrompt && rewindPhase === 'none' && !castFailedHere}
         playsInline
         onPlay={() => {
-          // La TV a ce film, ou le prend : la vidéo locale ne joue pas en même temps.
-          if (remoteActive) {
+          // La TV a ce film, le prend ou vient de le finir : la vidéo locale ne joue pas en même temps.
+          if (tvOwnsFilm) {
             videoRef.current?.pause();
             return;
           }

@@ -73,21 +73,55 @@ test('CAST LECTEUR: le service démarre au montage, la demande part dans la pile
 
 test('CAST LECTEUR: jamais de lecture locale lancée d\'office, jamais sur les deux écrans', () => {
   const src = read(PLAYER);
-  assert.match(src, /autoPlay=\{view === 'local' && !showMobileRemotePrompt && rewindPhase === 'none'\}/, 'autoPlay seulement en local, invite répondue');
+  assert.match(src, /autoPlay=\{view === 'local' && !showMobileRemotePrompt && rewindPhase === 'none' && !castFailedHere\}/, 'autoPlay seulement en local, invite répondue, sans lancement raté');
   // L'invite est calculée dès le premier rendu : la vidéo ne doit pas partir avant elle.
-  assert.match(src, /useState\(\(\) => isMobile && playerAsk && view === 'local'\)/, 'invite à l\'ouverture');
+  assert.match(src, /useState\(\(\) => isMobile && view === 'local' && \(playerAsk \|\| castFailedHere\)\)/, 'invite à l\'ouverture');
   assert.ok(callback(src, 'handleWatchHere').includes('.play()'), '« Continuer sur smartphone » lance la lecture');
-  // La TV prend le film : la vidéo locale se tait.
-  const takeover = src.slice(src.indexOf('if (!remoteActive) return;'), src.indexOf('if (!remoteActive) return;') + 400);
-  assert.ok(takeover.includes('.pause()'), 'la vidéo locale se met en pause quand la TV prend le film');
+});
+
+// Relecture de la tâche 6 (arbitrage H) : les trois gardes ci-dessous échouent sur le code d'avant le correctif 1.
+test('CAST LECTEUR: la vidéo locale se tait dès que la TV a le film, le prend OU vient de le finir', () => {
+  const src = read(PLAYER);
+  // Fin vue par la TV : « BE KIND REWIND » ne doit pas couvrir une vidéo qui joue avec le son (page rechargée).
+  assert.match(src, /const tvOwnsFilm = view !== 'local' && view !== 'other-on-tv';/, 'tvOwnsFilm compte aussi la vue « ended »');
+  const at = src.indexOf('if (!tvOwnsFilm) return;');
+  assert.ok(at > 0, 'un effet se règle sur tvOwnsFilm');
+  assert.ok(src.slice(at, at + 300).includes('.pause()'), 'et met la vidéo locale en pause');
+  // Un lancement raté (même vu à l'ouverture, même au bureau) : pause explicite, la lecture automatique est désarmée.
+  assert.match(src, /if \(castFailedHere\) videoRef\.current\?\.pause\(\);/, 'pause sur un lancement raté');
+});
+
+test('CAST LECTEUR: « Regarder sur TV » met d\'abord la vidéo d\'ici en pause, quelle que soit la suite', () => {
+  // Sans pause(), sur `no_source`, `unavailable` ou AirPlay, un élément qui n'a rien joué gardait sa lecture automatique.
+  const body = callback(read(PLAYER), 'handleWatchOnTV');
+  assert.match(body, /^const handleWatchOnTV = useCallback\(\(\) => \{\s*(?:\/\/[^\n]*\n\s*)*videoRef\.current\?\.pause\(\);/, 'pause() avant toute autre chose');
+});
+
+test('CAST LECTEUR: une seule décision pour « BE KIND REWIND », ÉJECTER à la fin vue par la TV', () => {
+  const src = read(PLAYER);
+  // Deux effets écrivaient pendingEject (la fin : vrai ; « l'ouverture » : faux, qui gagnait) : un seul décide.
+  assert.equal(src.split('rewindPromptFor(').length - 1, 1, 'une seule décision');
+  assert.match(src, /tv: view === 'ended' \? 'ended'/, 'la décision connaît la fin vue par la TV');
+  assert.ok(src.includes("setPendingEject(decision === 'eject')"), 'ÉJECTER ou NON MERCI selon la décision');
+  // Hors de la décision, seul STOP (lecture locale à 80 %) ouvre une proposition NON MERCI.
+  const nonMerci = /setPendingEject\(false\);\s*setRewindPhase\('prompt'\)/g;
+  assert.equal((src.match(nonMerci) ?? []).length, 1, 'une seule proposition NON MERCI hors décision');
+  assert.match(callback(src, 'handleStop'), nonMerci, 'et c\'est celle de STOP');
+  assert.ok(!/useEffect\(\(\) => \{\s*if \(view !== 'ended'/.test(src), 'plus d\'effet de fin séparé');
+});
+
+test('CAST LECTEUR: rien de périmé ne reparaît, les lignes du Cast restent à portée', () => {
+  const src = read(PLAYER);
+  assert.match(src, /if \(view !== 'remote'\) setRemoteError\(prev => \(prev === TV_SUBTITLE_ERROR \? null : prev\)\);/, 'erreur de sous-titres effacée hors télécommande');
+  assert.match(src, /if \(view !== 'other-on-tv'\) setConfirmReplace\(false\);/, 'la question « Remplacer » tombe avec son bandeau');
+  assert.match(src, /const castLineShown = view === 'other-on-tv' \|\| \(noticeHere !== null && !castMissing\);/, 'ligne du Cast affichée');
+  assert.match(src, /if \(checkPortraitMobile\(\) \|\| remoteActive \|\| castLineShown\) disableAutoHide\(\);/, 'l\'en-tête ne se masque pas sous une ligne du Cast');
 });
 
 test('CAST LECTEUR: la reprise, la fin, le clavier', () => {
   const src = read(PLAYER);
   assert.ok(/takeCastResume\(currentPlayingFilm\)/.test(src), 'la reprise locale est prise une fois');
   assert.ok(/position \?\? rental\?\.watchPosition/.test(src), 'position inconnue → celle de la location');
-  // Fin du film sur la TV : la proposition de rembobinage, puis la machine oublie le film terminé.
-  assert.ok(/view !== 'ended'/.test(src) && src.includes("setRewindPhase('prompt')"), 'BE KIND REWIND à la fin vue par la TV');
   assert.ok(callback(src, 'ejectAfterPrompt').includes('castDismiss()'), 'proposition fermée → castDismiss');
   // Pendant un Cast, Échap et E ferment le lecteur, la TV continue.
   const keys = src.slice(src.indexOf('if (remoteActive) {', src.indexOf('handleKeyDown')), src.indexOf('if (rewindingToStart)', src.indexOf('handleKeyDown')));

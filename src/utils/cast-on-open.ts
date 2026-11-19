@@ -31,3 +31,26 @@ export function rewindOfferOnOpen(i: { fresh: boolean; watchProgress: number; re
   if (!i.fresh || i.castingThisFilm) return 'wait';
   return shouldOfferRewindOnOpen(i) ? 'offer' : 'skip';
 }
+
+/**
+ * La proposition « BE KIND REWIND » que le lecteur montre maintenant, décidée à un seul endroit. Deux décisions
+ * séparées se contredisaient : à la fin vue par la TV, la location déjà à 100 % faisait aussi proposer « l'ouverture »,
+ * dont NON MERCI remplaçait ÉJECTER, et la question revenait une seconde fois.
+ * `tv` : la TV vient de finir ce film (`ended`), l'a ou le prend (`busy`), ou n'y est pour rien (`free`).
+ * `offered` : la proposition de l'ouverture a déjà été tranchée pour ce film.
+ * - `eject` : fin vue par la TV, à rembobiner — ÉJECTER ;
+ * - `close` : fin vue par la TV, rembobinage déjà réclamé — le lecteur se ferme ;
+ * - `offer` : film fini ailleurs, à l'ouverture — NON MERCI laisse le revoir ;
+ * - `wait` : rien encore (données pas relues, ou la TV a le film) ; `skip` : rien pour cette ouverture.
+ */
+export function rewindPromptFor(i: {
+  tv: 'ended' | 'busy' | 'free';
+  offered: boolean;
+  fresh: boolean;
+  watchProgress: number;
+  rewindClaimed: boolean;
+}): 'eject' | 'close' | 'offer' | 'wait' | 'skip' {
+  if (i.tv === 'ended') return i.rewindClaimed ? 'close' : 'eject';
+  if (i.offered) return 'skip';
+  return rewindOfferOnOpen({ fresh: i.fresh, watchProgress: i.watchProgress, rewindClaimed: i.rewindClaimed, castingThisFilm: i.tv === 'busy' });
+}
