@@ -1,33 +1,39 @@
 'use client';
 
 import { useStore } from '../../store';
+import { castOwnsFilm } from '../../cast/cast-machine';
+import { castChipLabel } from '../../cast/cast-labels';
 
-// Floating "Now Playing on TV" chip — appears in the lower-third of the
-// viewport whenever a cast is active on the receiver but the player overlay
-// is closed (e.g. the user dismissed the player to walk around the videoclub
-// while the film keeps playing on the TV). Tap → reopens the player for the
-// casting film, which then auto-detects the live session and enters the
-// Now Playing remote-control panel directly.
+// Puce flottante « Cast en cours » — apparaît en bas de l'écran quand la TV a un film à signaler (elle le joue, ne
+// répond plus, ou vient de le finir) et que le lecteur est fermé : le visiteur a quitté le lecteur pour se promener
+// dans le vidéoclub ou devant la borne pendant que le film continue sur la TV. L'appui rouvre le lecteur sur ce
+// film, directement sur le panneau du Cast (aucune invite « Regarder sur TV ? », la TV a déjà son film).
 //
-// Pattern lifted from Spotify / Netflix mini-bars — gives the user a
-// persistent awareness that a cast is alive AND a one-tap path back to
-// remote controls.
-export function ActiveCastIndicator() {
-  const activeCastFilmId = useStore(s => s.activeCastFilmId);
-  const isPlayerOpen = useStore(s => s.isPlayerOpen);
-  const openPlayer = useStore(s => s.openPlayer);
-  const films = useStore(s => s.films);
+// Le film à signaler vient de la MACHINE (`castOwnsFilm`), pas du champ dérivé du magasin (celui que lit encore la
+// fiche de la K7) : il est nul une fois le film terminé, et la puce « Film terminé » doit rester jusqu'au rembobinage.
+//
+// Motif des mini-barres de Spotify / Netflix : la conscience permanente qu'un Cast est vivant, et un chemin en un
+// appui vers les commandes.
+//
+// `variant` : où la puce est posée. `kiosk` ouvre le lecteur « depuis la borne » (le retour de la télécommande y
+// ramène) ; son dessin propre à la borne vient à la tâche 7, en attendant les deux dessinent la même chose.
+export function ActiveCastIndicator({ variant = 'store' }: { variant?: 'store' | 'kiosk' }) {
+  const cast = useStore((s) => s.cast);
+  const isPlayerOpen = useStore((s) => s.isPlayerOpen);
+  const openPlayer = useStore((s) => s.openPlayer);
+  const films = useStore((s) => s.films);
 
-  if (!activeCastFilmId || isPlayerOpen) return null;
+  const filmId = castOwnsFilm(cast);
+  const label = castChipLabel(cast.phase);
+  if (filmId === null || label === null || isPlayerOpen) return null;
 
-  const film = Object.values(films).flat().find(f => f.id === activeCastFilmId);
+  const film = Object.values(films).flat().find((f) => f.id === filmId);
   const title = film?.title || 'Film en cours';
 
   return (
     <button
       type="button"
-      onClick={() => openPlayer(activeCastFilmId)}
-      aria-label={`Reprendre la télécommande pour ${title}`}
+      onClick={() => openPlayer(filmId, { from: variant === 'kiosk' ? 'kiosk' : 'store', ask: false })}
       style={{
         position: 'fixed',
         bottom: 'calc(env(safe-area-inset-bottom, 0px) + 12px)',
@@ -47,7 +53,7 @@ export function ActiveCastIndicator() {
         fontSize: '0.95rem',
         letterSpacing: '0.08em',
         cursor: 'pointer',
-        // Slight breathing animation so the chip reads as "live" not "stale"
+        // Légère respiration : la puce se lit « vivante », pas figée.
         animation: 'activeCastChipPulse 2.4s ease-in-out infinite',
         WebkitTapHighlightColor: 'transparent',
         maxWidth: 'calc(100vw - 40px)',
@@ -83,12 +89,13 @@ export function ActiveCastIndicator() {
           fontSize: '0.85em',
           letterSpacing: '0.12em',
           flexShrink: 0,
+          whiteSpace: 'nowrap',
           marginLeft: 6,
           paddingLeft: 10,
           borderLeft: '1px solid rgba(255,255,255,0.15)',
         }}
       >
-        TÉLÉCOMMANDE
+        {label}
       </span>
       <style>{`
         @keyframes activeCastChipPulse {

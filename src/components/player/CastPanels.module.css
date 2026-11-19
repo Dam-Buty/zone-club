@@ -1,0 +1,380 @@
+/* Panneaux du Cast : attente, télécommande, liaison perdue (CastPanels.tsx).
+   Copiés de VHSPlayer.module.css, que l'ancien lecteur lit encore : la tâche 6 retirera les originaux. Même rendu. */
+
+/* ===== Fond commun ===== */
+.castingOverlay {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at center, rgba(0, 10, 20, 0.92) 0%, rgba(0, 0, 0, 0.97) 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  z-index: 6;
+}
+
+/* Fines lignes de balayage CRT par-dessus les panneaux, pour dialoguer avec le lecteur VHS : 1 px tous les 4 px,
+   très peu contrastées. Portées par un pseudo-élément pour ne pas ajouter d'enveloppe. */
+.castingOverlay::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.02) 0px,
+    rgba(255, 255, 255, 0.02) 1px,
+    transparent 1px,
+    transparent 4px
+  );
+  mix-blend-mode: overlay;
+  z-index: 0;
+}
+.castingOverlay > * { position: relative; z-index: 1; }
+
+.castingTitle {
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  color: var(--color-neon-cyan);
+  text-shadow: var(--glow-cyan);
+  letter-spacing: 0.12em;
+  text-align: center;
+  padding: 0 1.5rem;
+}
+
+.castingTimer {
+  font-family: 'Courier New', monospace;
+  font-size: 2rem;
+  color: #00ff88;
+  text-shadow: 0 0 16px rgba(0, 255, 136, 0.5);
+  letter-spacing: 0.15em;
+  font-weight: bold;
+  margin-top: 18px;
+}
+
+.castingBarContainer {
+  width: 320px;
+  max-width: 80%;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+  overflow: hidden;
+  border: 1px solid rgba(0, 255, 247, 0.15);
+}
+
+.castingBarFill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--color-neon-cyan), #00ff88);
+  border-radius: 3px;
+  box-shadow: 0 0 6px rgba(0, 255, 247, 0.4);
+  transition: width 1s linear;
+}
+
+.castingPercent {
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  color: rgba(0, 255, 247, 0.7);
+  letter-spacing: 0.1em;
+}
+
+/* ===== Attente : ondes radio qui s'éloignent + points qui clignotent ===== */
+/* La parabole est au centre de trois anneaux concentriques qui pulsent vers l'extérieur : l'iconographie « signal
+   en cours » que chacun a déjà vue. CSS pur, aucun tic JS. */
+.awaitingIcon {
+  position: relative;
+  width: 96px;
+  height: 96px;
+  margin-bottom: 8px;
+  display: grid;
+  place-items: center;
+}
+.awaitingIcon::before,
+.awaitingIcon::after,
+.awaitingIcon > .awaitingRing {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  border: 2px solid rgba(0, 255, 247, 0.55);
+  inset: 0;
+  animation: awaitingRingPulse 2.2s ease-out infinite;
+}
+.awaitingIcon::after { animation-delay: 0.73s; }
+.awaitingIcon > .awaitingRing { animation-delay: 1.46s; }
+
+.awaitingDish {
+  position: relative;
+  z-index: 1;
+  font-size: 2.6rem;
+  filter: drop-shadow(0 0 14px rgba(0, 255, 247, 0.55));
+  /* léger balancement : elle a l'air vivante, pas seulement entourée d'ondes */
+  animation: awaitingDishTilt 3.4s ease-in-out infinite;
+}
+
+@keyframes awaitingRingPulse {
+  0%   { transform: scale(0.6); opacity: 0.9; border-width: 2px; }
+  70%  { opacity: 0.15; }
+  100% { transform: scale(1.6); opacity: 0; border-width: 1px; }
+}
+@keyframes awaitingDishTilt {
+  0%, 100% { transform: rotate(-4deg); }
+  50%      { transform: rotate(4deg); }
+}
+
+/* Les points de suspension qui finissent « Connexion à … » */
+.awaitingDots {
+  display: inline-block;
+  margin-left: 2px;
+  opacity: 0.2;
+  animation: awaitingDotBlink 1.4s infinite;
+}
+@keyframes awaitingDotBlink {
+  0%, 100% { opacity: 0.2; }
+  40%      { opacity: 1; }
+}
+
+.awaitingDeviceName {
+  font-family: var(--font-display);
+  color: #fff;
+  background: rgba(0, 255, 247, 0.12);
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid rgba(0, 255, 247, 0.35);
+  margin: 0 2px;
+}
+
+.awaitingCancelBtn {
+  margin-top: 28px;
+  font-family: 'VT323', 'Courier New', monospace;
+  font-size: 1rem;
+  letter-spacing: 0.16em;
+  padding: 10px 24px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 4px;
+  cursor: pointer;
+  text-transform: uppercase;
+  transition: all 180ms ease;
+}
+.awaitingCancelBtn:hover,
+.awaitingCancelBtn:active {
+  color: #fff;
+  border-color: rgba(255, 70, 100, 0.65);
+  background: rgba(255, 70, 100, 0.08);
+}
+
+/* ===== Télécommande (le Cast joue) ===== */
+/* Une seule surface : l'appareil et le titre, la ligne du temps, la rangée de transport, puis les actions
+   secondaires. Une chose à regarder, une chose à manœuvrer. */
+.nowPlayingHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 24px;
+  max-width: 420px;
+  text-align: center;
+  flex-direction: column;
+}
+.nowPlayingDeviceChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  background: rgba(0, 255, 247, 0.12);
+  border: 1px solid rgba(0, 255, 247, 0.4);
+  border-radius: 999px;
+  font-family: var(--font-display, 'VT323'), 'Courier New', monospace;
+  font-size: 0.85rem;
+  letter-spacing: 0.12em;
+  color: var(--color-neon-cyan);
+  text-shadow: 0 0 8px rgba(0, 255, 247, 0.45);
+}
+.nowPlayingDeviceChip::before {
+  content: '●';
+  color: #00ff88;
+  font-size: 0.65rem;
+  animation: nowPlayingDot 1.6s ease-in-out infinite;
+}
+@keyframes nowPlayingDot {
+  0%, 100% { opacity: 0.45; }
+  50%      { opacity: 1; }
+}
+.nowPlayingFilmTitle {
+  font-family: var(--font-display, 'VT323'), 'Courier New', monospace;
+  font-size: 1.2rem;
+  letter-spacing: 0.08em;
+  color: #fff;
+  text-shadow: 0 0 8px rgba(0, 255, 247, 0.25);
+  margin-top: 4px;
+  line-height: 1.2;
+}
+
+.nowPlayingTransport {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 16px;
+}
+.nowPlayingBtn {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  border: 1.5px solid rgba(0, 255, 247, 0.45);
+  color: #fff;
+  font-family: 'VT323', 'Courier New', monospace;
+  font-size: 0.78rem;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: all 160ms ease;
+  box-shadow: 0 0 12px rgba(0, 255, 247, 0.15);
+  -webkit-tap-highlight-color: transparent;
+}
+.nowPlayingBtn:hover,
+.nowPlayingBtn:active {
+  background: rgba(0, 255, 247, 0.18);
+  border-color: rgba(0, 255, 247, 0.85);
+  box-shadow: 0 0 18px rgba(0, 255, 247, 0.4);
+  transform: translateY(-1px);
+}
+.nowPlayingBtnPrimary {
+  width: 78px;
+  height: 78px;
+  background: linear-gradient(135deg, rgba(0, 255, 247, 0.25), rgba(0, 255, 136, 0.15));
+  border-color: rgba(0, 255, 247, 0.8);
+  font-size: 2rem;
+}
+.nowPlayingBtnPrimary:hover,
+.nowPlayingBtnPrimary:active {
+  background: linear-gradient(135deg, rgba(0, 255, 247, 0.4), rgba(0, 255, 136, 0.25));
+}
+
+/* Une commande attend l'accusé de la télé : le bouton s'estompe mais reste un vrai bouton (aria-busy), son appui est
+   ignoré par le composant. Sur mobile un bouton désactivé avalerait le toucher sans rien dire. */
+.nowPlayingBusy {
+  opacity: 0.45;
+  cursor: progress;
+}
+.nowPlayingBusy:hover,
+.nowPlayingBusy:active {
+  transform: none;
+  box-shadow: 0 0 12px rgba(0, 255, 247, 0.15);
+}
+
+.nowPlayingSubtitleRow {
+  display: flex;
+  gap: 10px;
+  margin-top: 18px;
+}
+.nowPlayingSubtitleBtnActive {
+  color: var(--color-neon-cyan);
+  border-color: var(--color-neon-cyan);
+  background: rgba(0, 255, 247, 0.12);
+  box-shadow: 0 0 10px rgba(0, 255, 247, 0.25);
+}
+
+/* Trois boutons (retour, ici, arrêter) : sur un téléphone en portrait ils ne tiennent pas sur une ligne. */
+.nowPlayingSecondary {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 26px;
+  padding: 0 16px;
+  max-width: 100%;
+}
+.nowPlayingSecondaryBtn {
+  padding: 10px 18px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 4px;
+  color: rgba(255, 255, 255, 0.78);
+  font-family: 'VT323', 'Courier New', monospace;
+  font-size: 0.95rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 160ms ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.nowPlayingSecondaryBtn:hover,
+.nowPlayingSecondaryBtn:active {
+  color: #fff;
+  border-color: rgba(0, 255, 247, 0.6);
+  background: rgba(0, 255, 247, 0.06);
+}
+.nowPlayingStopBtn {
+  border-color: rgba(255, 80, 100, 0.4);
+  color: rgba(255, 200, 200, 0.85);
+}
+.nowPlayingStopBtn:hover,
+.nowPlayingStopBtn:active {
+  color: #fff;
+  border-color: rgba(255, 80, 100, 0.9);
+  background: rgba(255, 80, 100, 0.12);
+}
+
+.nowPlayingVolumeRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 18px;
+  width: 240px;
+  max-width: 80%;
+  color: rgba(255, 255, 255, 0.55);
+  font-family: 'VT323', 'Courier New', monospace;
+  font-size: 1.1rem;
+}
+.nowPlayingVolumeSlider {
+  flex: 1;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 2px;
+  outline: none;
+}
+.nowPlayingVolumeSlider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--color-neon-cyan);
+  cursor: pointer;
+  box-shadow: 0 0 8px rgba(0, 255, 247, 0.6);
+}
+.nowPlayingVolumeSlider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--color-neon-cyan);
+  cursor: pointer;
+  border: none;
+}
+
+/* ===== Liaison perdue : trois issues, l'une sous l'autre, faciles à toucher ===== */
+.lostActions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 24px;
+  width: 320px;
+  max-width: 80%;
+}
+.lostBtn {
+  justify-content: center;
+  min-height: 48px;
+}
+.lostBtnPrimary {
+  color: var(--color-neon-cyan);
+  border-color: var(--color-neon-cyan);
+  background: rgba(0, 255, 247, 0.12);
+  box-shadow: 0 0 10px rgba(0, 255, 247, 0.25);
+}
