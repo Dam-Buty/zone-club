@@ -1,10 +1,11 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Film, Rental, AisleType, SceneType, MemberLevel, AuthUser, LocalUser } from '../types';
-import api, { apiFilmToFilm, type ApiRentalWithFilm, type ApiFilm, type ReviewWithUser, type ApiReturnRequest, type WeeklyBonusStatus, type ApiBoardNote, type BoardCapacity } from '../api';
+import api, { ApiError, apiFilmToFilm, type ApiRentalWithFilm, type ApiRentalHistoryEntry, type ApiFilm, type MeResponse, type ReviewWithUser, type ApiReturnRequest, type WeeklyBonusStatus, type ApiBoardNote, type BoardCapacity } from '../api';
 import { preloadPosterImage } from '../utils/CassetteTextureArray';
 import { fetchVHSCoverData } from '../utils/VHSCoverGenerator';
 import { parseServerDate } from '../utils/server-date';
+import { rentalsRefreshOutcome } from '../utils/rentals-refresh';
 import { createCastSlice, type CastSlice } from './slices/cast';
 import { createManagerSlice } from './slices/manager';
 import { createTutorialSlice, TUTORIAL_WAYPOINTS } from './slices/tutorial';
@@ -37,6 +38,27 @@ function apiRentalToRental(apiRental: ApiRentalWithFilm): Rental {
     rewindClaimed: !!apiRental.rewind_claimed,
     viewingMode: (apiRental.viewing_mode as 'sur_place') ?? null,
   };
+}
+
+/** L'historique de /api/me au format du magasin : une seule lecture, pour `fetchMe` et `refreshRentals`. */
+function historyFromApi(entries: ApiRentalHistoryEntry[] | undefined): RentalHistoryEntry[] {
+  // SQLite stores naive-UTC datetimes ("YYYY-MM-DD HH:MM:SS"); normalise to ISO-UTC before parsing.
+  const toMs = parseServerDate;
+  return (entries || []).map((h) => ({
+    filmId: h.film_id,
+    title: h.film_title,
+    posterUrl: h.film_poster_url,
+    rentedAt: toMs(h.rented_at) || Date.now(),
+    returnedAt: toMs(h.expires_at) || 0,
+    // SQLite renvoie 0/1 malgré le typage `boolean` de l'API.
+    isActive: !!h.is_active,
+    expiresAt: toMs(h.expires_at) || 0,
+    watchProgress: h.watch_progress ?? 0,
+    rewindClaimed: !!h.rewind_claimed,
+    returnedEarly: !!h.returned_early,
+    returnDate: h.returned_at ? toMs(h.returned_at) || null : null,
+    expiredDate: h.expired_at ? toMs(h.expired_at) || null : null,
+  }));
 }
 
 
@@ -89,6 +111,12 @@ export interface VideoClubState extends CastSlice {
   clearAuthError: () => void;
   clearRecoveryPhrase: () => void;
   fetchMe: () => Promise<void>;
+  /**
+   * Relit les locations (et l'historique qui vient avec) sur le serveur, pour le Cast. Contrairement à `fetchMe`, une
+   * panne ne déconnecte pas le visiteur : rien n'est écrit et la promesse rejette ; seul un 401 laisse `fetchMe`
+   * constater la déconnexion. Une réponse arrivée après un changement de compte n'écrit rien.
+   */
+  refreshRentals: () => Promise<void>;
 
   // User local (fallback)
   localUser: LocalUser;
@@ -440,32 +468,37 @@ export const useStore = create<VideoClubState>()(
       clearAuthError: () => set({ authError: null }),
       clearRecoveryPhrase: () => set({ recoveryPhrase: null }),
 
+      refreshRentals: async () => {
+        // Le compte connecté au départ : une réponse revenue après une déconnexion (logout part pendant qu'une séance de
+        // Cast se clôt) ne doit pas remplir les locations du visiteur suivant.
+        const accountBefore = get().authUser?.id ?? null;
+        let data: MeResponse;
+        try {
+          data = await api.me.get();
+        } catch (error) {
+          // Panne réseau ou erreur du serveur : rien n'est touché, le visiteur reste connecté, l'appelant le sait. Un 401
+          // seulement est une vraie déconnexion : fetchMe la constate, comme partout ailleurs.
+          const outcome = rentalsRefreshOutcome({
+            failedStatus: error instanceof ApiError ? error.status : null, accountBefore, accountNow: null, responseAccount: null,
+          });
+          if (outcome === 'logged-out') await get().fetchMe();
+          throw error;
+        }
+        const outcome = rentalsRefreshOutcome({ accountBefore, accountNow: get().authUser?.id ?? null, responseAccount: data.user.id });
+        if (outcome !== 'write') throw new Error('Compte changé pendant la relecture des locations');
+        set({ rentals: data.activeRentals.map(apiRentalToRental), rentalHistory: historyFromApi(data.rentalHistory) });
+      },
+
       fetchMe: async () => {
         try {
           const data = await api.me.get();
-          // SQLite stores naive-UTC datetimes ("YYYY-MM-DD HH:MM:SS"); normalise to ISO-UTC before parsing.
-          const toMs = parseServerDate;
           set({
             isAuthenticated: true,
             authUser: data.user,
             rentals: data.activeRentals.map(apiRentalToRental),
             // Source of truth for the rental history (was previously never populated → terminal showed
             // "empty" even with rentals on record). Server returns ALL of the user's rentals.
-            rentalHistory: (data.rentalHistory || []).map((h) => ({
-              filmId: h.film_id,
-              title: h.film_title,
-              posterUrl: h.film_poster_url,
-              rentedAt: toMs(h.rented_at) || Date.now(),
-              returnedAt: toMs(h.expires_at) || 0,
-              // SQLite renvoie 0/1 malgré le typage `boolean` de l'API.
-              isActive: !!h.is_active,
-              expiresAt: toMs(h.expires_at) || 0,
-              watchProgress: h.watch_progress ?? 0,
-              rewindClaimed: !!h.rewind_claimed,
-              returnedEarly: !!h.returned_early,
-              returnDate: h.returned_at ? toMs(h.returned_at) || null : null,
-              expiredDate: h.expired_at ? toMs(h.expired_at) || null : null,
-            })),
+            rentalHistory: historyFromApi(data.rentalHistory),
             userReviews: data.reviews || [],
             reviewEligibility: Object.fromEntries(
               (data.reviewEligibility || []).map((e) => [e.film_id, { allowed: e.allowed, reason: e.reason, availableAtMs: e.available_at_ms }]),

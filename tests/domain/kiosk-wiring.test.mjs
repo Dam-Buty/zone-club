@@ -448,12 +448,17 @@ test('COMPTE: /api/me dit ce qu\'on peut encore critiquer, et le magasin garde l
   const store = readText(path.join(ROOT, 'src/store/index.ts'));
   const start = store.indexOf('fetchMe: async');
   const fetchMe = store.slice(start, store.indexOf('// User local (fallback)', start));
-  for (const k of ['reviewEligibility', 'rewindClaimed', 'returnedEarly', 'returnDate', 'expiredDate', 'watchProgress', 'expiresAt']) {
-    assert.ok(fetchMe.includes(k), `fetchMe pose ${k}`);
+  // L'historique est lu par une seule fonction, que fetchMe et refreshRentals (relecture du Cast) partagent.
+  const historyStart = store.indexOf('function historyFromApi(');
+  assert.ok(historyStart > 0 && fetchMe.includes('rentalHistory: historyFromApi(data.rentalHistory)'), 'fetchMe lit l\'historique par historyFromApi');
+  const history = store.slice(historyStart, store.indexOf('\n}\n', historyStart));
+  assert.ok(fetchMe.includes('reviewEligibility'), 'fetchMe pose reviewEligibility');
+  for (const k of ['rewindClaimed', 'returnedEarly', 'returnDate', 'expiredDate', 'watchProgress', 'expiresAt']) {
+    assert.ok(history.includes(k), `l'historique pose ${k}`);
   }
   const catchBlock = fetchMe.slice(fetchMe.indexOf('catch'));
   assert.ok(catchBlock.includes('reviewEligibility: {}'), 'remis à zéro hors connexion');
-  assert.ok(fetchMe.includes('returnedAt:'), 'le champ existant returnedAt est gardé (terminal, Michel)');
+  assert.ok(history.includes('returnedAt:'), 'le champ existant returnedAt est gardé (terminal, Michel)');
 });
 test('CRITIQUE (borne): le formulaire publie ou modifie, jamais grisé, et relit le compte', () => {
   const src = readText(path.join(ROOT, 'src/components/kiosk/KioskReview.tsx'));

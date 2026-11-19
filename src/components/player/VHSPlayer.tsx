@@ -12,7 +12,7 @@ import { CAST_UNAVAILABLE_TEXT, castDeviceLabel, castNoticeView } from '../../ca
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { useBackGuard } from '../../hooks/useBackGuard';
 import { buildCastSubtitleTracks, activeSubtitleId } from '../../utils/cast-subtitles';
-import { appleAirPlay, rewindPromptFor } from '../../utils/cast-on-open';
+import { appleAirPlay, playerWithoutRental, rewindPromptFor } from '../../utils/cast-on-open';
 import { REVIEW_MIN_LENGTH, REVIEW_RATING_LABELS } from '../../utils/review-rules';
 import styles from './VHSPlayer.module.css';
 import castStyles from './CastPanels.module.css';
@@ -70,6 +70,7 @@ export function VHSPlayer() {
   const castDismiss = useStore(state => state.castDismiss);
   const castSubtitle = useStore(state => state.castSubtitle);
   const takeCastResume = useStore(state => state.takeCastResume);
+  const castRentalGone = useStore(state => state.castRentalGone);
   // La TV a ce film, ou le prend : les panneaux du Cast couvrent le lecteur.
   const remoteActive = view !== 'local' && view !== 'other-on-tv' && view !== 'ended';
   // La TV a ce film, le prend, ou vient de le finir : la vidéo locale se tait (jamais sur les deux écrans, et jamais
@@ -322,6 +323,16 @@ export function VHSPlayer() {
     const film = currentPlayingFilm;
     void fetchMe().finally(() => setRentalFreshFor(film));
   }, [isPlayerOpen, currentPlayingFilm, fetchMe]);
+
+  // Ouvert sur un film sans location (échue pendant le film puis relue, prévisualisation adoptée sur le site) : le
+  // lecteur ne dessine rien et resterait « ouvert » — la borne inerte dessous, Échap sans effet. Il se ferme lui-même
+  // une fois les données relues, et la machine est prévenue : un Cast de ce film s'arrête, « Location terminée ».
+  const withoutRental = playerWithoutRental({ open: isPlayerOpen, hasRental: !!rental, fresh: rentalFreshFor === currentPlayingFilm });
+  useEffect(() => {
+    if (!withoutRental) return;
+    if (currentPlayingFilm !== null) castRentalGone(currentPlayingFilm);
+    closePlayer();
+  }, [withoutRental, currentPlayingFilm, castRentalGone, closePlayer]);
 
   // Resume from saved position when player opens
   useEffect(() => {
@@ -678,6 +689,12 @@ export function VHSPlayer() {
         return;
       }
 
+      // Échap ferme le lecteur même sans vidéo montée (lecteur ouvert sur un film dont la location vient de disparaître).
+      if (e.key === 'Escape') {
+        handleEject();
+        return;
+      }
+
       const video = videoRef.current;
       if (!video) return;
 
@@ -741,9 +758,6 @@ export function VHSPlayer() {
         case 'r':
         case 'R':
           handleRewindToStart();
-          break;
-        case 'Escape':
-          handleEject();
           break;
       }
     };

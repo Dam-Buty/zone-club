@@ -33,6 +33,17 @@ export function rewindOfferOnOpen(i: { fresh: boolean; watchProgress: number; re
 }
 
 /**
+ * Le lecteur est ouvert sur un film que plus rien ne permet de regarder ici — ni location réelle, ni prévisualisation
+ * (`hasRental` : ce que sert `getRental`) — une fois ses données relues depuis l'ouverture (`fresh`) : il doit se
+ * fermer. Il ne dessine rien sans location mais reste « ouvert » : la borne inerte dessous, le vidéoclub en pause, un
+ * écran sans sortie visible (relecture finale de la refonte du Cast, A3). Avant la relecture, un magasin périmé n'est
+ * pas une location disparue.
+ */
+export function playerWithoutRental(i: { open: boolean; hasRental: boolean; fresh: boolean }): boolean {
+  return i.open && !i.hasRental && i.fresh;
+}
+
+/**
  * La proposition « BE KIND REWIND » que le lecteur montre maintenant, décidée à un seul endroit. Deux décisions
  * séparées se contredisaient : à la fin vue par la TV, la location déjà à 100 % faisait aussi proposer « l'ouverture »,
  * dont NON MERCI remplaçait ÉJECTER, et la question revenait une seconde fois.

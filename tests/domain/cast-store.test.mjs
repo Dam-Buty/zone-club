@@ -162,3 +162,44 @@ test('CAST STORE A2: logout arrête le Cast AVANT la requête de déconnexion', 
   assert.ok(cast >= 0 && request >= 0, 'les deux appels existent');
   assert.ok(cast < request, 'castLoggedOut() précède api.auth.logout()');
 });
+
+// Relecture finale, A4 : sur un échec, `fetchMe` pose « non connecté ». Appelé par les ports du Cast — à la clôture
+// d'une séance et à la relecture d'une location, quand le réseau est le plus fragile —, il faisait demander à la borne
+// de se reconnecter alors que le cookie était valide. Les ports passent par `refreshRentals`, qui n'écrit qu'en cas de
+// succès, ne touche à rien sur une panne réseau, et ne laisse `fetchMe` conclure qu'à un vrai 401.
+test('CAST STORE A4: les ports du Cast n\'appellent plus fetchMe, ils relisent les locations par refreshRentals', () => {
+  const slice = read(SLICE);
+  assert.ok(!slice.includes('fetchMe('), 'slices/cast.ts ne contient plus fetchMe(');
+  const ports = between(slice, 'function createPorts', 'export const createCastSlice');
+  assert.ok(between(ports, 'serverClose:', 'readRental:').includes('refreshRentals()'), 'serverClose relit les locations');
+  assert.ok(between(ports, 'readRental:', 'remember:').includes('refreshRentals()'), 'readRental relit les locations');
+  const store = read(STORE);
+  assert.ok(/refreshRentals: \(\) => Promise<void>;/.test(store), 'action typée du magasin');
+  const refresh = between(store, 'refreshRentals: async () => {', 'fetchMe: async () => {');
+  assert.ok(refresh.includes('rentalsRefreshOutcome('), 'la décision est la fonction testée');
+  // Sur une erreur : fetchMe seulement pour un compte réellement déconnecté, et l'appelant le sait (rejet).
+  const failure = refresh.slice(refresh.indexOf('catch'), refresh.indexOf('set({'));
+  assert.ok(failure.includes("=== 'logged-out'") && failure.includes('fetchMe()') && failure.includes('throw'), 'fetchMe sur 401 seulement, puis rejet');
+  // Une seule écriture, après le verdict « write » : rentals et l'historique qui vient avec.
+  assert.equal((refresh.match(/\bset\(/g) ?? []).length, 1, 'une seule écriture');
+  const write = refresh.slice(refresh.indexOf('set({'));
+  assert.ok(write.includes('rentals:') && write.includes('rentalHistory:'), 'rentals et historique');
+  assert.ok(!/isAuthenticated:|authUser:/.test(refresh), 'refreshRentals ne dit jamais « connecté » ni « déconnecté »');
+});
+test('CAST STORE A4: la relecture des locations n\'écrit qu\'une réponse réussie, du compte qui l\'a demandée', async () => {
+  const { rentalsRefreshOutcome } = await import('../../src/utils/rentals-refresh.ts');
+  const ok = { failedStatus: undefined, accountBefore: 4, accountNow: 4, responseAccount: 4 };
+  assert.equal(rentalsRefreshOutcome(ok), 'write');
+  // Panne réseau (pas de statut) ou erreur du serveur : rien n'est touché, le visiteur reste connecté.
+  assert.equal(rentalsRefreshOutcome({ ...ok, failedStatus: null }), 'keep');
+  assert.equal(rentalsRefreshOutcome({ ...ok, failedStatus: 502 }), 'keep');
+  // 401 : le visiteur est réellement déconnecté, fetchMe le constate.
+  assert.equal(rentalsRefreshOutcome({ ...ok, failedStatus: 401 }), 'logged-out');
+  // Déconnexion (ou autre compte) pendant l'appel : la réponse de l'ancien compte n'écrit rien.
+  assert.equal(rentalsRefreshOutcome({ ...ok, accountNow: null }), 'keep');
+  assert.equal(rentalsRefreshOutcome({ ...ok, accountNow: 9 }), 'keep');
+  assert.equal(rentalsRefreshOutcome({ ...ok, responseAccount: 9 }), 'keep');
+  // Page à peine chargée, compte pas encore lu : la réponse du serveur fait foi.
+  assert.equal(rentalsRefreshOutcome({ ...ok, accountBefore: null, accountNow: null }), 'write');
+  assert.equal(rentalsRefreshOutcome({ ...ok, accountBefore: null, accountNow: 4 }), 'write');
+});

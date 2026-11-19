@@ -83,3 +83,17 @@ test('REMBOBINAGE: une seule décision — fin vue par la TV, film fini à l\'ou
   // Film pas fini : rien.
   assert.equal(rewindPromptFor({ ...base, watchProgress: 40 }), 'skip');
 });
+
+// Relecture finale, A3 : un lecteur ouvert sur un film sans location ne dessine rien, mais reste « ouvert » — la borne
+// inerte dessous, le vidéoclub en pause, Échap sans effet : un écran sans sortie visible. Location échue pendant le
+// film puis relecture des locations, ou prévisualisation adoptée sur le site principal (lecteur sans location).
+test('LECTEUR A3: ouvert sur un film sans location, données relues → il se ferme', async () => {
+  const { playerWithoutRental } = await import('../../src/utils/cast-on-open.ts');
+  const open = { open: true, hasRental: false, fresh: true };
+  assert.equal(playerWithoutRental(open), true);
+  // Pas avant la relecture faite à l'ouverture : un magasin périmé n'est pas une location disparue.
+  assert.equal(playerWithoutRental({ ...open, fresh: false }), false);
+  // Une location réelle, ou une prévisualisation /admin (getRental la sert), et rien ne se ferme.
+  assert.equal(playerWithoutRental({ ...open, hasRental: true }), false);
+  assert.equal(playerWithoutRental({ ...open, open: false }), false);
+});

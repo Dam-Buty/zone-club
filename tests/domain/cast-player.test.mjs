@@ -153,3 +153,22 @@ test('CAST LECTEUR: les styles du Cast ont quitté la feuille du lecteur, aucune
     assert.ok(new RegExp(`\\.${name}\\b`).test(castCss), `.${name} manque dans CastPanels.module.css`);
   }
 });
+
+// Relecture finale, A3 : sans location le lecteur ne dessine rien ; il se ferme de lui-même une fois les données
+// relues (la décision est la fonction testée de cast-on-open), et prévient la machine — un Cast de ce film s'arrête,
+// « Location terminée ». Échap le ferme même sans <video> monté.
+test('CAST LECTEUR A3: ouvert sans location, il se ferme lui-même et Échap fonctionne sans vidéo', () => {
+  const src = read(PLAYER);
+  assert.match(src, /playerWithoutRental\(\{\s*open: isPlayerOpen,\s*hasRental: !!rental,\s*fresh: rentalFreshFor === currentPlayingFilm\s*\}\)/, 'la décision est la fonction testée, après la relecture');
+  const at = src.indexOf('if (!withoutRental) return;');
+  assert.ok(at > 0, 'un effet se règle sur elle');
+  const effect = src.slice(at, at + 400);
+  assert.ok(effect.includes('castRentalGone(') && effect.includes('closePlayer()'), 'la machine est prévenue, le lecteur se ferme');
+  assert.ok(effect.indexOf('castRentalGone(') < effect.indexOf('closePlayer()'), 'la machine d\'abord');
+  // Échap avant `if (!video) return;` : le lecteur sans location n'a pas de vidéo.
+  const keys = src.slice(src.indexOf('const handleKeyDown'), src.indexOf("window.addEventListener('keydown', handleKeyDown)"));
+  const escape = keys.indexOf("if (e.key === 'Escape') {", keys.indexOf('if (rewindPhase !== \'none\')'));
+  const noVideo = keys.indexOf('if (!video) return;');
+  assert.ok(escape > 0 && noVideo > escape, 'Échap est traité avant le garde « pas de vidéo »');
+  assert.ok(keys.slice(escape, noVideo).includes('handleEject()'), 'Échap éjecte');
+});

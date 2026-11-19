@@ -52,6 +52,11 @@ export interface CastSlice {
   takeCastResume: (filmId: number) => { position: number | null; play: boolean } | null
   /** Le compte se déconnecte : la location du film qui est sur la TV disparaît avec lui. Appelé par `logout`. */
   castLoggedOut: () => void
+  /**
+   * Le lecteur s'est trouvé ouvert sur `filmId` sans location (échue pendant le film, prévisualisation adoptée) : si la
+   * TV a ce film, elle s'arrête et « Location terminée » reste. La machine en juge (elle ignore un autre film).
+   */
+  castRentalGone: (filmId: number) => void
 }
 
 /** Film à lier au suivi de la TV : celui qu'elle joue ou ne répond plus pour, sinon null (valeur de `activeCastFilmId`). */
@@ -81,17 +86,16 @@ function createPorts(get: () => VideoClubState, set: (patch: Partial<VideoClubSt
     serverClose: (filmId, position, finished) =>
       settle(async () => {
         await api.castSessions.end(filmId, { position: position ?? undefined, finished })
-        // Un film fini côté serveur passe la location à 100 % : le magasin la relit.
-        await get().fetchMe()
+        // Un film fini côté serveur passe la location à 100 % : le magasin la relit. Jamais par fetchMe, qui dirait le
+        // visiteur déconnecté sur une simple panne réseau, au moment où le réseau est le plus fragile.
+        await get().refreshRentals()
       }, null),
     readRental: async (filmId) => {
       const read = await settle(async () => {
-        await get().fetchMe()
-        const s = get()
-        // `fetchMe` avale ses échecs et se dit alors « non connecté » : on ne sait pas si la location existe encore,
-        // et conclure « disparue » arrêterait la TV sur une panne réseau.
-        if (!s.isAuthenticated) return null
-        const rental = s.rentals.find((r) => r.filmId === filmId)
+        // Une panne, ou un compte déconnecté, rejette : on ne sait pas si la location existe encore, et conclure
+        // « disparue » arrêterait la TV sur une panne réseau.
+        await get().refreshRentals()
+        const rental = get().rentals.find((r) => r.filmId === filmId)
         return { exists: rental !== undefined, watchProgress: rental?.watchProgress ?? 0, watchPosition: rental?.watchPosition ?? 0 }
       }, null)
       // Se règle par un rejet, pas par un faux « n'existe pas » : le service ignore un port qui rejette, et la
@@ -207,5 +211,7 @@ export const createCastSlice: StateCreator<VideoClubState, [['zustand/persist', 
       const owned = castOwnsFilm(service)
       if (owned !== null && service.tracked) sendCast({ type: 'RENTAL_GONE', filmId: owned })
     },
+
+    castRentalGone: (filmId) => ask({ type: 'RENTAL_GONE', filmId }),
   }
 }
