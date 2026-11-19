@@ -36,6 +36,11 @@ interface KioskActionProps {
   onRenting: (filmId: number | null) => void;
   /** La location est enregistrée : la borne distribue la K7 (panneau « Votre K7 est prête »). */
   onRented: (filmId: number) => void;
+  /**
+   * « REGARDER » sur un film déjà loué : la borne décide — le lecteur si la TV a déjà ce film, sinon son panneau
+   * « Où voulez-vous regarder ? » (refonte du Cast, § 5.4). Ce bouton n'ouvre jamais le lecteur lui-même.
+   */
+  onWatch: (filmId: number) => void;
 }
 
 // Un verrou par film, partagé par tous les affichages du bouton : revenir sur une fiche pendant
@@ -50,7 +55,7 @@ function lockFor(filmId: number): { busy: boolean } {
   return lock;
 }
 
-export function KioskAction({ film, detail, onNotice, onRequestAuth, onRenting, onRented }: KioskActionProps) {
+export function KioskAction({ film, detail, onNotice, onRequestAuth, onRenting, onRented, onWatch }: KioskActionProps) {
   const isAuthenticated = useStore((state) => state.isAuthenticated);
   const isRented = useStore((state) => state.rentals.some((r) => r.filmId === film.id));
   const credits = useCredits();
@@ -129,7 +134,7 @@ export function KioskAction({ film, detail, onNotice, onRequestAuth, onRenting, 
     });
 
     if (now === 'watch') {
-      state.openPlayer(film.id);
+      onWatch(film.id);
       return;
     }
     if (now === 'login') {

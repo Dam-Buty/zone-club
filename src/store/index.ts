@@ -161,12 +161,6 @@ export interface VideoClubState extends CastSlice {
   /** D'où le lecteur a été ouvert ; `closePlayer` n'y touche pas (le lecteur se ferme, son libellé reste lisible). */
   playerFrom: 'kiosk' | 'store';
   playerAsk: boolean;
-  /**
-   * « Sur la TV » de la borne : lance le Cast (`castFilm`, dans l'appui) puis ouvre le lecteur, qui montre l'attente.
-   * La borne appellera `castFilm` elle-même.
-   * @deprecated retiré à la tâche 7
-   */
-  openPlayerOnTv: (filmId: number) => void;
   closePlayer: () => void;
 
   // Film suivi par la TV : écrit par la seule tranche `cast` (le film joué ou « la télé ne répond plus »), sinon
@@ -806,11 +800,6 @@ export const useStore = create<VideoClubState>()(
           managerVisible: false,
           chatBackdropUrl: null,
         });
-      },
-      openPlayerOnTv: (filmId) => {
-        // Dans cet ordre et sans attente : le sélecteur d'appareils exige l'activation de l'appui de la borne.
-        get().castFilm(filmId);
-        get().openPlayer(filmId, { from: 'kiosk', ask: false });
       },
       // closePlayer leaves the Cast alone: the film continues on the TV
       // without the player, and the next openPlayer finds it through the

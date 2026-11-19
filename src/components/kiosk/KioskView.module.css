@@ -514,6 +514,16 @@
     --k-strip-top: 111.9cqw;
     --k-rail-poster-h: 31.4cqw;
   }
+
+  /* La barre du Cast (KioskCastBar) prend la place du haut de la bande, haute comme un onglet ; la bande descend
+     d'autant et ses jaquettes rapetissent pour y tenir ((150 − 2,4 − 122,586 − 0,8) × 0,9). Sur téléphone, c'est
+     phoneLayout qui fait ce calcul. */
+  .screen[data-cast-bar] {
+    --k-cast-top: 111.9cqw;
+    --k-cast-h: 8.886cqw;
+    --k-strip-top: 122.586cqw;
+    --k-rail-poster-h: 21.79cqw;
+  }
 }
 
 /* Écran dense : les traits de la grille y sont deux à trois fois plus fins, donc un peu plus

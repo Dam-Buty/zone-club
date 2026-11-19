@@ -685,9 +685,9 @@ function App() {
               <KioskMount />
             </Suspense>
           </div>
+          {/* Pas de puce flottante ici : la borne a sa barre du Cast, dans son écran (KioskCastBar). */}
           <Suspense fallback={null}>
             {isPlayerOpen && <VHSPlayer />}
-            <ActiveCastIndicator />
           </Suspense>
         </KioskBoundary>
       )}

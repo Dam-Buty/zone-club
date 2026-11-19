@@ -541,3 +541,63 @@ test('PANNEAU: « Où voulez-vous regarder ? » dit où et comment', () => {
   assert.equal(K.tvMeansLabel(false), 'via Chromecast');
   assert.equal(K.tvMeansLabel(true), 'via AirPlay');
 });
+
+// ===== Refonte du Cast, tâche 7 : « Où voulez-vous regarder ? » pour chaque reprise de film =====
+// docs/superpowers/specs/2026-11-18-cast-refonte-design.md, § 5.4 et § 5.5 point 6.
+test('CAST BORNE: la TV a déjà ce film, ne répond plus pour lui ou vient de le finir → le lecteur ; sinon le panneau', () => {
+  for (const view of ['remote', 'lost', 'ended']) assert.equal(K.watchEntry({ view }), 'remote', view);
+  // Un autre film sur la TV, ou rien : on demande où regarder (le panneau, jamais l'invite du lecteur).
+  for (const view of ['local', 'other-on-tv', 'choosing', 'connecting', 'loading']) assert.equal(K.watchEntry({ view }), 'choose', view);
+});
+test('CAST BORNE: « Sur ma télé » passe par AirPlay sur un appareil Apple qui le sait, par le Cast partout ailleurs', async () => {
+  assert.equal(K.tvEntry({ airPlay: true }), 'airplay');
+  assert.equal(K.tvEntry({ airPlay: false }), 'cast');
+  // Avec la détection réelle (cast-on-open.ts), lue sur l'élément vidéo.
+  const { appleAirPlay } = await import('../../src/utils/cast-on-open.ts');
+  const picker = { webkitShowPlaybackTargetPicker() {} };
+  const iphone = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
+  const macChrome = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0 Safari/537.36';
+  const pixel = 'Mozilla/5.0 (Linux; Android 17; Pixel 9a) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0 Mobile Safari/537.36';
+  assert.equal(K.tvEntry({ airPlay: appleAirPlay(iphone, picker) }), 'airplay', 'Safari sur iPhone');
+  assert.equal(K.tvEntry({ airPlay: appleAirPlay(macChrome, {}) }), 'cast', 'Chrome sur Mac : pas d\'AirPlay, le Cast');
+  assert.equal(K.tvEntry({ airPlay: appleAirPlay(pixel, picker) }), 'cast', 'Android');
+});
+test('CAST BORNE: la barre du Cast écrit l\'état dans la casse de la borne, avec les mots de cast-labels', async () => {
+  const { castChipLabel } = await import('../../src/cast/cast-labels.ts');
+  assert.equal(K.kioskLabelCase(castChipLabel('remote')), 'Télécommande');
+  assert.equal(K.kioskLabelCase(castChipLabel('lost')), 'La télé ne répond plus');
+  assert.equal(K.kioskLabelCase(castChipLabel('ended')), 'Film terminé');
+  assert.equal(K.kioskLabelCase(''), '');
+});
+test('CAST BORNE: « Location terminée » se montre lecteur fermé ; un lecteur resté ouvert sans location est d\'abord fermé', () => {
+  // Le lecteur ne dessine rien sans location, mais reste « ouvert » : la borne, inerte sous lui, ne pourrait pas
+  // faire fermer le message.
+  assert.equal(K.rentalOverStep({ playerOpen: false, playerHasRental: false }), 'show');
+  assert.equal(K.rentalOverStep({ playerOpen: false, playerHasRental: true }), 'show');
+  assert.equal(K.rentalOverStep({ playerOpen: true, playerHasRental: false }), 'close-player');
+  // Un autre film se regarde ici : le message attend que le lecteur se ferme.
+  assert.equal(K.rentalOverStep({ playerOpen: true, playerHasRental: true }), 'wait');
+});
+test('CAST BORNE: la barre du Cast prend sa place entre LOUER et la bande, sans rien pousser hors de l\'écran', () => {
+  for (const [name, q] of Object.entries(PHONES)) {
+    const L = K.phoneLayout(q, true);
+    const plain = K.phoneLayout(q);
+    assert.ok(L.castH * q >= 44 - 0.01, name + ' : barre de 44 px au moins');
+    assert.ok(L.castTop >= L.btnTop + L.btnH + 1.8 - 0.01, name + ' : sous LOUER');
+    assert.ok(L.stripTop >= L.castTop + L.castH + 1.8 - 0.01, name + ' : au-dessus de la bande, sans la recouvrir');
+    assert.ok(Math.abs(L.stripTop + L.stripH + 2.4 - 180) < 0.01, name + ' : la bande finit au bas de l\'écran');
+    assert.ok(L.stripH >= 30 - 0.01, name + ' : la bande garde une hauteur correcte');
+    assert.ok(2 * L.railPosterH + 1 <= 70.4 + 0.01, name + ' : trois jaquettes tiennent entre les flèches');
+    if (L.showUnder) assert.ok(L.btnTop >= L.underTop + L.underH + 2 - 0.01, name + ' : LOUER sous le cadre « En bref »');
+    // Les commandes et la fiche ne bougent pas : seule la place du cadre « En bref » et de la bande se répartit.
+    for (const k of ['navH', 'tabH', 'btnH', 'cardTop', 'cardH', 'underTop']) assert.equal(L[k], plain[k], `${name} : ${k}`);
+    assert.ok(L.underH <= plain.underH, name + ' : le cadre « En bref » cède d\'abord');
+  }
+  // Sans barre, la mise en page validée le 17/11 ne change pas.
+  assert.deepEqual(K.phoneLayout(PHONES.pixel9a, false), K.phoneLayout(PHONES.pixel9a));
+  assert.equal(K.phoneLayout(PHONES.pixel9a).castH, 0, 'sans barre, aucune place réservée');
+  assert.ok(Object.values(K.phoneLayout(0, true)).every((v) => typeof v === 'boolean' || Number.isFinite(v)), 'mesure absente : pas de NaN');
+  const vars = K.phoneLayoutVars(K.phoneLayout(4, true));
+  assert.equal(vars['--k-cast-h'], '11cqw');
+  assert.ok(/cqw$/.test(vars['--k-cast-top']));
+});

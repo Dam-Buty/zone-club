@@ -9,7 +9,7 @@ const DOT_COLOR = { live: '#00ff88', warn: '#ffb020' } as const;
 
 // Puce flottante « Cast en cours » — apparaît en bas de l'écran quand la TV a un film à signaler (elle le joue, ne
 // répond plus, ou vient de le finir) et que le lecteur est fermé : le visiteur a quitté le lecteur pour se promener
-// dans le vidéoclub ou devant la borne pendant que le film continue sur la TV. L'appui rouvre le lecteur sur ce
+// dans le vidéoclub pendant que le film continue sur la TV. L'appui rouvre le lecteur sur ce
 // film, directement sur le panneau du Cast (aucune invite « Regarder sur TV ? », la TV a déjà son film).
 //
 // Le film à signaler vient de la MACHINE (`castOwnsFilm`), pas du champ dérivé du magasin (celui que lit encore la
@@ -18,9 +18,8 @@ const DOT_COLOR = { live: '#00ff88', warn: '#ffb020' } as const;
 // Motif des mini-barres de Spotify / Netflix : la conscience permanente qu'un Cast est vivant, et un chemin en un
 // appui vers les commandes.
 //
-// `variant` : où la puce est posée. `kiosk` ouvre le lecteur « depuis la borne » (le retour de la télécommande y
-// ramène) ; son dessin propre à la borne vient à la tâche 7, en attendant les deux dessinent la même chose.
-export function ActiveCastIndicator({ variant = 'store' }: { variant?: 'store' | 'kiosk' }) {
+// Vidéoclub 3D seulement : la borne a sa propre barre, dessinée dans son écran (src/components/kiosk/KioskCastBar.tsx).
+export function ActiveCastIndicator() {
   const cast = useStore((s) => s.cast);
   const isPlayerOpen = useStore((s) => s.isPlayerOpen);
   const openPlayer = useStore((s) => s.openPlayer);
@@ -37,7 +36,7 @@ export function ActiveCastIndicator({ variant = 'store' }: { variant?: 'store' |
   return (
     <button
       type="button"
-      onClick={() => openPlayer(filmId, { from: variant === 'kiosk' ? 'kiosk' : 'store', ask: false })}
+      onClick={() => openPlayer(filmId, { from: 'store', ask: false })}
       style={{
         position: 'fixed',
         bottom: 'calc(env(safe-area-inset-bottom, 0px) + 12px)',

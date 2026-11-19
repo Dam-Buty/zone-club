@@ -400,7 +400,8 @@ test('DISTRIBUTION: la location réussie mène au panneau « prête », pas au m
 test('DISTRIBUTION: pendant l\'attente la barre du haut est inerte et le panneau précharge le Cast', () => {
   const view = readText(path.join(ROOT, 'src/components/kiosk/KioskView.tsx'));
   assert.match(view, /className=\{styles\.kTop\} inert=\{[^}]*distribution/, 'barre du haut inerte pendant la distribution');
-  assert.ok(view.includes('openPlayerOnTv'), '« Sur la TV »');
+  // « Sur ma télé » demande le Cast elle-même depuis la tâche 7 de la refonte du Cast (voir plus bas).
+  assert.ok(view.includes('castFilm('), '« Sur ma télé »');
   const dist = readText(path.join(ROOT, 'src/components/kiosk/KioskDistribution.tsx'));
   for (const copy of ['Veuillez patienter', 'Votre K7 est prête', 'Où voulez-vous regarder ?', 'Sur ma télé', 'le film démarre ici', 'Mon compte']) {
     assert.ok(dist.includes(copy), copy);
@@ -483,4 +484,116 @@ test('COMPTE: « Compte » pendant la recherche ferme la recherche avant d\'ouvr
   const view = readText(path.join(ROOT, 'src/components/kiosk/KioskView.tsx'));
   const fn = view.slice(view.indexOf('const openAccount'), view.indexOf('const openAccount') + 700);
   assert.ok(/closeSearch\(\)|setMode\('browse'\)/.test(fn), 'la recherche se ferme');
+});
+
+// ===== Refonte du Cast, tâche 7 (docs/superpowers/specs/2026-11-18-cast-refonte-design.md, § 5.4, § 5.5 point 6) =====
+const KIOSK = (name) => readText(path.join(ROOT, 'src/components/kiosk', name));
+/** Le corps d'une fonction `const name = …` du composant (indentée de deux espaces), jusqu'à son accolade fermante. */
+function arrowBody(src, name) {
+  // En début de ligne, à deux espaces : un `const watch` plus profond (useScreenDensity en a un) n'est pas celui-là.
+  const start = src.indexOf(`\n  const ${name} = `) + 1;
+  assert.ok(start > 0, `${name} introuvable`);
+  const end = src.slice(start).search(/\n {2}\}[,;)]/);
+  assert.ok(end > 0, `fin de ${name} introuvable`);
+  return src.slice(start, start + end);
+}
+
+test('CAST BORNE: chaque reprise de film passe par « Où voulez-vous regarder ? », la TV qui a déjà le film exceptée', () => {
+  const action = KIOSK('KioskAction.tsx');
+  assert.ok(!action.includes('openPlayer('), 'KioskAction n\'ouvre plus le lecteur lui-même');
+  assert.ok(/if \(now === 'watch'\) \{\s*onWatch\(film\.id\);/.test(action), '« REGARDER » passe la main à la borne');
+  const view = KIOSK('KioskView.tsx');
+  assert.ok(!view.includes('openPlayerOnTv'), 'plus d\'openPlayerOnTv');
+  assert.ok(view.includes('fresh: false'), 'le panneau d\'un film déjà loué');
+  const watch = arrowBody(view, 'watch');
+  assert.ok(/watchEntry\(\{\s*view:\s*castView\(useStore\.getState\(\)\.cast,\s*filmId\)\s*\}\)/.test(watch), 'la décision est la fonction testée, sur la vue de CE film, lue au moment de l\'appui');
+  assert.ok(watch.includes("setDistribution({ phase: 'ready', filmId, fresh: false })"), 'sinon le panneau, sans « Votre K7 est prête »');
+  // Les trois entrées : la fiche du parcours, la fiche détaillée, « Mon compte ».
+  assert.equal((view.match(/<KioskAction [^>]*onWatch=\{watch\}/g) || []).length, 2, 'les deux boutons d\'action');
+  assert.match(view, /<KioskAccount[\s\S]*?onWatch=\{watch\}/, '« Regarder » de « Mon compte »');
+  // Toute ouverture du lecteur par la borne dit d'où elle vient (« ← Retour à la borne »).
+  const opens = view.match(/openPlayer\([^)]*\)/g) || [];
+  assert.ok(opens.length >= 4, `ouvertures relevées : ${opens.length}`);
+  for (const call of opens) assert.ok(call.includes("from: 'kiosk'"), `${call} : depuis la borne`);
+  // « Sur ce téléphone » : le panneau a déjà demandé, le lecteur ne redemande pas.
+  assert.ok(arrowBody(view, 'watchHere').includes("openPlayer(filmId, { from: 'kiosk', ask: false })"), '« Sur ce téléphone » sans invite');
+});
+
+test('CAST BORNE: « Sur ma télé » — le Cast part dans l\'appui, jamais sur la branche AirPlay', () => {
+  const view = KIOSK('KioskView.tsx');
+  const fn = arrowBody(view, 'watchOnTv');
+  // Aucune attente : le sélecteur d'appareils exige l'activation de l'appui.
+  assert.ok(!/\bawait\b|\basync\b|\.then\(|setTimeout|requestAnimationFrame/.test(fn), 'aucune attente dans le gestionnaire');
+  const branchStart = fn.indexOf("if (entry === 'airplay') {");
+  assert.ok(branchStart >= 0, 'une branche AirPlay');
+  const branchEnd = fn.indexOf('return;', branchStart);
+  const airplay = fn.slice(branchStart, branchEnd);
+  assert.ok(airplay.includes("openPlayer(filmId, { from: 'kiosk', ask: true })"), 'AirPlay : le lecteur s\'ouvre avec son invite, qui porte AirPlay');
+  assert.ok(!airplay.includes('castFilm('), 'AirPlay : jamais le Cast de Google');
+  const cast = fn.slice(branchEnd);
+  const castAt = cast.indexOf('castFilm(filmId)');
+  const openAt = cast.indexOf("openPlayer(filmId, { from: 'kiosk', ask: false })");
+  assert.ok(castAt >= 0 && openAt > castAt, 'ailleurs : castFilm(filmId) puis openPlayer(…, ask: false)');
+  // Un seul appel au Cast dans toute la borne : celui-là, après la sortie de la branche AirPlay.
+  assert.equal((view.match(/castFilm\(/g) || []).length, 1, 'un seul castFilm( dans KioskView');
+  assert.ok(view.indexOf('castFilm(') > view.indexOf("if (entry === 'airplay') {"), 'castFilm vient après la branche AirPlay');
+  for (const file of walkFiles(path.join(ROOT, 'src/components/kiosk'))) {
+    if (file.endsWith('KioskView.tsx')) continue;
+    assert.ok(!readText(file).includes('castFilm('), `${path.basename(file)} : pas de Cast hors du gestionnaire de la borne`);
+  }
+  assert.match(view, /onTv=\{\(entry\) => watchOnTv\(filmId, entry\)\}/, 'le panneau passe son choix à watchOnTv');
+  // Le choix AirPlay / Cast est la fonction testée, sur la détection lue sur l'élément vidéo.
+  const dist = KIOSK('KioskDistribution.tsx');
+  assert.ok(dist.includes('tvEntry(') && dist.includes('appleAirPlay('), 'KioskReady choisit par tvEntry(appleAirPlay(…))');
+});
+
+test('CAST BORNE: le panneau d\'un film déjà loué demande « Où voulez-vous regarder ? » en titre, sans doublon', () => {
+  const dist = KIOSK('KioskDistribution.tsx');
+  assert.ok(/fresh \? 'Votre K7 est prête' : 'Où voulez-vous regarder \?'/.test(dist), 'titre selon `fresh`');
+  assert.match(dist, /\{fresh && <p className=\{styles\.kReadyQuestion\}>Où voulez-vous regarder \?<\/p>\}/, 'la ligne de question, seulement après une location');
+  assert.ok(!/\bdisabled\b/.test(dist), 'aucun bouton grisé');
+  const view = KIOSK('KioskView.tsx');
+  assert.ok(view.includes('fresh={fresh}'), 'KioskView transmet `fresh`');
+  assert.ok(/onRented = useCallback\(\(filmId: number\) => setDistribution\(\{ phase: 'ready', filmId, fresh: true \}\)/.test(view), 'après une location : « Votre K7 est prête »');
+});
+
+test('CAST BORNE: la barre du Cast est dessinée par la borne, dans son écran, au-dessus de la bande', () => {
+  const bar = KIOSK('KioskCastBar.tsx');
+  for (const name of ['castChipLabel(', 'castChipLook(', 'kioskLabelCase(']) assert.ok(bar.includes(name), name);
+  assert.ok(bar.includes("openPlayer(filmId, { from: 'kiosk', ask: false })"), 'l\'appui rouvre le lecteur depuis la borne, sans invite');
+  assert.ok(!/position:\s*['"]?fixed/.test(bar) && !/style=\{\{/.test(bar), 'ni position fixe ni style en ligne : la feuille de la borne');
+  assert.ok(!/\p{Extended_Pictographic}/u.test(bar), 'aucun emoji');
+  assert.ok(bar.includes("from './KioskBrowse.module.css'"), 'styles dans une feuille de la borne');
+  const css = readText(path.join(ROOT, 'src/components/kiosk/KioskBrowse.module.css'));
+  const rule = css.slice(css.indexOf('.kCastBar {'), css.indexOf('}', css.indexOf('.kCastBar {')));
+  assert.ok(rule.length > 0, '.kCastBar est dans KioskBrowse.module.css');
+  assert.ok(/position:\s*absolute/.test(rule) && /top:\s*var\(--k-cast-top/.test(rule) && /height:\s*var\(--k-cast-h/.test(rule), 'la barre prend la place que phoneLayout lui réserve');
+  assert.ok(/var\(--k-skin-teal\)/.test(rule) && /var\(--k-edge-teal\)/.test(rule), 'l\'aplat et le filet des boutons de la borne');
+  assert.ok(/\.screen\[data-cast-bar\][\s\S]*?--k-strip-top/.test(readText(path.join(ROOT, 'src/components/kiosk/KioskView.module.css'))), 'l\'écran 2:3 du PC lui fait aussi sa place');
+  const view = KIOSK('KioskView.tsx');
+  const pane = view.slice(view.indexOf('className={styles.kPane}'), view.indexOf('{detailOpen && catalog'));
+  assert.ok(pane.includes('<KioskCastBar'), 'dans le volet du parcours, avec la bande');
+  // Montrée exactement quand la machine désigne un film (la TV le joue, ne répond plus, ou vient de le finir) et que le
+  // lecteur est fermé ; le titre vient du catalogue de la borne.
+  assert.ok(view.includes('useStore((state) => castOwnsFilm(state.cast))'), 'le film vient de la machine');
+  assert.ok(/const castBarFilm = isPlayerOpen \? null : castFilmId;/.test(view), 'lecteur fermé seulement');
+  assert.ok(/\{castBarFilm !== null && \(\s*<KioskCastBar filmId=\{castBarFilm\}/.test(view), 'rendue sur cette seule condition');
+  assert.ok(view.includes("'Film en cours'"), 'titre de repli');
+  assert.ok(view.includes('usePhoneLayoutVars(screenRef, castBarFilm !== null)') && view.includes('data-cast-bar='), 'sa place est réservée dans l\'écran');
+  // La puce flottante reste au vidéoclub 3D, seule.
+  const app = readText(path.join(ROOT, 'src/App.tsx'));
+  const kiosk = app.slice(app.indexOf('{isKiosk && ('), app.indexOf('{isInterior && ('));
+  assert.ok(kiosk.length > 0 && !kiosk.includes('ActiveCastIndicator'), 'la borne ne monte plus la puce flottante');
+  assert.equal((app.match(/<ActiveCastIndicator \/>/g) || []).length, 1, 'le vidéoclub la garde');
+  assert.ok(!readText(path.join(ROOT, 'src/components/player/ActiveCastIndicator.tsx')).includes('variant'), 'plus de variante « kiosk »');
+});
+
+test('CAST BORNE: « Location terminée » est dit par la borne, et le fermer efface le message du Cast', () => {
+  const view = KIOSK('KioskView.tsx');
+  assert.ok(view.includes("castNotice?.code === 'rental_over'"), 'le message du service');
+  assert.ok(view.includes("title: 'Location terminée'"), 'texte exact');
+  assert.ok(view.includes('rentalOverStep('), 'la décision est la fonction testée');
+  assert.match(view, /title: 'Location terminée'[\s\S]{0,200}onPress: castDismiss/, '« Fermer » appelle castDismiss');
+  assert.match(view, /action === 'close-notice'[\s\S]{0,80}castDismiss\(\)/, 'le geste retour aussi');
+  assert.match(view, /rentalStep === 'close-player'\) closePlayer\(\)/, 'un lecteur resté ouvert sans location se ferme');
 });

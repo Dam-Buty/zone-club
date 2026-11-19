@@ -105,8 +105,10 @@ test('CAST PANNEAUX: la puce lit la machine, dit son état, et rouvre le lecteur
   assert.ok(src.includes('castChipLabel('), 'le mot de droite vient des libellés');
   assert.ok(/from '\.\.\/\.\.\/cast\/cast-labels'/.test(src));
   assert.ok(/ask:\s*false/.test(src), 'rouvrir la télécommande ne repose pas la question « Regarder sur TV ? »');
-  assert.ok(/from:\s*variant === 'kiosk' \? 'kiosk' : 'store'/.test(src), 'l\'origine suit la variante');
-  assert.ok(/variant\?: 'store' \| 'kiosk'/.test(src) && /variant = 'store'/.test(src), 'prop variant, « store » par défaut');
+  // Tâche 7 : la borne a sa propre barre (src/components/kiosk/KioskCastBar.tsx) ; la puce n'est plus montée qu'au
+  // vidéoclub, d'où le lecteur s'ouvre, et sa variante « kiosk » est partie.
+  assert.ok(/from:\s*'store'/.test(src), 'le lecteur s\'ouvre depuis le vidéoclub');
+  assert.ok(!src.includes('variant'), 'plus de prop variant');
   // Les mots de la puce sont écrits à un seul endroit, testé : cast-labels.ts.
   const labels = read('src/cast/cast-labels.ts');
   for (const word of ['TÉLÉCOMMANDE', 'LA TÉLÉ NE RÉPOND PLUS', 'FILM TERMINÉ']) assert.ok(labels.includes(word), word);

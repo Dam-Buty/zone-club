@@ -1,10 +1,10 @@
 import { useEffect, useId, useRef } from 'react';
 import styles from './KioskPanels.module.css';
 
-/** Un message dans l'écran de la borne : un titre, un texte, un ou deux boutons. */
+/** Un message dans l'écran de la borne : un titre, un texte (sauf pour un message d'une seule ligne), un ou deux boutons. */
 export type KioskNoticeSpec = {
   title: string;
-  body: string;
+  body?: string;
   primary: { label: string; onPress: () => void };
   secondary?: { label: string; onPress: () => void };
 };
@@ -22,7 +22,7 @@ export function KioskNotice({ title, body, primary, secondary }: KioskNoticeSpec
     <div className={styles.kNoticeScrim}>
       <div className={styles.kNotice} role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <h2 id={titleId} className={styles.kNoticeTitle}>{title}</h2>
-        <p className={styles.kNoticeBody}>{body}</p>
+        {body && <p className={styles.kNoticeBody}>{body}</p>}
         <div className={styles.kNoticeActions}>
           {secondary && (
             <button type="button" className={styles.kNoticeBtn} onClick={secondary.onPress}>

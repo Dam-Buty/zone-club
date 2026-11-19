@@ -119,28 +119,25 @@ test('CAST STORE: openPlayer reçoit son origine et son invite, sans casser les 
   assert.ok(!close.includes('playerFrom') && !close.includes('playerAsk'), 'closePlayer laisse l\'origine et l\'invite');
 });
 
-test('CAST STORE: les accès du vieux lecteur sont partis, celui de la borne reste marqué périmé', () => {
+test('CAST STORE: les accès du vieux lecteur sont partis, et celui de la borne avec eux', () => {
   // Le lecteur lit la machine (tâche 6) : plus rien n'écrit l'état du Cast hors de la tranche.
   const store = read(STORE);
-  for (const name of ['castOnOpen', 'clearCastOnOpen', 'setActiveCastFilmId', 'endCast']) {
+  for (const name of ['castOnOpen', 'clearCastOnOpen', 'setActiveCastFilmId', 'endCast', 'openPlayerOnTv']) {
     assert.ok(!new RegExp(`\\b${name}\\b`).test(store), `${name} doit avoir quitté le magasin`);
   }
   assert.ok(!read('src/utils/cast-on-open.ts').includes('shouldStartCastOnOpen'), 'la règle du drapeau de la borne est partie');
-  // La borne s'en sert encore jusqu'à la tâche 7.
-  assert.ok(/@deprecated retiré à la tâche 7[^*]*\*\/\s*openPlayerOnTv:/.test(store), 'openPlayerOnTv doit porter « @deprecated retiré à la tâche 7 »');
   // Seule la tranche écrit activeCastFilmId : le magasin n'en garde que le type et la valeur de départ.
   assert.equal(store.split('activeCastFilmId:').length - 1, 2, 'activeCastFilmId : son type et sa valeur de départ, rien d\'autre');
   assert.ok(!read('src/components/player/VHSPlayer.tsx').includes('activeCastFilmId'), 'le lecteur ne lit ni n\'écrit activeCastFilmId');
 });
 
-test('CAST STORE: « Sur la TV » de la borne lance le Cast dans l\'appui, puis ouvre le lecteur sans invite', () => {
-  // Le sélecteur d'appareils exige l'activation de l'appui de la borne : castFilm d'abord, sans attente.
-  const store = read(STORE);
-  const body = between(store, 'openPlayerOnTv: (filmId) => {', 'closePlayer:');
-  assert.ok(!/\bawait\b|\basync\b|\.then\(/.test(body), 'aucune attente');
-  const cast = body.indexOf('castFilm(filmId)');
-  const open = body.indexOf("openPlayer(filmId, { from: 'kiosk', ask: false })");
-  assert.ok(cast >= 0 && open > cast, 'castFilm(filmId) puis openPlayer(filmId, { from: \'kiosk\', ask: false })');
+test('CAST STORE: openPlayerOnTv n\'existe plus nulle part — la borne demande le Cast elle-même', () => {
+  // Tâche 7 : « Sur ma télé » appelle castFilm puis openPlayer dans son propre gestionnaire, et rien sur la branche
+  // AirPlay (gardes dans tests/domain/kiosk-wiring.test.mjs).
+  for (const file of walkFiles(path.join(ROOT, 'src'), new Set(['.ts', '.tsx']))) {
+    assert.ok(!readText(file).includes('openPlayerOnTv'), `${toPosix(path.relative(ROOT, file))} ne connaît plus openPlayerOnTv`);
+  }
+  assert.ok(!read(STORE).includes('@deprecated retiré à la tâche 7'), 'plus d\'alias périmé laissé pour la borne');
 });
 
 test('CAST STORE: activeCastFilmId est écrit par la tranche, la déconnexion et la location surveillées', () => {

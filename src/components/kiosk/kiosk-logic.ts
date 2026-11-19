@@ -6,6 +6,7 @@
 // (tests/domain/kiosk-logic.test.mjs), un import de valeur sans extension casserait.
 import type { AisleType, Film } from '../../types';
 import type { RentalHistoryEntry, ReviewEligibilityMap } from '../../store';
+import type { CastView } from '../../cast/cast-machine';
 
 // ===== Onglets =====
 
@@ -547,6 +548,46 @@ export function tvMeansLabel(airPlay: boolean): 'via AirPlay' | 'via Chromecast'
   return airPlay ? 'via AirPlay' : 'via Chromecast';
 }
 
+// Refonte du Cast (docs/superpowers/specs/2026-11-18-cast-refonte-design.md, § 5.4) : chaque reprise d'un film déjà
+// loué — « REGARDER » de la fiche, « Regarder » de « Mon compte » — pose la question avec le panneau de la borne, pas
+// avec l'invite du lecteur (proposition validée par Rusmir le 18/11/2026).
+
+/**
+ * Reprendre un film loué : la TV l'a déjà (elle le joue, ne répond plus pour lui, ou vient de le finir) → le lecteur
+ * tout de suite, sur sa télécommande ou sur « BE KIND REWIND » ; sinon le panneau « Où voulez-vous regarder ? ».
+ * `view` : ce que la machine du Cast dit de CE film (`castView`).
+ */
+export function watchEntry(i: { view: CastView }): 'remote' | 'choose' {
+  return i.view === 'remote' || i.view === 'lost' || i.view === 'ended' ? 'remote' : 'choose';
+}
+
+/**
+ * « Sur ma télé » : sur un appareil Apple qui sait faire AirPlay, le Cast de Google n'existe pas — le lecteur s'ouvre
+ * avec son invite, qui porte AirPlay (son sélecteur exige un appui direct). Partout ailleurs, le Cast.
+ */
+export function tvEntry(i: { airPlay: boolean }): 'airplay' | 'cast' {
+  return i.airPlay ? 'airplay' : 'cast';
+}
+
+/**
+ * Un libellé écrit en capitales (`castChipLabel`, pour la puce du vidéoclub) remis dans la casse de la borne : une
+ * majuscule initiale, le reste écrit normalement (« TÉLÉCOMMANDE » → « Télécommande »). Les mots restent ceux de
+ * cast-labels, écrits à un seul endroit.
+ */
+export function kioskLabelCase(label: string): string {
+  return label.charAt(0).toLocaleUpperCase('fr') + label.slice(1).toLocaleLowerCase('fr');
+}
+
+/**
+ * « Location terminée » (la location d'un film sur la TV a disparu : échéance, retour, déconnexion). La borne le dit
+ * lecteur fermé. Le lecteur ne dessine rien sans location mais reste « ouvert », la borne inerte sous lui : il est
+ * d'abord fermé. Un lecteur qui joue un autre film, lui, n'est pas interrompu — le message attend sa fermeture.
+ */
+export function rentalOverStep(i: { playerOpen: boolean; playerHasRental: boolean }): 'show' | 'close-player' | 'wait' {
+  if (!i.playerOpen) return 'show';
+  return i.playerHasRental ? 'wait' : 'close-player';
+}
+
 // ===== Trame de la dalle =====
 
 /**
@@ -607,6 +648,9 @@ export type KioskLayout = {
   stripTop: number;
   stripH: number;
   railPosterH: number;
+  /** Barre du Cast (KioskCastBar), entre LOUER et la bande ; hauteur 0 quand elle n'est pas montrée. */
+  castTop: number;
+  castH: number;
 };
 
 const SCREEN_H = 180; // écran haut 5:9, en cqw
@@ -641,8 +685,13 @@ const COLUMN_BUTTONS = KIOSK_TAB_PAGE_SIZE + 1;
  *  2. sinon deux lignes, avec une bande d'au moins STRIP_MIN ;
  *  3. sinon le générique seul (« De », « Avec ») ;
  *  4. sinon le cadre s'efface : sur un tout petit écran, les jaquettes passent avant le reste.
+ *
+ * `castBar` : la barre du Cast (la TV a un film à signaler, lecteur fermé) prend sa place entre LOUER et la bande,
+ * haute comme un onglet (44 px au moins). Sa place est retirée de celle qui se partage, par les mêmes règles : elle
+ * ne recouvre rien et ne pousse rien hors de l'écran ; c'est le cadre « En bref » qui cède d'abord (refonte du Cast,
+ * spec 2026-11-18, § 5.5 point 6 — visuel provisoire tant que Rusmir ne l'a pas vu).
  */
-export function phoneLayout(pxPerCqw: number): KioskLayout {
+export function phoneLayout(pxPerCqw: number, castBar = false): KioskLayout {
   const q = pxPerCqw > 0 && Number.isFinite(pxPerCqw) ? pxPerCqw : 4;
   const navH = Math.max(7.6, KIOSK_MIN_PX.nav / q);
   const tabH = Math.max(9.75, KIOSK_MIN_PX.tab / q);
@@ -653,7 +702,9 @@ export function phoneLayout(pxPerCqw: number): KioskLayout {
   const cardTop = 1.9 + navH + 2.5;
   const cardH = COLUMN_BUTTONS * tabH + 1.8;
   const underTop = cardTop + cardH + 1.6;
-  const available = SCREEN_H - underTop - 2 - btnH - 1.8 - 2.4;
+  const castH = castBar ? tabH : 0;
+  const castSpace = castBar ? castH + 1.8 : 0; // la barre et l'écart qui la sépare de la bande
+  const available = SCREEN_H - underTop - 2 - btnH - 1.8 - 2.4 - castSpace;
   const underFor = (lines: number) => underCredits + lines * line;
   const preferred = [4, 3, 2].find((lines) => available - underFor(lines) >= STRIP_PREF);
   let underH = 0;
@@ -663,7 +714,8 @@ export function phoneLayout(pxPerCqw: number): KioskLayout {
   else if (available - underCredits >= STRIP_MIN) underH = underCredits;
   else showUnder = false;
   const btnTop = showUnder ? underTop + underH + 2 : underTop;
-  const stripTop = btnTop + btnH + 1.8;
+  const castTop = btnTop + btnH + 1.8;
+  const stripTop = castTop + castSpace;
   const stripH = SCREEN_H - 2.4 - stripTop;
   return {
     navH,
@@ -685,6 +737,8 @@ export function phoneLayout(pxPerCqw: number): KioskLayout {
     stripTop,
     stripH,
     railPosterH: Math.min(RAIL_POSTER_MAX_H, (stripH - 0.8) * 0.9),
+    castTop,
+    castH,
   };
 }
 
@@ -708,6 +762,8 @@ export function phoneLayoutVars(L: KioskLayout): Record<string, string> {
     '--k-btn-h': cq(L.btnH),
     '--k-strip-top': cq(L.stripTop),
     '--k-rail-poster-h': cq(L.railPosterH),
+    '--k-cast-top': cq(L.castTop),
+    '--k-cast-h': cq(L.castH),
   };
 }
 

@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { readText } from '../helpers/repo.mjs';
 
-// « Sur la TV » de la borne ne passe plus par un drapeau lu par le lecteur : `openPlayerOnTv` demande le Cast
-// lui-même (tests/domain/cast-store.test.mjs). Restent ici la règle Apple et la proposition de rembobinage.
+// « Sur ma télé » de la borne ne passe plus par un drapeau lu par le lecteur : la borne demande le Cast elle-même,
+// sauf sur Apple avec AirPlay (tests/domain/kiosk-wiring.test.mjs). Restent ici la règle Apple et la proposition de
+// rembobinage.
 
 // Revue finale : l'état « AirPlay disponible » du lecteur est posé par un effet du même commit que
 // l'ouverture — il pouvait valoir encore false sur Apple. La détection se fait donc sur l'élément vidéo

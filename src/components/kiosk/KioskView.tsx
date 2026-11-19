@@ -3,9 +3,11 @@ import { useStore, useCredits } from '../../store';
 import { useBackGuard } from '../../hooks/useBackGuard';
 import api from '../../api';
 import type { Film } from '../../types';
+import { castOwnsFilm, castView } from '../../cast/cast-machine';
 import { KioskAction, type KioskFilmDetail } from './KioskAction';
 import { KioskAuth } from './KioskAuth';
 import { KioskBrowse } from './KioskBrowse';
+import { KioskCastBar } from './KioskCastBar';
 import { KioskDetail } from './KioskDetail';
 import { KioskReady, KioskWaiting } from './KioskDistribution';
 import { KioskAccount } from './KioskAccount';
@@ -28,7 +30,9 @@ import {
   lcdPitchInDevicePixels,
   phoneLayout,
   phoneLayoutVars,
+  rentalOverStep,
   viewingAngle,
+  watchEntry,
   type DetailTab,
   type KioskTab,
 } from './kiosk-logic';
@@ -114,9 +118,10 @@ const PC_QUERY = '(min-width: 769px) and (pointer: fine)';
 /**
  * Sur un téléphone, la mise en page de l'écran de la borne dépend de sa taille réelle : chaque
  * commande garde une hauteur minimale en pixels, la place qui reste va au résumé et aux jaquettes
- * (phoneLayout). Mesurée sur l'écran de la borne lui-même, à chaque changement de taille.
+ * (phoneLayout). Mesurée sur l'écran de la borne lui-même, à chaque changement de taille. `castBar` :
+ * la barre du Cast est montrée, sa place est réservée au-dessus de la bande.
  */
-function usePhoneLayoutVars(screen: RefObject<HTMLDivElement | null>): CSSProperties | undefined {
+function usePhoneLayoutVars(screen: RefObject<HTMLDivElement | null>, castBar: boolean): CSSProperties | undefined {
   const [pxPerCqw, setPxPerCqw] = useState<number | null>(null);
   const [isPc, setIsPc] = useState(() => typeof window !== 'undefined' && window.matchMedia(PC_QUERY).matches);
   useLayoutEffect(() => {
@@ -135,7 +140,7 @@ function usePhoneLayoutVars(screen: RefObject<HTMLDivElement | null>): CSSProper
     query.addEventListener('change', update);
     return () => query.removeEventListener('change', update);
   }, []);
-  return useMemo(() => (isPc || !pxPerCqw ? undefined : (phoneLayoutVars(phoneLayout(pxPerCqw)) as CSSProperties)), [isPc, pxPerCqw]);
+  return useMemo(() => (isPc || !pxPerCqw ? undefined : (phoneLayoutVars(phoneLayout(pxPerCqw, castBar)) as CSSProperties)), [isPc, pxPerCqw, castBar]);
 }
 
 /**
@@ -232,12 +237,20 @@ export function KioskView() {
   const isPlayerOpen = useStore((state) => state.isPlayerOpen);
   const closePlayer = useStore((state) => state.closePlayer);
   const openPlayer = useStore((state) => state.openPlayer);
-  const openPlayerOnTv = useStore((state) => state.openPlayerOnTv);
+  const castFilm = useStore((state) => state.castFilm);
+  const castDismiss = useStore((state) => state.castDismiss);
+  const castNotice = useStore((state) => state.cast.notice);
+  // Le film que la TV signale (elle le joue, ne répond plus, ou vient de le finir) : lecteur fermé, la barre du Cast
+  // le montre au-dessus de la bande, à la place que phoneLayout lui réserve.
+  const castFilmId = useStore((state) => castOwnsFilm(state.cast));
+  const castBarFilm = isPlayerOpen ? null : castFilmId;
+  // Le lecteur ne dessine rien sans location (voir « Location terminée » plus bas).
+  const playerHasRental = useStore((state) => state.currentPlayingFilm !== null && state.getRental(state.currentPlayingFilm) !== undefined);
   const credits = useCredits();
   const phoneLandscape = usePhoneLandscape();
   const density = useScreenDensity();
   const screenRef = useRef<HTMLDivElement>(null);
-  const layoutVars = usePhoneLayoutVars(screenRef);
+  const layoutVars = usePhoneLayoutVars(screenRef, castBarFilm !== null);
   useViewingAngle(screenRef);
   // Allumage du rétroéclairage à l'ouverture de la borne (.kWarm), une seule fois ; pas pour qui a
   // demandé moins de mouvement.
@@ -257,17 +270,48 @@ export function KioskView() {
   const [notice, setNotice] = useState<KioskNoticeSpec | null>(null);
 
   // ----- Distribution de la K7 (spec 2026-11-17) -----
-  // « Veuillez patienter » pendant l'appel au serveur, puis le panneau « Votre K7 est prête ».
-  const [distribution, setDistribution] = useState<{ phase: 'waiting' | 'ready'; filmId: number } | null>(null);
+  // « Veuillez patienter » pendant l'appel au serveur, puis le panneau « Votre K7 est prête ». Le même panneau, titré
+  // « Où voulez-vous regarder ? » (`fresh` faux), pose la question à chaque reprise d'un film déjà loué.
+  const [distribution, setDistribution] = useState<{ phase: 'waiting' | 'ready'; filmId: number; fresh: boolean } | null>(null);
   // « Mon compte » (spec 2026-11-17-borne-mon-compte) : ouvert par « Compte » ou depuis le panneau d'après location.
   const [accountOpen, setAccountOpen] = useState(false);
   // Film dont la critique s'écrit (formulaire de la tâche 6 du plan « Mon compte »).
   const [reviewFilmId, setReviewFilmId] = useState<number | null>(null);
   const onRenting = useCallback((filmId: number | null) => {
-    setDistribution(filmId === null ? null : { phase: 'waiting', filmId });
+    setDistribution(filmId === null ? null : { phase: 'waiting', filmId, fresh: true });
   }, []);
-  const onRented = useCallback((filmId: number) => setDistribution({ phase: 'ready', filmId }), []);
+  const onRented = useCallback((filmId: number) => setDistribution({ phase: 'ready', filmId, fresh: true }), []);
   const closeReady = useCallback(() => setDistribution(null), []);
+
+  // ----- « Où voulez-vous regarder ? » (refonte du Cast, spec 2026-11-18, § 5.4) -----
+  // Toute ouverture du lecteur par la borne en porte l'origine : son en-tête et sa télécommande ramènent ici.
+  /** « REGARDER » d'un film loué, « Regarder » de « Mon compte » : la TV a déjà ce film → le lecteur ; sinon le panneau. */
+  const watch = (filmId: number) => {
+    if (watchEntry({ view: castView(useStore.getState().cast, filmId) }) === 'remote') {
+      openPlayer(filmId, { from: 'kiosk', ask: false });
+      return;
+    }
+    setDistribution({ phase: 'ready', filmId, fresh: false });
+  };
+  /** « Sur ce téléphone » : le panneau a demandé, le lecteur ne redemande pas et lance le film. */
+  const watchHere = (filmId: number) => {
+    closeReady();
+    openPlayer(filmId, { from: 'kiosk', ask: false });
+  };
+  /**
+   * « Sur ma télé ». Apple avec AirPlay : le Cast de Google n'y existe pas, et le sélecteur d'AirPlay exige un appui
+   * direct — le lecteur s'ouvre avec son invite, qui le porte. Ailleurs, le Cast part DANS cet appui (le sélecteur
+   * d'appareils exige son activation : ni attente ni promesse avant castFilm), puis le lecteur montre l'attente.
+   */
+  const watchOnTv = (filmId: number, entry: 'airplay' | 'cast') => {
+    closeReady();
+    if (entry === 'airplay') {
+      openPlayer(filmId, { from: 'kiosk', ask: true });
+      return;
+    }
+    castFilm(filmId);
+    openPlayer(filmId, { from: 'kiosk', ask: false });
+  };
   // Un serveur muet ne doit pas enfermer le visiteur : au bout de KIOSK_RENT_TIMEOUT_MS, l'attente
   // laisse place à un message qui mène à « Mes locations » (la location a pu aboutir) et à « Quitter ».
   // Si la réponse arrive ensuite, le parcours normal reprend (panneau ou message d'erreur).
@@ -423,6 +467,20 @@ export function KioskView() {
     setAccountOpen(true);
   };
 
+  // ----- « Location terminée » (refonte du Cast, spec 2026-11-18, § 5.2 bis) -----
+  // La location du film qui passait sur la TV a disparu (échéance, retour, déconnexion) : le service a arrêté la TV et
+  // laissé ce message. Le lecteur ne peut pas le dire (il ne dessine rien sans location) : la borne le dit, après ses
+  // propres messages, et le fermer l'efface (castDismiss). Un lecteur resté ouvert sans location est fermé d'abord.
+  const rentalOver = castNotice?.code === 'rental_over' ? castNotice : null;
+  const rentalStep = rentalOver ? rentalOverStep({ playerOpen: isPlayerOpen, playerHasRental }) : null;
+  useEffect(() => {
+    if (rentalStep === 'close-player') closePlayer();
+  }, [rentalStep, closePlayer]);
+  const rentalOverTitle = rentalOver ? catalogue.find((f) => f.id === rentalOver.filmId)?.title : undefined;
+  const rentalOverBody = rentalOverTitle ? `«\u00a0${rentalOverTitle}\u00a0»` : undefined;
+  const rentalOverNotice: KioskNoticeSpec | null =
+    rentalStep === 'show' ? { title: 'Location terminée', body: rentalOverBody, primary: { label: 'Fermer', onPress: castDismiss } } : null;
+
   const overlay: KioskNoticeSpec | null =
     catalog === 'unavailable'
       ? {
@@ -433,7 +491,7 @@ export function KioskView() {
           // n'aurait plus aucun moyen de revenir à la devanture.
           secondary: { label: 'Quitter', onPress: quit },
         }
-      : notice;
+      : notice ?? rentalOverNotice;
 
   // ----- Geste retour : il agit DANS la borne, il ne la quitte jamais -----
   // Une seule garde pour toute la borne, reposée dès qu'elle a servi : le geste (ou le bouton
@@ -466,7 +524,11 @@ export function KioskView() {
       trailerOpen: detailOpen && detailTab === 'bande-annonce',
     });
     if (action === 'close-player') closePlayer();
-    else if (action === 'close-notice') closeNotice();
+    // Le message de la borne d'abord ; sinon c'est « Location terminée », qui vient du Cast.
+    else if (action === 'close-notice') {
+      if (notice) closeNotice();
+      else castDismiss();
+    }
     else if (action === 'close-ready') closeReady();
     else if (action === 'close-review') setReviewFilmId(null);
     else if (action === 'close-account') setAccountOpen(false);
@@ -525,7 +587,7 @@ export function KioskView() {
         <div className={styles.column}>
           <div className={styles.bezel}>
             <div ref={screenRef} className={styles.ks} style={{ '--k-dpx': lcdDevicePixel(density), '--k-lcd-n': lcdPitchInDevicePixels(density) } as CSSProperties}>
-              <div className={styles.screen} data-mode={mode} style={layoutVars}>
+              <div className={styles.screen} data-mode={mode} data-cast-bar={castBarFilm !== null || undefined} style={layoutVars}>
                 <div className={styles.kTop} inert={overlay !== null || distribution !== null}>
                   <div className={styles.kLogo}>
                     VIDÉOCLUB<small>borne 24/7</small>
@@ -575,9 +637,12 @@ export function KioskView() {
                       onSearch={() => setMode('search')}
                       onOpenDetail={openDetail}
                       actionSlot={(film) => (
-                        <KioskAction film={film} detail={currentDetail} onNotice={setNotice} onRequestAuth={requestAuth} onRenting={onRenting} onRented={onRented} />
+                        <KioskAction film={film} detail={currentDetail} onNotice={setNotice} onRequestAuth={requestAuth} onRenting={onRenting} onRented={onRented} onWatch={watch} />
                       )}
                     />
+                  )}
+                  {castBarFilm !== null && (
+                    <KioskCastBar filmId={castBarFilm} title={catalogue.find((f) => f.id === castBarFilm)?.title ?? 'Film en cours'} />
                   )}
                 </div>
 
@@ -593,7 +658,7 @@ export function KioskView() {
                         setSelectedId(film.id);
                         setDetailTab('resume');
                       }}
-                      action={<KioskAction film={displayed} detail={currentDetail} onNotice={setNotice} onRequestAuth={requestAuth} onRenting={onRenting} onRented={onRented} />}
+                      action={<KioskAction film={displayed} detail={currentDetail} onNotice={setNotice} onRequestAuth={requestAuth} onRenting={onRenting} onRented={onRented} onWatch={watch} />}
                     />
                   </div>
                 )}
@@ -602,7 +667,7 @@ export function KioskView() {
                   <div className={styles.kLayer} inert={overlay !== null || distribution !== null || authVisible || reviewFilmId !== null}>
                     <KioskAccount
                       films={catalogue}
-                      onWatch={(filmId) => openPlayer(filmId)}
+                      onWatch={watch}
                       onReview={(filmId) => setReviewFilmId(filmId)}
                       onLogout={() => {
                         setAccountOpen(false);
@@ -638,19 +703,15 @@ export function KioskView() {
 
                 {distribution?.phase === 'waiting' && <KioskWaiting />}
                 {distribution?.phase === 'ready' && (() => {
-                  const filmId = distribution.filmId;
+                  const { filmId, fresh } = distribution;
                   return (
                     <KioskReady
+                      fresh={fresh}
                       title={catalogue.find((f) => f.id === filmId)?.title ?? 'Titre indisponible'}
                       expiresAt={useStore.getState().getRental(filmId)?.expiresAt ?? null}
-                      onWatch={() => {
-                        closeReady();
-                        openPlayer(filmId);
-                      }}
-                      onTv={() => {
-                        closeReady();
-                        openPlayerOnTv(filmId);
-                      }}
+                      onWatch={() => watchHere(filmId)}
+                      onTv={(entry) => watchOnTv(filmId, entry)}
+                      // Ouvert depuis « Mon compte », le compte est déjà dessous : le panneau se ferme et c'est tout.
                       onAccount={() => {
                         closeReady();
                         setAccountOpen(true);
