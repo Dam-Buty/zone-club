@@ -332,7 +332,10 @@ export function VHSPlayer() {
   // Ouvert sur un film sans location (échue pendant le film puis relue, prévisualisation adoptée sur le site) : le
   // lecteur ne dessine rien et resterait « ouvert » — la borne inerte dessous, Échap sans effet. Il se ferme lui-même
   // une fois les données relues, et la machine est prévenue : un Cast de ce film s'arrête, « Location terminée ».
-  const withoutRental = playerWithoutRental({ open: isPlayerOpen, hasRental: !!rental, fresh: rentalFreshFor === currentPlayingFilm });
+  // La présence de la location est LUE dans le magasin (abonnement) : `getRental` est une fonction stable, et le
+  // lecteur ne se redessinait pas quand la location quittait `rentals` (vu à l'écran le 19/11).
+  const hasRental = useStore(state => state.currentPlayingFilm !== null && state.getRental(state.currentPlayingFilm) !== undefined);
+  const withoutRental = playerWithoutRental({ open: isPlayerOpen, hasRental, fresh: rentalFreshFor === currentPlayingFilm });
   useEffect(() => {
     if (!withoutRental) return;
     if (currentPlayingFilm !== null) castRentalGone(currentPlayingFilm);

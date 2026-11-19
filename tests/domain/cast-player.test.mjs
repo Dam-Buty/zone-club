@@ -161,7 +161,10 @@ test('CAST LECTEUR: les styles du Cast ont quitté la feuille du lecteur, aucune
 // « Location terminée ». Échap le ferme même sans <video> monté.
 test('CAST LECTEUR A3: ouvert sans location, il se ferme lui-même et Échap fonctionne sans vidéo', () => {
   const src = read(PLAYER);
-  assert.match(src, /playerWithoutRental\(\{\s*open: isPlayerOpen,\s*hasRental: !!rental,\s*fresh: rentalFreshFor === currentPlayingFilm\s*\}\)/, 'la décision est la fonction testée, après la relecture');
+  assert.match(src, /playerWithoutRental\(\{\s*open: isPlayerOpen,\s*hasRental,\s*fresh: rentalFreshFor === currentPlayingFilm\s*\}\)/, 'la décision est la fonction testée, après la relecture');
+  // La présence de la location est un ABONNEMENT au magasin : getRental est une fonction stable, et un lecteur qui ne
+  // lit la location qu'au rendu ne se redessine pas quand elle quitte `rentals` (vu à l'écran le 19/11 : il restait ouvert).
+  assert.match(src, /const hasRental = useStore\(state => state\.currentPlayingFilm !== null && state\.getRental\(state\.currentPlayingFilm\) !== undefined\);/, 'présence de la location lue par abonnement');
   const at = src.indexOf('if (!withoutRental) return;');
   assert.ok(at > 0, 'un effet se règle sur elle');
   const effect = src.slice(at, at + 400);
