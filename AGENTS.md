@@ -86,14 +86,17 @@ lib/                         # Backend
 │   ├── video-plan.ts remote-encode.ts ffmpeg-ops.ts ocr-subs.ts
 │   ├── refresh.ts run-stats.ts
 ├── chat.ts chat-tools.ts user-facts.ts dictionaries/   # gérant LLM
-├── cast-sessions.ts cast-session-checker.ts
+├── cast-sessions.ts cast-session-store.ts cast-completion.ts cast-session-checker.ts   # séances de Cast suivies par le serveur
 ├── cleanup.ts push.ts tmdb.ts
 
 src/
 ├── App.tsx                  # Vrai point d'entrée : trois scènes (devanture, vidéoclub, borne), lazy loading, prefetch catalogue, PWA
 ├── api/index.ts             # Client API frontend
 ├── data/storefront-mobile.json  # Mise en page de la devanture mobile — FABRIQUÉE, ne pas retoucher à la main
-├── store/index.ts + slices/ # Zustand (manager.ts, tutorial.ts externalisés)
+├── store/index.ts + slices/ # Zustand (manager.ts, tutorial.ts, cast.ts externalisés)
+├── cast/                    # Le Cast, sans React : cast-machine.ts (la machine, pure), cast-service.ts (le seul
+│                            # endroit qui touche au SDK de Google), cast-sdk.ts (ses types, le chargement du script),
+│                            # cast-wire.ts (le fil vers la TV, pur), cast-labels.ts (les mots des panneaux)
 ├── components/
 │   ├── exterior/            # Devanture : ExteriorView (bureau animé / image fixe sur mobile), le film
 │   │                        # d'approche de la borne (useApproachFilm.ts), storefront-layout.ts (géométrie
@@ -105,10 +108,10 @@ src/
 │   │                        # LaZoneCRT, VHSCaseViewer, BenchmarkMode
 │   ├── minitel/             # Overlay Minitel 1982 (catalogue, recherche, commande)
 │   ├── terminal/            # TVTerminal — compte + admin
-│   ├── player/              # VHSPlayer + Google Cast / AirPlay
+│   ├── player/              # VHSPlayer, panneaux du Cast (CastPanels, CastNotices, ActiveCastIndicator) / AirPlay
 │   ├── manager/             # Chat du gérant + composants Generative UI
 │   ├── videoclub/ tutorial/ mobile/ ui/ board/ auth/ review/ search/
-├── hooks/                   # useGoogleCast, useKTX2Textures, useBackGuard…
+├── hooks/                   # useKTX2Textures, useBackGuard, useIsMobile…
 ├── utils/                   # CassetteTextureArray (atlas), VHSCoverGenerator, interior-preload-gate
 │                            # (vanne des préchargements 3D), account-rules (règles d'un compte)…
 
@@ -116,7 +119,7 @@ cinema-stream/               # Service Node autonome — chaîne HLS 24/7
 zone-discord-bot/            # Service Node autonome — présence Discord
 scripts/                     # seed, migrate, configure-radarr, cinema-cam*, entrypoint…
 tools/devanture-borne/       # Fabrique des images de la devanture mobile (Python + Blender) — voir « Extérieur »
-tests/                       # node --test — architecture, domain, cache, media, performance
+tests/                       # node --test — architecture, domain, cache, media, performance, helpers (faux SDK du Cast)
 ```
 
 `cinema-stream/` et `zone-discord-bot/` sont **exclus du tsconfig racine** : ce sont des
@@ -483,9 +486,10 @@ permanent dans les coins.
 
 ### Store Zustand
 
-`src/store/index.ts` (monolithe, ~1000 lignes) + 2 slices externalisées (`slices/manager.ts`,
-`slices/tutorial.ts`). Persist `videoclub-storage` avec `partialize` restreint (`localUser`,
-`rentalHistory`, flags d'onboarding, scène courante) — **pas l'auth**, gérée par cookie.
+`src/store/index.ts` (monolithe, ~1100 lignes) + 3 slices externalisées (`slices/manager.ts`,
+`slices/tutorial.ts`, `slices/cast.ts`). Persist `videoclub-storage` avec `partialize` restreint
+(`localUser`, `rentalHistory`, flags d'onboarding, scène courante, `lastCastFilmId`) — **pas l'auth**,
+gérée par cookie, et **jamais l'état du Cast** (`cast` porte l'adresse du film et des drapeaux passagers).
 
 `rentalHistory` est **alimenté par le serveur** (`fetchMe` → `/api/me`) et contient **toutes** les
 locations, actives comprises : ne pas l'additionner à `rentals.length` pour obtenir un total. La copie
@@ -495,12 +499,36 @@ persistée n'est qu'un cache d'affichage en attendant la réponse de `fetchMe` ;
 'lazoneWatching' | 'film'`. Remplace 6 setters mutex codés à la main qui avaient dérivé ; les
 booléens `isXxx` subsistent comme vues dérivées pour les ~50 sites de lecture existants.
 
+**Cast et lecteur** — la tranche `slices/cast.ts` porte `cast` (l'état de la machine du Cast) et ses actions ;
+`lastCastFilmId` est le film dont le Cast court peut-être encore, pour la page rechargée (persisté, écrit par le
+service). `activeCastFilmId` est **dérivé** : réécrit à chaque état publié par la tranche, jamais par un composant ;
+seule la fiche de la K7 (`VHSCaseOverlay`) le lit encore. `openPlayer(filmId, { from?: 'kiosk' | 'store', ask?:
+boolean })` dit d'où le visiteur vient (`playerFrom`, défaut `'store'` : le libellé du retour du lecteur et de la
+télécommande) et si l'invite « Regarder sur TV ? » doit être posée (`playerAsk`, défaut `true`, mobile seulement) ;
+`closePlayer()` ne touche ni à `playerFrom` ni au Cast. Détail dans « Player + Cast ».
+
 Store exposé sur `window.__store` hors production (debug / Playwright).
 
-### Player + Cast — machine à états unifiée
+### Player + Cast — un service, une machine à états
 
-`PlayerState` : `'playing' | 'paused' | 'seeking' | 'rewinding' | 'fastforwarding' | 'casting' |
-'awaitingCast'`.
+Le Cast ne vit plus dans le lecteur (refonte du 18/11/2026, document de conception
+`docs/superpowers/specs/2026-11-18-cast-refonte-design.md`, à lire avant d'y toucher). Avant elle, cinq effets
+React et deux gestionnaires du lecteur écrivaient le même état du Cast et se contredisaient : le Cast démarrait,
+puis cassait dès qu'on fermait et rouvrait le lecteur, et le visiteur n'avait d'autre issue que de recharger la
+page. Chaque pièce a maintenant un seul rôle :
+
+| Pièce | Rôle |
+|---|---|
+| `src/cast/cast-machine.ts` | **La machine, pure** : `castReduce(state, event) → { state, effects }` décide de tout. Aucun import de valeur. |
+| `src/cast/cast-service.ts` (+ `cast-sdk.ts`) | **La seule partie impure**, une instance pour toute la page : charge et initialise le SDK de Google, traduit ses rappels en événements, exécute les effets. `cast-sdk.ts` : les types du SDK et le chargement de son script. |
+| `src/cast/cast-wire.ts`, `src/cast/cast-labels.ts` | Du pur, testé sans SDK : le fil (ce qu'on envoie à la TV, ce qu'on comprend d'un statut — `cast-wire.ts` n'importe aucune valeur) et les mots des panneaux. |
+| `src/store/slices/cast.ts` | **Le seul appelant du service.** Publie l'état (`cast`), branche l'API et le store sur les « ports » du service (séance serveur, relecture de la location, film mémorisé), traduit les gestes du visiteur en événements : `startCast`, `castFilm`, `castToggle`, `castSeekBy`, `castVolume`, `castStop`, `castToPhone`, `castRetry`, `castCancel`, `castDismiss`, `castSubtitle`, `takeCastResume`. |
+| `VHSPlayer.tsx`, `CastPanels.tsx`, `CastNotices.tsx`, `ActiveCastIndicator.tsx`, `kiosk/KioskCastBar.tsx` | **Les écrans** : ils lisent `cast` et demandent par ces actions ; aucun n'écrit l'état du Cast. |
+
+`PlayerState` (`src/types/index.ts`) ne connaît plus le Cast : `'playing' | 'paused' | 'seeking' | 'rewinding' |
+'fastforwarding'`. Le hook `useGoogleCast` a été supprimé, avec `awaitingCast`, `casting`, le délai de 6 s,
+`wasCastConnectedRef`, `lastKnownCastTimeRef`, `endCast()` et le drapeau `castOnOpen` : ne pas les réintroduire (des
+gardes de `tests/domain/cast-player.test.mjs` et `cast-store.test.mjs` le vérifient).
 
 **Pistes** : `AudioTrack` (`'vf' | 'vo'`) et `SubtitleTrack` (`'off' | 'fr' | 'en'`). Les quatre
 peuvent manquer indépendamment — un film est régulièrement VF-only, ou VO avec les seuls sous-titres
@@ -513,43 +541,215 @@ l'effet qui force `track.mode` explicitement (`addtrack` inclus, la piste pouvan
 **Sous-titres en Cast** — les `<track>` du `<video>` local ne traversent pas le réseau. Les WebVTT
 sont donc **side-loadés** dans le `MediaInfo` (`mediaInfo.tracks`, `text/vtt`, IDs stables fr=1/en=2)
 et la langue active part dans `request.activeTrackIds`. Pendant le cast, un changement de piste passe
-par `media.editTracksInfo(...)` sans recharger le film (boutons STFR/STEN du panneau Now Playing +
-touche `T`). `buildCastSubtitleTracks()` (`src/utils/cast-subtitles.ts`) n'accepte que les URLs
+par l'action `castSubtitle` → `setCastSubtitle` du service (`editTracksInfo` sur la séance média, avec accusé
+ou délai) sans recharger le film (boutons STFR/STEN de la télécommande + touche `T`) ; la séance média
+vivant dans le service, la bascule marche aussi après fermeture et réouverture du lecteur.
+`buildCastSubtitleTracks()` (`src/utils/cast-subtitles.ts`) n'accepte que les URLs
 absolues : un chemin `/seed-media/...` n'est pas joignable par le Chromecast, et déclarer des tracks
 impose le CORS sur le MP4 comme sur le VTT (le storage envoie `Access-Control-Allow-Origin: *` sur
 les deux). Le receiver par défaut ne gère que les pistes **texte**, une seule active à la fois. AirPlay
 n'est pas couvert : `webkitShowPlaybackTargetPicker` envoie l'URL seule.
 
-**Pattern central** : `activeCastFilmId` **persiste à travers `closePlayer()`**. La session Cast vit
-sur le receiver indépendamment de l'overlay : on peut fermer le lecteur, marcher dans les rayons, le
-rouvrir et retomber directement en mode télécommande.
+**Le service : une initialisation, un seul `setOptions`.** `startCast()` est idempotent et demandé de partout où le
+Cast peut servir : à l'entrée dans le vidéoclub ou dans la borne (`App.tsx`), à l'ouverture du panneau de la borne
+(`KioskReady`), par chaque geste de la tranche (`castFilm`…) et par le lecteur à son montage (filet pour `/admin`, où il
+est monté hors de `App`). La première demande lance `initCast` : il charge le SDK, appelle `context.setOptions(`
+**une seule fois**, crée **un** `RemotePlayer` et **un** `RemotePlayerController`, pose ses écouteurs pour toute la vie
+de la page. Il n'y a qu'**un** `setOptions(` dans tout `src/` (dans `cast-service.ts`), et
+`tests/domain/cast-service-wiring.test.mjs` les compte. **Pourquoi** : un second appel coupe sans bruit le canal des
+commandes sur Chrome Android, alors que le SDK continue de dire « connecté » et que le temps estimé avance — la TV
+n'obéit plus et rien ne le dit (l'ancien hook le rappelait à chaque ouverture du lecteur). Le service vit autant que
+la page : lecteur fermé, la TV reste suivie et le serveur informé. Le sélecteur d'appareils exige l'activation de
+l'appui : `castFilm` s'appelle **directement** dans le gestionnaire, sans `await` ni promesse avant, et le service
+appelle `requestSession` dans la pile même de l'appui (un test le garde). SDK pas encore chargé : il l'attend, et si
+l'activation est perdue le visiteur a « Réessayer ».
 
-- `tap « Regarder sur TV »` → `paused → awaitingCast` (pause locale immédiate) → succès `casting`,
-  échec retour `paused` + reprise locale
-- `closePlayer()` : `isPlayerOpen=false`, `currentPlayingFilm=null`. **Ne touche pas `activeCastFilmId`.**
-- `endCast()` : appelé **uniquement** à la fin réelle du cast (Stop, disconnect, fin de film)
-- `openPlayer(filmId)` : auto-détection — si `activeCastFilmId` correspond et que le SDK n'a pas
-  encore reconnecté → `awaitingCast` avec timeout 6 s
-- Le détecteur de disconnect est gaté par `wasCastConnectedRef` : sans ça, au remount le SDK publie
-  `isCastConnected=false` avant d'avoir republié ses events → tear-down prématuré
-- `<video autoPlay={playerState !== 'casting' && playerState !== 'awaitingCast'}>`
-- `preloadCastSdk()` est appelé dès `isSitting=true` : le SDK met 1 à 3 s à charger, et l'utilisateur
-  tape « TV » avant
+**La machine** (`cast-machine.ts`). Phases (`CastPhase`) : `idle` (repos) · `choosing` (sélecteur ouvert : **aucun
+délai**, le visiteur y prend le temps qu'il veut) · `connecting` et `loading` (20 s chacune, `CAST_CONNECT_TIMEOUT_MS`
+et `CAST_LOAD_TIMEOUT_MS`) · `remote` (la TV joue : la télécommande) · `ended` (la TV a fini le film) · `lost` (la TV
+ne répond plus). Autres délais, exportés par la machine : `CAST_ACK_TIMEOUT_MS` (accusé d'une commande, 5 s),
+`CAST_STATUS_TIMEOUT_MS` (réponse à une demande de statut, 5 s), `CAST_REPORT_EVERY_MS` (surveillance de la TV et envoi
+de la position au serveur, 10 s). **Qui envoie, qui exécute** : le service envoie les événements qui viennent du SDK,
+de la TV et du serveur (`SESSION_STARTED`, `MEDIA_STATUS`, `NO_MEDIA`, `STATUS_FAILED`, `TICK`, `PAGE_VISIBLE`,
+`RENTAL_STATE`…) ; la tranche envoie ceux qui viennent du visiteur et du store (`REQUEST_CAST`, `COMMAND`, `USER_STOP`,
+`USER_TO_PHONE`, `USER_CANCEL`, `USER_RETRY`, `USER_DISMISS`, `RESUME_TAKEN`, `RENTAL_GONE`) ; la machine rend des
+**effets** (`OPEN_PICKER`, `LOAD_MEDIA`, `REQUEST_STATUS`, `SEND_COMMAND`, `STOP_AND_END_SESSION`, `SERVER_OPEN` /
+`SERVER_REPORT` / `SERVER_CLOSE`, `READ_RENTAL`, `REMEMBER_FILM`, minuteurs) que **seul le service exécute**.
+`sendCast` met les événements en file : tous les effets d'un pas s'exécutent, dans l'ordre, sur l'état qui les a
+produits. Un cas nouveau est une transition de plus dans `castReduce` (et sa ligne dans
+`tests/domain/cast-machine.test.mjs`), jamais un effet React qui écrit l'état.
 
-Sync de position : `updateRentalProgress` toutes les 10 s + sur `pause` + au handoff cast + flush
-final au unmount. Au disconnect, on restaure depuis `lastKnownCastTimeRef` (le SDK remet `remoteTime`
-à 0 **avant** que l'effet de disconnect ne lise).
+**Ce que le lecteur lit** : `castView(state, filmId)` — `local` · `choosing` · `connecting` · `loading` · `remote` ·
+`ended` · `lost` · `other-on-tv` (la TV est prise, ou en passe de l'être, par un AUTRE film). `castOwnsFilm(state)`
+donne le film que la TV signale lecteur fermé (`remote`, `lost` ou `ended`). Le lecteur s'abonne à des valeurs
+simples (la vue de ce film, le message, la reprise) : la position, qui avance chaque seconde, ne le redessine pas.
 
-**Suivi d'un film regardé sur la TV, téléphone éteint** (`docs/superpowers/specs/2026-11-17-cast-suivi-serveur-design.md`).
-La sauvegarde ci-dessus n'existe que lecteur ouvert et page au premier plan ; une fois le film lancé sur la TV, on doit
-pouvoir fermer l'application. Le serveur prend donc le relais : la séance de Cast (`cast_sessions`, créée au lancement,
-fin estimée recalculée à chaque `updatePosition`) est examinée toutes les 60 s par `lib/cast-session-checker.ts` ; à sa
-fin estimée, `completeCastRental` (`lib/cast-completion.ts`) note la location vue (100 %, position 0, même expirée)
-**avant** et **sans dépendre** de la notification. À la réouverture, `shouldOfferRewindOnOpen` fait proposer « BE KIND
-REWIND » au lecteur au lieu de relancer le film (« NON MERCI » laisse revoir le film). Estimation par l'horloge : pause,
-avance rapide ou arrêt sur la TV ne sont pas vus. **Jamais de récepteur Chromecast maison** (décision de Rusmir du
-17/11/2026). ⚠️ `estimated_end_at` est en ISO (« T ») : toute comparaison avec `datetime('now')` passe par `datetime()`,
-sinon une séance finie le jour même n'est trouvée qu'après minuit UTC (corrigé le 17/11/2026).
+Règles que suit le lecteur (`VHSPlayer.tsx` lit la vue et envoie des intentions, il ne décide de rien) :
+
+- **La vidéo locale ne part jamais d'elle-même quand la TV est en jeu ou qu'une question attend.** `autoPlay` n'est
+  vrai que si la vue est `local`, que l'invite « Regarder sur TV ? » n'attend pas de réponse, qu'aucun rembobinage
+  n'est proposé ou en cours et qu'aucun lancement vers la TV n'a échoué (`connect_failed`, `load_failed`).
+  L'invite n'existe que sur mobile : posée à l'ouverture quand l'appelant la demande (`playerAsk`) ou quand le dernier
+  lancement a échoué, elle revient quand une attente (sélecteur, connexion, lancement) retombe sur `local`. Toute vue
+  autre que `local` ou `other-on-tv` (attente, télécommande, liaison perdue, film terminé) met la vidéo d'ici en
+  pause : jamais le film sur les deux écrans, jamais sous « BE KIND REWIND ». Sans invite ni Cast, ouvrir un film que
+  la TV n'a pas le lance ici : c'est le cas normal.
+- **Reprise ici.** « Arrêter », « Sur ce téléphone » (« Continuer sur ce téléphone » depuis la liaison perdue) et un
+  arrêt venu d'ailleurs laissent `cast.resume`, que le lecteur prend une seule fois (`takeCastResume`) : il reprend à la
+  position de la TV — à celle de la location quand la machine n'en connaît aucune (`position` null, page rechargée) — et
+  ne lance la lecture que si le visiteur a choisi de continuer ici. Sinon il reste **en pause** : le visiteur n'est
+  peut-être plus devant son téléphone.
+- **Fin du film sur la TV** (`ended`) : la location est vue (100 %, position 0) et la séance serveur close. Le lecteur
+  ouvert propose « BE KIND REWIND » — une seule décision, `rewindPromptFor` (`src/utils/cast-on-open.ts`) : ÉJECTER, ou
+  fermeture directe si le rembobinage est déjà réclamé (« NON MERCI », qui laisse revoir le film, ne sert qu'à un film
+  fini ailleurs et vu à l'ouverture). Lecteur fermé, la puce ou la barre dit « Film terminé » jusqu'au rembobinage ou à
+  l'éjection (ÉJECTER ferme le lecteur puis appelle `castDismiss` : le film terminé est oublié). La séance avec la TV
+  reste ouverte, le film suivant part sans repasser par le sélecteur.
+- **Les messages** (`cast.notice`, mots dans `castNoticeView`) sont une ligne fermable sous l'en-tête (`CastNoticeLine`),
+  avec « Réessayer » quand un nouvel essai a un sens : « La diffusion sur {nom} s'est arrêtée » (arrêt venu de la
+  télécommande de la TV, d'Android, du menu Cast de Chrome ou d'une autre application : lecteur en pause à la dernière
+  position, séance serveur close), « La télé n'a pas pu lire le film » + Réessayer, « Impossible de joindre {nom} » +
+  Réessayer, « Le film n'a pas pu démarrer sur {nom} » + Réessayer, « Location terminée » (voir « Borne de
+  location »), « Ce film n'a pas de source vidéo à envoyer sur la télé » (posé par la tranche, le service ne le connaît
+  pas). Un navigateur sans Cast (`unavailable`) ouvre le panneau « recopie d'écran » avec « Le Cast n'est pas disponible
+  sur ce navigateur. ». Un sélecteur refermé n'est **pas** une panne : retour silencieux. Nom de la TV inconnu (page
+  rechargée) : les textes disent « la télé » (`castDeviceLabel`). Aucun message technique du SDK à l'écran.
+- **Les panneaux** (`CastPanels`, lus dans le store) couvrent le lecteur : l'attente (« Choisis ton appareil dans la
+  fenêtre Google Cast. », « Connexion à {nom}… », « Lancement du film sur {nom}… », avec « Annuler »), la télécommande
+  (état réel de la TV : position, lecture/pause, ±15 s, volume, sous-titres, « ← Retour à la borne » ou « ← Retour au
+  vidéoclub » d'après `playerFrom`, « Sur ce téléphone » — libellé d'appareil par `watchHereLabel` —, « Arrêter » ; les
+  commandes de l'écran verrouillé d'Android la pilotent aussi) et la liaison perdue (« La télé ne répond plus » :
+  « Réessayer », « Continuer sur ce téléphone », « Fermer » — jamais une impasse). **Jamais de `<button disabled>`** : un
+  bouton qui attend l'accusé de la TV porte `aria-busy="true"`, est estompé et ignore l'appui. Le curseur de volume
+  suit le doigt et la TV ne reçoit qu'une commande, au relâchement (`volumeSettle`) ; la machine ne prend qu'une
+  commande à la fois (`busy`).
+- **Échap, le geste retour, « ← Retour… »** : pendant un Cast (attente, télécommande, liaison perdue), Échap, `E` et le
+  geste retour ferment le lecteur **sans rien demander au Cast** — la TV continue, la puce du vidéoclub ou la barre de la
+  borne la signale, et un appui rouvre le lecteur directement sur la télécommande (`openPlayer(filmId, { from, ask:
+  false })`). Espace pilote la TV, `T` change ses sous-titres. Seul « Arrêter » met fin à la séance : la TV revient à son
+  accueil. « Sur ce téléphone » fait de même, puis reprend ici.
+- **Un autre film passe sur la TV** (`other-on-tv`) : lecteur local normal, avec le bandeau « {titre} est en cours sur
+  {nom} » (`OtherFilmBanner`) ; « Regarder sur TV » demande alors « Remplacer {titre} sur {nom} ? » avant de remplacer.
+- **La puce** (`ActiveCastIndicator`, vidéoclub 3D seulement) paraît lecteur fermé quand la TV a un film à signaler :
+  « TÉLÉCOMMANDE » (point vert), « LA TÉLÉ NE RÉPOND PLUS » (point orange), « FILM TERMINÉ ». L'appui rouvre le lecteur
+  sans invite : la TV a déjà son film.
+
+**Ce que fait la machine quand rien ne va comme prévu** :
+
+- **La TV ne répond plus** (`lost`) : une commande sans accusé (5 s) ou un statut sans réponse (5 s) ne se devinent pas,
+  la machine redemande le statut ; sans réponse, la liaison est perdue et le dit. La séance serveur **reste ouverte**
+  (la TV joue sans doute encore, l'estimation continue) ; le statut est redemandé toutes les 10 s et la télécommande
+  revient si la TV répond. « Continuer sur ce téléphone » tente d'arrêter la TV, clôt la séance serveur à la dernière
+  position, puis reprend ici — sinon le vérificateur remettrait la location à 100 % en plein visionnage.
+- **Page rechargée, ou rendue après un gel** : le service redemande le statut à la TV **et** relit la location sur le
+  serveur (`READ_RENTAL`). Média présent : télécommande. Plus de média et location à 100 % : film terminé. Plus de média
+  et location sous 100 % : repos, lecteur en pause à la dernière position enregistrée, avec « La diffusion… s'est
+  arrêtée ». Film mémorisé (`lastCastFilmId`) et TV qui ne répond pas à la demande de statut : « La télé ne répond
+  plus », plutôt qu'un lecteur qui repartirait en local pendant qu'elle joue peut-être.
+- **La location disparaît pendant un Cast** (échéance, retour, déconnexion du compte) : la tranche le voit
+  (`rentalGoneFilm` sur `rentals`, et `logout()` appelle `castLoggedOut`), la machine reçoit `RENTAL_GONE`, la TV
+  s'arrête, la séance se termine, la puce disparaît et une ligne « Location terminée » reste — la borne la dit elle-même,
+  car le lecteur ne dessine rien sans location. Une prévisualisation /admin n'a pas de location : celle d'un vrai film
+  qui s'éteint ne l'arrête pas.
+
+**Trois faits mesurés le 18/11/2026 (Pixel 9a, Chrome 157, vers « Téléviseur Pièce à vivre », récepteur standard) —
+à tenir pour acquis, ce sont eux qui ont dicté la conception :**
+
+- **F1** — si `setOptions` n'est transmis qu'une fois, la télécommande obéit encore après fermeture et réouverture du
+  lecteur. Rappelé une seconde fois, il suffit à couper les commandes sans que le SDK ne s'en aperçoive. D'où le
+  service unique.
+- **F2** — après un rechargement de page, `setOptions` au démarrage reprend la séance en quelques millisecondes
+  (`SESSION_RESUMED`) mais **sans média** ; un message `GET_STATUS` sur `urn:x-cast:com.google.cast.media` fait revenir
+  le film en cours (état, position, durée, titre) en moins d'une seconde. Le service le demande à chaque séance reprise
+  (effet `REQUEST_STATUS`) et lit la **réponse brute** : l'objet média du SDK n'existe pas encore. Le film est reconnu
+  par le `customData` du média, posé au chargement : `{ filmId }` pour une location, `{ filmId, preview: true }` pour
+  une prévisualisation /admin (qui n'est jamais suivie par le serveur).
+- **F3** — à la fin du film, l'écouteur de la séance média (`Media.addUpdateListener`) reçoit `IDLE` avec
+  `idleReason: "FINISHED"`, durée encore lisible sur l'objet média : c'est le signal de fin. `RemotePlayer`, lui, remet
+  durée et position à 0 dans le même lot : le service lit l'objet média, jamais `RemotePlayer` (sauf le volume du
+  récepteur). Repli si le signal manque : dernière position connue ≥ 95 % de la dernière durée connue, mémorisées
+  **avant** la remise à zéro.
+- Aussi mesuré : Chrome gèle la page 60 s après son passage en arrière-plan et la reprend au retour, séance intacte
+  (la position part au passage en arrière-plan, un statut est redemandé au retour : `PAGE_HIDDEN`, `PAGE_VISIBLE`,
+  événement `resume`) ; `endCurrentSession(true)` libère bien la TV ; `requestSession` appelé sur une séance existante
+  ouvre une fenêtre native « Arrêter la diffusion » (le service rejoint la séance au lieu de rouvrir le sélecteur) ;
+  le sélecteur rejette `'cancel'` quand le visiteur le referme.
+
+**Position, en lecture locale** : `updateRentalProgress` toutes les 10 s quand la vidéo joue, sur `pause` et à la
+fermeture du lecteur (flush final). Pendant un Cast, ou sur un film que la TV vient de finir, le lecteur n'écrit plus
+rien : sa vidéo, en pause, écraserait la position tenue par le service, voire les 100 % d'une fin vue sur la TV.
+
+**Suivi serveur d'un film regardé sur la TV, téléphone éteint** (`docs/superpowers/specs/2026-11-17-cast-suivi-serveur-design.md`,
+repris par la refonte du 18/11). Une fois le film lancé sur la TV, on doit pouvoir fermer l'application. Le suivi est
+tenu par le **service**, plus par le lecteur : il tourne donc aussi lecteur fermé, tant que la page vit. `SERVER_OPEN`
+crée la séance de Cast au chargement (`POST /api/cast-sessions`), `SERVER_REPORT` envoie la position toutes les 10 s en
+`remote` et au passage en arrière-plan (`PATCH` de la séance **et** progression de la location), `SERVER_CLOSE` la clôt
+(`DELETE`, `finished` vrai quand le téléphone a vu la fin). Les appels partent dans **une file** (une position ne peut
+pas arriver après la clôture qui la suit) et chaque port de la tranche se règle (`settle` : abandon après 10 s). Une
+prévisualisation /admin n'appelle jamais le serveur. Côté serveur (`app/api/cast-sessions/route.ts`,
+`lib/cast-sessions.ts`, la logique dans `lib/cast-session-store.ts`, testée sur une base en mémoire) :
+
+- la **durée est facultative** : absente, le serveur prend `films.duration_sec` ; 400 seulement si aucune durée n'existe
+  nulle part (sans location active : 200 avec `session: null`, rien à suivre) ;
+- **pas de doublon** : un `POST` sur une location qui a déjà une séance ouverte met cette séance à jour ; un `PATCH`
+  sans séance ouverte en rouvre une ;
+- **le téléphone corrige** : `POST` et `PATCH` acceptent la durée réelle annoncée par la TV, qui prime sur la durée déjà
+  notée, elle-même prioritaire sur `films.duration_sec` (dans la base de seed la durée du film et celle de la vidéo de
+  test diffèrent : ~110 min contre 10 min) ;
+- **le vérificateur** (`lib/cast-session-checker.ts`, toutes les 60 s) examine les séances dont la fin estimée est
+  passée ; `completeCastRental` (`lib/cast-completion.ts`) note la location vue (100 %, position 0, même expirée)
+  **avant** et **sans dépendre** de la notification, et il **clôt** (`ended = 1`) la séance qu'il vient de compléter —
+  sinon elle serait réécrite en boucle. La fin vue par le téléphone donne le même résultat.
+
+**Estimation par l'horloge, et ses limites acceptées** (17/11/2026) : sans le téléphone, le serveur ne voit pas la TV.
+La fin estimée est « maintenant + ce qui reste du film » ; pause, avance rapide ou arrêt sur la TV ne sont pas vus, et
+le téléphone corrige quand il est là. **Jamais de récepteur Chromecast maison** (décision de Rusmir du 17/11/2026,
+reprise par la spec du 18/11) : le récepteur est le récepteur média par défaut de Google
+(`DEFAULT_MEDIA_RECEIVER_APP_ID` ; `NEXT_PUBLIC_GOOGLE_CAST_APP_ID`, si elle est posée, le remplace), donc rien ne
+remonte de la TV au serveur et le suivi reste estimé. ⚠️ `estimated_end_at` est en ISO (« T ») : toute comparaison
+avec `datetime('now')` passe par `datetime()`, sinon une séance finie le jour même n'est trouvée qu'après minuit UTC
+(corrigé le 17/11/2026).
+
+**Non couvert par la refonte** (à savoir avant de promettre quoi que ce soit) :
+
+- **AirPlay** : le chemin du lecteur (`handleAirPlayPicker`, `appleAirPlay`) est resté tel quel ; il sera repris avec le
+  chantier de l'iPad.
+- **Abonnement aux notifications** : toujours pas branché côté client (`handleEnablePushNotifications` n'a aucun
+  appelant, donc `push_subscriptions` ne se remplit pas) ; la notification « film terminé » n'a personne à qui parler. Le
+  serveur note quand même la location vue : il ne dépend pas d'elle.
+- **Safari sur Mac** : « Sur ma télé » à la borne ouvre le lecteur (`openPlayer(filmId, { from: 'kiosk', ask: true })`),
+  dont l'invite « Regarder sur TV ? » n'existe que sur mobile : le film part sur l'ordinateur, et le bouton AIRPLAY de
+  l'en-tête reste le chemin. Comportement d'avant la refonte, à traiter avec l'iPad.
+- **Sous-titres en Cast** : non vérifiables en local (URLs absolues du stockage, en production seulement).
+
+#### Recette du Cast sur appareil
+
+⚠️ **État de la vérification au 19/11/2026** : la refonte est vérifiée par les tests (voir « Tests »), par un build de
+production et **à l'écran avec un faux SDK** injecté dans la page (panneaux, puce, borne). Elle n'a **PAS encore été
+vérifiée sur une vraie TV** : la recette sur le Pixel 9a et le vidéoprojecteur (spec, § 6, points 1 à 12) est ce qui
+reste du chantier, et ses résultats iront dans la section « Résultats de la recette » de la spec. Deux hypothèses n'ont
+jamais été vues sur le vrai récepteur : qu'il renvoie `customData` dans sa réponse à `GET_STATUS` (c'est ce que vérifie
+`customdata.py`), et si `FINISHED` arrive ou non après le dégel d'une page. Tant que la recette n'a pas eu lieu, ne pas
+écrire que le Cast « marche sur la TV » : écrire ce qui a été vu.
+
+Les outils et les journaux sont dans `.superpowers/sdd/2026-11-18-audit-cast/` (ignoré par git) : `drv.cjs` pilote
+l'onglet du téléphone par CDP ; `probe.js` et `sampler.js` journalisent le SDK, le serveur et l'écran (`sampler.js` lit
+l'écran par des classes CSS : à adapter à celles de `CastPanels.module.css`) ; `picker.cjs` lit et touche les fenêtres
+natives de Chrome ; `tv.py` lit l'**état réel de la TV** par pychromecast (dans un venv à part) ; `customdata.py`
+vérifie que le récepteur renvoie `customData`. Ce qui ne se devine pas :
+
+- **Les appuis injectés par CDP restent sans réponse sur Chrome Android** : utiliser `adb shell input tap`. Sur le
+  Pixel 9a, écran = x × 2,625 ; 2424 − hauteur × 2,625 + y × 2,625 (x et y : position de l'élément dans la page ;
+  hauteur : celle de la fenêtre de la page).
+- **Un onglet créé par CDP naît en arrière-plan** : ouvrir la page par
+  `adb shell am start -a android.intent.action.VIEW -d http://localhost:3002/ com.android.chrome`.
+- **Jamais `adb screencap`** : il montre les notifications du propriétaire du téléphone. Capturer l'onglet par CDP.
+- **Le sélecteur du Cast exige un contexte sécurisé** : `adb reverse tcp:3002 tcp:3002` donne `localhost`. Pour CDP :
+  `adb forward tcp:9334 localabstract:chrome_devtools_remote` (vérifier `Android-Package` = `com.android.chrome`).
+- **La cible est « Téléviseur Pièce à vivre »** ; « Salle TV » est un Chromecast Audio, pas une cible. Garder l'écran
+  allumé pendant la recette (`adb shell svc power stayon usb`, puis `stayon false`).
+- **Voir les panneaux sans TV** : injecter un faux SDK dans la page. `tests/helpers/fake-cast-sdk.mjs` sert aux tests ;
+  une version pour la page existe dans `.superpowers/sdd/2026-11-18-cast-refonte/task-6-verification/fake-cast-page.js`.
 
 ### Tutorial
 
@@ -654,13 +854,42 @@ Règles à ne pas casser — chacune a son test dans `tests/domain/kiosk-*.test.
   `docs/superpowers/specs/2026-11-17-borne-distribution-k7-design.md`, validé par Rusmir le
   17/11/2026). La location est enregistrée **avant** tout : « Veuillez patienter » pendant l'appel au
   serveur (sans bouton, le geste retour n'y fait rien), puis le panneau « Votre K7 est prête » —
-  « Regarder », « Sur la TV », « Plus tard », « Mes locations » (`KioskRentals`). Un refus du serveur
-  garde son message d'avant, sans panneau. « Sur la TV » passe par `openPlayerOnTv` : le drapeau
-  `castOnOpen` (jamais persisté) demande au lecteur de lancer son propre parcours Cast à
-  l'ouverture (`shouldStartCastOnOpen`) ; le panneau précharge le SDK pour que la demande de
-  session tienne dans l'activation de l'appui ; sur Apple (AirPlay), le lecteur s'ouvre
-  normalement. La livraison 2 — robot, carter, afficheur et vidéo de 8 s, avec le lot 3 — viendra
-  s'insérer entre l'attente et le panneau.
+  « Sur ce téléphone » (ou « Sur cette tablette », « Sur cet ordinateur » : `watchHereLabel`), « Sur ma télé »,
+  « Plus tard », « Mon compte ». Un refus du serveur garde son message d'avant, sans panneau. Les deux choix
+  sont décrits dans la règle qui suit (l'ancien `openPlayerOnTv` et son drapeau `castOnOpen` n'existent plus). La
+  livraison 2 — robot, carter, afficheur et vidéo de 8 s, avec le lot 3 — viendra s'insérer entre l'attente et le
+  panneau.
+- **Chaque reprise d'un film déjà loué repasse par le même panneau** (refonte du Cast,
+  `docs/superpowers/specs/2026-11-18-cast-refonte-design.md`, § 5.4 ; validé par Rusmir le 18/11/2026). « REGARDER » de
+  la fiche (`KioskAction`) et « Regarder » de « Mon compte » n'ouvrent jamais le lecteur eux-mêmes : elles appellent
+  `watch` de `KioskView`, qui lit `watchEntry({ view })` (`castView` de CE film). La TV a déjà le film (`remote`,
+  `lost` ou `ended`) : le lecteur s'ouvre tout de suite, sur sa télécommande ou sur « BE KIND REWIND ». Sinon
+  `KioskReady` s'ouvre avec `fresh` faux : « Où voulez-vous regarder ? » en titre, sans « Votre K7 est prête » ni la
+  question répétée. « Sur ce téléphone » (`watchHere`) ouvre le lecteur sans invite (`ask: false`) : le visiteur a
+  déjà répondu, le film démarre ici. « Sur ma télé » (`watchOnTv`, d'après `tvEntry`) fait partir le
+  Cast **dans l'appui même** — `castFilm(filmId)` avant tout `await`, le sélecteur d'appareils exige l'activation —,
+  puis ouvre le lecteur (`ask: false`), qui montre l'attente ; le panneau a démarré le service du Cast à son
+  ouverture pour que le SDK soit prêt. **Branche AirPlay** : sur un appareil Apple qui sait faire AirPlay
+  (`appleAirPlay`, lu sur l'élément vidéo), le Cast de Google n'existe pas : le lecteur s'ouvre avec son invite
+  (`ask: true`), dont le sélecteur AirPlay exige un appui direct. Quand la TV joue un AUTRE film, la seconde ligne du
+  bouton « Sur ma télé » le dit **avant** l'appui — « remplace {titre} sur {nom} » à la place de « via Chromecast »
+  (`tvChoiceLine`) : l'appui remplace sans demander, parce qu'une confirmation en deux temps ferait perdre
+  l'activation dont le sélecteur a besoin.
+- **La barre du Cast** (`KioskCastBar`) remplace la puce flottante dans la borne, qui recouvrait la rangée de K7.
+  Lecteur fermé, quand la TV a un film à signaler (`castOwnsFilm` : elle le joue, ne répond plus, ou vient de le
+  finir), un bouton dessiné dans le langage de la borne — l'aplat et le filet de « Recherche », sa police et sa casse
+  (`kioskLabelCase`) — prend sa place entre « LOUER » et la bande, celle que `phoneLayout(pxPerCqw, castBar)` lui
+  réserve : le cadre « En bref » cède d'abord, la rangée de jaquettes reste entière. Titre du film, état
+  (« Télécommande », « La télé ne répond plus », « Film terminé ») et point (vert quand la TV joue, orange quand elle ne
+  répond plus, aucun pour un film terminé). L'appui rouvre le lecteur (`openPlayer(filmId, { from: 'kiosk', ask:
+  false })`) : sa télécommande ramène à la borne (« ← Retour à la borne »). **Visuel PROVISOIRE, Rusmir ne l'a pas
+  encore vu** : vu à la taille d'écran d'un Pixel 9a (pas sur le téléphone), la page se recompose à l'apparition et à
+  la disparition de la barre, et en « La télé ne répond plus » le titre est tronqué.
+- **« Location terminée »** : la location du film qui est sur la TV disparaît (échéance, retour, déconnexion du
+  compte), le service a arrêté la TV et laissé ce message. Le lecteur ne peut pas le dire (il ne dessine rien sans
+  location) : c'est la borne qui le dit, après ses propres messages (`rentalOverStep`). Un lecteur resté ouvert sans
+  location est fermé d'abord ; un lecteur qui joue un autre film n'est pas interrompu, le message attend. Le fermer
+  (« Fermer », ou le geste retour) appelle `castDismiss`.
 - **« Mon compte » et les critiques** (`KioskAccount`, `KioskReview`, spec
   `docs/superpowers/specs/2026-11-17-borne-mon-compte-design.md`). « Compte » ouvre l'écran à tout moment, sans avoir à
   louer : crédits, locations en cours, **tout l'historique** (rendu / expiré / terminée, rembobiné, rendu en avance,
@@ -913,7 +1142,8 @@ Runner **natif Node** (`node --test`), pas de Jest/Vitest.
 | Dossier | Contenu |
 |---|---|
 | `tests/architecture/` | Imports morts, budget de taille (≤ 1000 lignes, exceptions listées), assets référencés existants |
-| `tests/domain/` | Audits figés en régressions (sécurité, performance, UX/compat) + cohérence des types + borne de location (`kiosk-logic`, `kiosk-wiring`), règles de compte, tarif, dates du serveur |
+| `tests/domain/` | Audits figés en régressions (sécurité, performance, UX/compat) + cohérence des types + borne de location (`kiosk-logic`, `kiosk-wiring`), règles de compte, tarif, dates du serveur + le Cast (`cast-*.test.mjs`, voir plus bas) |
+| `tests/helpers/` | `repo.mjs` (lire et parcourir le dépôt), `fake-cast-sdk.mjs` (faux Web Sender SDK de Google Cast) |
 | `tests/media/` | Pipeline : `identify-tracks`, `iso639`, `quality-control`, `video-plan`, `media-dir` (`.test.ts`, type-strip natif Node 22) |
 | `tests/cache/` | LRU des textures VHS, cache TMDB, en-têtes HTTP |
 | `tests/performance/` | Rejoue la logique de collision de `Controls.tsx` |
@@ -921,6 +1151,16 @@ Runner **natif Node** (`node --test`), pas de Jest/Vitest.
 La plupart des tests `domain`/`architecture` sont de l'**analyse statique du code source** (regex et
 assertions sur le texte des fichiers) — pattern « audit as test », pour empêcher le retour de
 régressions constatées lors des audits.
+
+**Le Cast se teste à trois niveaux.** La machine et le fil sont purs et se testent tels quels
+(`cast-machine`, `cast-wire`, `cast-labels`) : `cast-machine.ts` et `cast-wire.ts` n'ont aucun import de valeur, et
+`cast-service.ts` importe ses voisins avec l'extension `.ts`, ce qui permet à Node de le charger. **Le service se teste
+devant un faux SDK** (`cast-service` + `tests/helpers/fake-cast-sdk.mjs`, qui rejoue ce qui a été mesuré sur le
+Pixel : séance reprise sans média, réponse brute à `GET_STATUS`, envoi qui lève sur une liaison morte, fin de film où
+`RemotePlayer` est remis à zéro). Le texte des composants se garde par analyse statique (`cast-service-wiring` — dont
+« un seul `setOptions(` dans `src/` » —, `cast-store`, `cast-player`, `cast-panels`). Côté serveur,
+`cast-session-store` et `cast-completion` tournent sur une base en mémoire ; `cast-on-open` couvre la règle AirPlay et la
+proposition de rembobinage, `cast-subtitles` les pistes de sous-titres.
 
 ## Variables d'environnement
 
@@ -1058,6 +1298,37 @@ plafonnent à 19 Mo/s. D'où la passe ffmpeg unique pour audio + sous-titres.
 **Process ffmpeg orphelins** — sur échec de l'encodage distant, les jobs latéraux doivent être tués
 via `AbortSignal` (destruction du pipe → SIGTERM → SIGKILL après 5 s). Six tentatives sans ça = douze
 ffmpeg vivants.
+
+**Un seul `setOptions`** — le SDK de Google Cast se laisse initialiser deux fois sans une erreur : le second
+`context.setOptions(` coupe sans bruit le canal des commandes sur Chrome Android, alors que le SDK dit toujours
+« connecté » et que le temps estimé avance. Vu sur le Pixel : pause et arrêt n'atteignent plus la TV après fermeture et
+réouverture du lecteur. Un seul appel, dans `src/cast/cast-service.ts` ; un test compte les `setOptions(` de `src/`.
+Ne pas replacer l'initialisation dans un composant ou un effet : un composant se remonte, le service non.
+
+**Un état, un écrivain** — cinq effets React et deux gestionnaires du lecteur écrivaient le même état du Cast et se
+contredisaient : attente sans fin à la réouverture, délai qui courait pendant le choix de l'appareil, fin de film lue
+comme un arrêt manuel. Des rustines effet par effet auraient corrigé le premier défaut et laissé les autres : ils
+viennent du chevauchement lui-même. Ce qui le règle : un réducteur pur, `castReduce`, seul à décider, que le service
+alimente et que l'interface ne fait que lire. Un `useEffect` qui écrit l'état du Cast est un défaut, quelle que soit
+son intention : le cas manquant s'ajoute à la machine.
+
+**Le statut de la TV se demande** — après un rechargement de page, la séance Cast est reprise en quelques millisecondes
+mais **sans média** : le SDK ne sait plus ce qui joue. Il faut envoyer `GET_STATUS` sur `urn:x-cast:com.google.cast.media`
+et lire la réponse brute. Même piège à la fin du film : `RemotePlayer` remet durée et position à 0 dans le même lot que
+`IDLE`, donc un lecteur qui le lit conclut à un arrêt manuel. Le signal est `idleReason: FINISHED`, lu sur l'objet média
+de la séance (`Media.addUpdateListener`), dont la durée reste lisible.
+
+**L'état réel de la TV se lit sur la TV** — le SDK du téléphone extrapole le temps et continue de dire « connecté » sur
+une liaison morte : ce qu'il affiche ne prouve pas que la TV obéit. L'audit du 18/11/2026 a lu la TV elle-même
+(`tv.py`, pychromecast), et c'est ce qui a montré que la télécommande n'avait plus de prise. Une recette du Cast qui ne
+regarde que l'écran du téléphone ne prouve rien.
+
+**Un faux SDK attrape ce que les gardes statiques ne voient pas** — le pattern « audit as test » (lire le texte du
+code) ne voit pas une échéance de statut levée trop tôt, ni le statut tardif d'une séance qui n'est plus la courante :
+la relecture du service a trouvé deux défauts importants que des gardes statiques laissaient passer, et les premiers cas
+devant le faux SDK en ont trouvé un de plus. `tests/helpers/fake-cast-sdk.mjs` fait tourner le vrai
+`src/cast/cast-service.ts` sous Node, avec les comportements mesurés sur l'appareil ; les cas du service s'écrivent
+contre lui, les gardes statiques ne tiennent que le texte des composants.
 
 ## Skills
 
