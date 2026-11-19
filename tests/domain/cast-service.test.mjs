@@ -277,3 +277,42 @@ test('CAST SERVICE: le volume du récepteur change → la télécommande le suit
   fake.controller.setVolume(0.4);
   assert.equal(state().volume, 0.4);
 });
+
+// Relecture finale, A1 : la séance d'une page rechargée revient APRÈS le délai de reprise (500 ms). SDK_READY est
+// parti sans elle et a relu la location du film mémorisé ; la TV répond ensuite qu'elle joue ; la location (40 %)
+// arrive après coup. La télécommande doit rester, la séance serveur ouverte, le film mémorisé.
+test('CAST SERVICE A1: séance reprise après le délai de 500 ms, location relue entre-temps → la télécommande reste', async (t) => {
+  service.__resetCastForTests();
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+  const fake = installFakeCastSdk();
+  const ports = fakePorts(7);
+  let answerRental = null;
+  ports.readRental = (filmId) => {
+    ports.calls.push(['readRental', filmId]);
+    return new Promise((resolve) => { answerRental = resolve; });
+  };
+  service.initCast(ports);
+  await flush();
+  t.mock.timers.tick(service.CAST_RESUME_SETTLE_MS);   // SDK_READY, pas encore de séance : la location est relue
+  await flush();
+  assert.deepEqual(named(ports, 'readRental'), [[7]]);
+  assert.equal(service.getCastState().connected, false);
+  const tv = fake.makeSession('Salon');
+  fake.context.resume(tv);
+  fake.context.emitSession('SESSION_RESUMED', tv);       // la séance revient, après le délai
+  assert.equal(fake.getStatusCount(), 1, 'la TV est interrogée');
+  tv.reply({ type: 'MEDIA_STATUS', requestId: 1, status: [{
+    mediaSessionId: 4, playerState: 'PLAYING', currentTime: 300, media: { duration: 600, customData: { filmId: 7 } },
+  }] });
+  await flush();
+  assert.equal(service.getCastState().phase, 'remote', 'la TV joue : télécommande');
+  answerRental({ exists: true, watchProgress: 40, watchPosition: 120 });   // la relecture périmée arrive
+  await flush();
+  const s = service.getCastState();
+  assert.equal(s.phase, 'remote', 'la télécommande reste');
+  assert.equal(castView(s, 7), 'remote');
+  assert.equal(s.notice, null, 'aucun « La diffusion … s\'est arrêtée »');
+  assert.deepEqual(named(ports, 'serverClose'), [], 'la séance serveur n\'est pas close');
+  assert.ok(!named(ports, 'remember').some(([filmId]) => filmId === null), 'le film reste mémorisé');
+  assert.deepEqual(named(ports, 'serverReport'), [[7, 300, 600]], 'le suivi serveur reprend');
+});

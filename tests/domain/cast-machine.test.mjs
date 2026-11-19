@@ -244,7 +244,8 @@ test('CAST MACHINE TABLE: délais exportés, aucun pendant le choix', () => {
 test('CAST MACHINE TABLE: état initial', () => {
   assert.deepEqual(initialCastState, {
     phase: 'idle', available: null, connected: false, deviceName: null, filmId: null, tracked: true,
-    position: 0, duration: 0, paused: false, volume: 1, positionKnown: false, busy: false, stopping: false, notice: null, resume: null, media: null,
+    position: 0, duration: 0, paused: false, volume: 1, positionKnown: false, busy: false, stopping: false, rentalAsked: false,
+    notice: null, resume: null, media: null,
   });
 });
 test('CAST MACHINE TABLE: SDK indisponible → repos depuis toutes les phases', () => {
@@ -434,13 +435,15 @@ test('CAST MACHINE TABLE: arrêt sans raison ou séance terminée ailleurs → m
     ]);
   }
 });
-test('CAST MACHINE TABLE: plus de média avant 95 % → on relit la location', () => {
+test('CAST MACHINE TABLE: plus de média avant 95 % → on relit la location, et on attend cette relecture', () => {
   const remote = reach('remote');
   const { state, effects } = step(remote, { type: 'NO_MEDIA' });
-  assert.equal(state, remote); assert.deepEqual(effects, [{ type: 'READ_RENTAL', filmId: 7 }]);
+  // Rien d'autre ne change : la télécommande reste en attendant le serveur (A1 : seule cette relecture conclura).
+  assert.deepEqual(state, { ...remote, rentalAsked: true }); assert.deepEqual(effects, [{ type: 'READ_RENTAL', filmId: 7 }]);
 });
 test('CAST MACHINE TABLE: location relue en télécommande — vue, arrêtée, ou disparue', () => {
-  const remote = reach('remote');
+  // La relecture est celle que la machine a demandée (plus de média) : A1, une autre ne conclut pas.
+  const remote = step(reach('remote'), { type: 'NO_MEDIA' }).state;
   let r = step(remote, { type: 'RENTAL_STATE', filmId: 7, exists: true, watchProgress: 100, watchPosition: 0 });
   assert.equal(r.state.phase, 'ended'); assert.equal(r.state.filmId, 7); assert.deepEqual(r.effects, []);
   r = step(remote, { type: 'RENTAL_STATE', filmId: 7, exists: true, watchProgress: 40, watchPosition: 812 });
@@ -459,7 +462,8 @@ test('CAST MACHINE TABLE: location relue en télécommande — vue, arrêtée, o
   assert.equal(other.state, remote); assert.deepEqual(other.effects, []);
 });
 test('CAST MACHINE TABLE: location relue en liaison perdue', () => {
-  const lost = reach('lost');
+  // La relecture demandée par la liaison perdue quand la TV dit n'avoir plus de média (A1).
+  const lost = step(reach('lost'), { type: 'NO_MEDIA' }).state;
   assert.equal(step(lost, { type: 'RENTAL_STATE', filmId: 7, exists: true, watchProgress: 100, watchPosition: 0 }).state.phase, 'ended');
   const r = step(lost, { type: 'RENTAL_STATE', filmId: 7, exists: true, watchProgress: 12, watchPosition: 99 });
   assert.equal(r.state.phase, 'idle'); assert.deepEqual(r.state.resume, { filmId: 7, position: 10, play: false });
@@ -846,4 +850,59 @@ test('CAST MACHINE CORRECTIF: une demande d\'ici garde son propre suivi, quel qu
   ({ state, effects } = run([ready, preview, started, playing(), { type: 'STATUS_FAILED' }, playing(), { type: 'TICK' }]));
   assert.equal(state.phase, 'remote'); assert.equal(state.tracked, false);
   assert.deepEqual(effects.filter(e => SERVER_EFFECTS.includes(e.type)), []);
+});
+
+// ---------------------------------------------------------------------------------------------------------
+// Vague de corrections de la relecture finale (final-fix-brief, A1) : une lecture de location périmée ne coupe plus
+// la télécommande. La séance d'une page rechargée peut revenir APRÈS le délai de 500 ms : SDK_READY part alors sans
+// elle et relit la location du film mémorisé ; la TV répond ensuite qu'elle joue, et la location (sous 100 %) arrive
+// après coup. Seule une relecture que la machine attend (plus de média en télécommande ou liaison perdue) conclut.
+// ---------------------------------------------------------------------------------------------------------
+
+test('CAST MACHINE A1: une relecture partie avant la reprise de la séance ne coupe pas la télécommande', () => {
+  const reloaded = [{ ...ready, rememberedFilmId: 7 }, { ...started, resumed: true }, playing({ position: 300 })];
+  const before = run(reloaded);
+  assert.equal(before.state.phase, 'remote', 'préalable : la TV joue, télécommande');
+  assert.deepEqual(ofType(before.effects, 'READ_RENTAL'), [{ type: 'READ_RENTAL', filmId: 7 }], 'la relecture est partie au SDK_READY');
+  const { state, effects } = step(before.state, rentalAt(40, 812));
+  assert.equal(state.phase, 'remote'); assert.equal(castView(state, 7), 'remote'); assert.equal(castOwnsFilm(state), 7);
+  assert.equal(state.notice, null, 'aucun « La diffusion … s\'est arrêtée »');
+  assert.deepEqual(effects, [], 'ni SERVER_CLOSE ni REMEMBER_FILM null');
+  // La TV se tait juste après : la même lecture périmée ne conclut pas davantage depuis la liaison perdue.
+  const lost = runFrom(before.state, [{ type: 'STATUS_FAILED' }, rentalAt(40, 812)]);
+  assert.equal(lost.state.phase, 'lost'); assert.deepEqual(lost.effects, []);
+});
+test('CAST MACHINE A1: le chemin légitime conclut toujours — plus de média sous 95 %, puis la location', () => {
+  for (const phase of ['remote', 'lost']) {
+    const { state, effects } = runFrom(reach(phase), [{ type: 'NO_MEDIA' }, rentalAt(40, 812)]);
+    assert.equal(state.phase, 'idle', phase); assert.equal(state.notice.code, 'stopped_elsewhere', phase);
+    assert.deepEqual(state.resume, { filmId: 7, position: 10, play: false }, phase);
+    assert.deepEqual(effects, [
+      { type: 'READ_RENTAL', filmId: 7 },
+      { type: 'SERVER_CLOSE', filmId: 7, position: null, finished: false },
+      { type: 'REMEMBER_FILM', filmId: null },
+    ], phase);
+    // Vue jusqu'au bout : film terminé.
+    assert.equal(runFrom(reach(phase), [{ type: 'NO_MEDIA' }, rentalAt(100, 0)]).state.phase, 'ended', phase);
+  }
+});
+test('CAST MACHINE A1: la TV reparle avant la réponse du serveur → la relecture n\'est plus attendue', () => {
+  const { state, effects } = runFrom(reach('remote'), [{ type: 'NO_MEDIA' }, playing({ position: 40 }), rentalAt(40, 812)]);
+  assert.equal(state.phase, 'remote'); assert.equal(state.position, 40);
+  assert.deepEqual(ofType(effects, 'SERVER_CLOSE'), []);
+  // Depuis la liaison perdue aussi : la TV revenue, la télécommande reste.
+  const lost = runFrom(reach('lost'), [{ type: 'NO_MEDIA' }, playing({ position: 40 }), rentalAt(40, 812)]);
+  assert.equal(lost.state.phase, 'remote');
+});
+test('CAST MACHINE A1: une location disparue arrête la TV, attendue ou non', () => {
+  for (const phase of ['remote', 'lost']) {
+    const { state, effects } = step(reach(phase), { ...rentalAt(0, 0), exists: false });
+    assert.equal(state.phase, 'idle', phase); assert.equal(state.notice.code, 'rental_over', phase);
+    assert.ok(effects.some(e => e.type === 'STOP_AND_END_SESSION'), phase);
+  }
+});
+test('CAST MACHINE A1: au repos avec film mémorisé, la location relue conclut comme avant', () => {
+  const { state } = run([{ ...ready, rememberedFilmId: 7 }, rentalAt(40, 812)]);
+  assert.equal(state.phase, 'idle'); assert.equal(state.notice.code, 'stopped_elsewhere');
+  assert.deepEqual(state.resume, { filmId: 7, position: 812, play: false });
 });

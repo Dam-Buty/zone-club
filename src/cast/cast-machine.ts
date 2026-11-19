@@ -46,6 +46,12 @@ export interface CastState {
   positionKnown: boolean;
   busy: boolean;                  // une commande attend son accusé
   stopping: boolean;              // arrêt demandé : les statuts tardifs sont ignorés
+  /**
+   * La télécommande (ou la liaison perdue) a vu la TV sans média et relit la location : seule CETTE relecture conclut
+   * (vue, arrêtée). Une relecture partie avant (SDK_READY d'une page rechargée, la séance revenue après coup) est
+   * périmée quand la TV joue : elle couperait la télécommande d'un film en cours. Levé dès que la TV rejoue le film.
+   */
+  rentalAsked: boolean;
   notice: { code: CastNotice; filmId: number | null; deviceName: string | null } | null;
   /** À reprendre en local. `position` null : inconnue, le lecteur reprend à la position de la location. */
   resume: { filmId: number; position: number | null; play: boolean } | null;
@@ -90,7 +96,7 @@ export const initialCastState: CastState = {
   // (`preview`). Un film mémorisé est toujours suivi : seul un film suivi est mémorisé.
   tracked: true,
   position: 0, duration: 0, paused: false, volume: 1, positionKnown: false, busy: false, stopping: false,
-  notice: null, resume: null, media: null,
+  rentalAsked: false, notice: null, resume: null, media: null,
 };
 
 type Step = { state: CastState; effects: CastEffect[] };
@@ -178,9 +184,9 @@ function clearTimerOf(phase: CastPhase): CastEffect[] {
   return [];
 }
 
-/** Retour au repos : le film y est oublié (voir `CastState.filmId`), aucune commande n'attend plus. */
+/** Retour au repos : le film y est oublié (voir `CastState.filmId`), aucune commande ni relecture n'attend plus. */
 function toIdle(state: CastState, patch: Partial<CastState> = {}): CastState {
-  return { ...state, phase: 'idle', filmId: null, media: null, busy: false, ...patch };
+  return { ...state, phase: 'idle', filmId: null, media: null, busy: false, rentalAsked: false, ...patch };
 }
 
 function load(filmId: number, media: CastMediaRequest): CastEffect[] {
@@ -222,7 +228,8 @@ function enterRemote(state: CastState, e: MediaStatus, filmId: number, opening: 
   const next: CastState = {
     ...state,
     ...tvFields(state, e, filmId === state.filmId),
-    phase: 'remote', filmId, media: null, busy: false,
+    // La TV joue : une relecture de la location en route n'a plus rien à conclure (A1).
+    phase: 'remote', filmId, media: null, busy: false, rentalAsked: false,
     tracked: ours ? state.tracked : !e.preview,
     // Un échec annoncé ou une reprise locale de CE film ne sont plus vrais : jamais le film sur les deux écrans.
     notice: state.notice?.filmId === filmId ? null : state.notice,
@@ -242,7 +249,7 @@ function enterRemote(state: CastState, e: MediaStatus, filmId: number, opening: 
  */
 function finish(state: CastState, filmId: number): Step {
   return {
-    state: { ...state, phase: 'ended', position: 0, busy: false, media: null },
+    state: { ...state, phase: 'ended', position: 0, busy: false, media: null, rentalAsked: false },
     effects: ifTracked(state, { type: 'SERVER_CLOSE', filmId, position: null, finished: true }),
   };
 }
@@ -319,7 +326,7 @@ function startRequest(state: CastState, e: Extract<CastEvent, { type: 'REQUEST_C
     filmId: e.filmId, tracked: e.tracked, media: e.media,
     // Position demandée, pas encore confirmée par la TV.
     position: e.media.startAt, positionKnown: false, duration: 0, paused: false, busy: false,
-    stopping: false, notice: null, resume: null,
+    stopping: false, rentalAsked: false, notice: null, resume: null,
   };
   // Séance déjà ouverte : chargement direct. Jamais le sélecteur sur une séance existante (fenêtre native, D7).
   if (state.connected) return { state: { ...next, phase: 'loading' }, effects: [...released, ...load(e.filmId, e.media)] };
@@ -405,7 +412,7 @@ function onMediaStatus(state: CastState, e: MediaStatus): Step {
       if (filmId !== state.filmId) return idle ? unchanged(state) : replacedOnTv(state, e, filmId);
       if (idle) return onTvIdle(state, filmId, e.idleReason);
       if (state.phase === 'lost') return enterRemote(state, e, filmId, false);
-      return { state: { ...state, ...tvFields(state, e, true), busy: false }, effects: [] };
+      return { state: { ...state, ...tvFields(state, e, true), busy: false, rentalAsked: false }, effects: [] };
     case 'choosing': case 'connecting': case 'ended':
       return unchanged(state);
   }
@@ -444,9 +451,12 @@ function onNoMedia(state: CastState): Step {
   }
 }
 
-/** Plus de média sur la TV, fin non établie : la location dit si le film a été vu. */
+/**
+ * Plus de média sur la TV, fin non établie : la location dit si le film a été vu. La machine attend désormais CETTE
+ * relecture (`rentalAsked`) : c'est elle, et non une plus ancienne, qui conclura.
+ */
 function noMediaLeft(state: CastState, filmId: number): Step {
-  if (state.tracked) return { state, effects: [{ type: 'READ_RENTAL', filmId }] };
+  if (state.tracked) return { state: state.rentalAsked ? state : { ...state, rentalAsked: true }, effects: [{ type: 'READ_RENTAL', filmId }] };
   // Prévisualisation : pas de location à relire, la machine tranche avec ce qu'elle sait.
   return nearEnd(state) ? finish(state, filmId) : interrupted(state, filmId, 'stopped_elsewhere', knownPosition(state));
 }
@@ -472,19 +482,32 @@ function onStatusFailed(state: CastState): Step {
 function onRentalState(state: CastState, e: Extract<CastEvent, { type: 'RENTAL_STATE' }>): Step {
   if (e.filmId !== state.filmId) return unchanged(state);
   switch (state.phase) {
-    case 'remote': case 'lost': case 'idle': {
+    case 'remote': case 'lost':
+      // Une location disparue reste disparue, attendue ou non. Sinon seule la relecture demandée ici (plus de média)
+      // conclut : une plus ancienne, partie avant que la TV ne réponde (page rechargée, séance revenue après le délai
+      // de reprise), dirait « arrêtée » d'un film qu'elle joue — télécommande coupée, séance serveur close (A1).
       if (!e.exists) return rentalOver(state, e.filmId);
-      // Vue jusqu'au bout : fin vue par la TV avant un gel de la page, ou fin estimée par le serveur.
-      if (e.watchProgress >= 100) return { state: { ...state, phase: 'ended', position: 0, busy: false, media: null }, effects: [] };
-      // Arrêtée en route pendant notre absence. La reprise locale part de la dernière position non nulle que la
-      // machine a lue sur la TV ; sinon (page rechargée) de celle du serveur, désormais connue. La séance
-      // serveur est close sans position : le serveur garde la sienne.
-      const known = state.positionKnown && state.position > 0 ? state : { ...state, position: e.watchPosition, positionKnown: true };
-      return interrupted(known, e.filmId, 'stopped_elsewhere', null);
-    }
+      return state.rentalAsked ? concludeFromRental(state, e) : unchanged(state);
+    case 'idle':
+      // Film mémorisé d'une page rechargée, la TV muette ou à l'accueil : le serveur seul sait ce qu'il est devenu.
+      if (!e.exists) return rentalOver(state, e.filmId);
+      return concludeFromRental(state, e);
     case 'choosing': case 'connecting': case 'loading': case 'ended':
       return unchanged(state);
   }
+}
+
+/** Plus de film sur la TV et la location relue : vue jusqu'au bout, ou arrêtée en route. */
+function concludeFromRental(state: CastState, e: Extract<CastEvent, { type: 'RENTAL_STATE' }>): Step {
+  // Vue jusqu'au bout : fin vue par la TV avant un gel de la page, ou fin estimée par le serveur.
+  if (e.watchProgress >= 100) {
+    return { state: { ...state, phase: 'ended', position: 0, busy: false, media: null, rentalAsked: false }, effects: [] };
+  }
+  // Arrêtée en route pendant notre absence. La reprise locale part de la dernière position non nulle que la machine
+  // a lue sur la TV ; sinon (page rechargée) de celle du serveur, désormais connue. La séance serveur est close sans
+  // position : le serveur garde la sienne.
+  const known = state.positionKnown && state.position > 0 ? state : { ...state, position: e.watchPosition, positionKnown: true };
+  return interrupted(known, e.filmId, 'stopped_elsewhere', null);
 }
 
 function onRentalGone(state: CastState, filmId: number): Step {
