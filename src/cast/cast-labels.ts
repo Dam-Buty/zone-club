@@ -71,3 +71,64 @@ export function formatCastTime(seconds: number): string {
   if (h > 0) return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
+
+/**
+ * Ce que dessine la puce flottante selon la phase : un point (`live` vert qui clignote, `warn` orange fixe, ou aucun)
+ * et si la puce « respire ». Le vert et la respiration disent « la télécommande est vivante » : ils ne vont qu'à
+ * `remote` ; à `lost` la TV ne répond pas (orange, immobile) ; à `ended` il n'y a plus rien de vivant.
+ */
+export function castChipLook(phase: CastPhase): { dot: 'live' | 'warn' | null; pulse: boolean } {
+  switch (phase) {
+    case 'remote': return { dot: 'live', pulse: true };
+    case 'lost': return { dot: 'warn', pulse: false };
+    case 'ended': case 'idle': case 'choosing': case 'connecting': case 'loading': return { dot: null, pulse: false };
+  }
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// Curseur de volume : le pouce suit le doigt, la commande part une fois, au relâchement
+// ---------------------------------------------------------------------------------------------------------
+//
+// Un curseur contrôlé par le seul volume de la TV revient en arrière sous le doigt : la TV n'accuse qu'après la
+// commande, et la machine ne prend qu'une commande à la fois (une valeur envoyée pendant le geste en fait perdre le
+// reste). Le geste garde donc sa valeur ici, et la TV ne reçoit que la dernière.
+
+/** Volume demandé par le doigt (`pending`) et doigt levé ou non (`released`). `pending` null : aucun geste en cours. */
+export interface VolumeGesture { pending: number | null; released: boolean }
+export const NO_VOLUME_GESTURE: VolumeGesture = { pending: null, released: false };
+
+/** Écart sous lequel deux volumes sont le même : le pas du curseur n'est pas celui de la TV (0,28 n'est pas un pas de 0,05). */
+const SAME_VOLUME = 0.005;
+
+/** Le doigt a bougé : c'est sa valeur qui compte, rien n'est encore envoyé. */
+export function volumeDragged(level: number): VolumeGesture {
+  return { pending: level, released: false };
+}
+
+/**
+ * La valeur du curseur : celle du doigt (`draft`, prise quand la TV était à `base`) tant que la TV n'a pas répondu,
+ * sinon celle de la TV. Une TV dont le volume a changé depuis le geste a répondu : le curseur ne reste jamais sur une
+ * valeur qu'elle n'a pas.
+ */
+export function volumeShown(draft: { level: number; base: number } | null, tvVolume: number): number {
+  return draft !== null && draft.base === tvVolume ? draft.level : tvVolume;
+}
+
+/**
+ * Que faire du geste maintenant ? À appeler quand le doigt se lève (`release`, pour chacun des événements qui le disent :
+ * pointerup, touchend, keyup, blur…) et quand une commande en vol retombe. Rend le geste qui reste, la valeur à envoyer
+ * à la TV (au plus une par geste : le geste est vidé en l'envoyant, les événements suivants ne renvoient rien), et si
+ * le curseur doit rendre la main à la TV (relâché sur le volume qu'elle a déjà : il n'y a rien à envoyer, rien à attendre).
+ * Doigt encore posé, ou commande en vol : on attend, la valeur est gardée et la dernière demandée gagne.
+ */
+export function volumeSettle(
+  gesture: VolumeGesture,
+  now: { release: boolean; busy: boolean; tvVolume: number },
+): { gesture: VolumeGesture; send: number | null; clear: boolean } {
+  const level = gesture.pending;
+  if (level === null) return { gesture, send: null, clear: false };
+  const held: VolumeGesture = { pending: level, released: gesture.released || now.release };
+  if (!held.released || now.busy) return { gesture: held, send: null, clear: false };
+  if (Math.abs(level - now.tvVolume) < SAME_VOLUME) return { gesture: NO_VOLUME_GESTURE, send: null, clear: true };
+  return { gesture: NO_VOLUME_GESTURE, send: level, clear: false };
+}

@@ -15,9 +15,11 @@ const CHIP = 'src/components/player/ActiveCastIndicator.tsx';
 
 test('CAST PANNEAUX: ni curseur sans état, ni bouton grisé, ni l\'ancien crochet', () => {
   const src = read(PANELS);
-  // Le volume est celui de la TV (`value`), jamais un `1` posé au montage.
-  assert.ok(!src.includes('defaultValue'), 'le curseur de volume est contrôlé par cast.volume');
-  assert.ok(src.includes('value={cast.volume}'), 'le curseur lit le volume de la TV');
+  // Le volume est celui de la TV, jamais un `1` posé au montage : la valeur affichée est le doigt ou la TV, et la
+  // TV vient de `cast.volume`.
+  assert.ok(!src.includes('defaultValue'), 'le curseur de volume est contrôlé');
+  assert.ok(src.includes('tvVolume={cast.volume}'), 'le curseur reçoit le volume de la TV');
+  assert.ok(/value=\{volumeShown\(draft, tvVolume\)\}/.test(src), 'et affiche le doigt ou la TV, jamais autre chose');
   // Un bouton grisé avale l'appui sur mobile sans rien dire : un bouton en attente porte aria-busy.
   assert.ok(!/disabled/i.test(src), 'aucun bouton grisé par l\'attribut du navigateur');
   assert.ok(!src.includes('useGoogleCast'), 'le crochet du SDK n\'est plus lu par les panneaux');
@@ -32,9 +34,9 @@ test('CAST PANNEAUX: la liaison perdue a ses trois issues, la télécommande son
     assert.ok(src.includes(action), `${action} est demandé au magasin`);
   }
   // Un seul appui à la fois : le bouton dit qu'il attend, et son gestionnaire ne fait rien.
-  assert.ok((src.match(/aria-busy=\{/g) ?? []).length >= 4, 'aria-busy sur les trois boutons de transport et le curseur');
-  // Deux gardes : celle des boutons de transport (`press`) et celle du curseur de volume.
-  assert.ok((src.match(/if \(busy\) return/g) ?? []).length >= 2, 'un appui pendant l\'attente est ignoré, boutons et curseur');
+  assert.ok((src.match(/aria-busy=\{/g) ?? []).length >= 5, 'aria-busy sur les trois boutons de transport, le curseur et « Réessayer »');
+  // La garde des boutons de transport. Le curseur, lui, ne perd jamais un geste (voir le test du volume).
+  assert.ok(/if \(busy\) return/.test(src), 'un appui pendant l\'attente est ignoré');
   assert.ok(/onClick=\{press\(\(\) => castSeekBy\(-15\)\)\}/.test(src) && /onClick=\{press\(\(\) => castSeekBy\(15\)\)\}/.test(src) && /onClick=\{press\(castToggle\)\}/.test(src), 'les trois boutons de transport passent par la garde');
 });
 
@@ -114,4 +116,80 @@ test('CAST PANNEAUX: cast-labels.ts reste pur, sans import de valeur', () => {
   const src = read('src/cast/cast-labels.ts');
   const imports = src.match(/^import .*$/gm) ?? [];
   for (const line of imports) assert.ok(/^import type /.test(line), `import de valeur : ${line}`);
+});
+
+/** Le texte d'une fonction de premier niveau du composant, jusqu'à la suivante. */
+function panel(src, name) {
+  const start = src.indexOf(`function ${name}(`);
+  assert.ok(start >= 0, `${name} introuvable`);
+  const next = src.indexOf('\nfunction ', start + 1);
+  const exported = src.indexOf('\nexport function ', start + 1);
+  const ends = [next, exported].filter((i) => i > 0);
+  return src.slice(start, ends.length ? Math.min(...ends) : undefined);
+}
+
+test('CAST PANNEAUX: le volume suit le doigt, part une seule fois au relâchement, et rend la main à la TV', () => {
+  const row = panel(read(PANELS), 'VolumeRow');
+  // Le doigt, le clavier et la perte de focus lèvent le geste ; la décision est celle, testée, de cast-labels.
+  for (const event of ['onPointerUp', 'onPointerCancel', 'onTouchEnd', 'onKeyUp', 'onBlur']) assert.ok(row.includes(`${event}=`), event);
+  assert.ok(row.includes('volumeSettle(') && row.includes('volumeDragged('), 'la décision vient de cast-labels');
+  // Le geste n'envoie rien : onChange ne touche pas à la TV.
+  const onChange = row.slice(row.indexOf('onChange='), row.indexOf('onPointerUp='));
+  assert.ok(!onChange.includes('castVolume('), 'onChange ne commande pas la TV');
+  // À défaut de réponse, le curseur revient à la TV après l'accusé, et le minuteur est nettoyé.
+  assert.ok(row.includes('CAST_ACK_TIMEOUT_MS'), 'le curseur ne reste jamais sur une valeur que la TV n\'a pas');
+  assert.ok(row.includes('clearTimeout('), 'le minuteur est levé au démontage');
+  // Une commande en vol qui retombe envoie la valeur gardée.
+  assert.ok(/if \(!busy\) run\(false\)/.test(row), 'busy qui retombe → la valeur relâchée part');
+});
+
+test('CAST PANNEAUX: « Réessayer » dit qu\'il a entendu, « Continuer » et « Fermer » restent libres', () => {
+  const lost = panel(read(PANELS), 'LostPanel');
+  assert.ok(lost.includes('retrying'), 'un drapeau local');
+  assert.ok(lost.includes('CAST_STATUS_TIMEOUT_MS'), 'il retombe quand la TV a eu le temps de répondre');
+  assert.ok(lost.includes('clearTimeout('), 'le minuteur est levé au démontage');
+  assert.ok(/aria-busy=\{retrying\}/.test(lost), 'le bouton dit qu\'il attend');
+  assert.ok(/if \(retrying\) return/.test(lost), 'un second appui est ignoré');
+  assert.ok(lost.includes('nowPlayingBusy'), 'et il s\'estompe');
+  // Les deux autres issues ne passent pas par la garde.
+  assert.ok(lost.includes('onClick={castToPhone}') && lost.includes('onClick={onBack}'), 'continuer et fermer restent actifs pendant l\'essai');
+  assert.ok(lost.includes('Réessayer'), 'le libellé reste « Réessayer »');
+});
+
+test('CAST PANNEAUX: une affiche invalide ne fait pas tomber la télécommande', () => {
+  const src = read(PANELS);
+  const at = src.indexOf('new MediaMetadata(');
+  assert.ok(at > 0);
+  const before = src.slice(0, at);
+  assert.ok(before.lastIndexOf('try {') > before.lastIndexOf('catch'), 'MediaMetadata est construit dans un try');
+  // Et les commandes de l'écran verrouillé se posent même si l'affiche est refusée : un try chacun.
+  assert.ok((src.match(/\btry \{/g) ?? []).length >= 3, 'métadonnées, pose des commandes, retrait des commandes');
+});
+
+test('CAST PANNEAUX: chaque zone de toucher fait au moins 44 px de haut', () => {
+  const css = read(CSS);
+  /** La plus grande hauteur, en px, que la règle `.name { … }` pose (height ou min-height). */
+  const heightOf = (name) => {
+    const body = css.match(new RegExp(`\\.${name}\\s*\\{([^}]*)\\}`))?.[1];
+    assert.ok(body, `.${name} manque dans la feuille`);
+    const px = [...body.matchAll(/(?:^|[\s;])(?:min-)?height:\s*(\d+(?:\.\d+)?)px/g)].map((m) => Number(m[1]));
+    return px.length ? Math.max(...px) : 0;
+  };
+  for (const name of ['nowPlayingBtn', 'nowPlayingSecondaryBtn', 'awaitingCancelBtn', 'lostBtn', 'nowPlayingVolumeSlider']) {
+    assert.ok(heightOf(name) >= 44, `.${name} : ${heightOf(name)} px, il en faut 44`);
+  }
+  // Tout bouton du composant a pour classe de base l'une de celles-là : aucune n'échappe au minimum.
+  const covered = new Set(['nowPlayingBtn', 'nowPlayingSecondaryBtn', 'awaitingCancelBtn']);
+  const buttons = [...read(PANELS).matchAll(/<button\b[^>]*?className=\{`?\$?\{?styles\.(\w+)/g)].map((m) => m[1]);
+  assert.ok(buttons.length >= 8, `les boutons du composant sont comptés (${buttons.length})`);
+  for (const base of buttons) assert.ok(covered.has(base), `le bouton de classe ${base} n'a pas de minimum de 44 px`);
+  // La piste dessinée reste mince : c'est l'input qui porte la zone de prise.
+  assert.ok(/\.nowPlayingVolumeSlider::-webkit-slider-runnable-track/.test(css) && /\.nowPlayingVolumeSlider::-moz-range-track/.test(css), 'piste dessinée au centre de la zone de prise');
+});
+
+test('CAST PANNEAUX: la puce dessine son point et sa respiration d\'après castChipLook', () => {
+  const src = read(CHIP);
+  assert.ok(src.includes('castChipLook('), 'le choix par phase vient de cast-labels');
+  assert.ok(/look\.pulse \? 'activeCastChipPulse/.test(src), 'la respiration ne tourne que si la phase le veut');
+  assert.ok(/look\.dot !== null/.test(src), 'sans point quand il n\'y a rien à dire');
 });

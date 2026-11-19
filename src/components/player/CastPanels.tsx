@@ -1,12 +1,14 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useStore } from '../../store';
-import { castView } from '../../cast/cast-machine';
+import { CAST_ACK_TIMEOUT_MS, CAST_STATUS_TIMEOUT_MS, castView } from '../../cast/cast-machine';
 import {
-  CAST_CHOOSING_TEXT, castBackLabel, castDeviceLabel, castWaitingParts, continueHereLabel, formatCastTime,
+  CAST_CHOOSING_TEXT, NO_VOLUME_GESTURE, castBackLabel, castDeviceLabel, castWaitingParts, continueHereLabel, formatCastTime,
+  volumeDragged, volumeSettle, volumeShown,
 } from '../../cast/cast-labels';
+import type { VolumeGesture } from '../../cast/cast-labels';
 import { watchHereLabel } from '../kiosk/kiosk-logic';
 import styles from './CastPanels.module.css';
 
@@ -48,11 +50,15 @@ function useLockScreenControls(active: boolean, title: string, posterUrl: string
 
   useEffect(() => {
     if (!active || typeof navigator === 'undefined' || !('mediaSession' in navigator)) return;
-    navigator.mediaSession.metadata = new MediaMetadata({
-      title: title || 'Zone Club',
-      artist: 'Zone Club',
-      artwork: posterUrl ? [{ src: posterUrl, sizes: '200x300', type: 'image/jpeg' }] : [],
-    });
+    try {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: title || 'Zone Club',
+        artist: 'Zone Club',
+        artwork: posterUrl ? [{ src: posterUrl, sizes: '200x300', type: 'image/jpeg' }] : [],
+      });
+    } catch {
+      // Une affiche dont l'adresse est refusée lève ici : l'écran verrouillé s'en passe, la télécommande reste.
+    }
     try {
       navigator.mediaSession.setActionHandler('play', castToggle);
       navigator.mediaSession.setActionHandler('pause', castToggle);
@@ -103,13 +109,73 @@ function WaitingPanel({ phase, deviceName }: { phase: 'choosing' | 'connecting' 
   );
 }
 
+/**
+ * Curseur de volume : le pouce suit le doigt, et la TV ne reçoit qu'une commande, au relâchement (`volumeSettle`). Un
+ * curseur qui n'afficherait que le volume de la TV reviendrait en arrière sous le doigt le temps de l'accusé. La valeur
+ * du doigt s'affiche jusqu'à ce que la TV réponde (son volume change) ou, à défaut, jusqu'à l'échéance des accusés : le
+ * curseur ne reste jamais sur une valeur que la TV n'a pas.
+ */
+function VolumeRow({ tvVolume, busy }: { tvVolume: number; busy: boolean }) {
+  const castVolume = useStore((s) => s.castVolume);
+  const [draft, setDraft] = useState<{ level: number; base: number } | null>(null);
+  const gesture = useRef<VolumeGesture>(NO_VOLUME_GESTURE);
+  const giveUp = useRef<number | undefined>(undefined);
+
+  const run = useCallback(
+    (release: boolean) => {
+      const step = volumeSettle(gesture.current, { release, busy, tvVolume });
+      gesture.current = step.gesture;
+      if (step.clear) setDraft(null);
+      if (step.send === null) return;
+      castVolume(step.send);
+      window.clearTimeout(giveUp.current);
+      giveUp.current = window.setTimeout(() => setDraft(null), CAST_ACK_TIMEOUT_MS);
+    },
+    [busy, tvVolume, castVolume],
+  );
+  // Une commande en vol qui retombe : la valeur relâchée pendant ce temps part maintenant.
+  useEffect(() => {
+    if (!busy) run(false);
+  }, [busy, run]);
+  useEffect(() => () => window.clearTimeout(giveUp.current), []);
+
+  // Pointeur, toucher, clavier, focus : l'un ou l'autre lève le geste, et les suivants ne renvoient rien.
+  const release = () => run(true);
+
+  return (
+    <div className={`${styles.nowPlayingVolumeRow}${busy ? ` ${styles.nowPlayingBusy}` : ''}`}>
+      <span aria-hidden="true">🔉</span>
+      <input
+        type="range"
+        min={0}
+        max={1}
+        step={0.05}
+        value={volumeShown(draft, tvVolume)}
+        onChange={(e) => {
+          const level = Number(e.target.value);
+          window.clearTimeout(giveUp.current);
+          gesture.current = volumeDragged(level);
+          setDraft({ level, base: tvVolume });
+        }}
+        onPointerUp={release}
+        onPointerCancel={release}
+        onTouchEnd={release}
+        onKeyUp={release}
+        onBlur={release}
+        className={styles.nowPlayingVolumeSlider}
+        aria-label="Volume TV"
+        aria-busy={busy}
+      />
+    </div>
+  );
+}
+
 /** La TV joue : la télécommande dit l'état réel de la TV, et obéit une commande à la fois. */
 function RemotePanel({ title, onBack, subtitles }: Pick<CastPanelsProps, 'title' | 'onBack' | 'subtitles'>) {
   const cast = useStore((s) => s.cast);
   const playerFrom = useStore((s) => s.playerFrom);
   const castToggle = useStore((s) => s.castToggle);
   const castSeekBy = useStore((s) => s.castSeekBy);
-  const castVolume = useStore((s) => s.castVolume);
   const castStop = useStore((s) => s.castStop);
   const castToPhone = useStore((s) => s.castToPhone);
   const [here] = useState(readHereLabel);
@@ -173,23 +239,7 @@ function RemotePanel({ title, onBack, subtitles }: Pick<CastPanelsProps, 'title'
         </button>
       </div>
 
-      <div className={`${styles.nowPlayingVolumeRow}${dim}`}>
-        <span aria-hidden="true">🔉</span>
-        <input
-          type="range"
-          min={0}
-          max={1}
-          step={0.05}
-          value={cast.volume}
-          onChange={(e) => {
-            if (busy) return;
-            castVolume(Number(e.target.value));
-          }}
-          className={styles.nowPlayingVolumeSlider}
-          aria-label="Volume TV"
-          aria-busy={busy}
-        />
-      </div>
+      <VolumeRow tvVolume={cast.volume} busy={busy} />
 
       {/* Sans ces boutons, changer de langue pendant le Cast serait impossible au doigt sur mobile. */}
       {subtitles != null && subtitles !== false && <div className={styles.nowPlayingSubtitleRow}>{subtitles}</div>}
@@ -215,6 +265,18 @@ function LostPanel({ onBack }: Pick<CastPanelsProps, 'onBack'>) {
   const castToPhone = useStore((s) => s.castToPhone);
   const [here] = useState(readHereLabel);
 
+  // « Réessayer » ne change rien à l'écran tant que la TV se tait : le bouton dit qu'il a entendu (aria-busy, estompé)
+  // et ignore les appuis suivants, le temps que la TV ait pu répondre. Le panneau disparaît si elle répond.
+  const [retrying, setRetrying] = useState(false);
+  const retryTimer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(retryTimer.current), []);
+  const retry = () => {
+    if (retrying) return;
+    setRetrying(true);
+    castRetry();
+    retryTimer.current = window.setTimeout(() => setRetrying(false), CAST_STATUS_TIMEOUT_MS);
+  };
+
   return (
     <div className={styles.castingOverlay}>
       <div className={styles.castingTitle} role="alert">
@@ -223,8 +285,9 @@ function LostPanel({ onBack }: Pick<CastPanelsProps, 'onBack'>) {
       <div className={styles.lostActions}>
         <button
           type="button"
-          className={`${styles.nowPlayingSecondaryBtn} ${styles.lostBtn} ${styles.lostBtnPrimary}`}
-          onClick={castRetry}
+          className={`${styles.nowPlayingSecondaryBtn} ${styles.lostBtn} ${styles.lostBtnPrimary}${retrying ? ` ${styles.nowPlayingBusy}` : ''}`}
+          aria-busy={retrying}
+          onClick={retry}
         >
           Réessayer
         </button>

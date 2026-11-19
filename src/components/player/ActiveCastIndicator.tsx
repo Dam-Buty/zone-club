@@ -2,7 +2,10 @@
 
 import { useStore } from '../../store';
 import { castOwnsFilm } from '../../cast/cast-machine';
-import { castChipLabel } from '../../cast/cast-labels';
+import { castChipLabel, castChipLook } from '../../cast/cast-labels';
+
+// Point de la puce : vert (télécommande vivante) ou orange (la TV ne répond plus). Le choix par phase est dans cast-labels.
+const DOT_COLOR = { live: '#00ff88', warn: '#ffb020' } as const;
 
 // Puce flottante « Cast en cours » — apparaît en bas de l'écran quand la TV a un film à signaler (elle le joue, ne
 // répond plus, ou vient de le finir) et que le lecteur est fermé : le visiteur a quitté le lecteur pour se promener
@@ -27,6 +30,7 @@ export function ActiveCastIndicator({ variant = 'store' }: { variant?: 'store' |
   const label = castChipLabel(cast.phase);
   if (filmId === null || label === null || isPlayerOpen) return null;
 
+  const look = castChipLook(cast.phase);
   const film = Object.values(films).flat().find((f) => f.id === filmId);
   const title = film?.title || 'Film en cours';
 
@@ -53,25 +57,27 @@ export function ActiveCastIndicator({ variant = 'store' }: { variant?: 'store' |
         fontSize: '0.95rem',
         letterSpacing: '0.08em',
         cursor: 'pointer',
-        // Légère respiration : la puce se lit « vivante », pas figée.
-        animation: 'activeCastChipPulse 2.4s ease-in-out infinite',
+        // Légère respiration : la puce se lit « vivante », pas figée. Seulement quand la télécommande l'est.
+        animation: look.pulse ? 'activeCastChipPulse 2.4s ease-in-out infinite' : undefined,
         WebkitTapHighlightColor: 'transparent',
         maxWidth: 'calc(100vw - 40px)',
         overflow: 'hidden',
       }}
     >
-      <span
-        aria-hidden="true"
-        style={{
-          width: 8,
-          height: 8,
-          borderRadius: '50%',
-          background: '#00ff88',
-          boxShadow: '0 0 8px #00ff88',
-          animation: 'activeCastDotBlink 1.4s ease-in-out infinite',
-          flexShrink: 0,
-        }}
-      />
+      {look.dot !== null && (
+        <span
+          aria-hidden="true"
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: '50%',
+            background: DOT_COLOR[look.dot],
+            boxShadow: `0 0 8px ${DOT_COLOR[look.dot]}`,
+            animation: look.dot === 'live' ? 'activeCastDotBlink 1.4s ease-in-out infinite' : undefined,
+            flexShrink: 0,
+          }}
+        />
+      )}
       <span style={{ fontSize: '1.1em', flexShrink: 0 }} aria-hidden="true">📺</span>
       <span
         style={{

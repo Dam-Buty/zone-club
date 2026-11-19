@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  CAST_CHOOSING_TEXT, castBackLabel, castChipLabel, castDeviceLabel, castWaitingParts, continueHereLabel, formatCastTime,
+  CAST_CHOOSING_TEXT, NO_VOLUME_GESTURE, castBackLabel, castChipLabel, castChipLook, castDeviceLabel, castWaitingParts,
+  continueHereLabel, formatCastTime, volumeDragged, volumeSettle, volumeShown,
 } from '../../src/cast/cast-labels.ts';
 import { castOwnsFilm, initialCastState } from '../../src/cast/cast-machine.ts';
 import { watchHereLabel } from '../../src/components/kiosk/kiosk-logic.ts';
@@ -84,4 +85,75 @@ test('CAST LIBELLÉS: un temps que la TV n\'a pas donné s\'affiche 0:00, pas Na
   assert.equal(formatCastTime(NaN), '0:00');
   assert.equal(formatCastTime(Infinity), '0:00');
   assert.equal(formatCastTime(-5), '0:00');
+});
+
+test('CAST LIBELLÉS: la puce n\'a un point que si elle a quelque chose à dire, et ne respire que télécommande allumée', () => {
+  // Vert qui clignote : la télécommande est vivante. Orange fixe : la TV ne répond plus. Rien : le film est fini.
+  assert.deepEqual(castChipLook('remote'), { dot: 'live', pulse: true });
+  assert.deepEqual(castChipLook('lost'), { dot: 'warn', pulse: false });
+  assert.deepEqual(castChipLook('ended'), { dot: null, pulse: false });
+  for (const phase of ['idle', 'choosing', 'connecting', 'loading']) assert.deepEqual(castChipLook(phase), { dot: null, pulse: false }, phase);
+});
+
+test('CAST VOLUME: le curseur montre le doigt tant que la TV n\'a pas répondu, puis la TV', () => {
+  assert.equal(volumeShown(null, 0.28), 0.28);
+  // Geste fait quand la TV était à 0,28 : il se voit tant qu\'elle y est encore.
+  assert.equal(volumeShown({ level: 0.8, base: 0.28 }, 0.28), 0.8);
+  // La TV a répondu (son volume a changé) : sa valeur reprend la main, jamais une valeur qu\'elle n\'a pas.
+  assert.equal(volumeShown({ level: 0.8, base: 0.28 }, 0.8), 0.8);
+  assert.equal(volumeShown({ level: 0.8, base: 0.28 }, 0.5), 0.5);
+});
+
+const idle = { busy: false, tvVolume: 0.28 };
+
+test('CAST VOLUME: rien ne part pendant le geste, une seule commande au relâchement', () => {
+  let g = volumeDragged(0.4);
+  // Le doigt bouge : plusieurs valeurs, aucune commande.
+  g = volumeDragged(0.55);
+  let r = volumeSettle(g, { release: false, ...idle });
+  assert.equal(r.send, null);
+  assert.deepEqual(r.gesture, g, 'le geste continue');
+  // Le doigt se lève : une commande, la dernière valeur.
+  r = volumeSettle(g, { release: true, ...idle });
+  assert.equal(r.send, 0.55);
+  assert.deepEqual(r.gesture, NO_VOLUME_GESTURE);
+  // pointerup, touchend, keyup et blur se suivent : aucun ne renvoie la valeur.
+  for (let i = 0; i < 4; i += 1) {
+    const again = volumeSettle(r.gesture, { release: true, ...idle });
+    assert.equal(again.send, null, `événement ${i + 2}`);
+    assert.equal(again.clear, false);
+  }
+});
+
+test('CAST VOLUME: relâché pendant qu\'une commande est en vol, il part dès que la TV a accusé, la dernière valeur gagne', () => {
+  let r = volumeSettle(volumeDragged(0.4), { release: true, busy: true, tvVolume: 0.28 });
+  assert.equal(r.send, null, 'en vol : on attend');
+  assert.equal(r.gesture.pending, 0.4, 'la valeur est gardée');
+  assert.equal(r.gesture.released, true, 'et le doigt est bien levé');
+  // Un nouveau geste remplace la valeur gardée.
+  const next = volumeDragged(0.7);
+  r = volumeSettle(next, { release: true, busy: true, tvVolume: 0.28 });
+  assert.equal(r.send, null);
+  // L\'accusé arrive : busy retombe, sans nouvel événement du doigt.
+  r = volumeSettle(r.gesture, { release: false, busy: false, tvVolume: 0.28 });
+  assert.equal(r.send, 0.7, 'la dernière valeur demandée, pas la première');
+  assert.deepEqual(r.gesture, NO_VOLUME_GESTURE);
+});
+
+test('CAST VOLUME: tant que le doigt est posé, une commande qui retombe n\'envoie rien', () => {
+  const dragging = volumeDragged(0.6);
+  const r = volumeSettle(dragging, { release: false, busy: false, tvVolume: 0.28 });
+  assert.equal(r.send, null);
+  assert.deepEqual(r.gesture, dragging);
+});
+
+test('CAST VOLUME: relâcher sur le volume de la TV n\'envoie rien et rend le curseur à la TV', () => {
+  const r = volumeSettle(volumeDragged(0.28), { release: true, busy: false, tvVolume: 0.28 });
+  assert.equal(r.send, null);
+  assert.equal(r.clear, true);
+  assert.deepEqual(r.gesture, NO_VOLUME_GESTURE);
+  // Sans geste, il n\'y a rien à rendre : le curseur n\'est pas touché.
+  const none = volumeSettle(NO_VOLUME_GESTURE, { release: true, ...idle });
+  assert.equal(none.send, null);
+  assert.equal(none.clear, false);
 });

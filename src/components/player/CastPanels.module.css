@@ -144,6 +144,7 @@
 }
 
 .awaitingCancelBtn {
+  min-height: 44px; /* zone de toucher minimale */
   margin-top: 28px;
   font-family: 'VT323', 'Courier New', monospace;
   font-size: 1rem;
@@ -288,6 +289,7 @@
   max-width: 100%;
 }
 .nowPlayingSecondaryBtn {
+  min-height: 44px; /* zone de toucher minimale */
   padding: 10px 18px;
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.25);
@@ -331,20 +333,33 @@
   font-family: 'VT323', 'Courier New', monospace;
   font-size: 1.1rem;
 }
+/* L'input porte la zone de prise (44 px de haut : le doigt ne vise pas une piste de 4 px) ; la piste mince est dessinée à
+   son centre, par le pseudo-élément de chaque moteur. */
 .nowPlayingVolumeSlider {
   flex: 1;
-  height: 4px;
+  height: 44px;
+  margin: 0;
   -webkit-appearance: none;
   appearance: none;
+  background: transparent;
+  outline: none;
+}
+.nowPlayingVolumeSlider::-webkit-slider-runnable-track {
+  height: 4px;
   background: rgba(255, 255, 255, 0.12);
   border-radius: 2px;
-  outline: none;
+}
+.nowPlayingVolumeSlider::-moz-range-track {
+  height: 4px;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 2px;
 }
 .nowPlayingVolumeSlider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
   width: 16px;
   height: 16px;
+  margin-top: -6px; /* centre le pouce de 16 px sur la piste de 4 px */
   border-radius: 50%;
   background: var(--color-neon-cyan);
   cursor: pointer;
