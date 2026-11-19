@@ -5,6 +5,7 @@ import api, { apiFilmToFilm, type ApiRentalWithFilm, type ApiFilm, type ReviewWi
 import { preloadPosterImage } from '../utils/CassetteTextureArray';
 import { fetchVHSCoverData } from '../utils/VHSCoverGenerator';
 import { parseServerDate } from '../utils/server-date';
+import { createCastSlice, type CastSlice } from './slices/cast';
 import { createManagerSlice } from './slices/manager';
 import { createTutorialSlice, TUTORIAL_WAYPOINTS } from './slices/tutorial';
 
@@ -75,7 +76,7 @@ export interface RentalHistoryEntry {
 /** Ce qu'un film loué et pas encore critiqué permet, par identifiant de film. */
 export type ReviewEligibilityMap = Record<number, { allowed: boolean; reason: string | null; availableAtMs: number | null }>;
 
-export interface VideoClubState {
+export interface VideoClubState extends CastSlice {
   // Auth
   isAuthenticated: boolean;
   authUser: AuthUser | null;
@@ -152,22 +153,33 @@ export interface VideoClubState {
   previewRental: Rental | null;
   previewFilm: Film | null;
   openPreviewPlayer: (film: Film, rental: Rental) => void;
-  openPlayer: (filmId: number) => void;
+  /**
+   * `from` : d'où le visiteur vient (libellé du retour du lecteur) ; `ask` : montrer l'invite « Regarder sur TV ? »
+   * sur mobile. Un appel à un seul argument garde les défauts : le vidéoclub, avec l'invite.
+   */
+  openPlayer: (filmId: number, opts?: { from?: 'kiosk' | 'store'; ask?: boolean }) => void;
+  /** D'où le lecteur a été ouvert ; `closePlayer` n'y touche pas (le lecteur se ferme, son libellé reste lisible). */
+  playerFrom: 'kiosk' | 'store';
+  playerAsk: boolean;
   /**
    * « Sur la TV » de la borne : ouvre le lecteur en lui demandant de lancer aussitôt le Cast
-   * (`castOnOpen`, consommé une fois par le lecteur ; jamais persisté).
+   * (`castOnOpen`, consommé une fois par le lecteur ; jamais persisté). La borne appellera `castFilm` elle-même.
+   * @deprecated retiré à la tâche 7
    */
   openPlayerOnTv: (filmId: number) => void;
+  /** @deprecated retiré à la tâche 6 */
   castOnOpen: number | null;
+  /** @deprecated retiré à la tâche 6 */
   clearCastOnOpen: () => void;
   closePlayer: () => void;
 
-  // Cast tracking — kept across player open/close so the next openPlayer
-  // can detect an active receiver session and enter remote-control mode.
+  // Film suivi par la TV : écrit par la tranche `cast` (le film joué ou « la télé ne répond plus »), sinon null.
+  // Lu par la puce et la fiche de la K7 (`castView` et `cast` pour le reste).
   activeCastFilmId: number | null;
+  // Plus personne ne devrait écrire `activeCastFilmId` : la tranche le fait, d'après la machine du service.
+  /** @deprecated retiré à la tâche 6 */
   setActiveCastFilmId: (filmId: number | null) => void;
-  // End the cast tracking. Call when the cast actually ends (Stop button,
-  // receiver disconnect, film completion) — NOT on player close.
+  /** @deprecated retiré à la tâche 6 */
   endCast: () => void;
 
   // Targeting (pour le hover via raycasting central)
@@ -434,6 +446,8 @@ export const useStore = create<VideoClubState>()(
           managerVisible: false,
           chatBackdropUrl: null,
         });
+        // La location du film qui est sur la TV disparaît avec le compte : la TV s'arrête.
+        get().castLoggedOut();
       },
 
       clearAuthError: () => set({ authError: null }),
@@ -765,9 +779,14 @@ export const useStore = create<VideoClubState>()(
       // Manager IA — see src/store/slices/manager.ts
       ...createManagerSlice(set, get, store),
 
+      // Cast — voir src/store/slices/cast.ts
+      ...createCastSlice(set, get, store),
+
       // Player
       isPlayerOpen: false,
       currentPlayingFilm: null,
+      playerFrom: 'store',
+      playerAsk: true,
       previewRental: null,
       previewFilm: null,
       openPreviewPlayer: (film, rental) => set((state) => ({
@@ -789,7 +808,7 @@ export const useStore = create<VideoClubState>()(
       // Do NOT call this when the player just closes — the cast on the TV
       // is independent of the player overlay and should keep going.
       endCast: () => set({ activeCastFilmId: null }),
-      openPlayer: (filmId) => {
+      openPlayer: (filmId, opts) => {
         // Always allow opening — even if another film is already casting.
         // The player overlay will read activeCastFilmId on mount and:
         //   - if it matches `filmId` → auto-resume in remote-control mode
@@ -800,6 +819,8 @@ export const useStore = create<VideoClubState>()(
         set({
           isPlayerOpen: true,
           currentPlayingFilm: filmId,
+          playerFrom: opts?.from ?? 'store',
+          playerAsk: opts?.ask ?? true,
           // Une location réelle remplace toute prévisualisation admin restée
           // ouverte dans le même onglet.
           previewRental: null,
@@ -1094,6 +1115,8 @@ export const useStore = create<VideoClubState>()(
         hasSeenOnboarding: state.hasSeenOnboarding,
         hasSeenVHSSwipeHint: state.hasSeenVHSSwipeHint,
         hasCompletedTutorial: state.hasCompletedTutorial,
+        // Le film dont le Cast court peut-être encore (page rechargée). Jamais l'état du Cast : adresse du film, drapeaux passagers.
+        lastCastFilmId: state.lastCastFilmId,
         // Navigation state — persisted so mobile tab-switch doesn't reset to exterior
         currentScene: state.currentScene,
         currentAisle: state.currentAisle,

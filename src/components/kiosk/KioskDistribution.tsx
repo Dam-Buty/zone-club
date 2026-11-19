@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import { preloadCastSdk } from '../../hooks/useGoogleCast';
+import { useStore } from '../../store';
 import { appleAirPlay } from '../../utils/cast-on-open';
 import { readyUntilText, tvMeansLabel, watchHereLabel } from './kiosk-logic';
 import styles from './KioskPanels.module.css';
@@ -66,13 +66,14 @@ export function KioskReady({ title, expiresAt, onWatch, onTv, onAccount, onLater
   const titleId = useId();
   const watchRef = useRef<HTMLButtonElement>(null);
   const [labels] = useState(readWatchLabels);
+  const startCast = useStore((state) => state.startCast);
 
   useEffect(() => {
     watchRef.current?.focus();
-    // Le SDK du Cast se charge maintenant, pour que l'appui sur « Sur ma télé » ouvre le sélecteur
-    // pendant que le navigateur tient encore cet appui pour un geste de l'utilisateur.
-    void preloadCastSdk();
-  }, []);
+    // Le service du Cast démarre maintenant, SDK chargé et initialisé, pour que l'appui sur « Sur ma télé » ouvre
+    // le sélecteur pendant que le navigateur tient encore cet appui pour un geste de l'utilisateur.
+    startCast();
+  }, [startCast]);
 
   return (
     <div className={styles.kNoticeScrim}>

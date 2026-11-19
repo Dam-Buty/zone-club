@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { castSourceFor, loadRequestData, mediaStatusEvent } from '../../src/cast/cast-wire.ts';
+import { castMediaRequest, castSourceFor, castStartAt, loadRequestData, mediaStatusEvent, rentalGoneFilm } from '../../src/cast/cast-wire.ts';
 
 // Le fil entre la machine du Cast et le SDK (src/cast/cast-wire.ts) : ce que le service envoie à la TV, et ce
 // qu'il comprend de ce qu'elle répond. Pur, sans import de valeur : Node le charge tel quel.
@@ -95,4 +95,63 @@ test('CAST FIL: ce que la TV dit mal ne devient jamais une valeur fausse', () =>
   assert.equal(odd.volume, 1);
   assert.equal(mediaStatusEvent({ playerState: 'PLAYING', media: { duration: -1, customData: { filmId: 3 } } }, -0.2).volume, 0);
   assert.equal(mediaStatusEvent({ playerState: 'PLAYING', media: { customData: { filmId: 3 } } }, Number.NaN).volume, 1);
+});
+
+// ---------------------------------------------------------------------------------------------------------
+// Ce que la tranche du magasin décide avant de parler au service (src/store/slices/cast.ts)
+// ---------------------------------------------------------------------------------------------------------
+
+const rental = (o = {}) => ({
+  videoUrl: 'v', streamingUrls: { vf: 'https://s/vf.mp4', vo: 'https://s/vo.mp4' }, watchProgress: 40, watchPosition: 1234, ...o,
+});
+const subs = [{ id: 1, url: 'https://s/fr.vtt', language: 'fr', label: 'Français' }];
+
+test('CAST FIL: le départ par défaut est la position de la location, 0 si elle est vue jusqu\'au bout', () => {
+  assert.equal(castStartAt(rental(), undefined), 1234);
+  assert.equal(castStartAt(rental({ watchProgress: 100, watchPosition: 5400 }), undefined), 0);
+  assert.equal(castStartAt(rental({ watchProgress: 99, watchPosition: 5300 }), undefined), 5300);
+  assert.equal(castStartAt(null, undefined), 0);
+  assert.equal(castStartAt(rental({ watchPosition: Number.NaN }), undefined), 0);
+  assert.equal(castStartAt(rental({ watchPosition: -5 }), undefined), 0);
+});
+test('CAST FIL: un départ demandé prime, même 0 ; un départ illisible vaut « pas demandé »', () => {
+  assert.equal(castStartAt(rental(), 600), 600);
+  assert.equal(castStartAt(rental(), 0), 0);
+  assert.equal(castStartAt(rental({ watchProgress: 100, watchPosition: 5400 }), 90), 90);
+  assert.equal(castStartAt(rental(), Number.NaN), 1234);
+  assert.equal(castStartAt(rental(), -3), 1234);
+});
+
+test('CAST FIL: la demande de Cast d\'un film = source, titre, départ, sous-titres', () => {
+  const media = castMediaRequest({ rental: rental(), audio: 'vo', title: 'Get Out', subtitles: subs, activeSubtitleId: 1 });
+  assert.deepEqual(media, { url: 'https://s/vo.mp4', title: 'Get Out', startAt: 1234, subtitles: subs, activeSubtitleId: 1 });
+  assert.equal(castMediaRequest({ rental: rental(), audio: 'vf', title: 'Get Out', startAt: 5, subtitles: [], activeSubtitleId: null }).startAt, 5);
+});
+test('CAST FIL: sans source il n\'y a pas de demande ; sans titre, le nom du club', () => {
+  assert.equal(castMediaRequest({ rental: rental({ videoUrl: '', streamingUrls: { vf: null, vo: null } }), audio: 'vf', title: 'x', subtitles: [], activeSubtitleId: null }), null);
+  assert.equal(castMediaRequest({ rental: null, audio: 'vf', title: 'x', subtitles: [], activeSubtitleId: null }), null);
+  assert.equal(castMediaRequest({ rental: rental(), audio: 'vf', title: null, subtitles: [], activeSubtitleId: null }).title, 'Zone Club');
+  assert.equal(castMediaRequest({ rental: rental(), audio: 'vf', title: '   ', subtitles: [], activeSubtitleId: null }).title, 'Zone Club');
+});
+
+// La location qui disparaît pendant un Cast arrête la TV ; pendant que les locations ne sont pas encore chargées,
+// rien ne disparaît (la liste vide d'avant la première réponse du serveur n'est pas une location perdue).
+const own = (o = {}) => ({ owned: 7, tracked: true, before: [{ filmId: 7 }, { filmId: 9 }], after: [{ filmId: 9 }], ...o });
+test('CAST FIL: une location qui était là et n\'y est plus arrête le Cast de ce film', () => {
+  assert.equal(rentalGoneFilm(own()), 7);
+  assert.equal(rentalGoneFilm(own({ after: [] })), 7);
+});
+test('CAST FIL: les locations pas encore chargées ne sont pas des locations perdues', () => {
+  // Avant la première réponse de fetchMe : [] puis la liste. Le film n'a jamais été là, il n'a pas disparu.
+  assert.equal(rentalGoneFilm(own({ before: [], after: [] })), null);
+  assert.equal(rentalGoneFilm(own({ before: [], after: [{ filmId: 9 }] })), null);
+});
+test('CAST FIL: la location du film encore là, ou un autre film perdu, ne touche pas le Cast', () => {
+  assert.equal(rentalGoneFilm(own({ after: [{ filmId: 7 }, { filmId: 9 }] })), null);
+  assert.equal(rentalGoneFilm(own({ before: [{ filmId: 7 }, { filmId: 9 }], after: [{ filmId: 7 }] })), null);
+});
+test('CAST FIL: rien à arrêter sans film sur la TV, ni pour une prévisualisation /admin', () => {
+  assert.equal(rentalGoneFilm(own({ owned: null })), null);
+  // Une prévisualisation n'a pas de location : celle, réelle, du même film qui s'éteint ne l'arrête pas.
+  assert.equal(rentalGoneFilm(own({ tracked: false })), null);
 });

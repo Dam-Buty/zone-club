@@ -405,7 +405,7 @@ test('DISTRIBUTION: pendant l\'attente la barre du haut est inerte et le panneau
   for (const copy of ['Veuillez patienter', 'Votre K7 est prête', 'Où voulez-vous regarder ?', 'Sur ma télé', 'le film démarre ici', 'Mon compte']) {
     assert.ok(dist.includes(copy), copy);
   }
-  assert.ok(dist.includes('preloadCastSdk'), 'SDK préchargé à l\'affichage du panneau');
+  assert.ok(dist.includes('startCast'), 'service du Cast démarré (SDK chargé) à l\'affichage du panneau');
   assert.ok(!/\bdisabled\b/.test(dist), 'aucun bouton grisé');
 });
 test('DISTRIBUTION: le panneau « prête » ne bloque jamais la borne', () => {

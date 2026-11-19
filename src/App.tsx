@@ -374,6 +374,7 @@ function App() {
   const isSceneReady = useStore(state => state.isSceneReady);
   const showPostTutorialAuth = useStore(state => state.showPostTutorialAuth);
   const dismissPostTutorialAuth = useStore(state => state.dismissPostTutorialAuth);
+  const startCast = useStore(state => state.startCast);
   const showInstallPrompt = useStore(state => state.showInstallPrompt);
   const setShowInstallPrompt = useStore(state => state.setShowInstallPrompt);
   const dismissInstallPrompt = useStore(state => state.dismissInstallPrompt);
@@ -428,16 +429,11 @@ function App() {
     };
   }, [currentScene]);
   useEffect(() => {
-    // Pre-load the Google Cast SDK as soon as the user enters the videoclub
-    // so it is ready by the time they open the player. Previously the SDK
-    // only started loading when VHSPlayer mounted (lazy import), which
-    // created a 1-2 s race window where clicking the Cast button silently
-    // hit the !isReady branch. Idempotent + module-level promise.
-    // La borne ouvre le même lecteur : même préchargement.
-    if (currentScene === 'interior' || currentScene === 'kiosk') {
-      import('./hooks/useGoogleCast').then(m => m.preloadCastSdk()).catch(() => {});
-    }
-  }, [currentScene]);
+    // Le service du Cast démarre dès l'entrée dans le vidéoclub ou la borne : le SDK est chargé et initialisé
+    // avant que le visiteur n'ouvre le lecteur (sinon, 1 à 3 s où « Regarder sur TV » tombait dans le vide), et le
+    // suivi de la TV tourne lecteur fermé. Idempotent : la borne, la scène et le lecteur le demandent aussi.
+    if (currentScene === 'interior' || currentScene === 'kiosk') startCast();
+  }, [currentScene, startCast]);
   // Filet de sécurité : entrer dans la boutique ouvre la vanne des préchargements de
   // l'intérieur, au cas où l'on arriverait ici sans être passé par la devanture (lien
   // « castEnded » d'une notification). Idempotent.

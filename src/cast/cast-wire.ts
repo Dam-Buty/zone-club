@@ -50,6 +50,70 @@ export function castSourceFor(
   return urls?.[audio] || urls?.[other] || rental?.videoUrl || null;
 }
 
+/** Ce que la tranche du magasin lit d'une location pour lancer le Cast : où la prendre et d'où reprendre. */
+export interface CastRentalLike {
+  videoUrl?: string;
+  streamingUrls?: { vf: string | null; vo: string | null };
+  watchProgress: number;             // 0-100
+  watchPosition: number;             // secondes
+}
+
+/** Titre envoyé à la TV quand le catalogue chargé ne connaît pas le film. */
+const CAST_FALLBACK_TITLE = 'Zone Club';
+
+/**
+ * D'où le film part. Un départ demandé prime, même 0 ; sinon la position de la location, et 0 pour une location
+ * vue jusqu'au bout (100 %) : « Regarder sur TV » d'un film fini le reprend au début, pas à sa dernière seconde.
+ * Une valeur illisible (NaN, négative) vaut « pas demandée » ou « pas de position » : jamais un départ faux.
+ */
+export function castStartAt(rental: Pick<CastRentalLike, 'watchProgress' | 'watchPosition'> | null | undefined, asked: number | undefined): number {
+  if (typeof asked === 'number' && Number.isFinite(asked) && asked >= 0) return asked;
+  if (!rental || rental.watchProgress >= 100) return 0;
+  return Number.isFinite(rental.watchPosition) && rental.watchPosition > 0 ? rental.watchPosition : 0;
+}
+
+/**
+ * Le média que la machine garde entre le sélecteur et le chargement. Rien sans source : la location n'a aucune
+ * piste lisible, il n'y a rien à envoyer à la TV et la tranche le dit au visiteur.
+ */
+export function castMediaRequest(i: {
+  rental: CastRentalLike | null | undefined;
+  audio: 'vf' | 'vo';
+  title: string | null | undefined;
+  startAt?: number;
+  subtitles: CastMediaRequest['subtitles'];
+  activeSubtitleId: number | null;
+}): CastMediaRequest | null {
+  const url = castSourceFor(i.rental, i.audio);
+  if (!url) return null;
+  return {
+    url,
+    title: i.title?.trim() || CAST_FALLBACK_TITLE,
+    startAt: castStartAt(i.rental, i.startAt),
+    subtitles: i.subtitles,
+    activeSubtitleId: i.activeSubtitleId,
+  };
+}
+
+/**
+ * La location du film qui est sur la TV vient-elle de disparaître (échéance, retour) ? Rend ce film, sinon null.
+ * Elle a disparu seulement si elle ÉTAIT dans la liste d'avant et n'est plus dans celle d'après : avant la première
+ * réponse du serveur la liste est vide, et un film qui n'a jamais été là n'a pas disparu. Une prévisualisation /admin
+ * (`tracked` faux) n'a pas de location : celle, réelle, du même film qui s'éteint ne l'arrête pas.
+ */
+export function rentalGoneFilm(i: {
+  owned: number | null;
+  tracked: boolean;
+  before: readonly { filmId: number }[];
+  after: readonly { filmId: number }[];
+}): number | null {
+  const { owned } = i;
+  if (owned === null || !i.tracked) return null;
+  const had = i.before.some((r) => r.filmId === owned);
+  const has = i.after.some((r) => r.filmId === owned);
+  return had && !has ? owned : null;
+}
+
 export function loadRequestData(filmId: number, media: CastMediaRequest, tracked: boolean): CastLoadData {
   const tracks = media.subtitles.map((s) => ({ trackId: s.id, trackContentId: s.url, language: s.language, name: s.label }));
   // Une piste active absente des pistes déclarées : le récepteur refuserait le chargement entier.

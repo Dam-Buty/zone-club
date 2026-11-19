@@ -23,7 +23,6 @@ import { PostProcessingEffects } from './PostProcessingEffects'
 import { Environment } from '@react-three/drei'
 import { useIsMobile } from '../../hooks/useIsMobile'
 import { useBackGuard } from '../../hooks/useBackGuard'
-import { preloadCastSdk } from '../../hooks/useGoogleCast'
 import { createMobileInput } from '../../types/mobile'
 import type { MobileInput } from '../../types/mobile'
 import { abandonRendererDuringInit, releaseRendererAfterUnmount } from './release-renderer'
@@ -789,6 +788,7 @@ export function InteriorScene({ onCassetteClick, prewarm = false }: InteriorScen
   const laZoneActive = useStore(state => state.isInteractingWithLaZone || state.isWatchingLaZone)
   const isSitting = useStore(state => state.isSitting)
   const setSitting = useStore(state => state.setSitting)
+  const startCast = useStore(state => state.startCast)
   const isTerminalOpen = useStore(state => state.isTerminalOpen)
   const isWatchingLaZone = useStore(state => state.isWatchingLaZone)
   const isInteractingWithLaZone = useStore(state => state.isInteractingWithLaZone)
@@ -806,15 +806,12 @@ export function InteriorScene({ onCassetteClick, prewarm = false }: InteriorScen
   useBackGuard(isInteractingWithLaZone, () => setInteractingWithLaZone(false))
   useBackGuard(isWatchingLaZone, () => { setWatchingLaZone(false); setInteractingWithLaZone(false) })
 
-  // Preload the Google Cast SDK script when the player sits on the couch — this
-  // is the strongest signal of "I'm about to watch a film". By the time the user
-  // taps a cassette + opens the player + sees the "Watch on TV" prompt, the SDK
-  // is already cached (script load takes 1-3s on mobile). Without this prefetch,
-  // tapping "TV" too fast races with the SDK load and falls through to the
-  // mirroring fallback, leaving the video playing on the phone.
+  // Le service du Cast démarre quand le visiteur s'assoit sur le canapé — le signal le plus fort de « je vais
+  // regarder un film ». App le démarre déjà à l'entrée dans la boutique ; l'appel est idempotent, et celui-ci
+  // garde la garantie quand la scène est montée sans passer par App.
   useEffect(() => {
-    if (isSitting) preloadCastSdk()
-  }, [isSitting])
+    if (isSitting) startCast()
+  }, [isSitting, startCast])
 
   useEffect(() => {
     // Remis à vrai à chaque passage : en dev, StrictMode rejoue cet effet (pose, retrait, pose)
