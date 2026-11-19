@@ -412,6 +412,10 @@ export const useStore = create<VideoClubState>()(
       },
 
       logout: async () => {
+        // La location du film qui est sur la TV disparaît avec le compte : la TV s'arrête, et sa séance serveur est
+        // close tant que le cookie existe encore. AVANT la requête de déconnexion : après elle, le DELETE de la séance
+        // reçoit 401 (la route de déconnexion clôt de toute façon les séances du visiteur côté serveur).
+        get().castLoggedOut();
         try {
           await api.auth.logout();
         } catch {
@@ -431,8 +435,6 @@ export const useStore = create<VideoClubState>()(
           managerVisible: false,
           chatBackdropUrl: null,
         });
-        // La location du film qui est sur la TV disparaît avec le compte : la TV s'arrête.
-        get().castLoggedOut();
       },
 
       clearAuthError: () => set({ authError: null }),

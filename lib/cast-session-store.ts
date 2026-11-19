@@ -163,3 +163,14 @@ export function closeCastSession(
     db.prepare('UPDATE cast_sessions SET ended = 1 WHERE user_id = ? AND film_id = ? AND ended = 0').run(i.userId, i.filmId);
   }
 }
+
+/**
+ * Le visiteur se déconnecte : toutes ses séances ouvertes sont closes, sans rien noter sur ses locations (la TV a été
+ * arrêtée, rien n'a été vu). Appelé par la route de déconnexion AVANT d'effacer le cookie : le DELETE que le
+ * téléphone envoie en arrêtant la TV peut arriver après, sans cookie (401), et l'onglet a pu être fermé ou la
+ * déconnexion venir d'un autre appareil. Sans cela, le vérificateur passerait la location à 100 % à l'heure de fin
+ * estimée. Rend le nombre de séances closes ; rejouable.
+ */
+export function closeOpenCastSessions(db: Db, userId: number): number {
+  return db.prepare('UPDATE cast_sessions SET ended = 1 WHERE user_id = ? AND ended = 0').run(userId).changes;
+}

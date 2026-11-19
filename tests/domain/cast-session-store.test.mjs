@@ -254,3 +254,47 @@ test('CAST SÉANCE: la route ne demande plus la durée et dit « Durée du film 
   assert.match(del, /finished/, 'DELETE lit finished');
   assert.match(del, /currentPosition/, 'DELETE lit currentPosition');
 });
+
+// Relecture finale, A2 : se déconnecter pendant un Cast laissait la séance serveur ouverte (le DELETE du téléphone
+// partait après l'effacement du cookie : 401), et le vérificateur passait la location à 100 % à l'heure de fin
+// estimée alors que la TV avait été arrêtée. La déconnexion clôt elle-même les séances du visiteur, avant d'effacer
+// le cookie — ce qui couvre aussi l'onglet fermé puis la déconnexion depuis un autre appareil.
+test('CAST SÉANCE A2: la déconnexion clôt toutes les séances ouvertes du visiteur, locations intactes', async () => {
+  const { closeOpenCastSessions } = await import('../../lib/cast-session-store.ts');
+  const { db, u, f, rent, rental, sessions } = freshDb({ filmDuration: 6840 });
+  const { deps } = makeDeps();
+  const r = rent();
+  // Un second film du même visiteur, et la séance d'un autre visiteur sur le même film.
+  const f2 = db.prepare("INSERT INTO films (tmdb_id, title, duration_sec) VALUES (2, 'Us', 6960)").run().lastInsertRowid;
+  const r2 = db.prepare(`INSERT INTO rentals (user_id, film_id, symlink_uuid, expires_at, is_active, watch_progress, watch_position)
+    VALUES (?, ?, 'u2', datetime('now', '+1 day'), 1, 55, 3000)`).run(u, f2).lastInsertRowid;
+  const other = db.prepare("INSERT INTO users (username, password_hash, recovery_phrase_hash) VALUES ('o', 'x', 'y')").run().lastInsertRowid;
+  db.prepare(`INSERT INTO rentals (user_id, film_id, symlink_uuid, expires_at, is_active, watch_progress, watch_position)
+    VALUES (?, ?, 'o1', datetime('now', '+1 day'), 1, 10, 600)`).run(other, f);
+  openCastSession(db, { userId: u, filmId: f, position: 100 }, deps);
+  openCastSession(db, { userId: u, filmId: f2, position: 200 }, deps);
+  openCastSession(db, { userId: other, filmId: f, position: 300 }, deps);
+  assert.equal(closeOpenCastSessions(db, u), 2, 'deux séances closes');
+  const byUser = (id) => sessions().filter((s) => s.user_id === id).map((s) => s.ended);
+  assert.deepEqual(byUser(u), [1, 1], 'celles du visiteur sont closes');
+  assert.deepEqual(byUser(other), [0], 'celle d\'un autre visiteur reste ouverte');
+  // Ni fin notée, ni position touchée : la TV a été arrêtée, rien n'a été vu.
+  assert.equal(rental(r).watch_progress, 30); assert.equal(rental(r).watch_position, 812); assert.equal(rental(r).watch_completed_at, null);
+  assert.equal(rental(r2).watch_progress, 55); assert.equal(rental(r2).watch_position, 3000);
+  // Rejouable, et sans séance rien ne casse.
+  assert.equal(closeOpenCastSessions(db, u), 0);
+});
+
+test('CAST SÉANCE A2: la route de déconnexion clôt les séances AVANT d\'effacer le cookie', () => {
+  const src = readText(path.join(ROOT, 'app/api/auth/logout/route.ts'));
+  const close = src.indexOf('endAllCastSessions(');
+  const cookie = src.indexOf("cookieStore.set('session'");
+  assert.ok(close > 0, 'la route clôt les séances du visiteur');
+  assert.ok(cookie > close, 'avant d\'effacer le cookie');
+  assert.ok(src.includes('getUserFromSession('), 'le visiteur est lu sur son cookie');
+  // Une base en panne ne doit pas empêcher de se déconnecter.
+  const guarded = src.slice(src.lastIndexOf('try {', close), cookie);
+  assert.ok(guarded.includes('catch'), 'la clôture est gardée');
+  const wrapper = readText(path.join(ROOT, 'lib/cast-sessions.ts'));
+  assert.ok(/export function endAllCastSessions\(/.test(wrapper) && wrapper.includes('closeOpenCastSessions('), 'l\'enveloppe passe la vraie base');
+});

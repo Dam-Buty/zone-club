@@ -2,6 +2,7 @@ import { db } from "./db";
 import { completeCastRental, findFinishedCastSessions } from "./cast-completion";
 import {
   closeCastSession,
+  closeOpenCastSessions,
   hasActiveRental,
   openCastSession,
   reportCastSession,
@@ -72,6 +73,11 @@ export function endCastSession(
     { userId, filmId, position: opts.position, finished: opts.finished === true },
     { completeCastRental },
   );
+}
+
+/** Déconnexion : toutes les séances ouvertes du visiteur sont closes, ses locations intactes. */
+export function endAllCastSessions(userId: number): number {
+  return closeOpenCastSessions(db, userId);
 }
 
 export function getExpiredUnnotifiedSessions(): (CastSession & {

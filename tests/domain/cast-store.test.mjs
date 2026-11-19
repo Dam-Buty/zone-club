@@ -151,3 +151,14 @@ test('CAST STORE: activeCastFilmId est écrit par la tranche, la déconnexion et
   assert.ok(logout.includes('castLoggedOut()'), 'logout prévient la tranche');
   assert.ok(slice.includes('lastCastFilmId'), 'la tranche tient lastCastFilmId');
 });
+
+// Relecture finale, A2 : `logout` attendait l'effacement du cookie avant d'arrêter le Cast ; le DELETE de la séance
+// recevait 401 et la séance restait ouverte. Le Cast s'arrête d'abord (la TV, et le serveur tant que le compte est
+// encore connecté), puis la déconnexion part — qui clôt de toute façon les séances côté serveur.
+test('CAST STORE A2: logout arrête le Cast AVANT la requête de déconnexion', () => {
+  const logout = between(read(STORE), 'logout: async', 'clearAuthError:');
+  const cast = logout.indexOf('castLoggedOut()');
+  const request = logout.indexOf('api.auth.logout()');
+  assert.ok(cast >= 0 && request >= 0, 'les deux appels existent');
+  assert.ok(cast < request, 'castLoggedOut() précède api.auth.logout()');
+});
