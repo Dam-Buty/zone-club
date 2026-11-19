@@ -1,8 +1,8 @@
 import { useStore } from '../../store';
 import { castChipLabel, castChipLook } from '../../cast/cast-labels';
 import { TvIcon } from './KioskDistribution';
-import { kioskLabelCase } from './kiosk-logic';
-import styles from './KioskBrowse.module.css';
+import { castBarLabel, kioskLabelCase } from './kiosk-logic';
+import styles from './KioskCastBar.module.css';
 
 // La barre du Cast de la borne (refonte du Cast, docs/superpowers/specs/2026-11-18-cast-refonte-design.md, § 5.5
 // point 6). Lecteur fermé, la TV a un film à signaler — elle le joue, ne répond plus, ou vient de le finir — : la puce
@@ -31,10 +31,15 @@ export function KioskCastBar({ filmId, title }: KioskCastBarProps) {
   const { dot } = castChipLook(phase);
 
   return (
-    <button type="button" className={styles.kCastBar} onClick={() => openPlayer(filmId, { from: 'kiosk', ask: false })}>
+    // Un lecteur d'écran entend ce que fait l'appui (« Ouvrir la télécommande de … »), pas « titre, état ».
+    <button
+      type="button"
+      className={styles.kCastBar}
+      aria-label={castBarLabel(phase, title) ?? undefined}
+      onClick={() => openPlayer(filmId, { from: 'kiosk', ask: false })}
+    >
       <TvIcon className={styles.kCastIcon} />
       <span className={styles.kCastTitle}>{title}</span>
-      {/* L'espace ne se voit pas (bouton en flex) mais sépare les mots pour un lecteur d'écran. */}{' '}
       <span className={styles.kCastState}>
         {dot !== null && <i className={`${styles.kCastDot} ${dot === 'live' ? styles.kCastDotLive : styles.kCastDotWarn}`} aria-hidden="true" />}
         {kioskLabelCase(label)}

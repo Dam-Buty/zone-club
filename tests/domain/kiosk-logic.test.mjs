@@ -569,6 +569,23 @@ test('CAST BORNE: la barre du Cast écrit l\'état dans la casse de la borne, av
   assert.equal(K.kioskLabelCase(castChipLabel('ended')), 'Film terminé');
   assert.equal(K.kioskLabelCase(''), '');
 });
+test('CAST BORNE: « Sur ma télé » dit qu\'il remplacera le film que joue la TV, avant l\'appui (correctif 1)', async () => {
+  const { castDeviceLabel } = await import('../../src/cast/cast-labels.ts');
+  assert.equal(K.tvChoiceLine({ airPlay: false, replacing: null }), 'via Chromecast');
+  assert.equal(K.tvChoiceLine({ airPlay: true, replacing: null }), 'via AirPlay');
+  assert.equal(K.tvChoiceLine({ airPlay: false, replacing: { title: 'Dune : Deuxième partie', device: castDeviceLabel('Salon') } }), 'remplace Dune : Deuxième partie sur Salon');
+  // Titre absent du catalogue de la borne, appareil sans nom connu (page rechargée).
+  assert.equal(K.tvChoiceLine({ airPlay: false, replacing: { title: null, device: castDeviceLabel(null) } }), 'remplace un film sur la télé');
+  assert.equal(K.tvChoiceLine({ airPlay: false, replacing: { title: '  ', device: castDeviceLabel('  ') } }), 'remplace un film sur la télé');
+  // AirPlay ne passe pas par le Cast : il ne remplace rien sur la TV du Cast.
+  assert.equal(K.tvChoiceLine({ airPlay: true, replacing: { title: 'Dune', device: 'Salon' } }), 'via AirPlay');
+});
+test('CAST BORNE: la barre du Cast dit ce que fait l\'appui, pour un lecteur d\'écran (correctif 1)', () => {
+  assert.equal(K.castBarLabel('remote', 'Dune'), 'Ouvrir la télécommande de Dune');
+  assert.equal(K.castBarLabel('lost', 'Dune'), 'Dune : la télé ne répond plus, ouvrir');
+  assert.equal(K.castBarLabel('ended', 'Dune'), 'Dune est terminé, ouvrir');
+  for (const phase of ['idle', 'choosing', 'connecting', 'loading']) assert.equal(K.castBarLabel(phase, 'Dune'), null, phase);
+});
 test('CAST BORNE: « Location terminée » se montre lecteur fermé ; un lecteur resté ouvert sans location est d\'abord fermé', () => {
   // Le lecteur ne dessine rien sans location, mais reste « ouvert » : la borne, inerte sous lui, ne pourrait pas
   // faire fermer le message.

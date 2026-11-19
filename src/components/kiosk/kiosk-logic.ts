@@ -6,7 +6,7 @@
 // (tests/domain/kiosk-logic.test.mjs), un import de valeur sans extension casserait.
 import type { AisleType, Film } from '../../types';
 import type { RentalHistoryEntry, ReviewEligibilityMap } from '../../store';
-import type { CastView } from '../../cast/cast-machine';
+import type { CastPhase, CastView } from '../../cast/cast-machine';
 
 // ===== Onglets =====
 
@@ -567,6 +567,32 @@ export function watchEntry(i: { view: CastView }): 'remote' | 'choose' {
  */
 export function tvEntry(i: { airPlay: boolean }): 'airplay' | 'cast' {
   return i.airPlay ? 'airplay' : 'cast';
+}
+
+/**
+ * La seconde ligne de « Sur ma télé » : par quoi le film passe (`tvMeansLabel`) ; ou, si la TV joue déjà un AUTRE film
+ * (`castView` = `other-on-tv`), « remplace {titre} sur {nom} ». L'appui remplace sans demander : une confirmation en
+ * deux temps ferait perdre l'activation de l'appui dont le sélecteur a besoin, le visiteur est donc prévenu AVANT
+ * (correctif 1 de la refonte du Cast, spec 2026-11-18, § 5.4). `title` : le film de la TV dans le catalogue de la
+ * borne, « un film » sinon ; `device` : déjà passé par `castDeviceLabel` (« la télé » quand le nom est inconnu).
+ * AirPlay ne passe pas par le Cast : il ne remplace rien.
+ */
+export function tvChoiceLine(i: { airPlay: boolean; replacing: { title: string | null; device: string } | null }): string {
+  if (i.airPlay || i.replacing === null) return tvMeansLabel(i.airPlay);
+  return `remplace ${i.replacing.title?.trim() || 'un film'} sur ${i.replacing.device}`;
+}
+
+/**
+ * Ce qu'un lecteur d'écran entend sur la barre du Cast : ce que fait l'appui, selon l'état de la TV. `null` quand la
+ * barre n'a rien à signaler (mêmes phases que `castChipLabel`).
+ */
+export function castBarLabel(phase: CastPhase, title: string): string | null {
+  switch (phase) {
+    case 'remote': return `Ouvrir la télécommande de ${title}`;
+    case 'lost': return `${title} : la télé ne répond plus, ouvrir`;
+    case 'ended': return `${title} est terminé, ouvrir`;
+    case 'idle': case 'choosing': case 'connecting': case 'loading': return null;
+  }
 }
 
 /**

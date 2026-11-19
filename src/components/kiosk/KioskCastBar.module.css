@@ -1,0 +1,81 @@
+/* Borne de location — la barre du Cast (KioskCastBar).
+   La TV a un film à signaler, lecteur fermé : un bouton de la borne, pas une puce posée sur la page — la puce
+   flottante du vidéoclub recouvrait la bande. Entre LOUER et la bande, à la place que phoneLayout lui réserve
+   (--k-cast-top, --k-cast-h : haute comme un onglet, 44 px au moins), la bande descendant d'autant ; l'écran 2:3 du PC
+   lui fait la sienne (KioskView.module.css, .screen[data-cast-bar]). Aplat et filet de « Recherche » — ce n'est pas
+   l'action principale : majuscule initiale —, ombre de texte courte, aucun halo. Mêmes variables --k-* que les trois
+   autres feuilles, posées sur l'écran. Visuel PROVISOIRE (refonte du Cast, spec 2026-11-18, § 5.5 point 6), à
+   présenter à Rusmir. */
+
+.kCastBar {
+  position: absolute;
+  left: 2.4cqw;
+  right: 2.4cqw;
+  top: var(--k-cast-top, var(--k-strip-top));
+  height: var(--k-cast-h, var(--k-tab-h));
+  display: flex;
+  align-items: center;
+  gap: 2.2cqw;
+  padding: 0 3cqw 0 2.6cqw;
+  overflow: hidden;
+  white-space: nowrap;
+  text-align: left;
+  font-size: var(--k-tab-size);
+  font-weight: 800;
+  line-height: 1;
+  color: var(--k-ink);
+  text-shadow: 0 0.25cqw 0.12cqw rgba(0, 40, 70, 0.55);
+  border: 0.4cqw solid var(--k-edge-teal);
+  border-radius: var(--k-radius);
+  background: var(--k-skin-teal);
+  box-shadow: inset 0 0.25cqw 0 rgba(255, 255, 255, 0.16), 0 0 0 0.25cqw rgba(0, 10, 30, 0.6), 0 0.9cqw 2cqw rgba(0, 0, 20, 0.5);
+}
+
+/* Le téléviseur dessiné du panneau « Où voulez-vous regarder ? » (TvIcon). */
+.kCastIcon {
+  flex: none;
+  width: 6.4cqw;
+  height: 6.4cqw;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.kCastTitle {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* L'état derrière un filet, comme le prix du bouton d'action. */
+.kCastState {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 1.4cqw;
+  padding: 0.5cqw 0 0.5cqw 2.4cqw;
+  border-left: 0.3cqw solid rgba(255, 255, 255, 0.55);
+  font-size: var(--k-price-size);
+  font-weight: 700;
+  color: #eef8ff;
+}
+
+/* Le voyant : une diode plate dans son sertissage sombre, sans halo, fixe. */
+.kCastDot {
+  flex: none;
+  width: 2.4cqw;
+  height: 2.4cqw;
+  border-radius: 50%;
+  border: 0.3cqw solid rgba(0, 18, 48, 0.6);
+}
+
+.kCastDotLive {
+  background: #6fe39a;
+}
+
+.kCastDotWarn {
+  background: #ffb347;
+}

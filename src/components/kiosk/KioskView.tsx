@@ -706,6 +706,7 @@ export function KioskView() {
                   const { filmId, fresh } = distribution;
                   return (
                     <KioskReady
+                      filmId={filmId}
                       fresh={fresh}
                       title={catalogue.find((f) => f.id === filmId)?.title ?? 'Titre indisponible'}
                       expiresAt={useStore.getState().getRental(filmId)?.expiresAt ?? null}

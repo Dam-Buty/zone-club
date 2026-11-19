@@ -470,7 +470,9 @@ test('PANNEAU: deux pictogrammes dessinés, et plus de « Mes locations » ni de
   const dist = readText(path.join(ROOT, 'src/components/kiosk/KioskDistribution.tsx'));
   assert.ok((dist.match(/<svg/g) || []).length >= 2, 'pictogrammes en SVG');
   assert.ok(!dist.includes('Mes locations') && !dist.includes('Sur la TV'), 'anciens libellés');
-  assert.ok(dist.includes('watchHereLabel(') && dist.includes('tvMeansLabel('), 'libellés tirés de la logique testée');
+  // Le « comment » de la télé passe par tvChoiceLine depuis le correctif 1 de la refonte du Cast (« via … » ou
+  // « remplace … sur … ») ; tvChoiceLine reprend tvMeansLabel (tests/domain/kiosk-logic.test.mjs).
+  assert.ok(dist.includes('watchHereLabel(') && dist.includes('tvChoiceLine('), 'libellés tirés de la logique testée');
 });
 // Relecture finale : une critique publiée doit pouvoir se modifier depuis « Mon compte » (spec § 5), et « Compte »
 // appuyé pendant la recherche ne doit pas ouvrir le compte sous elle.
@@ -563,10 +565,15 @@ test('CAST BORNE: la barre du Cast est dessinée par la borne, dans son écran, 
   assert.ok(bar.includes("openPlayer(filmId, { from: 'kiosk', ask: false })"), 'l\'appui rouvre le lecteur depuis la borne, sans invite');
   assert.ok(!/position:\s*['"]?fixed/.test(bar) && !/style=\{\{/.test(bar), 'ni position fixe ni style en ligne : la feuille de la borne');
   assert.ok(!/\p{Extended_Pictographic}/u.test(bar), 'aucun emoji');
-  assert.ok(bar.includes("from './KioskBrowse.module.css'"), 'styles dans une feuille de la borne');
-  const css = readText(path.join(ROOT, 'src/components/kiosk/KioskBrowse.module.css'));
+  // Sa feuille à elle (correctif 1) : KioskBrowse.module.css approchait du budget de 1000 lignes.
+  assert.ok(bar.includes("from './KioskCastBar.module.css'"), 'styles dans la feuille de la barre');
+  assert.ok(!readText(path.join(ROOT, 'src/components/kiosk/KioskBrowse.module.css')).includes('.kCast'), 'plus rien de la barre dans la feuille du parcours');
+  const css = readText(path.join(ROOT, 'src/components/kiosk/KioskCastBar.module.css'));
   const rule = css.slice(css.indexOf('.kCastBar {'), css.indexOf('}', css.indexOf('.kCastBar {')));
-  assert.ok(rule.length > 0, '.kCastBar est dans KioskBrowse.module.css');
+  assert.ok(css.includes('.kCastBar {') && rule.length > 0, '.kCastBar est dans KioskCastBar.module.css');
+  for (const name of new Set([...bar.matchAll(/styles\.(\w+)/g)].map((m) => m[1]))) assert.ok(new RegExp(`\\.${name}\\b`).test(css), `.${name} manque dans KioskCastBar.module.css`);
+  // Un lecteur d'écran entend ce que fait l'appui (castBarLabel, testée), pas « Dune Télécommande ».
+  assert.match(bar, /aria-label=\{castBarLabel\(phase, title\) \?\? undefined\}/, 'nom accessible par état');
   assert.ok(/position:\s*absolute/.test(rule) && /top:\s*var\(--k-cast-top/.test(rule) && /height:\s*var\(--k-cast-h/.test(rule), 'la barre prend la place que phoneLayout lui réserve');
   assert.ok(/var\(--k-skin-teal\)/.test(rule) && /var\(--k-edge-teal\)/.test(rule), 'l\'aplat et le filet des boutons de la borne');
   assert.ok(/\.screen\[data-cast-bar\][\s\S]*?--k-strip-top/.test(readText(path.join(ROOT, 'src/components/kiosk/KioskView.module.css'))), 'l\'écran 2:3 du PC lui fait aussi sa place');
@@ -586,6 +593,19 @@ test('CAST BORNE: la barre du Cast est dessinée par la borne, dans son écran, 
   assert.ok(kiosk.length > 0 && !kiosk.includes('ActiveCastIndicator'), 'la borne ne monte plus la puce flottante');
   assert.equal((app.match(/<ActiveCastIndicator \/>/g) || []).length, 1, 'le vidéoclub la garde');
   assert.ok(!readText(path.join(ROOT, 'src/components/player/ActiveCastIndicator.tsx')).includes('variant'), 'plus de variante « kiosk »');
+});
+
+test('CAST BORNE: la TV joue un autre film — « Sur ma télé » dit qu\'il le remplacera, sans second appui (correctif 1)', () => {
+  const dist = KIOSK('KioskDistribution.tsx');
+  // La vue de CE film, lue en continu tant que le panneau est ouvert (sélecteurs du magasin, pas une lecture unique).
+  assert.match(dist, /useStore\(\(state\) => \(castView\(state\.cast, filmId\) === 'other-on-tv' \? state\.cast\.filmId : null\)\)/, 'le film qui occupe la TV, d\'après castView');
+  assert.ok(dist.includes('castDeviceLabel(state.cast.deviceName)'), 'le nom de la télé, « la télé » s\'il est inconnu');
+  assert.ok(dist.includes('allFilms(state.films)'), 'le titre vient du catalogue de la borne');
+  assert.ok(/tvChoiceLine\(\{/.test(dist) && dist.includes('<small>{tvLine}</small>'), 'la seconde ligne du bouton est celle de tvChoiceLine');
+  // Toujours un seul appui : le bouton ne change pas de gestionnaire (la confirmation en deux temps perdrait l'activation).
+  assert.ok(dist.includes('onClick={() => onTv(labels.entry)}'), 'même gestionnaire, rien de plus');
+  const view = KIOSK('KioskView.tsx');
+  assert.match(view, /<KioskReady\s+filmId=\{filmId\}/, 'le panneau sait de quel film il parle');
 });
 
 test('CAST BORNE: « Location terminée » est dit par la borne, et le fermer efface le message du Cast', () => {
