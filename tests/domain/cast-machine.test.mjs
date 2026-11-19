@@ -32,7 +32,7 @@ const ofType = (effects, type) => effects.filter((e) => e.type === type);
 const SERVER_EFFECTS = ['SERVER_OPEN', 'SERVER_REPORT', 'SERVER_CLOSE', 'READ_RENTAL', 'REMEMBER_FILM'];
 
 const media = { url: 'https://s/vf.mp4', title: 'Get Out', startAt: 0, subtitles: [], activeSubtitleId: null };
-const ready = { type: 'SDK_READY', hasSession: false, rememberedFilmId: null };
+const ready = { type: 'SDK_READY', hasSession: false, deviceName: null, rememberedFilmId: null };
 const ask = { type: 'REQUEST_CAST', filmId: 7, tracked: true, media };
 const playing = (o = {}) => ({ type: 'MEDIA_STATUS', filmId: 7, playerState: 'PLAYING', idleReason: null, position: 10, duration: 600, volume: 0.3, preview: false, ...o });
 const started = { type: 'SESSION_STARTED', deviceName: 'Salon', resumed: false };
@@ -378,7 +378,8 @@ test('CAST MACHINE TABLE: Annuler pendant le choix, la connexion ou le chargemen
   const cancel = { type: 'USER_CANCEL' };
   const expected = {
     choosing: [],
-    connecting: [{ type: 'CLEAR_TIMER', timer: 'connect' }],
+    // B10 : l'appareil est choisi, la séance qui s'ouvre est arrêtée comme pendant le chargement.
+    connecting: [{ type: 'CLEAR_TIMER', timer: 'connect' }, { type: 'STOP_AND_END_SESSION' }],
     loading: [{ type: 'CLEAR_TIMER', timer: 'load' }, { type: 'STOP_AND_END_SESSION' }],
   };
   for (const [phase, effects] of Object.entries(expected)) {
@@ -905,4 +906,106 @@ test('CAST MACHINE A1: au repos avec film mémorisé, la location relue conclut 
   const { state } = run([{ ...ready, rememberedFilmId: 7 }, rentalAt(40, 812)]);
   assert.equal(state.phase, 'idle'); assert.equal(state.notice.code, 'stopped_elsewhere');
   assert.deepEqual(state.resume, { filmId: 7, position: 812, play: false });
+});
+
+// ---------------------------------------------------------------------------------------------------------
+// Relecture finale, mineurs promus (final-fix-brief, B1, B3, B8, B9, B10)
+// ---------------------------------------------------------------------------------------------------------
+
+test('CAST MACHINE B1: le nom de l\'appareil d\'une séance reprise arrive avec SDK_READY', () => {
+  // La séance reprise avant SDK_READY n'atteint pas la machine (le service la résume) : sans ce nom, les textes
+  // disaient « la télé » pour toute la séance après un rechargement.
+  const { state } = run([{ ...ready, hasSession: true, deviceName: 'Salon', rememberedFilmId: 7 }]);
+  assert.equal(state.deviceName, 'Salon');
+  assert.equal(run([{ ...ready, hasSession: false, deviceName: null }]).state.deviceName, null);
+});
+
+test('CAST MACHINE B3: un IDLE sans raison à 95 % ou plus de la dernière durée connue est une fin', () => {
+  const near = run([...toRemote, playing({ position: 582 })]).state;          // 582 / 600 = 97 %
+  let r = step(near, tvIdle(null));
+  assert.equal(r.state.phase, 'ended');
+  assert.deepEqual(r.effects, [{ type: 'SERVER_CLOSE', filmId: 7, position: null, finished: true }]);
+  // Les raisons dites gardent leur sens, même près de la fin.
+  for (const [reason, code] of [['CANCELLED', 'stopped_elsewhere'], ['INTERRUPTED', 'stopped_elsewhere'], ['ERROR', 'tv_error']]) {
+    r = step(near, tvIdle(reason));
+    assert.equal(r.state.phase, 'idle', reason); assert.equal(r.state.notice.code, code, reason);
+  }
+  // Sous 95 %, sans raison : un arrêt.
+  r = step(run([...toRemote, playing({ position: 300 })]).state, tvIdle(null));
+  assert.equal(r.state.phase, 'idle'); assert.equal(r.state.notice.code, 'stopped_elsewhere');
+});
+
+test('CAST MACHINE B8: au repos avec film mémorisé, un IDLE vaut « plus de média » ; la fin de ce film, une fin', () => {
+  const reloaded = { ...ready, hasSession: true, deviceName: 'Salon', rememberedFilmId: 7 };
+  for (const status of [tvIdle('CANCELLED'), tvIdle(null), tvIdle('INTERRUPTED', { filmId: null }), tvIdle('FINISHED', { filmId: 9 })]) {
+    const { state, effects } = run([reloaded, status]);
+    assert.equal(state.phase, 'idle', JSON.stringify(status));
+    assert.deepEqual(ofType(effects, 'READ_RENTAL'), [{ type: 'READ_RENTAL', filmId: 7 }], JSON.stringify(status));
+  }
+  const finished = run([reloaded, tvIdle('FINISHED')]);
+  assert.equal(finished.state.phase, 'ended'); assert.equal(castOwnsFilm(finished.state), 7);
+  assert.deepEqual(ofType(finished.effects, 'SERVER_CLOSE'), [{ type: 'SERVER_CLOSE', filmId: 7, position: null, finished: true }]);
+  // Un média qui n'est pas d'ici joue : notre film n'y est plus, on relit sa location.
+  const foreign = run([reloaded, playing({ filmId: null })]);
+  assert.equal(foreign.state.phase, 'idle');
+  assert.deepEqual(ofType(foreign.effects, 'READ_RENTAL'), [{ type: 'READ_RENTAL', filmId: 7 }]);
+  // Sans film mémorisé, rien ne change : un IDLE au repos ne dit rien.
+  const free = run([{ ...ready, hasSession: true }]).state;
+  assert.equal(step(free, tvIdle('CANCELLED')).state, free);
+});
+
+test('CAST MACHINE B9: castPending — le film mémorisé attend la TV ou le serveur, et l\'attente a une fin', async () => {
+  const { castPending } = await import('../../src/cast/cast-machine.ts');
+  // SDK pas encore prêt : la machine ne sait pas encore ce que joue la TV ; seul le film mémorisé attend.
+  assert.equal(castPending(initialCastState, 7, 7), true);
+  assert.equal(castPending(initialCastState, 8, 7), false);
+  assert.equal(castPending(initialCastState, 7, null), false);
+  assert.equal(castPending(initialCastState, null, 7), false);
+  // SDK prêt, séance reprise : on attend la réponse de la TV.
+  const reloaded = { ...ready, hasSession: true, deviceName: 'Salon', rememberedFilmId: 7 };
+  const asking = run([reloaded]).state;
+  assert.equal(castPending(asking, 7, 7), true); assert.equal(castPending(asking, 8, 7), false);
+  // Plus de média : on attend la location.
+  const reading = step(asking, { type: 'NO_MEDIA' }).state;
+  assert.equal(castPending(reading, 7, 7), true);
+  // Chaque issue met fin à l'attente : la TV joue, se tait, la location dit, ou ne peut pas être relue.
+  const exits = {
+    'la TV joue': step(asking, playing()).state,
+    'la TV se tait': step(asking, { type: 'STATUS_FAILED' }).state,
+    'location relue (40 %)': step(reading, rentalAt(40, 812)).state,
+    'location relue (100 %)': step(reading, rentalAt(100, 0)).state,
+    'location disparue': step(reading, { ...rentalAt(0, 0), exists: false }).state,
+    'location illisible': step(reading, { type: 'RENTAL_UNREAD', filmId: 7 }).state,
+  };
+  for (const [label, state] of Object.entries(exits)) assert.equal(castPending(state, 7, 7), false, label);
+  // Sans séance au démarrage : la relecture de la location est l'attente.
+  const noSession = run([{ ...ready, rememberedFilmId: 7 }]).state;
+  assert.equal(castPending(noSession, 7, 7), true);
+  assert.equal(castPending(step(noSession, { type: 'RENTAL_UNREAD', filmId: 7 }).state, 7, 7), false);
+  // Rien d'autre n'attend : repos sans film mémorisé, et toutes les autres phases.
+  assert.equal(castPending(run([ready]).state, 7, 7), false);
+  for (const phase of PHASES.filter((p) => p !== 'idle')) assert.equal(castPending(reach(phase), 7, 7), false, phase);
+});
+
+test('CAST MACHINE B9: location illisible — au repos, le film mémorisé cesse d\'être attendu ; ailleurs rien', () => {
+  const noSession = run([{ ...ready, rememberedFilmId: 7 }]).state;
+  const { state, effects } = step(noSession, { type: 'RENTAL_UNREAD', filmId: 7 });
+  assert.equal(state.phase, 'idle'); assert.equal(state.filmId, null); assert.equal(state.notice, null);
+  // Le film reste mémorisé pour la page suivante : on ne sait rien de plus de lui.
+  assert.deepEqual(effects, []);
+  // En télécommande ou liaison perdue, la surveillance redemandera : rien ne change.
+  for (const phase of ['remote', 'lost']) {
+    const before = step(reach(phase), { type: 'NO_MEDIA' }).state;
+    assert.equal(step(before, { type: 'RENTAL_UNREAD', filmId: 7 }).state, before, phase);
+  }
+  // Un autre film : rien.
+  assert.equal(step(noSession, { type: 'RENTAL_UNREAD', filmId: 8 }).state, noSession);
+});
+
+test('CAST MACHINE B10: « Annuler » pendant la connexion arrête aussi la séance qui s\'ouvre', () => {
+  const { state, effects } = step(reach('connecting'), { type: 'USER_CANCEL' });
+  assert.equal(state.phase, 'idle'); assert.equal(state.notice, null);
+  assert.deepEqual(effects, [{ type: 'CLEAR_TIMER', timer: 'connect' }, { type: 'STOP_AND_END_SESSION' }]);
+  assert.equal(state.stopping, true, 'les statuts tardifs du lancement annulé sont ignorés');
+  assert.equal(state.connected, false);
 });

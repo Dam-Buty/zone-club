@@ -118,7 +118,19 @@ export function installFakeCastSdk({ sdk = true } = {}) {
     getCurrentSession: () => context.session,
     getSessionState: () => context.sessionState,
     requestSession: () => { calls.requestSession += 1; return context.requestSessionImpl(); },
-    endCurrentSession: (stopCasting) => { calls.endCurrentSession.push(stopCasting); },
+    /**
+     * Comme le vrai : la séance passe par SESSION_ENDING tout de suite (getSessionState le dit), puis SESSION_ENDED
+     * quand le récepteur a répondu (ici au tour suivant de la file des promesses). Sans séance, rien.
+     */
+    endCurrentSession: (stopCasting) => {
+      calls.endCurrentSession.push(stopCasting);
+      const ending = context.session;
+      if (!ending) return;
+      context.emitSession('SESSION_ENDING', ending);
+      Promise.resolve().then(() => {
+        if (context.session === ending) context.emitSession('SESSION_ENDED', ending);
+      });
+    },
     addEventListener: (type, fn) => on(contextListeners, type, fn),
     /** Séance présente avant l'initialisation : page rechargée pendant un Cast. */
     resume(session) {

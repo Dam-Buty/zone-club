@@ -59,3 +59,17 @@ test('CAST SERVICE: la remise à neuf réservée aux tests n\'est appelée nulle
     assert.ok(!readText(file).includes('ForTests'), `${rel} ne doit pas appeler une fonction réservée aux tests`);
   }
 });
+
+// Relecture finale, B12 : un effet ajouté à la machine ne doit pas pouvoir compiler sans être exécuté. `runEffect`
+// se termine par une branche `never` (le compilateur refuse un cas oublié), et chaque effet de la machine y a son cas.
+test('CAST SERVICE B12: runEffect traite chaque effet de la machine, et le compilateur le garde', () => {
+  const src = readText(SERVICE);
+  const start = src.indexOf('function runEffect(');
+  const body = src.slice(start, src.indexOf('\n}\n', start));
+  assert.match(body, /default: \{\s*(?:\/\/[^\n]*\n\s*)*const unhandled: never = effect;/, 'branche never');
+  const machine = readText(path.join(ROOT, 'src/cast/cast-machine.ts'));
+  const union = machine.slice(machine.indexOf('export type CastEffect ='), machine.indexOf('export type CastView'));
+  const types = [...union.matchAll(/type: '([A-Z_]+)'/g)].map((m) => m[1]);
+  assert.ok(types.length >= 12, `effets relevés : ${types.length}`);
+  for (const type of types) assert.ok(body.includes(`case '${type}'`), `runEffect traite ${type}`);
+});

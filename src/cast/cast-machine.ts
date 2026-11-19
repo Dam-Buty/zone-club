@@ -60,7 +60,8 @@ export interface CastState {
 }
 export type CastCommand = { kind: 'toggle' } | { kind: 'seekBy'; seconds: number } | { kind: 'volume'; level: number };
 export type CastEvent =
-  | { type: 'SDK_READY'; hasSession: boolean; rememberedFilmId: number | null } | { type: 'SDK_UNAVAILABLE' }
+  // `deviceName` : celui de la séance reprise avant SDK_READY (page rechargée), que la machine n'a pas entendue.
+  | { type: 'SDK_READY'; hasSession: boolean; deviceName: string | null; rememberedFilmId: number | null } | { type: 'SDK_UNAVAILABLE' }
   | { type: 'REQUEST_CAST'; filmId: number; tracked: boolean; media: CastMediaRequest }
   | { type: 'PICKER_CANCELLED' } | { type: 'PICKER_FAILED' }
   | { type: 'SESSION_STARTING'; deviceName: string | null }
@@ -73,6 +74,8 @@ export type CastEvent =
   | { type: 'POSITION'; position: number }
   // `watchPosition` : la position notée par le serveur sur la location.
   | { type: 'RENTAL_STATE'; filmId: number; exists: boolean; watchProgress: number; watchPosition: number }
+  // La location n'a pas pu être relue (réseau, compte déconnecté) : rien n'en est conclu.
+  | { type: 'RENTAL_UNREAD'; filmId: number }
   | { type: 'RENTAL_GONE'; filmId: number }
   | { type: 'COMMAND'; command: CastCommand }
   | { type: 'COMMAND_DONE' } | { type: 'COMMAND_FAILED' }
@@ -123,6 +126,7 @@ export function castReduce(state: CastState, event: CastEvent): Step {
     case 'STATUS_FAILED': return onStatusFailed(state);
     case 'POSITION': return state.phase === 'remote' ? { state: { ...state, position: event.position }, effects: [] } : unchanged(state);
     case 'RENTAL_STATE': return onRentalState(state, event);
+    case 'RENTAL_UNREAD': return onRentalUnread(state, event.filmId);
     case 'RENTAL_GONE': return onRentalGone(state, event.filmId);
     case 'COMMAND': case 'COMMAND_DONE': case 'COMMAND_FAILED': return onCommand(state, event);
     case 'TICK': case 'PAGE_VISIBLE': case 'PAGE_HIDDEN': case 'USER_RETRY': return onWatch(state, event);
@@ -146,6 +150,21 @@ export function castView(state: CastState, filmId: number | null): CastView {
     // Le sélecteur n'a encore rien mis sur la TV ; un film terminé ne l'occupe plus.
     case 'choosing': case 'ended': return 'local';
   }
+}
+
+/**
+ * La machine attend encore la TV ou le serveur pour `filmId`, le film mémorisé d'une page rechargée (`remembered` :
+ * `lastCastFilmId`) : SDK pas encore prêt, statut demandé à la TV, ou location en relecture. `castView` dit alors
+ * `local`, mais la TV joue peut-être ce film : tant que c'est vrai, sa vidéo d'ici ne part pas d'elle-même (B9).
+ * L'attente est bornée : le SDK se charge en 8 s au plus (puis `available` est connu), la TV répond ou se tait en
+ * CAST_STATUS_TIMEOUT_MS, une relecture se règle en 10 s (RENTAL_STATE, ou RENTAL_UNREAD qui lève l'attente).
+ */
+export function castPending(state: CastState, filmId: number | null, remembered: number | null): boolean {
+  if (filmId === null || state.phase !== 'idle') return false;
+  // SDK pas encore prêt : la machine ne connaît pas encore le film mémorisé, le magasin si.
+  if (state.available === null) return remembered === filmId;
+  // Au repos, un film n'est gardé que s'il est mémorisé et que la TV ou le serveur n'a pas encore dit où il en est.
+  return state.filmId === filmId;
 }
 
 /** Film à signaler par la puce, lecteur fermé : la TV le joue, ne répond plus, ou vient de le finir. */
@@ -296,8 +315,12 @@ function rentalOver(state: CastState, filmId: number): Step {
 
 function onSdkReady(state: CastState, e: Extract<CastEvent, { type: 'SDK_READY' }>): Step {
   if (state.phase !== 'idle') return unchanged(state);
-  // Le film mémorisé arrive sans position : ni la TV ni le serveur n'ont encore parlé.
-  const next: CastState = { ...state, available: true, connected: e.hasSession, filmId: e.rememberedFilmId, positionKnown: false };
+  // Le film mémorisé arrive sans position : ni la TV ni le serveur n'ont encore parlé. L'appareil d'une séance reprise
+  // est nommé ici : son SESSION_STARTED, arrivé avant, n'a pas atteint la machine (B1).
+  const next: CastState = {
+    ...state, available: true, connected: e.hasSession, deviceName: e.deviceName ?? state.deviceName,
+    filmId: e.rememberedFilmId, positionKnown: false,
+  };
   // Une séance reprise dit elle-même ce qu'elle joue (F2) ; sans séance, seul le serveur sait si le film
   // mémorisé a fini ou s'est arrêté pendant que la page dormait.
   if (e.hasSession) return { state: next, effects: [{ type: 'REQUEST_STATUS' }] };
@@ -398,8 +421,14 @@ function onTimeout(state: CastState, timer: 'connect' | 'load'): Step {
 
 function onMediaStatus(state: CastState, e: MediaStatus): Step {
   const filmId = e.filmId;
-  if (filmId === null) return unchanged(state);                // média que nous n'avons pas lancé
   const idle = e.playerState === 'IDLE';
+  // Page rechargée, film mémorisé : seul « un film d'ici en lecture » dit quelque chose de neuf. Un IDLE, ou un média
+  // qui n'est pas d'ici, disent que notre film n'est plus sur la TV — comme une liste vide, sinon le film mémorisé
+  // restait sans suite (B8) ; la fin de CE film est une fin.
+  if (state.phase === 'idle' && state.filmId !== null && (filmId === null || idle)) {
+    return idle && filmId === state.filmId && e.idleReason === 'FINISHED' ? finish(state, state.filmId) : onNoMedia(state);
+  }
+  if (filmId === null) return unchanged(state);                // média que nous n'avons pas lancé
   if (!idle && state.stopping) return unchanged(state);         // statut tardif d'un film qu'on a arrêté
   switch (state.phase) {
     case 'loading':
@@ -422,7 +451,10 @@ function onTvIdle(state: CastState, filmId: number, reason: MediaStatus['idleRea
   switch (reason) {
     case 'FINISHED': return finish(state, filmId);
     case 'ERROR': return interrupted(state, filmId, 'tv_error', knownPosition(state));
-    case 'CANCELLED': case 'INTERRUPTED': case null: return interrupted(state, filmId, 'stopped_elsewhere', knownPosition(state));
+    case 'CANCELLED': case 'INTERRUPTED': return interrupted(state, filmId, 'stopped_elsewhere', knownPosition(state));
+    // Sans raison : le repli des 95 % joue comme sur une séance média disparue (B3) — position et durée sont les
+    // dernières connues, le statut IDLE ne les a pas encore remplacées.
+    case null: return nearEnd(state) ? finish(state, filmId) : interrupted(state, filmId, 'stopped_elsewhere', knownPosition(state));
   }
 }
 
@@ -510,6 +542,16 @@ function concludeFromRental(state: CastState, e: Extract<CastEvent, { type: 'REN
   return interrupted(known, e.filmId, 'stopped_elsewhere', null);
 }
 
+/**
+ * La location n'a pas pu être relue. Au repos, le film mémorisé cesse d'être attendu (`castPending`) : sans cela il le
+ * restait pour la vie de la page, aucune relecture ne repartant au repos. Il reste mémorisé (`lastCastFilmId`) pour la
+ * page suivante, et une séance qui le joue le retrouvera (un statut de lecture ouvre la télécommande depuis le repos).
+ * En télécommande ou liaison perdue, la surveillance redemandera la TV, puis la location.
+ */
+function onRentalUnread(state: CastState, filmId: number): Step {
+  return state.phase === 'idle' && state.filmId === filmId ? { state: toIdle(state), effects: [] } : unchanged(state);
+}
+
 function onRentalGone(state: CastState, filmId: number): Step {
   if (filmId !== state.filmId) return unchanged(state);
   switch (state.phase) {
@@ -570,8 +612,12 @@ function onWatch(state: CastState, e: WatchEvent): Step {
 
 function onCancel(state: CastState): Step {
   switch (state.phase) {
-    case 'choosing': case 'connecting':
-      return { state: toIdle(state), effects: clearTimerOf(state.phase) };
+    case 'choosing':
+      return { state: toIdle(state), effects: [] };
+    case 'connecting':
+      // L'appareil est choisi, le récepteur se lance : la séance qui s'ouvre est arrêtée aussi, sinon le récepteur
+      // resterait lancé sur la TV et la séance ouverte (B10).
+      return { state: toIdle(state, closingSession), effects: [...clearTimerOf('connecting'), { type: 'STOP_AND_END_SESSION' }] };
     case 'loading':
       // Le film part peut-être déjà sur la TV : on arrête tout, et ses statuts tardifs sont ignorés — sinon
       // la télécommande réapparaîtrait juste après l'annulation.

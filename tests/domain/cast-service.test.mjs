@@ -316,3 +316,77 @@ test('CAST SERVICE A1: séance reprise après le délai de 500 ms, location relu
   assert.ok(!named(ports, 'remember').some(([filmId]) => filmId === null), 'le film reste mémorisé');
   assert.deepEqual(named(ports, 'serverReport'), [[7, 300, 600]], 'le suivi serveur reprend');
 });
+
+// Relecture finale, B1 : après un rechargement, la séance reprise arrive avant SDK_READY et n'atteint pas la machine ;
+// son appareil n'était jamais nommé (« la télé » pour toute la séance). SDK_READY le porte.
+test('CAST SERVICE B1: après une reprise, le nom de l\'appareil est celui que donne le SDK', async (t) => {
+  const { state } = await start(t, { session: true, remembered: 7 });
+  assert.equal(state().deviceName, 'Salon');
+  assert.equal(state().connected, true);
+});
+
+// Relecture finale, B9 : la relecture de la location d'un film mémorisé qui échoue (réseau, compte déconnecté) ne
+// laissait aucune trace : le film restait « attendu » pour toute la vie de la page.
+test('CAST SERVICE B9: relecture de la location impossible → le film mémorisé n\'est plus attendu, il reste mémorisé', async (t) => {
+  service.__resetCastForTests();
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+  installFakeCastSdk();
+  const ports = fakePorts(7);
+  ports.readRental = async (filmId) => { ports.calls.push(['readRental', filmId]); throw new Error('réseau'); };
+  service.initCast(ports);
+  await flush();
+  t.mock.timers.tick(service.CAST_RESUME_SETTLE_MS);
+  await flush();
+  assert.deepEqual(named(ports, 'readRental'), [[7]]);
+  const s = service.getCastState();
+  assert.equal(s.phase, 'idle'); assert.equal(s.filmId, null); assert.equal(s.notice, null);
+  assert.deepEqual(named(ports, 'remember'), [], 'lastCastFilmId n\'est pas effacé : la page suivante réessaiera');
+});
+
+// Relecture finale, B15 : le sélecteur jusqu'au chargement, comme sur le téléphone — requestSession résolu, appareil
+// choisi, séance ouverte, film chargé, télécommande.
+test('CAST SERVICE B15: sélecteur, connexion, chargement, télécommande', async (t) => {
+  const { fake, ports, state } = await start(t);
+  const tv = fake.makeSession('Salon');
+  let choose = null;
+  fake.context.requestSessionImpl = () => new Promise((resolve) => { choose = resolve; });
+  tv.loadMediaImpl = () => {
+    tv.mediaSession = fake.makeMedia({ filmId: 7, currentTime: 0 });
+    return Promise.resolve();
+  };
+  service.sendCast(ask(7));
+  assert.equal(state().phase, 'choosing');
+  assert.equal(fake.calls.requestSession, 1);
+  fake.context.emitSession('SESSION_STARTING', tv);                    // appareil choisi dans le sélecteur
+  assert.equal(state().phase, 'connecting');
+  assert.equal(state().deviceName, 'Salon');
+  fake.context.session = tv;
+  fake.context.emitSession('SESSION_STARTED', tv);                     // séance ouverte
+  assert.equal(state().phase, 'loading');
+  assert.equal(fake.calls.loadMedia.length, 1);
+  assert.deepEqual(fake.calls.loadMedia[0].media.customData, { filmId: 7 });
+  choose();                                                            // la promesse du sélecteur se règle après coup
+  await flush();
+  assert.equal(state().phase, 'remote');
+  assert.equal(state().filmId, 7);
+  assert.equal(fake.calls.loadMedia.length, 1, 'un seul chargement');
+  assert.deepEqual(named(ports, 'serverOpen'), [[7, 0, 600]]);
+  t.mock.timers.tick(CAST_LOAD_TIMEOUT_MS);
+  assert.equal(state().phase, 'remote', 'le délai de chargement est levé');
+});
+
+// Relecture finale, B15 : le faux endCurrentSession émet SESSION_ENDING puis SESSION_ENDED, comme le vrai.
+test('CAST SERVICE B15: « Arrêter » — la séance passe par SESSION_ENDING puis SESSION_ENDED', async (t) => {
+  const { fake, state } = await remoteOn(t);
+  const seen = [];
+  fake.context.addEventListener('sessionstatechanged', (e) => seen.push(e.sessionState));
+  service.sendCast({ type: 'USER_STOP' });
+  assert.equal(state().phase, 'idle'); assert.equal(state().stopping, true);
+  assert.equal(fake.context.getSessionState(), 'SESSION_ENDING', 'la séance se ferme');
+  // Un nouveau Cast demandé pendant la fermeture ne charge pas sur la séance qui se ferme.
+  service.sendCast(ask(7));
+  assert.equal(fake.calls.loadMedia.length, 0);
+  await flush();
+  assert.deepEqual(seen, ['SESSION_ENDING', 'SESSION_ENDED']);
+  assert.equal(state().connected, false); assert.equal(state().stopping, false);
+});

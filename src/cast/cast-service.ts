@@ -17,8 +17,8 @@
 // - Chrome gèle une page cachée après 60 s et la reprend au retour (`resume`).
 //
 // Règle : tout `catch` mène à un événement de la machine, aucune erreur avalée sans état. Deux exceptions
-// voulues : un port serveur qui rejette (l'envoi suivant rattrape) et un message illisible sur le canal média
-// (le délai de la demande de statut conclut).
+// voulues : un port serveur d'écriture qui rejette (l'envoi suivant rattrape ; une relecture de location qui rejette,
+// elle, le dit : RENTAL_UNREAD) et un message illisible sur le canal média (le délai de la demande de statut conclut).
 
 // Imports avec l'extension : Node charge ce fichier tel quel devant un faux SDK (tests/domain/cast-service.test.mjs).
 import {
@@ -226,7 +226,8 @@ function sdkReadyDue(): boolean {
 function sdkReadyEvent(): CastEvent {
   const session = currentSession();
   if (session) watchSession(session);
-  return { type: 'SDK_READY', hasSession: session !== null, rememberedFilmId: rememberedFilm() };
+  // La séance reprise avant SDK_READY a été retenue (voir fromTv) : son appareil n'est nommé que par cet événement.
+  return { type: 'SDK_READY', hasSession: session !== null, deviceName: deviceNameOf(session), rememberedFilmId: rememberedFilm() };
 }
 
 /**
@@ -253,6 +254,11 @@ function runEffect(effect: CastEffect): void {
     case 'SERVER_OPEN': case 'SERVER_REPORT': case 'SERVER_CLOSE': toServer(effect); return;
     case 'READ_RENTAL': readRental(effect.filmId); return;
     case 'REMEMBER_FILM': rememberFilm(effect.filmId); return;
+    default: {
+      // Un effet ajouté à la machine sans son cas ici ne compile pas : il ne serait jamais exécuté.
+      const unhandled: never = effect;
+      return unhandled;
+    }
   }
 }
 
@@ -721,9 +727,10 @@ function clearPhaseTimer(timer: PhaseTimer): void {
 // ---------------------------------------------------------------------------------------------------------
 
 /**
- * Appels au serveur en file : dans l'ordre d'émission, chacun après la fin du précédent — une position ne peut pas
- * arriver après la clôture qui la suit, ni une lecture de location avant l'écriture qui la précède. Un port qui
- * rejette est ignoré, voulu : l'envoi suivant (10 s) ou la lecture suivante rattrape.
+ * Appels au serveur en file : dans l'ordre d'émission, chacun après la fin du précédent — une position ne PART pas
+ * après la clôture qui la suit, ni une lecture de location avant l'écriture qui la précède. (Sur le fil, un appel
+ * abandonné après 10 s par `settle` peut encore aboutir plus tard : la file ordonne les envois, pas les arrivées.) Un
+ * port d'écriture qui rejette est ignoré, voulu : l'envoi suivant (10 s) rattrape ; une relecture, voir readRental.
  */
 function viaServer(call: (p: CastPorts) => Promise<unknown>): void {
   const p = ports;
@@ -741,10 +748,20 @@ function toServer(effect: ServerEffect): void {
   });
 }
 
+/**
+ * READ_RENTAL. Une relecture impossible (le port rejette : réseau, compte déconnecté) le dit à la machine : au repos,
+ * aucune autre relecture ne repartirait, et le film mémorisé resterait « attendu » pour la vie de la page (B9).
+ */
 function readRental(filmId: number): void {
   viaServer(async (p) => {
-    const { exists, watchProgress, watchPosition } = await p.readRental(filmId);
-    sendCast({ type: 'RENTAL_STATE', filmId, exists, watchProgress, watchPosition });
+    let read: Awaited<ReturnType<CastPorts['readRental']>>;
+    try {
+      read = await p.readRental(filmId);
+    } catch {
+      sendCast({ type: 'RENTAL_UNREAD', filmId });
+      return;
+    }
+    sendCast({ type: 'RENTAL_STATE', filmId, exists: read.exists, watchProgress: read.watchProgress, watchPosition: read.watchPosition });
   });
 }
 
