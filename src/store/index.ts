@@ -6,9 +6,9 @@ import { preloadPosterImage } from '../utils/CassetteTextureArray';
 import { fetchVHSCoverData } from '../utils/VHSCoverGenerator';
 import { parseServerDate } from '../utils/server-date';
 import { rentalsRefreshOutcome } from '../utils/rentals-refresh';
-import { prunedFilmVersions } from '../utils/version-choice';
+import { parseVersionChoice } from '../utils/version-choice';
 import { createCastSlice, type CastSlice } from './slices/cast';
-import { createVersionSlice, type VersionSlice } from './slices/version';
+import { createVersionSlice, filmVersionsAfterRead, type VersionSlice } from './slices/version';
 import { createManagerSlice } from './slices/manager';
 import { createTutorialSlice, TUTORIAL_WAYPOINTS } from './slices/tutorial';
 
@@ -426,6 +426,8 @@ export const useStore = create<VideoClubState>()(
             authUser: user,
             recoveryPhrase,
             isLoading: false,
+            // Compte neuf, sans fetchMe : ni préférence ni choix par film, et la table de l'appareil devient la sienne.
+            versionPref: null, filmVersions: {}, filmVersionsUser: user.id,
           });
           return true;
         } catch (error) {
@@ -465,7 +467,7 @@ export const useStore = create<VideoClubState>()(
           lastCastFilmId: null,
           // Ni la préférence ni les choix par film de ce compte ne passent au visiteur suivant.
           versionPref: null,
-          filmVersions: {},
+          filmVersions: {}, filmVersionsUser: null,
         });
       },
 
@@ -493,7 +495,7 @@ export const useStore = create<VideoClubState>()(
         set({
           rentals: data.activeRentals.map(apiRentalToRental),
           rentalHistory: historyFromApi(data.rentalHistory),
-          filmVersions: prunedFilmVersions(get().filmVersions, data.activeRentals.map((r) => r.film_id)),
+          ...filmVersionsAfterRead(get(), data.user.id, data.activeRentals.map((r) => r.film_id)),
         });
       },
 
@@ -512,12 +514,12 @@ export const useStore = create<VideoClubState>()(
               (data.reviewEligibility || []).map((e) => [e.film_id, { allowed: e.allowed, reason: e.reason, availableAtMs: e.available_at_ms }]),
             ),
             weeklyBonusStatus: data.weeklyBonus ?? null,
-            versionPref: data.user.version_pref ?? null,
-            // Le choix fait pour un film s'oublie quand sa location se termine.
-            filmVersions: prunedFilmVersions(get().filmVersions, data.activeRentals.map((r) => r.film_id)),
+            versionPref: parseVersionChoice(data.user.version_pref?.audio, data.user.version_pref?.subtitle),
+            // Les choix par film de ce seul compte, pour ses films encore loués ; jamais ceux d'un visiteur précédent.
+            ...filmVersionsAfterRead(get(), data.user.id, data.activeRentals.map((r) => r.film_id)),
           });
         } catch {
-          // Non connecté, pas d'erreur. Les choix par film restent sur l'appareil.
+          // Non connecté, pas d'erreur. Les choix par film et leur propriétaire restent sur l'appareil.
           set({ isAuthenticated: false, authUser: null, rentalHistory: [], userReviews: [], reviewEligibility: {}, weeklyBonusStatus: null, versionPref: null });
         }
       },
@@ -1136,8 +1138,9 @@ export const useStore = create<VideoClubState>()(
         hasCompletedTutorial: state.hasCompletedTutorial,
         // Le film dont le Cast court peut-être encore (page rechargée). Jamais l'état du Cast : adresse du film, drapeaux passagers.
         lastCastFilmId: state.lastCastFilmId,
-        // Le choix fait pour chaque film loué : retenu sur l'appareil. Jamais la version préférée : le serveur la tient.
-        filmVersions: state.filmVersions,
+        // Le choix fait pour chaque film loué, avec le compte à qui il appartient : retenu sur l'appareil. Jamais la
+        // version préférée : le serveur la tient.
+        filmVersions: state.filmVersions, filmVersionsUser: state.filmVersionsUser,
         // Navigation state — persisted so mobile tab-switch doesn't reset to exterior
         currentScene: state.currentScene,
         currentAisle: state.currentAisle,

@@ -6,6 +6,7 @@ import {
   versionName, versionSubLabel, defaultVersion, otherVersion,
   decideVersion, resolvedVersion, versionRows, versionLine,
   nextAudio, nextSubtitle, prunedFilmVersions,
+  readableFilmVersions, filmChoiceIn, keptFilmVersions,
 } from '../../src/utils/version-choice.ts';
 
 // Une seule décision de version (spec 2026-11-19-versions-et-erreurs-de-lecture, § 4.1) : ce que le visiteur demande
@@ -362,5 +363,70 @@ test('VERSION: entrées illisibles → null ; choix des films rendus retirés', 
   assert.deepEqual(map, { 1: VF, 2: VO, 3: VOSTFR }, 'la table d\'origine n\'est pas modifiée');
   assert.deepEqual(prunedFilmVersions(map, []), {});
   assert.deepEqual(prunedFilmVersions({}, [1, 2]), {});
-  assert.deepEqual(prunedFilmVersions(map, [1, 2, 3]), map);
+  assert.notEqual(kept, map, 'un élagage rend une table neuve');
+});
+
+test('VERSION: rien à élaguer → la même table, pour qu\'une relecture ne change pas l\'identité', () => {
+  const map = { 1: VF, 2: VO, 3: VOSTFR };
+  assert.equal(prunedFilmVersions(map, [1, 2, 3]), map);
+  assert.equal(prunedFilmVersions(map, [3, 9, 1, 2]), map, 'des locations sans choix ne comptent pas');
+  const empty = {};
+  assert.equal(prunedFilmVersions(empty, [1, 2]), empty);
+  assert.deepEqual(map, { 1: VF, 2: VO, 3: VOSTFR }, 'jamais modifiée');
+});
+
+// Stockage de l'appareil abîmé (édité à la main, format d'une autre version) : une table illisible compte comme vide,
+// une entrée illisible comme aucun choix — rien ne lève, ni dans fetchMe (qui conclurait à une déconnexion), ni à la
+// décision de version.
+const UNREADABLE_MAPS = [null, undefined, 'vo', 42, true, [], [VF, VO]];
+
+test('VERSION: une table de choix illisible sur l\'appareil compte comme vide, sans lever', () => {
+  for (const map of UNREADABLE_MAPS) {
+    let read;
+    assert.doesNotThrow(() => { read = readableFilmVersions(map); }, JSON.stringify(map));
+    assert.deepEqual(read, {}, `${JSON.stringify(map)} → table vide`);
+  }
+  const map = { 4: VOSTFR };
+  assert.equal(readableFilmVersions(map), map, 'une table lisible est rendue telle quelle');
+});
+
+test('VERSION: le choix retenu pour un film est le couple canonique, ou null s\'il est absent ou illisible', () => {
+  // Relu du stockage (JSON) : un objet ordinaire et des clés en texte ; la décision reçoit le couple gelé.
+  const stored = JSON.parse(JSON.stringify({ 42: VOSTFR, 7: VF }));
+  assert.equal(filmChoiceIn(stored, 42), VOSTFR, 'le couple canonique (même objet)');
+  assert.equal(filmChoiceIn(stored, 7), VF);
+  assert.equal(filmChoiceIn(stored, 8), null, 'aucun choix pour ce film');
+  for (const map of UNREADABLE_MAPS) {
+    let read;
+    assert.doesNotThrow(() => { read = filmChoiceIn(map, 42); }, JSON.stringify(map));
+    assert.equal(read, null, `table ${JSON.stringify(map)}`);
+  }
+  for (const entry of ['vo', 5, null, true, [], {}, { audio: 'xx', subtitle: 'fr' }, { audio: 'vo' }, ['vo', 'fr']]) {
+    let read;
+    assert.doesNotThrow(() => { read = filmChoiceIn({ 42: entry }, 42); }, JSON.stringify(entry));
+    assert.equal(read, null, `entrée ${JSON.stringify(entry)}`);
+  }
+});
+
+// Les choix par film sont retenus sur l'appareil SANS compte : sans propriétaire, le visiteur suivant sur le même
+// appareil (session de A échue sans déconnexion, puis B se connecte) jouerait un film loué par les deux dans la
+// version choisie par A. La table porte donc son propriétaire ; elle n'est reprise que par lui.
+test('VERSION: après une lecture du compte, ses choix pour ses films encore loués, jamais ceux d\'un autre compte', () => {
+  const map = { 42: VO, 7: VOSTFR };
+  // Même compte : élaguée aux locations actives ; rien à élaguer → la même table.
+  assert.deepEqual(keptFilmVersions({ map, owner: 4, accountId: 4, activeFilmIds: [42] }), { 42: VO });
+  assert.equal(keptFilmVersions({ map, owner: 4, accountId: 4, activeFilmIds: [42, 7] }), map);
+  // Le scénario de la relecture : A (4) a choisi la VO du film 42 ; B (9), qui loue aussi le 42, ne l'hérite pas.
+  assert.deepEqual(keptFilmVersions({ map, owner: 4, accountId: 9, activeFilmIds: [42, 7] }), {});
+  // Sans propriétaire, ou un propriétaire illisible : la table n'est à personne, elle part.
+  for (const owner of [null, undefined, '4', 0, NaN, {}]) {
+    assert.deepEqual(keptFilmVersions({ map, owner, accountId: 4, activeFilmIds: [42, 7] }), {}, `propriétaire ${String(owner)}`);
+  }
+  // Une table illisible, même au bon propriétaire : vide, sans lever.
+  for (const bad of UNREADABLE_MAPS) {
+    let kept;
+    assert.doesNotThrow(() => { kept = keptFilmVersions({ map: bad, owner: 4, accountId: 4, activeFilmIds: [42] }); }, JSON.stringify(bad));
+    assert.deepEqual(kept, {}, JSON.stringify(bad));
+  }
+  assert.deepEqual(map, { 42: VO, 7: VOSTFR }, 'jamais modifiée');
 });

@@ -245,13 +245,41 @@ export function nextSubtitle(offer: VersionOffer, v: VersionChoice): VersionChoi
   return v;
 }
 
-/** Les choix par film dont la location est finie sont oubliés : ne restent que ceux des films encore loués. */
+/**
+ * Les choix par film dont la location est finie sont oubliés : ne restent que ceux des films encore loués. Rien à
+ * oublier → la même table (une relecture du compte ne change pas son identité).
+ */
 export function prunedFilmVersions(map: Record<number, VersionChoice>, activeFilmIds: readonly number[]): Record<number, VersionChoice> {
   const active = new Set(activeFilmIds);
+  const keys = Object.keys(map);
   const kept: Record<number, VersionChoice> = {};
-  for (const key of Object.keys(map)) {
+  for (const key of keys) {
     const filmId = Number(key);
     if (active.has(filmId)) kept[filmId] = map[filmId];
   }
-  return kept;
+  return Object.keys(kept).length === keys.length ? map : kept;
+}
+
+/** La table des choix telle que l'appareil la rend : un objet ordinaire, sinon (stockage abîmé) une table vide. */
+export function readableFilmVersions(map: unknown): Record<number, VersionChoice> {
+  return typeof map === 'object' && map !== null && !Array.isArray(map) ? (map as Record<number, VersionChoice>) : {};
+}
+
+/** Le choix retenu sur l'appareil pour ce film : le couple canonique, ou null (aucun, ou illisible). Ne lève jamais. */
+export function filmChoiceIn(map: unknown, filmId: number): VersionChoice | null {
+  const stored: unknown = readableFilmVersions(map)[filmId];
+  if (typeof stored !== 'object' || stored === null) return null;
+  const { audio, subtitle } = stored as { audio?: unknown; subtitle?: unknown };
+  return parseVersionChoice(audio, subtitle);
+}
+
+/**
+ * Les choix à garder quand le compte `accountId` vient d'être lu. La table est retenue sur l'appareil, pas sur le
+ * compte : elle porte son propriétaire (`owner`), et seul lui la reprend — sinon le visiteur suivant sur le même
+ * appareil hériterait des choix du précédent pour un film qu'ils louent tous deux. Une table d'un autre compte, sans
+ * propriétaire ou illisible repart vide ; celle du compte est élaguée aux films encore loués.
+ */
+export function keptFilmVersions(i: { map: unknown; owner: unknown; accountId: number; activeFilmIds: readonly number[] }): Record<number, VersionChoice> {
+  if (i.owner !== i.accountId) return {};
+  return prunedFilmVersions(readableFilmVersions(i.map), i.activeFilmIds);
 }
