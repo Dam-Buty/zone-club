@@ -270,3 +270,23 @@ CREATE TABLE IF NOT EXISTS client_perf_runs (
 );
 CREATE INDEX IF NOT EXISTS idx_perf_runs_created ON client_perf_runs(created_at);
 CREATE INDEX IF NOT EXISTS idx_runs_outcome ON film_processing_runs(outcome);
+
+-- Lectures en échec : une ligne quand un film ne démarre pas pour un visiteur
+-- (src/api/index.ts → POST /api/playback-failures → lib/playback-failures.ts). Dit quel film, quelle version,
+-- sur l'appareil ou sur la télé, quel genre d'échec, quel navigateur. JAMAIS l'adresse de diffusion de la
+-- location ni un chemin de fichier : c'est le secret de la location, la table n'a pas de colonne pour.
+CREATE TABLE IF NOT EXISTS playback_failures (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    user_id INTEGER NOT NULL,
+    film_id INTEGER NOT NULL,
+    audio TEXT NOT NULL,             -- vf | vo
+    subtitle TEXT NOT NULL,          -- off | fr | en
+    place TEXT NOT NULL,             -- device | tv
+    kind TEXT NOT NULL,              -- error | timeout | tv_load
+    position_sec REAL,               -- où en était la lecture ; NULL si inconnue
+    browser TEXT,                    -- résumé court (briefBrowser), jamais l'en-tête brut
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (film_id) REFERENCES films(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_playback_failures_film ON playback_failures(film_id, created_at);

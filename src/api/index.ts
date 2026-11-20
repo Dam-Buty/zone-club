@@ -3,6 +3,7 @@
  */
 
 import type { Film } from '../types';
+import type { PlaybackFailure } from '../../lib/playback-failure-parse';
 
 const API_BASE = '';
 
@@ -533,6 +534,28 @@ export const castSessions = {
   },
 };
 
+// ============ PLAYBACK FAILURES ============
+
+export const playbackFailures = {
+  // Une lecture qui ne démarre pas laisse une trace côté serveur (quel film, quelle version, où). `keepalive` : l'envoi
+  // survit à un onglet qui se ferme ou à un lecteur qui se démonte. Toute erreur est avalée — une trace perdue ne
+  // dérange jamais le visiteur, qui a déjà assez de son film qui ne démarre pas.
+  async report(failure: PlaybackFailure): Promise<void> {
+    const { filmId, audio, subtitle, place, kind, position } = failure;
+    try {
+      await request('/api/playback-failures', {
+        method: 'POST',
+        keepalive: true,
+        // Les six champs nommés, jamais l'objet reçu tel quel : rien d'autre (une adresse de diffusion, par exemple)
+        // ne part, même si l'appelant en porte une.
+        body: JSON.stringify({ filmId, audio, subtitle, place, kind, position }),
+      });
+    } catch {
+      // volontairement muet
+    }
+  },
+};
+
 // ============ PUSH SUBSCRIBE ============
 
 export const pushSubscribe = {
@@ -642,6 +665,7 @@ export const api = {
   board,
   admin,
   castSessions,
+  playbackFailures,
   pushSubscribe,
 };
 
