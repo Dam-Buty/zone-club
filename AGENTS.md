@@ -221,7 +221,7 @@ Colonnes clés de `films` :
 | `original_language` | Pilote le choix du profil de qualité et l'identification VO |
 | `media_dir` | Dossier de sortie (nom de dossier Radarr, « Titre (Année) ») |
 | `file_path_vo_transcoded` / `file_path_vf_transcoded` | MP4 finaux |
-| `vf_unplayable` / `vo_unplayable` | 1 = version marquée illisible par `npm run media:check -- --mark` (fichier absent, illisible, sans piste, fin indécodable, sous 90 % de la durée TMDB) : elle compte comme **absente partout** — `has_vf` / `has_vo` de la fiche, adresses et liens de la location. Sans version jouable, la location est refusée (aucun crédit dépensé). Le script ne touche ni `is_available` ni `duration_sec`. Un fichier refait par le pipeline garde son drapeau : relancer `--mark`, qui le retire d'une version redevenue saine. La prévisualisation `/admin` ignore les drapeaux |
+| `vf_unplayable` / `vo_unplayable` | 1 = version marquée illisible par `npm run media:check -- --mark` (fichier absent, illisible, sans piste, fin indécodable, sous 90 % de la durée TMDB) : elle compte comme **absente partout** — `has_vf` / `has_vo` de la fiche, adresses de la location, téléchargement. Les liens d'une location couvrent tous les fichiers transcodés : le drapeau, relu à chaque lecture, masque l'adresse — une version démarquée pendant une location se lance aussitôt. Sans version jouable, la location est refusée (aucun crédit dépensé), et la borne le dit avant même la connexion. Chaque « fin indécodable » du rapport porte sa raison (rien décodé, délai dépassé, ou la première ligne d'erreur de ffmpeg) : à lire avant `--mark`. Le script ne touche ni `is_available` ni `duration_sec`. Un fichier refait par le pipeline garde son drapeau : relancer `--mark`, qui le retire d'une version redevenue saine. La prévisualisation `/admin` ignore les drapeaux |
 | `subtitle_fr_vtt` / `_srt`, `subtitle_en_vtt` / `_srt` | Sous-titres extraits |
 | `transcode_status` / `_progress` / `_error` | `pending` · `done` · `error` · `qc_failed` · `rejected_release` |
 | `qc_attempts` / `qc_force` | Compteur de rejets QC / laissez-passer manuel |
@@ -1421,8 +1421,8 @@ retour. Laisser le bouton actif, laisser le `onClick` décider et afficher une p
 `file_path_v{f,o}_transcoded` (c'est ce dont `streaming_urls` et les symlinks se servent), jamais
 `file_path_v*` ni `radarr_v*_id` (colonnes mortes). Une version marquée illisible (`v{f,o}_unplayable = 1`,
 posé par `npm run media:check -- --mark`) compte comme **absente** : un chemin rempli ne suffit pas. Toujours
-passer par `playableVersions` (`lib/media/file-check.ts`), qu'utilisent la fiche, `buildStreamingUrls` et
-`rentFilm` ; ne jamais retester le chemin à la main. Ça se teste désormais en local : le seed pose une
+passer par `playableVersions` (`lib/media/file-check.ts`), qu'utilisent la fiche, `buildStreamingUrls`,
+`rentFilm` et `getRentalDownloadSource` ; ne jamais retester le chemin à la main. Ça se teste désormais en local : le seed pose une
 dispo VF/VO/ST **par film**, aux proportions de la prod. `FORCED_RENTAL_VIDEO_URL`, lui, force
 toujours les deux versions sans sous-titres — s'il est défini, il gagne sur le seed et on ne teste
 plus rien de tout ça.

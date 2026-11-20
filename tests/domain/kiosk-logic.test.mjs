@@ -71,7 +71,8 @@ test('BORNE: décision du bouton d\'action, par ordre de priorité', () => {
   assert.equal(K.rentAction({ ...base, copiesLeft: null }), 'rent');
 });
 // Contrôle des fichiers (spec 2026-11-19-versions-et-erreurs-de-lecture, § 6) : un film dont plus aucune version n'est
-// lisible ne se loue pas, et la fiche le dit avant l'appui.
+// lisible ne se loue pas, et la fiche le dit avant l'appui — à tout visiteur, connecté ou non (correctif 1 de la
+// tâche 9 : un invité voyait « LOUER », était envoyé se connecter, et n'apprenait qu'ensuite que le film ne se loue pas).
 test('BORNE: un film sans version lisible → « unplayable », juste après « unavailable »', () => {
   const base = { isAuthenticated: true, isRented: false, isAvailable: true, playable: false, copiesLeft: 2, credits: 3, cost: 1 };
   assert.equal(K.rentAction(base), 'unplayable');
@@ -79,7 +80,14 @@ test('BORNE: un film sans version lisible → « unplayable », juste après « 
   assert.equal(K.rentAction({ ...base, credits: 0 }), 'unplayable', 'avant les crédits');
   assert.equal(K.rentAction({ ...base, isAvailable: false }), 'unavailable', 'après la disponibilité');
   assert.equal(K.rentAction({ ...base, isRented: true }), 'watch', 'une location en cours se regarde (le panneau dit le reste)');
-  assert.equal(K.rentAction({ ...base, isAuthenticated: false }), 'login');
+});
+test('BORNE: un invité apprend avant toute connexion qu\'un film ne se loue pas', () => {
+  const guest = { isAuthenticated: false, isRented: false, isAvailable: true, playable: true, copiesLeft: 2, credits: 5, cost: 1 };
+  assert.equal(K.rentAction({ ...guest, playable: false }), 'unplayable', 'sans version lisible : pas d\'envoi vers la connexion');
+  assert.equal(K.rentAction({ ...guest, isAvailable: false }), 'unavailable', 'pas en rayon : pas d\'envoi vers la connexion');
+  assert.equal(K.rentAction({ ...guest, isAvailable: false, playable: false }), 'unavailable');
+  assert.equal(K.rentAction(guest), 'login', 'un film qui se loue demande toujours la connexion');
+  assert.equal(K.rentAction({ ...guest, copiesLeft: 0 }), 'login', 'le stock se dit après la connexion, comme avant');
 });
 test('BORNE: un double appui ne lance qu\'une location', async () => {
   let rents = 0; let release;

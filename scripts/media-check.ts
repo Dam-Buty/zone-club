@@ -26,7 +26,7 @@ import { spawn } from 'child_process'
 import { access, readdir } from 'fs/promises'
 import { resolve } from 'path'
 import { db } from '../lib/db'
-import { judgeFilm, reportLines, tailDecoded, versionsToMark, type FileProbe } from '../lib/media/file-check'
+import { judgeFilm, reportLines, tailAnomaly, versionsToMark, type FileProbe } from '../lib/media/file-check'
 import { probeStreams } from '../lib/media/probe'
 import { isDirectMediaUrl } from '../lib/symlinks'
 
@@ -93,21 +93,26 @@ function answers(tool: string): Promise<boolean> {
 }
 
 /**
- * Décode les dix dernières secondes sans rien écrire. La progression (`-progress pipe:1`) dit si quelque chose a été
- * décodé : sans elle, un fichier coupé bien avant sa fin passerait pour sain (voir tailDecoded).
+ * Décode les dix dernières secondes sans rien écrire ; rend `null` si la fin se décode, sinon l'anomalie et sa raison
+ * (voir tailAnomaly). La progression (`-progress pipe:1`) dit si quelque chose a été décodé : sans elle, un fichier
+ * coupé bien avant sa fin passerait pour sain.
  */
-function decodesTail(file: string): Promise<boolean> {
+function tailOf(file: string): Promise<string | null> {
     return new Promise((done) => {
         const ffmpeg = spawn('ffmpeg', ['-progress', 'pipe:1', '-v', 'error', '-sseof', '-10', '-i', file, '-f', 'null', '-'], {
             stdio: ['ignore', 'pipe', 'pipe'],
         })
         let progress = ''
         let stderr = ''
+        let timedOut = false
         ffmpeg.stdout.on('data', (chunk) => { progress += chunk })
         ffmpeg.stderr.on('data', (chunk) => { stderr += chunk })
-        const timer = setTimeout(() => ffmpeg.kill('SIGKILL'), TAIL_TIMEOUT_MS)
-        ffmpeg.on('error', () => { clearTimeout(timer); done(false) })
-        ffmpeg.on('close', (code) => { clearTimeout(timer); done(tailDecoded({ code, stderr, progress })) })
+        const timer = setTimeout(() => { timedOut = true; ffmpeg.kill('SIGKILL') }, TAIL_TIMEOUT_MS)
+        ffmpeg.on('error', (err) => {
+            clearTimeout(timer)
+            done(tailAnomaly({ code: null, stderr: err.message, progress: '', timedOut: false }))
+        })
+        ffmpeg.on('close', (code) => { clearTimeout(timer); done(tailAnomaly({ code, stderr, progress, timedOut })) })
     })
 }
 
@@ -115,13 +120,15 @@ async function probeFile(file: string): Promise<FileProbe> {
     try { await access(file) } catch { return ABSENT }
     let probe: Awaited<ReturnType<typeof probeStreams>>
     try { probe = await probeStreams(file) } catch { return { ...ABSENT, exists: true } }
+    const tail = await tailOf(file)
     return {
         exists: true,
         opens: true,
         hasVideo: probe.streams.some((s) => s.codec_type === 'video'),
         hasAudio: probe.streams.some((s) => s.codec_type === 'audio'),
         duration: probe.duration,
-        tailDecodes: await decodesTail(file),
+        tailDecodes: tail === null,
+        tailAnomaly: tail,
     }
 }
 

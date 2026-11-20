@@ -4,7 +4,7 @@ import path from 'node:path';
 import Database from 'better-sqlite3';
 import { readText } from '../helpers/repo.mjs';
 import {
-  judgeFilm, playableVersions, versionsToMark, reportLines, tailDecoded, MIN_DURATION_RATIO, VF_VO_MAX_GAP_S,
+  judgeFilm, playableVersions, versionsToMark, reportLines, tailAnomaly, MIN_DURATION_RATIO, VF_VO_MAX_GAP_S,
 } from '../../lib/media/file-check.ts';
 
 // Contrôle des fichiers (docs/superpowers/specs/2026-11-19-versions-et-erreurs-de-lecture-design.md, § 6). Un script
@@ -124,25 +124,59 @@ test('CONTRÔLE DES FICHIERS: un film sain n\'a aucune anomalie, juste au-dessus
 const PROGRESS_SAIN = 'frame=20\nfps=0.00\nout_time_us=10000000\nout_time=00:00:10.000000\nprogress=end\n';
 const PROGRESS_VIDE = 'frame=0\nfps=0.00\nout_time_us=N/A\nout_time=N/A\nprogress=end\n';
 
-test('FIN DU FICHIER: un fichier sain décode ses dix dernières secondes', () => {
-  assert.equal(tailDecoded({ code: 0, stderr: '', progress: PROGRESS_SAIN }), true);
+// L'anomalie porte sa raison (correctif C de la tâche 9) : la règle est stricte — la moindre ligne d'erreur suffit —,
+// et l'opérateur doit pouvoir juger une ligne bénigne avant de lancer --mark.
+const run = (over) => ({ code: 0, stderr: '', progress: PROGRESS_SAIN, timedOut: false, ...over });
+
+test('FIN DU FICHIER: un fichier sain décode ses dix dernières secondes — aucune anomalie', () => {
+  assert.equal(tailAnomaly(run({})), null);
 });
 
-test('FIN DU FICHIER: coupé bien avant sa fin, il ne décode rien, sans erreur ni code non nul — indécodable quand même', () => {
+test('FIN DU FICHIER: coupé bien avant sa fin, il ne décode rien, sans erreur ni code non nul — « (rien décodé) »', () => {
   // ffmpeg saute au-delà des données, n'écrit qu'un avertissement (« Output file is empty, nothing was encoded »),
   // muet en `-v error`, et sort avec 0. Seule la position décodée le trahit.
-  assert.equal(tailDecoded({ code: 0, stderr: '', progress: PROGRESS_VIDE }), false);
-  assert.equal(tailDecoded({ code: 0, stderr: '', progress: '' }), false, 'aucune progression lue');
+  assert.equal(tailAnomaly(run({ progress: PROGRESS_VIDE })), 'fin indécodable (rien décodé)');
+  assert.equal(tailAnomaly(run({ progress: '' })), 'fin indécodable (rien décodé)', 'aucune progression lue');
 });
 
-test('FIN DU FICHIER: coupé près de sa fin, le décodeur se plaint — indécodable', () => {
+test('FIN DU FICHIER: coupé près de sa fin, le décodeur se plaint — sa première ligne, sans l\'adresse mémoire', () => {
   const stderr = '[h264 @ 0x87505d500] Invalid NAL unit size (1272 > 709).\n[h264 @ 0x87505d500] missing picture in access unit with size 713\n';
-  assert.equal(tailDecoded({ code: 0, stderr, progress: 'frame=18\nout_time_us=9000000\nprogress=end\n' }), false);
+  assert.equal(
+    tailAnomaly(run({ stderr, progress: 'frame=18\nout_time_us=9000000\nprogress=end\n' })),
+    'fin indécodable : [h264] Invalid NAL unit size (1272 > 709).',
+  );
+  // Lignes vides en tête ignorées.
+  assert.equal(tailAnomaly(run({ stderr: '\n  \n[aac @ 0xae4dbce00] Input buffer exhausted before END element found\n' })),
+    'fin indécodable : [aac] Input buffer exhausted before END element found');
 });
 
-test('FIN DU FICHIER: code non nul, ou ffmpeg tué au bout de 60 s (code nul) — indécodable', () => {
-  assert.equal(tailDecoded({ code: 1, stderr: '', progress: PROGRESS_SAIN }), false);
-  assert.equal(tailDecoded({ code: null, stderr: '', progress: 'frame=3\nout_time_us=1500000\nprogress=continue\n' }), false);
+test('FIN DU FICHIER: une ligne d\'erreur trop longue est raccourcie à 120 caractères', () => {
+  const long = `[mov,mp4,m4a,3gp,3g2,mj2 @ 0x7a6c4400] ${'x'.repeat(300)}`;
+  const anomaly = tailAnomaly(run({ stderr: long }));
+  const detail = anomaly.slice('fin indécodable : '.length);
+  assert.ok(anomaly.startsWith('fin indécodable : [mov,mp4,m4a,3gp,3g2,mj2] xxx'), anomaly.slice(0, 60));
+  assert.equal(detail.length, 120);
+  assert.ok(detail.endsWith('…'));
+});
+
+test('FIN DU FICHIER: ffmpeg tué au bout de 60 s — « (délai dépassé) », même s\'il avait écrit quelque chose', () => {
+  assert.equal(tailAnomaly(run({ code: null, timedOut: true, progress: 'frame=3\nout_time_us=1500000\nprogress=continue\n' })),
+    'fin indécodable (délai dépassé)');
+  assert.equal(tailAnomaly(run({ code: null, timedOut: true, stderr: '[h264 @ 0x1] error' })), 'fin indécodable (délai dépassé)');
+});
+
+test('FIN DU FICHIER: code non nul sans ligne d\'erreur — le code ; arrêté sans code — « (interrompu) »', () => {
+  assert.equal(tailAnomaly(run({ code: 1 })), 'fin indécodable (code de sortie 1)');
+  assert.equal(tailAnomaly(run({ code: null })), 'fin indécodable (interrompu)');
+});
+
+test('FIN DU FICHIER: la raison arrive telle quelle dans le rapport, une sonde sans raison dit « fin indécodable »', () => {
+  const vo = { ...ok(7200), tailDecodes: false, tailAnomaly: 'fin indécodable (rien décodé)' };
+  assert.deepEqual(judgeFilm({ runtimeMin: 120, vf: null, vo }).vo, ['fin indécodable (rien décodé)']);
+  assert.deepEqual(reportLines({ id: 69, title: 'Old Boy' }, judgeFilm({ runtimeMin: 120, vf: null, vo })), ['[69] Old Boy — VO : fin indécodable (rien décodé)']);
+  assert.deepEqual(judgeFilm({ runtimeMin: 120, vf: null, vo: { ...ok(7200), tailDecodes: false } }).vo, ['fin indécodable']);
+  // Une raison sans échec ne compte pas : seul `tailDecodes` décide.
+  assert.deepEqual(judgeFilm({ runtimeMin: 120, vf: null, vo: { ...ok(7200), tailAnomaly: 'fin indécodable (rien décodé)' } }).vo, []);
 });
 
 // ---------- Ce que marque --mark ----------
@@ -240,10 +274,11 @@ test('CONTRÔLE DES FICHIERS: le script n\'écrit ni is_available ni duration_se
     assert.ok(src.includes(used), `le script passe par ${used.slice(0, -1)}`);
   }
   // Les dix dernières secondes, décodées sans sortie, 60 s au plus — la commande de la spec, précédée de la progression
-  // qui dit si quelque chose a été décodé, jugée par tailDecoded.
+  // qui dit si quelque chose a été décodé, jugée par tailAnomaly (le verdict et sa raison).
   assert.match(src, /\['-progress', 'pipe:1', '-v', 'error', '-sseof', '-10', '-i', \w+, '-f', 'null', '-'\]/);
   assert.match(src, /60_000|60000/);
-  assert.ok(src.includes('tailDecoded('), 'le verdict vient de tailDecoded');
+  assert.match(src, /tailAnomaly\(\{ code, stderr, progress, timedOut \}\)/, 'le verdict et sa raison viennent de tailAnomaly');
+  assert.match(src, /tailDecodes: tail === null,\s*tailAnomaly: tail,/, 'la sonde porte le verdict et sa raison');
   // `isDirectMediaUrl` vient de lib/symlinks ; rien d'autre de ce qui fabrique l'adresse d'une location.
   assert.doesNotMatch(src, /streaming_url|getStreamingUrl|buildStreamingUrls|symlink_uuid|SYMLINKS_PATH|RentalSymlinks|from 'rentals'|rentals\./,
     'jamais l\'adresse de diffusion d\'une location');
@@ -296,12 +331,6 @@ test('LOCATION: sans version lisible, rentFilm refuse avant le stock et les cré
   }
   // Le refus vient de playableVersions, hors du mode FORCED_RENTAL_*.
   assert.match(block.slice(0, refuse), /const playable = playableVersions\(film\);\s*if \(!IS_FORCED_RENTAL_MODE && !playable\.vf && !playable\.vo\) \{\s*$/);
-});
-
-test('LOCATION: une version marquée n\'a pas de lien dans la location', () => {
-  const block = fnBlock(readText(path.join(ROOT, 'lib/rentals.ts')), 'export async function rentFilm');
-  assert.match(block, /vf: playable\.vf \? film\.file_path_vf_transcoded : null,/);
-  assert.match(block, /vo: playable\.vo \? film\.file_path_vo_transcoded : null,/);
 });
 
 test('VERSIONS JOUABLES: la prévisualisation /admin ne lit pas les drapeaux (elle sert à diagnostiquer)', () => {

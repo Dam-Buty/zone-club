@@ -238,6 +238,7 @@ export type RentAction = 'login' | 'watch' | 'unavailable' | 'unplayable' | 'out
 /**
  * Ce que fait le bouton d'action de la fiche, par ordre de priorité. `copiesLeft` vaut `null` tant que le stock est
  * inconnu ; `playable` : le film a au moins une version lisible (`has_vf` / `has_vo` de la fiche, spec 2026-11-19 § 6).
+ * Un film qui ne se loue pas le dit avant la connexion : un invité n'est pas envoyé s'inscrire pour rien.
  */
 export function rentAction(i: {
   isAuthenticated: boolean;
@@ -249,9 +250,9 @@ export function rentAction(i: {
   cost: number;
 }): RentAction {
   if (i.isRented) return 'watch';
-  if (!i.isAuthenticated) return 'login';
   if (!i.isAvailable) return 'unavailable';
   if (!i.playable) return 'unplayable';
+  if (!i.isAuthenticated) return 'login';
   if (i.copiesLeft !== null && i.copiesLeft <= 0) return 'out-of-stock';
   if (i.credits < i.cost) return 'insufficient';
   return 'rent';

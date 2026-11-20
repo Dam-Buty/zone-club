@@ -294,9 +294,11 @@ export async function rentFilm(userId: number, filmId: number): Promise<RentalWi
     const symlinks = IS_FORCED_RENTAL_MODE
         ? { uuid: `forced-${randomUUID()}` }
         : await createRentalSymlinks(film.tmdb_id, {
-            // Une version marquée n'a pas de lien : elle compte comme absente pour toute la location.
-            vf: playable.vf ? film.file_path_vf_transcoded : null,
-            vo: playable.vo ? film.file_path_vo_transcoded : null,
+            // Tous les fichiers transcodés sont liés, version marquée comprise : son adresse est masquée par
+            // buildStreamingUrls et le téléchargement ne la sert pas, tous deux relisant le drapeau à chaque appel —
+            // une version démarquée pendant la location se lance donc aussitôt.
+            vf: film.file_path_vf_transcoded,
+            vo: film.file_path_vo_transcoded,
             subtitles: {
                 fr: film.subtitle_fr_vtt,
                 en: film.subtitle_en_vtt
@@ -451,35 +453,27 @@ export async function getRentalDownloadSource(userId: number, filmId: number): P
         };
     }
 
-    const vfPath = join(SYMLINKS_PATH, rental.symlink_uuid, 'film_vf.mp4');
-    const voPath = join(SYMLINKS_PATH, rental.symlink_uuid, 'film_vo.mp4');
-
-    let absolutePath: string | null;
-    let languageSuffix = 'VO';
-
-    try {
-        await access(vfPath);
-        absolutePath = vfPath;
-        languageSuffix = 'VF';
-    } catch {
+    // La VF d'abord, sinon la VO. Le lien d'une version marquée illisible existe (rentFilm lie tous les fichiers) :
+    // le drapeau, relu ici, est la seule garde qui l'empêche d'être servie.
+    const playable = playableVersions(film);
+    const candidates = [
+        { playable: playable.vf, path: join(SYMLINKS_PATH, rental.symlink_uuid, 'film_vf.mp4'), suffix: 'VF' },
+        { playable: playable.vo, path: join(SYMLINKS_PATH, rental.symlink_uuid, 'film_vo.mp4'), suffix: 'VO' },
+    ];
+    for (const candidate of candidates) {
+        if (!candidate.playable) continue;
         try {
-            await access(voPath);
-            absolutePath = voPath;
-            languageSuffix = 'VO';
+            await access(candidate.path);
         } catch {
-            absolutePath = null;
+            continue;
         }
+        return {
+            absolutePath: candidate.path,
+            filename: `${sanitizeDownloadName(film.title)}-${candidate.suffix}.mp4`
+        };
     }
 
-    if (!absolutePath) {
-        throw new Error('Aucun fichier vidéo disponible pour cette location');
-    }
-
-    const baseName = sanitizeDownloadName(film.title);
-    return {
-        absolutePath,
-        filename: `${baseName}-${languageSuffix}.mp4`
-    };
+    throw new Error('Aucun fichier vidéo disponible pour cette location');
 }
 
 const EARLY_RETURN_HOURS = 24;
