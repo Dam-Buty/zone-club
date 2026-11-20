@@ -42,9 +42,11 @@ Même relevé : 370 films ont VF et VO, 9 n'ont que la VO, aucun n'a que la VF.
 **Buts**
 
 - Un seul réglage, compris sans réfléchir : **VF, VOSTFR, VO**.
-- Aucune question obligatoire avant le film ; le choix se voit et se change d'un appui.
+- Aucune question avant le film ; le choix se voit et se change d'un appui. Une seule exception, voulue par
+  Rusmir : quand le film n'a pas les sous-titres attendus, la borne demande « continuer ou passer en VF ? » (§ 4.1).
 - Le même réglage, au même endroit et sous le même nom, dans la borne, le lecteur et la télécommande du Cast.
-- Le choix est retenu sur le compte : on ne le refait pas à chaque film ni sur chaque appareil.
+- La version préférée est un réglage du compte, que le visiteur règle lui-même dans « Mon compte » : l'application
+  ne la déduit jamais de ce qu'il a regardé (décision de Rusmir du 20/11).
 - Changer de version pendant un Cast fonctionne.
 - La télécommande du Cast se manie comme celle d'un magnétoscope, avec les touches du lecteur (§ 7).
 - Un film qui ne se lance pas le dit, propose une sortie en un appui, et laisse une trace côté serveur.
@@ -94,32 +96,69 @@ et **VO, sous-titres anglais** (`vo`, `en`).
 Une fonction pure décide de ce qui joue, à partir de la préférence (ou de son absence) et de ce que la location
 offre (`streamingUrls` : `vf`, `vo`, `subtitles`, `subtitles_en`) :
 
-- **Sans préférence** (décision de Rusmir) : VF si elle existe ; sinon VOSTFR ; sinon VO avec les sous-titres
-  anglais s'ils existent ; sinon VO.
-- **Avec préférence** : elle est honorée si le film l'offre. Sinon, on garde d'abord la piste audio voulue.
-  Piste audio : VF absente → comme « sans préférence » ; VO absente → VF. Sous-titres : la langue voulue ; si le
-  film ne les a pas dans cette langue, on prend ceux de l'autre langue quand la piste audio est la VO (VOSTFR
-  demandée, pas de sous-titres français → VO avec les sous-titres anglais), et aucun quand la piste audio est la
-  VF (exemples et raisons au § 11.2).
-- La fonction rend aussi **si elle a dû substituer** : l'écran l'écrit (« VOSTFR · VF indisponible pour ce film »).
-- Une substitution ne modifie jamais la préférence enregistrée.
+Ce qui est demandé vient de trois sources, dans cet ordre :
+
+1. **le choix fait pour ce film** : un appui sur une version dans la liste. Il vaut pour ce film, y compris quand
+   on le rouvre, tant qu'il est loué. Il ne touche pas au réglage du compte ;
+2. **la version préférée du compte**, si le visiteur en a réglé une dans « Mon compte » (§ 4.2) ;
+3. sinon **le choix par défaut** (décision de Rusmir du 19/11) : VF si elle existe ; sinon VOSTFR ; sinon VO avec
+   les sous-titres anglais s'ils existent ; sinon VO.
+
+Quand le film n'offre pas ce qui est demandé :
+
+- **Piste audio absente** : VF absente → le choix par défaut ; VO absente → VF. L'écran l'écrit (« VOSTFR · VF
+  indisponible pour ce film »), sans poser de question : il n'y a rien à choisir.
+- **Sous-titres absents alors que la piste est la VO** (décision de Rusmir du 20/11) : la borne **demande**, une
+  fois, avant que le film démarre. Exemple, version préférée VOSTFR, film sans sous-titres français :
+
+  ```
+     Ce film n'a pas de sous-titres français
+        La VO existe avec des sous-titres anglais.
+
+     [ Continuer en VO, sous-titres anglais ]
+     [ Passer en VF ]
+  ```
+
+  Si le film n'a aucun sous-titre : « Ce film n'a pas de sous-titres. » — « Continuer en VO sans sous-titres » /
+  « Passer en VF ». La réponse vaut pour ce film (source 1) : la question n'est pas reposée à la réouverture. Si
+  le film n'a pas de VF non plus, il n'y a rien à choisir : pas de question, la VO joue et l'écran écrit ce qui
+  manque.
+- **Sous-titres absents alors que la piste est la VF** (version préférée « VF sous-titrée », film sans sous-titres
+  français) : la VF joue sans sous-titres et l'écran l'écrit. Pas de question.
+- Une substitution ne modifie jamais le réglage du compte.
 
 Les versions d'un film se comptent **par couple**, pas par piste audio : un film qui n'a que la VO mais des
 sous-titres français offre VOSTFR et VO. Tout couple a un libellé affichable, y compris ceux sans nom
 (« VF · sous-titres anglais »).
 
-Seul un geste du visiteur enregistre une préférence : un appui sur une version, ou les raccourcis clavier
-existants du lecteur (`VHSPlayer.tsx:754-765`), qui restent tels quels et agissent chacun sur son axe.
+Un appui sur une version, ou les raccourcis clavier existants du lecteur (`VHSPlayer.tsx:754-765`, qui restent
+tels quels et agissent chacun sur son axe), change la version **de ce film**. Rien de cela ne change la version
+préférée du compte.
 
-### 4.2 Mémorisation
+### 4.2 La version préférée, un réglage du compte
 
-- Deux colonnes sur `users` (`pref_audio`, `pref_subtitle`, nulles par défaut), ajoutées par migration idempotente
-  comme les autres (`lib/db.ts`).
-- `GET /api/me` rend la préférence ; une route `PATCH` sous `/api/me` l'enregistre (session requise, valeurs
-  validées).
-- Côté client, la préférence vit dans le magasin et dans sa copie persistée (affichage immédiat avant la réponse du
-  serveur) ; la valeur du serveur prime dès qu'elle arrive. L'enregistrement part en tâche de fond : son échec ne
-  bloque rien et ne s'affiche pas.
+Décision de Rusmir (20/11/2026) : « l'habitude doit être une option à cocher dans son compte, pas quelque chose
+qu'on met en place nous-mêmes ». La proposition précédente (retenir automatiquement le dernier choix) est
+abandonnée.
+
+- Dans « Mon compte » de la borne, une ligne « Version préférée » avec sa valeur. Un appui ouvre la même liste que
+  partout (§ 4.3), précédée d'un premier choix, **« Automatique »** (« VF quand elle existe, sinon VOSTFR »), qui
+  est la valeur d'un compte qui n'a rien réglé.
+
+  ```
+  Mon compte
+  verif778804                          4 crédits
+
+    Version préférée            Automatique ›
+  ```
+
+- Seul ce réglage modifie la préférence. Ni un choix fait sur un film, ni « Essayer en … » après une panne, ni la
+  réponse à la question des sous-titres ne la changent.
+- Stockage : deux colonnes sur `users` (`pref_audio`, `pref_subtitle`, nulles = « Automatique »), ajoutées par
+  migration idempotente comme les autres (`lib/db.ts`). `GET /api/me` rend la préférence ; une route `PATCH` sous
+  `/api/me` l'enregistre (session requise, valeurs validées). Le réglage dit s'il a bien été enregistré.
+- Le choix fait pour un film (source 1 du § 4.1) est retenu sur l'appareil, par film, et s'efface quand la location
+  se termine.
 
 ### 4.3 Où il apparaît
 
@@ -174,8 +213,10 @@ de changements.
 **c) Télécommande du Cast** (`RemotePanel`) : le même bouton à la place de la rangée STFR/STEN.
 
 - Changer **les sous-titres seulement** : sans coupure (`editTracksInfo`, déjà en place).
-- Changer **la piste audio** : la télé recharge l'autre fichier à la position courante, moins 3 secondes, sur la
-  séance déjà ouverte — jamais le sélecteur d'appareil. Aujourd'hui la machine ignore une demande pour le film
+- Changer **la piste audio** : la télé recharge l'autre fichier **à la même seconde** (décision de Rusmir du 20/11,
+  pas de retour en arrière), sur la séance déjà ouverte — jamais le sélecteur d'appareil. Rusmir attend une bascule
+  instantanée ; la VF et la VO étant deux fichiers, la télé doit ouvrir l'autre, et la durée réelle de ce
+  changement n'est pas encore mesurée (§ 10). Aujourd'hui la machine ignore une demande pour le film
   qu'elle joue déjà (`cast-machine.ts:338`) : il faut un événement dédié. La séance serveur reste la même.
 - Si la nouvelle version ne se charge pas, la télé **reprend l'ancienne à la même position**, et un message le
   dit : « La VF ne se lance pas sur {télé}. Le film continue en VOSTFR. » Si l'ancienne échoue aussi, le message
@@ -355,6 +396,20 @@ récepteur standard. Retenu sur l'appareil.
 
 Chaque point dit la situation, ce que j'ai choisi, et l'autre possibilité.
 
+**Réponses de Rusmir du 20/11/2026** (le reste du document est aligné sur elles) :
+
+| Point | Réponse |
+|---|---|
+| 11.1 « Autres versions » | D'accord, tant que ces deux versions restent sélectionnables. |
+| 11.2 Sous-titres absents | **Changé** : la borne pose la question « continuer ou passer en VF ? » au lieu de choisir seule (§ 4.1). |
+| 11.3 Reprise 3 secondes plus tôt | **Refusé** : reprise à la même seconde ; il attend une bascule instantanée (§ 4.3 c). |
+| 11.4 « Essayer en … » ne change pas l'habitude | D'accord, et il va plus loin : la version préférée est un réglage que le visiteur fait lui-même dans son compte, jamais déduite (§ 4.2). |
+| 11.5 Délai de 15 secondes | Pas de réponse : je garde 15 secondes, un seul nombre facile à changer. |
+| 11.6 Outil de contrôle des fichiers | D'accord. |
+| 11.7 Liste des échecs dans `/admin` | D'accord. |
+| 11.8 Le compteur reste | D'accord. |
+| 11.9 Télé en pause pendant l'avance rapide | Pas compris : réexpliqué plus bas, **réponse attendue**. |
+
 ### 11.1 La ligne « Autres versions » de la liste
 
 La liste « Version » montre trois choix : VF, VOSTFR, VO. Deux combinaisons plus rares existent aussi : la **VF
@@ -372,33 +427,41 @@ les sous-titres anglais**. Le lecteur actuel les permet déjà.
 Exemple : un visiteur regarde toujours en VOSTFR, c'est retenu sur son compte. Il loue un film qui a bien la VO,
 mais pas de sous-titres français ; seuls des sous-titres anglais existent. Que lance-t-on ?
 
-- **Mon choix** : la VO avec les sous-titres anglais, et l'écran l'écrit (« VO, sous-titres anglais · sous-titres
-  français indisponibles pour ce film »). Il a demandé la version originale, on la lui garde, et des sous-titres
-  anglais aident plus que pas de sous-titres du tout. Si le film n'a aucun sous-titre : VO seule, avec un message
-  du même genre.
-- **L'autre possibilité** : lancer la VF, en se disant qu'un visiteur qui lit des sous-titres français ne comprend
-  peut-être ni la langue du film ni l'anglais. Dans les deux cas, un appui sur « Version » suffit à changer.
+- **Décision de Rusmir (20/11)** : la borne ne choisit pas seule, elle demande, une fois, avant que le film
+  démarre : « Ce film n'a pas de sous-titres français. La VO existe avec des sous-titres anglais. » —
+  « Continuer en VO, sous-titres anglais » / « Passer en VF ». La réponse vaut pour ce film ; la version préférée
+  du compte ne change pas. Si le film n'a pas de VF, il n'y a rien à choisir : la VO joue et l'écran écrit ce qui
+  manque.
+- **Ce que j'avais proposé** : lancer la VO avec les sous-titres anglais sans rien demander, en l'écrivant à
+  l'écran.
 
 Cas inverse, plus rare : un visiteur a l'habitude de la « VF sous-titrée » et le film n'a pas de sous-titres
 français. On lance la VF sans sous-titres (des sous-titres anglais sur une piste française n'aident personne), et
 l'écran l'écrit.
 
-### 11.3 Changer de version en cours de film sur la télé : reprise trois secondes plus tôt
+### 11.3 Changer de version en cours de film sur la télé : reprise à la même seconde
 
 La VF et la VO sont deux fichiers distincts. Quand on passe de l'une à l'autre pendant un film sur la télé, la
-télé ferme un fichier et ouvre l'autre : une coupure, que j'estime à une ou deux secondes (à mesurer à la recette).
+télé ferme un fichier et ouvre l'autre.
 
-- **Mon choix** : reprendre trois secondes avant l'endroit où l'on était, pour ne pas perdre la phrase en cours.
-- **L'autre possibilité** : reprendre exactement à la même seconde.
+- **Décision de Rusmir (20/11)** : la reprise se fait exactement à la même seconde, sans retour en arrière. Il
+  attend une bascule instantanée.
+- **Ce que j'avais proposé** : reprendre trois secondes plus tôt, pour couvrir une coupure.
+- **Ce qui reste à mesurer** : le temps que met la télé à ouvrir l'autre fichier. Si la recette montre une coupure
+  gênante, je le lui montrerai avant de proposer quoi que ce soit.
 
-### 11.4 « Essayer en VOSTFR » après une panne ne change pas l'habitude du visiteur
+### 11.4 La version préférée est un réglage du compte, jamais une habitude déduite
 
 Exemple : un visiteur regarde toujours en VF. Sur un film, la VF ne se lance pas ; le panneau d'erreur propose
 « Essayer en VOSTFR » et il appuie. Ce film joue en VOSTFR.
 
-- **Mon choix** : son habitude reste la VF. Le film suivant partira en VF : il n'a pas choisi la VOSTFR par goût,
-  il a contourné une panne.
-- **L'autre possibilité** : la VOSTFR devient sa nouvelle habitude, et il devrait la rechanger à la main.
+- **Décision de Rusmir (20/11)** : le film suivant repart en VF, et plus largement l'application ne retient
+  **aucune** habitude d'elle-même. La version préférée est une option que le visiteur règle dans « Mon compte »
+  (§ 4.2). Un choix fait sur un film ne vaut que pour ce film.
+- **Ce que j'avais proposé** : retenir automatiquement, sur le compte, la dernière version choisie.
+- **Mon choix dans ce cadre, à corriger si besoin** : le réglage se fait dans « Mon compte » de la borne. Le
+  terminal du vidéoclub 3D n'a pas ce réglage dans ce chantier, mais le lecteur du vidéoclub respecte la version
+  préférée réglée depuis la borne, puisque le compte est le même.
 
 ### 11.5 Combien de temps attendre avant d'annoncer que le film ne se lance pas : 15 secondes
 
@@ -442,14 +505,25 @@ pourcentage. Rusmir ne veut aucune barre pour choisir une position.
 
 ### 11.9 Télécommande : sur la télé, l'avance rapide est une suite d'images fixes, sans le son
 
-Sur le téléphone, le lecteur accélère vraiment l'image. La télé ne sait pas le faire à la demande d'une page web
-(§ 7.2) ; on ne peut que lui demander d'aller à un endroit précis.
+Sur le téléphone, quand on appuie sur ▶▶, le film défile en accéléré : l'image bouge vite, en continu. La télé ne
+sait pas faire cela à la demande d'une page web (§ 7.2) ; la seule chose qu'on peut lui demander, c'est « va à tel
+endroit du film ».
 
-- **Mon choix** : pendant l'avance ou le retour rapide, la télé est en pause et saute d'image en image, au rythme
-  de deux ou quatre fois le temps réel. Si le téléphone se verrouille pendant ce temps, la lecture normale reprend.
-  L'avance rapide s'arrête d'elle-même dix secondes avant la fin du film.
-- **L'autre possibilité** : laisser la télé en lecture entre les sauts (on entendrait des bribes de son). Une vraie
-  accélération demanderait un récepteur Chromecast maison, écarté par décision.
+Ce que l'on verra sur la télé en appuyant sur ▶▶ : le film s'arrête sur une image, sans le son. Environ une
+seconde plus tard, cette image est remplacée par une autre, prise quelques secondes plus loin dans le film ; puis
+une autre encore, et ainsi de suite. Le compteur de la télécommande avance en même temps. Quand on appuie sur ▶,
+le film repart normalement, avec le son, depuis la dernière image affichée. C'est cela, « la télé en pause » :
+entre deux sauts l'image est **figée**, elle ne joue pas.
+
+- **Mon choix** : image figée entre les sauts, sans le son, au rythme de deux ou quatre fois le temps réel. Si le
+  téléphone se verrouille pendant ce temps, la lecture normale reprend. L'avance rapide s'arrête d'elle-même dix
+  secondes avant la fin du film.
+- **L'autre possibilité** : laisser le film jouer entre deux sauts. On verrait de courts morceaux de film et l'on
+  entendrait des bribes de son hachées. Une vraie accélération, image en continu comme sur le téléphone,
+  demanderait un récepteur Chromecast maison, écarté par décision.
+- **Ce que je ne sais pas encore** : la cadence réelle des images sur le vidéoprojecteur (une par seconde, ou
+  moins). Je l'essaierai sur l'appareil avant de construire le reste de la télécommande, et je montrerai le
+  résultat.
 
 ## 12. Laissé au constructeur
 
