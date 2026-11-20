@@ -33,6 +33,16 @@ export function localAutoPlay(i: { view: CastView; prompt: boolean; rewind: bool
 }
 
 /**
+ * Une lecture qui part ici doit-elle être arrêtée aussitôt ? Oui quand la TV a ce film, le prend ou vient de le finir
+ * (`tvOwnsFilm`), sous le panneau « Cette version ne se lance pas » (`failure` : failureHoldsPlayback) ou sous la question
+ * des sous-titres (`question`). La lecture automatique est déjà désarmée là (localAutoPlay) ; ceci arrête ce qui partirait
+ * quand même — une reprise du Cast, une touche média du matériel, un chargement tardif.
+ */
+export function playHeldHere(i: { tvOwnsFilm: boolean; failure: boolean; question: boolean }): boolean {
+  return i.tvOwnsFilm || i.failure || i.question;
+}
+
+/**
  * Appareil Apple dont le navigateur sait faire AirPlay — c'est-à-dire Safari : la TV y passe par
  * AirPlay, pas par le Cast. Règle de « Regarder sur TV » (lecteur et borne) : agent Apple ET AirPlay
  * disponible, lu sur l'élément vidéo lui-même plutôt que sur un état posé par un effet du lecteur.

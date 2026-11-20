@@ -21,9 +21,11 @@ export interface PlayerVersionPanelProps {
   onAnswer(v: VersionChoice): void;
   /** « Retour » de la liste. */
   onClose(): void;
+  /** « Retour » de la question (décision de Rusmir du 20/11/2026) : quitter le lecteur sans rien lancer ni retenir. */
+  onQuit(): void;
 }
 
-export function PlayerVersionPanel({ view, offer, current, question, onPick, onAnswer, onClose }: PlayerVersionPanelProps) {
+export function PlayerVersionPanel({ view, offer, current, question, onPick, onAnswer, onClose, onQuit }: PlayerVersionPanelProps) {
   const id = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   // « Autres versions » déplie la liste ; refermée, elle repart pliée.
@@ -79,6 +81,10 @@ export function PlayerVersionPanel({ view, offer, current, question, onPick, onA
                 {question.other.label}
               </button>
             </div>
+            {/* Plus discret que les deux réponses : ne lance rien, ne retient rien. */}
+            <button type="button" className={styles.quit} onClick={onQuit}>
+              Retour
+            </button>
           </>
         )}
       </div>

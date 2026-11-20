@@ -18,7 +18,7 @@ import { CAST_UNAVAILABLE_TEXT, castDeviceLabel, castNoticeView, continueHereLab
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { useBackGuard } from '../../hooks/useBackGuard';
 import { buildCastSubtitleTracks, activeSubtitleId } from '../../utils/cast-subtitles';
-import { appleAirPlay, localAutoPlay, noticeHoldsPlayback, playerWithoutRental, playsHere, rewindPromptFor } from '../../utils/cast-on-open';
+import { appleAirPlay, localAutoPlay, noticeHoldsPlayback, playHeldHere, playerWithoutRental, playsHere, rewindPromptFor } from '../../utils/cast-on-open';
 import { failureHoldsPlayback, failurePanel, failureTrace, type DeviceFailureKind } from '../../utils/playback-failure';
 import { nextSubtitle, versionName, type VersionChoice, type VersionSubtitle } from '../../utils/version-choice';
 import { swapResumeTime } from '../../utils/video-swap';
@@ -631,10 +631,10 @@ export function VHSPlayer() {
         return;
       }
       // Le panneau « Version » attend un choix : les touches ne visent plus la vidéo dessous. Échap ferme la liste ; sous la
-      // question, il éjecte sans rien choisir.
+      // question, il fait comme « Retour » : le lecteur se ferme, rien n'est choisi.
       if (versionPanelShown) {
         if (e.key === 'Escape') {
-          if (asking) handleEject();
+          if (asking) closePlayer();
           else closeVersionList();
         }
         return;
@@ -722,13 +722,15 @@ export function VHSPlayer() {
   }, [openAirPlayPicker, openMirroringFallback]);
 
   // « Regarder sur TV » : la demande part DANS le gestionnaire de l'appui (le sélecteur d'appareils exige son
-  // activation), avec la version que joue le lecteur et la position d'ici. La machine du Cast décide du reste.
+  // activation), avec la version que joue le lecteur et la position d'ici — à la règle de reprise de l'appareil
+  // (swapResumeTime) : la télé et le téléphone ne se contredisent pas. La machine du Cast décide du reste.
   const sendToTv = useCallback(() => {
     if (currentPlayingFilm === null) return;
     setRemoteError(null);
+    const video = videoRef.current;
     castFilm(currentPlayingFilm, {
       version: version ?? undefined,
-      startAt: Math.max(videoRef.current?.currentTime || 0, rental?.watchPosition || 0),
+      startAt: swapResumeTime({ elementTime: video?.currentTime ?? 0, rentalPosition: rental?.watchPosition ?? 0, duration: video?.duration ?? null }),
     });
   }, [currentPlayingFilm, castFilm, version, rental?.watchPosition]);
 
@@ -908,10 +910,8 @@ export function VHSPlayer() {
     }
   }, [currentPlayingFilm, stopRW, rental?.rewindClaimed, closePlayer, updateRentalProgress]);
   // La fin du film, la reprise à l'ouverture et la position d'un élément remonté (autre version, « Réessayer ») suivent
-  // l'élément <video> courant. Un élément qui n'a rien joué reprend à la position de la location — au début pour une
-  // location vue à 100 % (swapResumeTime, sans élément précédent).
-  const resumeAt = swapResumeTime({ elementTime: 0, rentalPosition: rental?.watchPosition ?? 0, rentalProgress: rental?.watchProgress ?? 0 });
-  useVideoLifecycle({ videoRef, videoKey, resumeAt, onEnded: handleEnded });
+  // l'élément <video> courant ; où il reprend se décide dans video-swap (resumeSeek), sur la durée du fichier.
+  useVideoLifecycle({ videoRef, videoKey, rentalPosition: rental?.watchPosition ?? 0, onEnded: handleEnded });
 
   // ===== BE KIND REWIND : fin vue par la TV, ou film déjà fini à l'ouverture =====
   // Une seule décision (rewindPromptFor). Fin vue par la TV : ÉJECTER, ou la sortie si le rembobinage est déjà
@@ -1251,8 +1251,9 @@ export function VHSPlayer() {
         autoPlay={playWanted}
         playsInline
         onPlay={() => {
-          // La TV a ce film, le prend ou vient de le finir, ou le panneau d'échec est affiché : la vidéo locale ne joue pas.
-          if (tvOwnsFilm || failureHoldsPlayback(failure)) {
+          // La TV a ce film, le prend ou vient de le finir, le panneau d'échec ou la question des sous-titres est affiché :
+          // la vidéo locale ne joue pas, même lancée par une reprise du Cast ou une touche média.
+          if (playHeldHere({ tvOwnsFilm, failure: failureHoldsPlayback(failure), question: asking })) {
             videoRef.current?.pause();
             return;
           }
@@ -1329,6 +1330,7 @@ export function VHSPlayer() {
           onPick={v => { choose(v); closeVersionList(); }}
           onAnswer={answerQuestion}
           onClose={closeVersionList}
+          onQuit={closePlayer}
         />
       )}
 

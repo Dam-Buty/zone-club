@@ -174,7 +174,8 @@ test('ÉCHEC LECTURE: le panneau retient la vidéo, aucun chargement tardif ne l
   assert.match(hook, /if \(failureHoldsPlayback\(failure\)\) videoRef\.current\?\.pause\(\);/, 'le crochet met la vidéo en pause dès que le panneau s\'affiche');
   const src = read(PLAYER);
   const onPlay = src.slice(src.indexOf('onPlay={() => {'), src.indexOf('onPause={() => {'));
-  assert.match(onPlay, /if \(tvOwnsFilm \|\| failureHoldsPlayback\(failure\)\) \{\s*videoRef\.current\?\.pause\(\);\s*return;/, 'une lecture qui part sous le panneau est arrêtée');
+  // Une seule règle pour tout ce qui retient la vidéo d'ici (playHeldHere : TV, panneau d'échec, question des sous-titres).
+  assert.match(onPlay, /if \(playHeldHere\(\{ tvOwnsFilm, failure: failureHoldsPlayback\(failure\), question: asking \}\)\) \{\s*videoRef\.current\?\.pause\(\);\s*return;/, 'une lecture qui part sous le panneau est arrêtée');
 });
 
 test('ÉCHEC LECTURE: la place est faite, AirPlay vit dans useAirPlay', () => {

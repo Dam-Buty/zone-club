@@ -69,7 +69,7 @@ test('CAST LECTEUR: le service démarre au montage, la demande part dans la pile
   assert.ok(send.includes('castFilm('), 'sendToTv demande castFilm');
   assert.ok(!/\bawait\b|\basync\b|\.then\(/.test(send), 'sendToTv n\'attend rien avant castFilm');
   assert.match(send, /version: version \?\? undefined/, 'avec la version que joue le lecteur (la décision unique)');
-  assert.match(send, /startAt: Math\.max\(/, 'et la position d\'ici ou de la location');
+  assert.match(send, /startAt: swapResumeTime\(/, 'et la position d\'ici ou de la location, à la règle de l\'appareil');
   // Apple garde AirPlay, un autre film sur la TV demande confirmation.
   const watch = callback(src, 'handleWatchOnTV');
   assert.ok(watch.includes('appleAirPlay(navigator.userAgent, videoRef.current') && watch.includes('handleAirPlayPicker()'), 'Apple → AirPlay');
@@ -275,4 +275,20 @@ test('VERSION LECTEUR: usePlayerVersion lit la décision hors de tout sélecteur
   const panel = read(VERSION_PANEL);
   assert.ok(panel.includes('<VersionList') && panel.includes('question.keep.label') && panel.includes('question.other.label'), 'la liste partagée, et la question telle que la décision la pose');
   assert.ok(!/disabled/i.test(panel), 'PlayerVersionPanel.tsx contient disabled');
+});
+
+// Décision de Rusmir du 20/11/2026 : la question des sous-titres a une troisième ligne, plus discrète que les deux
+// réponses, « Retour » — elle ne lance rien et ne retient rien. Dans le lecteur (ouvert par le vidéoclub), elle le ferme.
+test('VERSION LECTEUR: « Retour » sous la question ferme le lecteur, sans rien choisir', () => {
+  const panel = read(VERSION_PANEL);
+  const q = panel.slice(panel.indexOf('question.other.label'));
+  assert.match(q, /<button type="button" className=\{styles\.quit\} onClick=\{onQuit\}>\s*Retour\s*<\/button>/, '« Retour » après les deux réponses, sur onQuit');
+  assert.ok(!/onQuit[^}]*onAnswer|onAnswer[^}]*onQuit/.test(q), '« Retour » ne répond pas à la question');
+  const css = read('src/components/player/PlayerVersionPanel.module.css');
+  assert.match(css, /\.quit\s*\{[^}]*min-height: 44px/, 'zone d\'appui de 44 px');
+  const src = read(PLAYER);
+  assert.ok(src.includes('onQuit={closePlayer}'), 'le lecteur se ferme, rien n\'est choisi');
+  // Échap sous la question fait la même chose que « Retour ».
+  const keys = src.slice(src.indexOf('if (versionPanelShown) {'), src.indexOf('// Échap ferme le lecteur même sans vidéo montée'));
+  assert.match(keys, /if \(asking\) closePlayer\(\);/, 'Échap sous la question = « Retour »');
 });

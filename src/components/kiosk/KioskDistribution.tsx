@@ -66,7 +66,7 @@ interface KioskReadyProps {
   onMoreVersions: () => void;
   /** La réponse à la question : le choix de ce film, et le lancement là où le visiteur l'a demandé, dans cet appui. */
   onAnswer: (v: VersionChoice) => void;
-  /** « Retour » de la liste : revenir au contenu du panneau. */
+  /** « Retour » de la liste ou de la question : revenir au contenu du panneau, sans rien lancer ni retenir. */
   onCloseSub: () => void;
 }
 
@@ -173,6 +173,11 @@ export function KioskReady({
             </button>
             <button type="button" className={`${styles.kNoticeBtn} ${styles.kReadyAnswer}`} onClick={() => onAnswer(question.other.version)}>
               {question.other.label}
+            </button>
+            {/* Décision de Rusmir du 20/11/2026 : « Retour », plus discret que les deux réponses (le retour de la liste),
+                referme la question sans lancer le film ni rien retenir — le panneau revient. */}
+            <button type="button" className={`${styles.kAuthBack} ${styles.kVersionBack}`} onClick={onCloseSub}>
+              Retour
             </button>
           </>
         ) : (

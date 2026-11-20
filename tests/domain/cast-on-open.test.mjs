@@ -139,3 +139,18 @@ test('LECTEUR: la question des sous-titres retient la vidéo d\'ici tant qu\'ell
   // La réponse ne lève pas les autres retenues : l'invite « Regarder sur TV ? » attend encore la sienne.
   assert.equal(localAutoPlay({ view: 'local', ...free, prompt: true }), false);
 });
+
+// Relecture de la tâche 8 : la lecture automatique désarmée ne suffit pas — une reprise du Cast (`play()` de
+// takeCastResume) ou une touche média du matériel pouvaient lancer le film derrière la question. Toute lecture qui part
+// ici est arrêtée aussitôt, sous la même règle que sous le panneau d'échec.
+test('LECTEUR: une lecture qui part sous la question des sous-titres, sous le panneau d\'échec ou TV aux commandes est arrêtée', async () => {
+  const { playHeldHere } = await import('../../src/utils/cast-on-open.ts');
+  const free = { tvOwnsFilm: false, failure: false, question: false };
+  assert.equal(playHeldHere(free), false, 'rien ne la retient : elle joue');
+  for (const held of ['tvOwnsFilm', 'failure', 'question']) {
+    assert.equal(playHeldHere({ ...free, [held]: true }), true, held);
+  }
+  const player = readText(path.join(process.cwd(), 'src/components/player/VHSPlayer.tsx'));
+  const onPlay = player.slice(player.indexOf('onPlay={() => {'), player.indexOf('onPause={() => {'));
+  assert.match(onPlay, /if \(playHeldHere\(\{ tvOwnsFilm, failure: failureHoldsPlayback\(failure\), question: asking \}\)\) \{\s*videoRef\.current\?\.pause\(\);\s*return;/, 'onPlay arrête la lecture sous la question');
+});

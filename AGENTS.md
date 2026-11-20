@@ -557,23 +557,31 @@ version absente y est une ligne de texte avec sa raison, jamais un bouton grisé
 « Essayer en … » du panneau d'échec écrivent le **choix de ce film** (`chooseFilmVersion`) : la version préférée, que
 seul « Mon compte » règle, n'est jamais touchée par le lecteur. **La question des sous-titres** (décision `ask` : version
 préférée VOSTFR, film sans sous-titres français mais avec la VF) : la borne la pose avant d'ouvrir le lecteur, le
-vidéoclub non — le lecteur la pose donc lui-même quand la vidéo joue ici, par-dessus elle, **vidéo en pause derrière**
-(`localAutoPlay` reçoit `question`), avant l'invite « Regarder sur TV ? ». La réponse devient le choix de ce film et lance
-la lecture : autre piste, le nouvel élément part de lui-même ; même piste, le lecteur appelle `play()` si rien d'autre
-ne retient la vidéo. Elle n'est pas reposée à la réouverture. Échap éjecte sans rien choisir ; sous la liste, Échap et le
-geste retour la referment.
+vidéoclub non — le lecteur la pose donc lui-même quand la vidéo joue ici, par-dessus elle, **vidéo en pause derrière** :
+la lecture automatique est désarmée (`localAutoPlay` reçoit `question`) et toute lecture qui partirait quand même — une
+reprise du Cast, une touche média — est arrêtée aussitôt dans `onPlay` (`playHeldHere`, `src/utils/cast-on-open.ts` : TV
+aux commandes, panneau d'échec ou question). Elle passe avant l'invite « Regarder sur TV ? ». La réponse devient le choix
+de ce film et lance la lecture : autre piste, le nouvel élément part de lui-même ; même piste, le lecteur appelle `play()`
+si rien d'autre ne retient la vidéo. Elle n'est pas reposée à la réouverture. Sous les deux réponses, une troisième
+ligne plus discrète, **« Retour »** (décision de Rusmir du 20/11/2026), ferme le lecteur sans rien lancer ni retenir ;
+Échap fait de même. Sous la liste, Échap et le geste retour la referment.
 
 **La vidéo remontée garde sa fin et sa position.** L'élément `<video>` est remonté à chaque autre piste audio et à chaque
 « Réessayer » : sa `key` vaut `${version?.audio}-${videoUrl}-${attempt}`. Tout ce qui l'écoute suit cette key — dans
 `useVideoLifecycle`, trois effets qui dépendent tous de `videoKey` (un test le vérifie) : la **fin du film** (`ended` →
 « BE KIND REWIND » ou la fermeture), la **reprise à l'ouverture** (au `canplay`, un élément encore sous 1 s part de la
 position de la location) et la **position rétablie après un remontage** (au `loadedmetadata` du nouvel élément, ou tout
-de suite s'il les a déjà, s'il est encore sous 1 s). Où reprend le nouvel élément : `swapResumeTime`
-(`src/utils/video-swap.ts`, pur) — la plus grande des deux positions, celle de l'élément remplacé et celle de la
-location (un changement fait avant la première image ne repart pas de zéro) ; la position d'une location vue à 100 %
-ne compte plus (fin du film, ou périmée). Un élément remplacé avant d'avoir repris sa position la transmet au suivant.
-Avant, l'écouteur de fin et la reprise restaient sur l'ancien élément : plus de « BE KIND REWIND » après un changement
-de version, et un changement avant la première image repartait de zéro.
+de suite s'il les a déjà, s'il est encore sous 1 s). Le crochet reçoit la position enregistrée de la location telle
+quelle et lit la durée sur l'élément ; il ne décide rien : **une seule règle pure, `src/utils/video-swap.ts`**, sert la
+reprise à l'ouverture, le remontage et le départ sur la télé (`startAt` de « Regarder sur TV ») — le téléphone et la télé
+ne se contredisent pas. `swapResumeTime` : la plus grande des deux positions, celle de l'élément remplacé (0 à
+l'ouverture) et celle de la location (un changement fait avant la première image ne repart pas de zéro) ; **une position
+enregistrée dans les 10 dernières secondes du fichier vaut le début** (`RESUME_END_MARGIN_S`), sinon elle est reprise
+quel que soit le pourcentage — la progression ne redescend jamais, et un film fini puis revu jusqu'à 200 s reprend à
+200 s ; durée inconnue (pas encore de métadonnées) : la position est reprise. `resumeSeek` : ne déplace jamais un
+élément qui a déjà sa position (1 s ou plus). `leavingTime` : un élément remplacé avant d'avoir repris sa position la
+transmet au suivant. Avant, l'écouteur de fin et la reprise restaient sur l'ancien élément : plus de « BE KIND REWIND »
+après un changement de version, et un changement avant la première image repartait de zéro.
 
 Côté `<video>`, une seule `<track>` est montée à la fois, avec une `key` par langue : swapper le `src` d'une `<track>`
 déjà montée ne rafraîchit pas la textTrack, et l'attribut `default` d'une `<track>` insérée après le parse n'est pas
@@ -1001,8 +1009,10 @@ Règles à ne pas casser — chacune a son test dans `tests/domain/kiosk-*.test.
   « Ce film n'a pas de sous-titres français / La VO existe avec des sous-titres anglais. » (ou « Ce film n'a pas de
   sous-titres. ») avec « Continuer en … » et « Passer en VF » ; la réponse devient le choix de ce film et le film part
   vers la cible retenue **dans le même appui**. Le lecteur ouvert par la borne n'a donc plus rien à demander ; ouvert par
-  le vidéoclub, il pose la même question lui-même (voir « Pistes » dans « Player + Cast »). Le geste retour referme la
-  question ou la liste avant le panneau (`kioskBackAction`).
+  le vidéoclub, il pose la même question lui-même (voir « Pistes » dans « Player + Cast »). Sous les deux réponses, une
+  troisième ligne plus discrète, **« Retour »** (le retour de la liste, `.kAuthBack` + `.kVersionBack`, 44 px au moins ;
+  décision de Rusmir du 20/11/2026), ramène au panneau sans lancer le film ni rien retenir — comme le geste retour, qui
+  referme la question ou la liste avant le panneau (`kioskBackAction`).
 - **La barre du Cast** (`KioskCastBar`) remplace la puce flottante dans la borne, qui recouvrait la rangée de K7.
   Lecteur fermé, quand la TV a un film à signaler (`castOwnsFilm` : elle le joue, ne répond plus, ou vient de le
   finir), un bouton dessiné dans le langage de la borne — l'aplat et le filet de « Recherche », sa police et sa casse

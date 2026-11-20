@@ -196,6 +196,28 @@
   background: rgba(0, 255, 247, 0.18);
 }
 
+/* « Retour » sous la question : une troisième ligne, plus discrète que les deux réponses (sans cadre, texte plus petit),
+   qui ne lance rien et ne retient rien. Zone d'appui de 44 px. */
+.quit {
+  align-self: center;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 16px;
+  font-family: var(--font-display);
+  font-size: 0.64rem;
+  letter-spacing: 0.1em;
+  color: rgba(255, 255, 255, 0.7);
+  background: transparent;
+  border: none;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  cursor: pointer;
+}
+
+.quit:hover {
+  color: var(--color-neon-cyan);
+}
+
 /* ===== La note d'une substitution, sous l'en-tête du lecteur (grille à trois colonnes : une rangée entière) ===== */
 .note {
   grid-column: 1 / -1;

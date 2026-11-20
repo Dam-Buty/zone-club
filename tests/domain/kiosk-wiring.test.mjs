@@ -850,6 +850,21 @@ test('PANNEAU VERSION: la question remplace le contenu — titre, texte, et les 
   assert.ok(!/\bdisabled\b/.test(KIOSK('KioskDistribution.tsx')), 'aucun bouton grisé');
 });
 
+// Décision de Rusmir du 20/11/2026 : la question a une troisième ligne, plus discrète que les deux réponses, « Retour »,
+// qui referme la question sans lancer le film ni rien retenir — le panneau « Votre K7 est prête » revient.
+test('PANNEAU VERSION: « Retour » sous les deux réponses ramène au panneau, sans rien lancer ni retenir', () => {
+  const ready = readySrc();
+  const q = ready.slice(ready.indexOf("view === 'question' && question ? ("), ready.indexOf('/* Le panneau */'));
+  const answers = q.indexOf('onAnswer(question.other.version)');
+  const back = q.indexOf('Retour');
+  assert.ok(answers > 0 && back > answers, '« Retour » après les deux réponses');
+  // Le retour discret des panneaux de la borne, celui de la liste (zone d'appui de 44 px au moins), sur le rappel qui
+  // ramène au panneau — le même que le geste retour : ni onAnswer, ni lancement.
+  assert.match(q, /<button type="button" className=\{`\$\{styles\.kAuthBack\} \$\{styles\.kVersionBack\}`\} onClick=\{onCloseSub\}>\s*Retour\s*<\/button>/, '« Retour » = onCloseSub');
+  const view = KIOSK('KioskView.tsx');
+  assert.match(view, /onCloseSub=\{\(\) => setReadySub\(READY_PANEL\)\}/, 'onCloseSub ramène au panneau, rien d\'autre');
+});
+
 test('PANNEAU VERSION: KioskView calcule la ligne, la liste et la question à partir de la décision unique, hors sélecteur', () => {
   const view = KIOSK('KioskView.tsx');
   // versionDecisionFor rend un objet neuf à chaque appel : jamais en sélecteur du magasin (boucle de rendu).

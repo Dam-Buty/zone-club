@@ -116,7 +116,10 @@ Quand le film n'offre pas ce qui est demandé :
 
      [ Continuer en VO, sous-titres anglais ]
      [ Passer en VF ]
+                     Retour
   ```
+
+  « Retour » referme la question sans lancer le film ni rien retenir — décision de Rusmir du 20/11/2026.
 
   Si le film n'a aucun sous-titre : « Ce film n'a pas de sous-titres. » — « Continuer en VO sans sous-titres » /
   « Passer en VF ». La réponse vaut pour ce film (source 1) : la question n'est pas reposée à la réouverture. Si
