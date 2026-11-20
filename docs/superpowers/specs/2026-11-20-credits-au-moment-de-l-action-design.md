@@ -2,7 +2,8 @@
 
 Date : 20/11/2026 — branche `feat/borne-location` — fait suite à « Mon compte »
 (`2026-11-17-borne-mon-compte-design.md`) et au chantier des versions
-(`2026-11-19-versions-et-erreurs-de-lecture-design.md`). Rien n'est codé.
+(`2026-11-19-versions-et-erreurs-de-lecture-design.md`). Rien n'est codé. Les trois questions du § 12 ont reçu
+leur réponse le 20/11 ; les arbitrages du § 11 attendent encore son accord.
 
 ## 1. Pourquoi
 
@@ -262,12 +263,25 @@ Trois endroits, du plus « au moment de l'action » au plus discret :
      suffit à payer le film (on est sous le prix, donc à 0 ou 1 crédit, et le bonus en donne alors 3) ;
    - pas de bonus : « Ce film coûte 2 crédits. Vous en avez 1. » — **« Fermer »** / « Comment en gagner », qui
      ouvre le « Mode d'emploi ».
-2. **« Mon compte »** — sous le solde, une ligne « Bonus de la semaine » et son bouton **« Recevoir »** avec le
-   montant, seulement quand le bonus est disponible. Après l'appui : « +3 crédits reçus », le solde est à jour.
+2. **« Mon compte »** — sous le solde, une ligne « Bonus de la semaine » **toujours présente, au même endroit**
+   (demande de Rusmir du 20/11 : on doit pouvoir récupérer ses crédits à tout moment dans son compte, pas
+   seulement quand un message apparaît). Elle dit son état :
+   - bonus disponible : le bouton **« Recevoir »** avec le montant. Après l'appui : « +3 crédits reçus », le solde
+     est à jour ;
+   - déjà reçu : « Bonus de la semaine : déjà reçu » ;
+   - 5 crédits ou plus : « Bonus de la semaine : quand il vous reste moins de 5 crédits ».
+   Les deux derniers états sont du texte, pas un bouton.
 3. **Le bouton « Compte »** de la barre du haut — quand un bonus attend, le montant s'ajoute au solde affiché :
    « Compte  2 crédits  +3 ». C'est le seul rappel qui ne demande aucune action ; il n'ouvre aucun message.
 
 Pas de message qui surgit à l'ouverture de la borne (c'est ce que fait le vidéoclub, `WeeklyBonusToast.tsx`).
+
+**Piste à réfléchir, pas construite dans ce chantier** (idée de Rusmir du 20/11, qu'il présente lui-même comme une
+réflexion) : des notifications discrètes pendant la visite de la borne, du type « 3 crédits vous attendent dans
+votre compte ». Dans cette conception, ce rôle est tenu par le « +3 » du bouton « Compte », qui ne s'efface pas
+tant que le bonus attend. À décider après l'essai sur le Pixel : si le « +3 » passe inaperçu, on ajoutera une
+ligne discrète sous la barre du haut, une seule fois par bonus, qui disparaît seule et mène à « Mon compte ». Le
+texte devra dire que les crédits **attendent** (ils ne sont reçus qu'après l'appui sur « Recevoir »).
 
 ### 5.6 « Mode d'emploi »
 
@@ -326,7 +340,7 @@ panneau « Où voulez-vous regarder ? ».
 | Bonus de la semaine | **Existe** : `GET` / `POST /api/me/weekly-bonus` ; l'état arrive aussi dans `GET /api/me` (`weeklyBonus`) |
 | Heure limite du retour anticipé | **Manque** : à ajouter sur **toute** location renvoyée par le serveur, là où elles sont toutes enrichies (`enrichRental`, `lib/rentals.ts:228-244`) — `GET /api/me`, mais aussi la réponse de la location elle-même, sinon le champ manquerait juste après avoir loué. Calculée par le serveur avec sa constante de 24 h. Sans cela la borne recopierait la règle |
 | Crédits d'un compte neuf | **À rendre lisible** : les 5 crédits sont la valeur par défaut de la colonne (`lib/schema.sql:7`), l'inscription ne passe aucune valeur (`lib/auth.ts:44-47`). Une constante partagée, que l'inscription écrit explicitement et que le « Mode d'emploi » lit ; la valeur par défaut de la colonne reste, et un test vérifie qu'elles concordent |
-| Raison d'un bonus indisponible | **À préciser** : aujourd'hui une phrase (« Solde >= 5 crédits », « Bonus déjà réclamé cette semaine »). Un code à côté de la phrase éviterait de décider sur un texte. Utile seulement si l'on affiche la raison ; cette conception n'affiche le bonus que lorsqu'il est disponible |
+| Raison d'un bonus indisponible | **À préciser** : aujourd'hui une phrase (« Solde >= 5 crédits », « Bonus déjà réclamé cette semaine »). Un code à côté de la phrase (déjà reçu / solde suffisant) est **nécessaire** : la ligne « Bonus de la semaine » de « Mon compte » affiche son état (§ 5.5), et la borne ne doit pas le décider en lisant un texte |
 | Constantes partagées | **À regrouper** : les 24 h du retour et les montants du bonus sont des constantes locales du serveur (`lib/rentals.ts:471-472`, `lib/bonus.ts:16,29`). Le « Mode d'emploi » doit les lire au même endroit que le serveur, comme le font déjà les prix et la longueur minimale d'une critique |
 
 Côté client, à corriger : l'action de retour du magasin retire la location et relit le solde, mais **ne relit ni
@@ -434,7 +448,8 @@ Chaque point : la situation, ce que j'ai choisi, pourquoi, et l'autre possibilit
    par un petit « +3 » à côté du solde sur le bouton « Compte ». Je n'ai **pas** repris le message qui surgit en
    haut de l'écran comme dans le vidéoclub 3D. Pourquoi : la consigne est d'expliquer au moment de l'action ; un
    message à l'ouverture arrive avant toute action. L'autre possibilité : le même message surgissant qu'au
-   vidéoclub, que personne ne peut manquer mais qui interrompt.
+   vidéoclub, que personne ne peut manquer mais qui interrompt. Suite à la remarque de Rusmir du 20/11, la ligne
+   de « Mon compte » est toujours présente et dit son état, même quand il n'y a rien à recevoir.
 
 8. **Après « Recevoir 3 crédits » dans « Crédits insuffisants ».** Exemple : Inès a 1 crédit, veut une nouveauté
    à 2 crédits, appuie sur « LOUER ». La borne lui propose son bonus ; elle l'accepte ; la borne enchaîne
@@ -490,16 +505,19 @@ Chaque point : la situation, ce que j'ai choisi, pourquoi, et l'autre possibilit
     borne affiche aujourd'hui « Location terminée » dans ce cas. Après un retour fait depuis la borne, je n'affiche
     que « K7 rendue », pas les deux messages à la suite. L'autre possibilité : garder les deux.
 
-## 12. Questions que seul Rusmir peut trancher
+## 12. Questions tranchées par Rusmir (20/11/2026)
 
 1. **Le délai du retour anticipé part de la location, pas de la fin du film.** Qui loue le vendredi soir et
-   regarde le samedi soir a perdu ce crédit avant même de lancer le film, et — pour respecter « au moment de
-   l'action, pas avant » — la borne ne le lui dit que dans « Mon compte ». Trois issues : (a) on garde tout ainsi ;
-   (b) on ajoute une ligne au panneau « Votre K7 est prête » (« Rendue avant demain à 21:10 : +1 crédit ») ;
-   (c) on change la règle (par exemple 24 heures après le premier lancement du film).
-2. **Rendre sans avoir rembobiné** : on prévient (mon choix, arbitrage 3), ou on change la règle pour que le
-   crédit du rembobinage ne se perde pas ?
-3. **Le calcul de la semaine du bonus** (arbitrage 13) : on le laisse, ou on le corrige dans ce chantier ?
+   regarde le samedi soir a perdu ce crédit avant même de lancer le film. **Réponse : on garde tout ainsi.** La
+   règle ne change pas, et le panneau « Votre K7 est prête » ne gagne pas de ligne ; l'heure limite se lit dans
+   « Mon compte » et dans le panneau « Film terminé ».
+2. **Rendre sans avoir rembobiné. Réponse : on prévient**, avec « Rembobiner d'abord ? » (arbitrage 3). La règle
+   ne change pas.
+3. **Le calcul de la semaine du bonus. Réponse : on le laisse comme il est** (arbitrage 13).
+
+Remarque de Rusmir dans la même réponse : on doit pouvoir récupérer ses crédits à tout moment dans son compte, et
+pas seulement par un message qui apparaît au hasard — d'où la ligne « Bonus de la semaine » toujours présente
+(§ 5.5). Son idée de notifications discrètes pendant la visite est notée comme piste au § 5.5.
 
 ## 13. Laissé au constructeur
 
