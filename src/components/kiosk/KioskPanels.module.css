@@ -703,6 +703,50 @@ span.kSearchPoster {
   cursor: progress;
 }
 
+/* ----- la ligne « Version » du panneau « Votre K7 est prête » (spec 2026-11-19, § 4.3 a) -----
+   Entre l'échéance et les deux choix : le bouton de « Version préférée » (.kPrefLine, chevron compris) quand la liste
+   s'ouvre ; une simple ligne de texte, sans cadre ni chevron, quand le film n'a qu'une version. */
+.kReadyVersion {
+  margin-top: 3.4cqw;
+}
+
+.kReadyVersionFixed {
+  display: flex;
+  align-items: center;
+  gap: 3cqw;
+  padding: 1.2cqw 3cqw;
+  text-align: left;
+  font-size: 4.9cqw;
+  font-weight: 700;
+  color: #e3f1ff;
+  text-shadow: var(--k-text-shadow);
+}
+
+/* Une substitution, écrite sous la ligne (« VOSTFR · VF indisponible pour ce film ») : jamais muette. */
+.kReadyVersionNote {
+  margin-top: 1.2cqw;
+  padding: 0 3cqw;
+  text-align: left;
+  font-family: var(--k-font-text);
+  font-size: 4cqw;
+  font-style: italic;
+  line-height: 1.25;
+  color: #bfe3ff;
+}
+
+/* Dans le panneau, centré, les lignes de texte de la liste restent alignées sur les noms des versions. */
+.kNotice .kVersionAbsent {
+  text-align: left;
+}
+
+/* La question des sous-titres : les deux réponses pleine largeur, l'une sous l'autre, 48 px de haut au moins. */
+.kNoticeBtn.kReadyAnswer {
+  display: block;
+  width: 100%;
+  margin-top: 3cqw;
+  min-height: max(48px, 13cqw);
+}
+
 /* ----- critique écrite dans la borne ----- */
 
 .kReviewFilm {

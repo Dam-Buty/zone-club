@@ -2,11 +2,13 @@
 // d'action, déroulé d'une location, geste retour, orientation. La validation des formulaires
 // de compte est partagée avec le vidéoclub : src/utils/account-rules.ts.
 //
-// Imports de type uniquement : ce module est chargé tel quel par Node dans les tests
-// (tests/domain/kiosk-logic.test.mjs), un import de valeur sans extension casserait.
+// Ce module est chargé tel quel par Node dans les tests (tests/domain/kiosk-logic.test.mjs) : imports de type, et
+// imports de valeur relatifs qui portent l'extension `.ts` (sans elle, Node ne les trouverait pas).
 import type { AisleType, Film } from '../../types';
 import type { RentalHistoryEntry, ReviewEligibilityMap } from '../../store';
 import type { CastPhase, CastView } from '../../cast/cast-machine';
+import { resolvedVersion, versionLine } from '../../utils/version-choice.ts';
+import type { VersionDecision, VersionOffer } from '../../utils/version-choice.ts';
 
 // ===== Onglets =====
 
@@ -469,6 +471,8 @@ export type KioskBackAction =
   | 'none'
   | 'close-player'
   | 'close-notice'
+  | 'close-question'
+  | 'close-version'
   | 'close-ready'
   | 'close-review'
   | 'close-pref'
@@ -501,6 +505,10 @@ export function kioskBackAction(s: {
   waiting?: boolean;
   /** Le panneau « Votre K7 est prête » est affiché. */
   readyOpen?: boolean;
+  /** La question des sous-titres remplace le contenu du panneau : le geste ramène au panneau, rien n'est lancé. */
+  questionOpen?: boolean;
+  /** La liste « Version » remplace le contenu du panneau : le geste ramène au panneau. */
+  versionOpen?: boolean;
   /** L'écran « Mon compte » est ouvert. */
   accountOpen?: boolean;
   /** Le formulaire de critique est ouvert (par-dessus « Mon compte »). */
@@ -511,6 +519,8 @@ export function kioskBackAction(s: {
   if (s.playerOpen) return 'close-player';
   if (s.noticeOpen) return s.noticeClosable ? 'close-notice' : 'none';
   if (s.waiting) return 'none';
+  if (s.questionOpen) return 'close-question';
+  if (s.versionOpen) return 'close-version';
   if (s.readyOpen) return 'close-ready';
   if (s.reviewOpen) return 'close-review';
   if (s.prefOpen) return 'close-pref';
@@ -584,6 +594,36 @@ export function tvEntry(i: { airPlay: boolean }): 'airplay' | 'cast' {
 export function tvChoiceLine(i: { airPlay: boolean; replacing: { title: string | null; device: string } | null }): string {
   if (i.airPlay || i.replacing === null) return tvMeansLabel(i.airPlay);
   return `remplace ${i.replacing.title?.trim() || 'un film'} sur ${i.replacing.device}`;
+}
+
+// ===== La version du film, dans le panneau (docs/superpowers/specs/2026-11-19-versions-et-erreurs-de-lecture-design.md,
+// § 4.1, 4.3 a et 4.4) =====
+// Le panneau, le lecteur et le Cast partent de la même décision (`decideVersion`, rendue par `versionDecisionFor`).
+
+/** Le film loué n'a ni VF ni VO lisible : le lancement le dit au lieu de partir. */
+export const NO_PLAYABLE_VERSION = "Ce film n'a aucune version lisible pour le moment.";
+
+/**
+ * « Sur ce téléphone » / « Sur ma télé » : une version décidée se lance (une substitution comprise : sa note est déjà
+ * écrite sous la ligne « Version ») ; la question des sous-titres se pose d'abord, une fois, au moment de lancer ; sans
+ * aucune version lisible, le lancement est refusé (`NO_PLAYABLE_VERSION`).
+ */
+export function readyLaunchStep(d: VersionDecision): 'launch' | 'ask' | 'refuse' {
+  switch (d.kind) {
+    case 'play': return 'launch';
+    case 'ask': return 'ask';
+    case 'none': return 'refuse';
+  }
+}
+
+/**
+ * La ligne « Version » du panneau : la version qui jouera (celle qu'on garde par défaut tant que la question n'a pas été
+ * posée), si un appui ouvre la liste, et la note d'une substitution. Sans version lisible, la ligne n'ouvre rien et
+ * dit pourquoi.
+ */
+export function readyVersionRow(offer: VersionOffer, d: VersionDecision): { text: string; openable: boolean; note: string | null } {
+  if (d.kind === 'none') return { text: '—', openable: false, note: NO_PLAYABLE_VERSION };
+  return { ...versionLine(offer, resolvedVersion(d)), note: d.kind === 'play' ? d.note : null };
 }
 
 /**

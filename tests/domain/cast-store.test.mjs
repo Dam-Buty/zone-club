@@ -68,6 +68,64 @@ test('CAST STORE: castFilm part dans la pile de l\'appui, sans attente avant sen
   assert.ok(body.indexOf('startCast()') < body.indexOf("type: 'REQUEST_CAST'"), 'le service est démarré avant l\'envoi');
 });
 
+// Versions, tâche 7 (docs/superpowers/specs/2026-11-19-versions-et-erreurs-de-lecture-design.md, § 4.4) : le Cast part
+// de la même décision que le panneau de la borne et le lecteur. Plus de « vf » choisi d'office dans la tranche.
+test('CAST STORE VERSION: castFilm prend une version, sinon la décision unique — jamais « vf » d\'office', () => {
+  const slice = read(SLICE);
+  assert.ok(!slice.includes("?? 'vf'"), "plus de ?? 'vf' dans la tranche");
+  assert.ok(!/opts\?\.audio|opts\?\.subtitle/.test(slice), 'plus de piste ni de sous-titres passés à part');
+  assert.match(slice, /castFilm: \(filmId: number, opts\?: \{ version\?: VersionChoice; startAt\?: number \}\) => void/, 'signature : une version et un départ');
+  const body = between(slice, 'castFilm: (filmId, opts) => {', 'castToggle: () => ask(');
+  assert.ok(body.includes('opts?.version ?? resolvedVersion(versionDecisionFor(s, filmId))'), 'sans version : resolvedVersion(versionDecisionFor(…))');
+  assert.ok(/audio: version\.audio/.test(body) && /subtitle: version\.subtitle/.test(body), 'le média suit la version, piste et sous-titres');
+  assert.ok(body.indexOf('versionDecisionFor(') < body.indexOf('castMediaRequest('), 'la décision précède le média');
+  assert.match(slice, /import \{ versionDecisionFor \} from '\.\/version'/, 'la décision vient de la tranche des versions');
+});
+
+test('CAST STORE VERSION: le lecteur passe sa version courante à castFilm, avec la position d\'ici', () => {
+  const player = read('src/components/player/VHSPlayer.tsx');
+  const start = player.indexOf('const sendToTv = useCallback(');
+  assert.ok(start > 0, 'sendToTv introuvable');
+  const send = player.slice(start, player.indexOf('}, [', start));
+  assert.match(send, /castFilm\(currentPlayingFilm, \{\s*version: \{ audio: audioTrack, subtitle: subtitleTrack \},\s*startAt: Math\.max\(/, 'version d\'ici et position');
+});
+
+// La chaîne que castFilm compose, rejouée sur les vraies fonctions pures : la décision → la source et la piste de
+// sous-titres envoyées à la TV. Les adresses sont factices.
+async function castChain(offerUrls, filmChoice, pref) {
+  const VC = await import('../../src/utils/version-choice.ts');
+  const { castMediaRequest } = await import('../../src/cast/cast-wire.ts');
+  const { buildCastSubtitleTracks } = await import('../../src/utils/cast-subtitles.ts');
+  const rental = { videoUrl: offerUrls.vf || offerUrls.vo || '', streamingUrls: offerUrls, watchProgress: 0, watchPosition: 0 };
+  const version = VC.resolvedVersion(VC.decideVersion({ offer: VC.versionOffer(offerUrls), filmChoice: filmChoice?.(VC) ?? null, pref: pref?.(VC) ?? null }));
+  if (version === null) return null;
+  return castMediaRequest({ rental, audio: version.audio, subtitle: version.subtitle, title: 'x', subtitles: buildCastSubtitleTracks(offerUrls) });
+}
+const URLS = { vf: 'https://s.example/vf.mp4', vo: 'https://s.example/vo.mp4', subtitles: 'https://s.example/fr.vtt', subtitles_en: 'https://s.example/en.vtt' };
+
+test('CAST STORE VERSION: rien de choisi → la TV reçoit la VF, sans sous-titres', async () => {
+  const media = await castChain(URLS);
+  assert.equal(media.url, URLS.vf);
+  assert.equal(media.activeSubtitleId, null);
+});
+test('CAST STORE VERSION: VOSTFR choisie pour ce film → la VO, piste française active', async () => {
+  const media = await castChain(URLS, (VC) => VC.VOSTFR);
+  assert.equal(media.url, URLS.vo);
+  assert.equal(media.activeSubtitleId, 1, 'piste française (id 1)');
+});
+test('CAST STORE VERSION: VOSTFR préférée sur un film sans sous-titres français → la version gardée par défaut', async () => {
+  // La borne pose la question avant ; un appel sans version (et sans question posée) part dans la version gardée.
+  const media = await castChain({ ...URLS, subtitles: null }, null, (VC) => VC.VOSTFR);
+  assert.equal(media.url, URLS.vo);
+  assert.equal(media.activeSubtitleId, 2, 'piste anglaise (id 2)');
+});
+test('CAST STORE VERSION: aucune piste lisible → aucun média, la tranche le dit (no_source)', async () => {
+  assert.equal(await castChain({ vf: null, vo: null, subtitles: URLS.subtitles, subtitles_en: null }), null);
+  const body = between(read(SLICE), 'castFilm: (filmId, opts) => {', 'castToggle: () => ask(');
+  assert.match(body, /const media = version && castMediaRequest\(/, 'sans version, pas de média');
+  assert.ok(body.indexOf("code: 'no_source'") > body.indexOf('const media = '), 'puis le message « pas de source »');
+});
+
 test('CAST STORE: initCast d\'abord, une seule fois, avant tout sendCast', () => {
   const slice = read(SLICE);
   const start = between(slice, 'startCast: () => {', 'castFilm: (filmId, opts) => {');

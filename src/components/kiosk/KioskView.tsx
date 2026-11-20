@@ -4,6 +4,8 @@ import { useBackGuard } from '../../hooks/useBackGuard';
 import api from '../../api';
 import type { Film } from '../../types';
 import { castOwnsFilm, castView } from '../../cast/cast-machine';
+import { versionDecisionFor } from '../../store/slices/version';
+import { resolvedVersion, versionOffer, versionRows, type VersionChoice } from '../../utils/version-choice';
 import { KioskAction, type KioskFilmDetail } from './KioskAction';
 import { KioskAuth } from './KioskAuth';
 import { KioskBrowse } from './KioskBrowse';
@@ -28,8 +30,11 @@ import {
   kioskBackAction,
   lcdDevicePixel,
   lcdPitchInDevicePixels,
+  NO_PLAYABLE_VERSION,
   phoneLayout,
   phoneLayoutVars,
+  readyLaunchStep,
+  readyVersionRow,
   rentalOverStep,
   viewingAngle,
   watchEntry,
@@ -217,6 +222,15 @@ function spineTints(count: number, seed: number): string[] {
 const SPINES_SIDE = spineTints(46, 1);
 const SPINES_BELOW = spineTints(9, 0);
 
+/** Où le visiteur a demandé le film depuis le panneau : ici, ou sur la télé (par AirPlay ou par le Cast). */
+type ReadyTarget = 'here' | 'airplay' | 'cast';
+/**
+ * Ce que montre le panneau « Votre K7 est prête » : son contenu ; la liste des versions de ce film (dépliée ou non) ; ou
+ * la question des sous-titres, avec la cible retenue pour lancer le film une fois la réponse donnée.
+ */
+type ReadySub = { view: 'panel' } | { view: 'versions'; expanded: boolean } | { view: 'question'; target: ReadyTarget };
+const READY_PANEL: ReadySub = { view: 'panel' };
+
 function Spines({ tints, className }: { tints: string[]; className: string }) {
   return (
     <div className={className} aria-hidden="true">
@@ -272,7 +286,12 @@ export function KioskView() {
   // ----- Distribution de la K7 (spec 2026-11-17) -----
   // « Veuillez patienter » pendant l'appel au serveur, puis le panneau « Votre K7 est prête ». Le même panneau, titré
   // « Où voulez-vous regarder ? » (`fresh` faux), pose la question à chaque reprise d'un film déjà loué.
-  const [distribution, setDistribution] = useState<{ phase: 'waiting' | 'ready'; filmId: number; fresh: boolean } | null>(null);
+  // `sub` : ce que montre le panneau ouvert (absent = son contenu) ; chaque ouverture repart sans.
+  const [distribution, setDistribution] = useState<{ phase: 'waiting' | 'ready'; filmId: number; fresh: boolean; sub?: ReadySub } | null>(null);
+  const readyOpen = distribution?.phase === 'ready';
+  const readySub: ReadySub = distribution?.phase === 'ready' ? distribution.sub ?? READY_PANEL : READY_PANEL;
+  /** Change ce que montre le panneau ; sans effet s'il s'est fermé entre-temps. */
+  const setReadySub = useCallback((sub: ReadySub) => setDistribution((d) => (d?.phase === 'ready' ? { ...d, sub } : d)), []);
   // « Mon compte » (spec 2026-11-17-borne-mon-compte) : ouvert par « Compte » ou depuis le panneau d'après location.
   const [accountOpen, setAccountOpen] = useState(false);
   // La liste « Version préférée », ouverte depuis « Mon compte » à la place de son contenu.
@@ -284,6 +303,26 @@ export function KioskView() {
   }, []);
   const onRented = useCallback((filmId: number) => setDistribution({ phase: 'ready', filmId, fresh: true }), []);
   const closeReady = useCallback(() => setDistribution(null), []);
+
+  // ----- La version du film du panneau (spec 2026-11-19-versions-et-erreurs-de-lecture, § 4.1, 4.3 a et 4.4) -----
+  // La décision unique, celle du lecteur et du Cast. versionDecisionFor rend un objet neuf à chaque appel : jamais en
+  // sélecteur du magasin. Elle est relue sur l'état du magasin quand l'une des trois valeurs qu'elle lit change (la
+  // location du film, les choix par film, la version préférée), chacune suivie par un sélecteur à valeur stable.
+  const readyFilmId = distribution?.phase === 'ready' ? distribution.filmId : null;
+  const readyRental = useStore((state) => (readyFilmId === null ? undefined : state.getRental(readyFilmId)));
+  const filmVersions = useStore((state) => state.filmVersions);
+  const versionPref = useStore((state) => state.versionPref);
+  const chooseFilmVersion = useStore((state) => state.chooseFilmVersion);
+  const readyDecision = useMemo(
+    () => (readyFilmId === null ? null : versionDecisionFor(useStore.getState(), readyFilmId)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- lues par la décision sur l'état complet (voir plus haut)
+    [readyFilmId, readyRental, filmVersions, versionPref],
+  );
+  const readyOffer = versionOffer(readyRental?.streamingUrls);
+  // La liste ne montre que les versions du film (pas « Automatique », réglage du compte) ; la version courante cochée.
+  const readyRows = readyDecision !== null && readySub.view === 'versions'
+    ? versionRows({ offer: readyOffer, current: resolvedVersion(readyDecision), expanded: readySub.expanded, withAuto: false })
+    : [];
 
   // ----- « Où voulez-vous regarder ? » (refonte du Cast, spec 2026-11-18, § 5.4) -----
   // Toute ouverture du lecteur par la borne en porte l'origine : son en-tête et sa télécommande ramènent ici.
@@ -303,16 +342,54 @@ export function KioskView() {
   /**
    * « Sur ma télé ». Apple avec AirPlay : le Cast de Google n'y existe pas, et le sélecteur d'AirPlay exige un appui
    * direct — le lecteur s'ouvre avec son invite, qui le porte. Ailleurs, le Cast part DANS cet appui (le sélecteur
-   * d'appareils exige son activation : ni attente ni promesse avant castFilm), puis le lecteur montre l'attente.
+   * d'appareils exige son activation : ni attente ni promesse avant castFilm), dans la version décidée par le panneau,
+   * puis le lecteur montre l'attente.
    */
-  const watchOnTv = (filmId: number, entry: 'airplay' | 'cast') => {
+  const watchOnTv = (filmId: number, entry: 'airplay' | 'cast', version: VersionChoice) => {
     closeReady();
     if (entry === 'airplay') {
       openPlayer(filmId, { from: 'kiosk', ask: true });
       return;
     }
-    castFilm(filmId);
+    castFilm(filmId, { version });
     openPlayer(filmId, { from: 'kiosk', ask: false });
+  };
+  /** Le film part là où le visiteur l'a demandé : ici (le lecteur part de la même décision), ou sur la télé. */
+  const launch = (filmId: number, target: ReadyTarget, version: VersionChoice) => {
+    if (target === 'here') watchHere(filmId);
+    else watchOnTv(filmId, target, version);
+  };
+  /**
+   * « Sur ce téléphone » / « Sur ma télé » : la décision de version, lue au moment de l'appui. La question des
+   * sous-titres remplace le contenu du panneau, la cible retenue ; sans aucune version lisible, un message. Rien
+   * n'attend : « Sur ma télé » garde l'activation de l'appui jusqu'au Cast.
+   */
+  const launchFromReady = (filmId: number, target: ReadyTarget) => {
+    const decision = versionDecisionFor(useStore.getState(), filmId);
+    const step = readyLaunchStep(decision);
+    if (step === 'ask') {
+      setReadySub({ view: 'question', target });
+      return;
+    }
+    const version = resolvedVersion(decision);
+    if (step === 'refuse' || version === null) {
+      setNotice({ title: NO_PLAYABLE_VERSION, primary: { label: 'Fermer', onPress: () => setNotice(null) } });
+      return;
+    }
+    launch(filmId, target, version);
+  };
+  /**
+   * La réponse à la question des sous-titres devient le choix de CE film — jamais la version préférée, que seul « Mon
+   * compte » règle — et le film part vers la cible retenue, dans le même appui (le sélecteur d'appareils l'exige).
+   */
+  const answerQuestion = (filmId: number, target: ReadyTarget, v: VersionChoice) => {
+    chooseFilmVersion(filmId, v);
+    launch(filmId, target, v);
+  };
+  /** Une version choisie dans la liste vaut pour ce film ; le panneau revient, sur la nouvelle version. */
+  const pickVersion = (filmId: number, v: VersionChoice) => {
+    chooseFilmVersion(filmId, v);
+    setReadySub(READY_PANEL);
   };
   // Un serveur muet ne doit pas enfermer le visiteur : au bout de KIOSK_RENT_TIMEOUT_MS, l'attente
   // laisse place à un message qui mène à « Mes locations » (la location a pu aboutir) et à « Quitter ».
@@ -515,7 +592,9 @@ export function KioskView() {
       playerOpen: isPlayerOpen,
       noticeOpen: overlay !== null,
       waiting: distribution?.phase === 'waiting',
-      readyOpen: distribution?.phase === 'ready',
+      readyOpen,
+      questionOpen: readyOpen && readySub.view === 'question',
+      versionOpen: readyOpen && readySub.view === 'versions',
       accountOpen,
       reviewOpen: reviewFilmId !== null,
       prefOpen: accountOpen && prefOpen,
@@ -532,6 +611,8 @@ export function KioskView() {
       if (notice) closeNotice();
       else castDismiss();
     }
+    // La question ou la liste referment leur vue : le panneau revient, rien n'est lancé.
+    else if (action === 'close-question' || action === 'close-version') setReadySub(READY_PANEL);
     else if (action === 'close-ready') closeReady();
     else if (action === 'close-review') setReviewFilmId(null);
     else if (action === 'close-pref') setPrefOpen(false);
@@ -708,22 +789,33 @@ export function KioskView() {
                 {authVisible && <KioskAuth onDone={finishAuth} onCancel={cancelAuth} />}
 
                 {distribution?.phase === 'waiting' && <KioskWaiting />}
-                {distribution?.phase === 'ready' && (() => {
+                {distribution?.phase === 'ready' && readyDecision !== null && (() => {
                   const { filmId, fresh } = distribution;
                   return (
                     <KioskReady
                       filmId={filmId}
                       fresh={fresh}
                       title={catalogue.find((f) => f.id === filmId)?.title ?? 'Titre indisponible'}
-                      expiresAt={useStore.getState().getRental(filmId)?.expiresAt ?? null}
-                      onWatch={() => watchHere(filmId)}
-                      onTv={(entry) => watchOnTv(filmId, entry)}
+                      expiresAt={readyRental?.expiresAt ?? null}
+                      onWatch={() => launchFromReady(filmId, 'here')}
+                      onTv={(entry) => launchFromReady(filmId, entry)}
                       // Ouvert depuis « Mon compte », le compte est déjà dessous : le panneau se ferme et c'est tout.
                       onAccount={() => {
                         closeReady();
                         setAccountOpen(true);
                       }}
                       onLater={closeReady}
+                      version={readyVersionRow(readyOffer, readyDecision)}
+                      view={readySub.view}
+                      rows={readyRows}
+                      question={readySub.view === 'question' && readyDecision.kind === 'ask' ? readyDecision : null}
+                      onOpenVersions={() => setReadySub({ view: 'versions', expanded: false })}
+                      onPickVersion={(v) => pickVersion(filmId, v)}
+                      onMoreVersions={() => setReadySub({ view: 'versions', expanded: true })}
+                      onAnswer={(v) => {
+                        if (readySub.view === 'question') answerQuestion(filmId, readySub.target, v);
+                      }}
+                      onCloseSub={() => setReadySub(READY_PANEL)}
                     />
                   );
                 })()}

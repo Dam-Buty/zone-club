@@ -630,3 +630,84 @@ test('CAST BORNE: la barre du Cast prend sa place entre LOUER et la bande, sans 
   assert.equal(vars['--k-cast-h'], '11cqw');
   assert.ok(/cqw$/.test(vars['--k-cast-top']));
 });
+
+// ===== Versions, tâche 7 : la ligne « Version » du panneau, la question des sous-titres, le lancement =====
+// docs/superpowers/specs/2026-11-19-versions-et-erreurs-de-lecture-design.md, § 4.1, 4.3 a et 4.4. Les décisions sont
+// celles de la vraie fonction (decideVersion), pas des objets écrits à la main.
+const VC = await import('../../src/utils/version-choice.ts');
+const ALL = { vf: true, vo: true, fr: true, en: true };
+const decide = (offer, filmChoice = null, pref = null) => VC.decideVersion({ offer, filmChoice, pref });
+
+test('PANNEAU VERSION: une version jouable se lance sans question', () => {
+  const d = decide(ALL);
+  assert.equal(d.kind, 'play');
+  assert.equal(K.readyLaunchStep(d), 'launch');
+});
+test('PANNEAU VERSION: une substitution écrite (VF demandée, film sans VF) se lance aussi sans question', () => {
+  const d = decide({ vf: false, vo: true, fr: true, en: false }, null, VC.VF);
+  assert.equal(d.kind, 'play');
+  assert.equal(d.note, 'VOSTFR · VF indisponible pour ce film');
+  assert.equal(K.readyLaunchStep(d), 'launch');
+});
+test('PANNEAU VERSION: VOSTFR préférée sur un film sans sous-titres français mais avec la VF → la question', () => {
+  const d = decide({ vf: true, vo: true, fr: false, en: true }, null, VC.VOSTFR);
+  assert.equal(d.kind, 'ask');
+  assert.equal(K.readyLaunchStep(d), 'ask');
+});
+test('PANNEAU VERSION: la réponse rangée en choix du film, la même décision se lance sans reposer la question', () => {
+  const offer = { vf: true, vo: true, fr: false, en: true };
+  const asked = decide(offer, null, VC.VOSTFR);
+  for (const answer of [asked.keep.version, asked.other.version]) {
+    const again = decide(offer, answer, VC.VOSTFR);
+    assert.equal(K.readyLaunchStep(again), 'launch', `réponse ${answer.audio}/${answer.subtitle}`);
+    assert.equal(again.version, answer, 'la version de la réponse, telle quelle');
+  }
+});
+test('PANNEAU VERSION: aucune piste lisible → refus, avec le message exact', () => {
+  const d = decide({ vf: false, vo: false, fr: true, en: true });
+  assert.equal(d.kind, 'none');
+  assert.equal(K.readyLaunchStep(d), 'refuse');
+  assert.equal(K.NO_PLAYABLE_VERSION, "Ce film n'a aucune version lisible pour le moment.");
+});
+
+test('PANNEAU VERSION: la ligne d\'un film VF + VO dit « VF » et s\'ouvre, sans note', () => {
+  assert.deepEqual(K.readyVersionRow(ALL, decide(ALL)), { text: 'VF', openable: true, note: null });
+});
+test('PANNEAU VERSION: la ligne suit le choix fait pour ce film', () => {
+  assert.deepEqual(K.readyVersionRow(ALL, decide(ALL, VC.VOSTFR)), { text: 'VOSTFR', openable: true, note: null });
+});
+test('PANNEAU VERSION: la note de substitution s\'écrit sous la ligne', () => {
+  const offer = { vf: false, vo: true, fr: true, en: false };
+  assert.deepEqual(K.readyVersionRow(offer, decide(offer, null, VC.VF)), { text: 'VOSTFR', openable: true, note: 'VOSTFR · VF indisponible pour ce film' });
+});
+test('PANNEAU VERSION: un film à un seul couple le dit, sans rien à ouvrir', () => {
+  const offer = { vf: false, vo: true, fr: false, en: false };
+  assert.deepEqual(K.readyVersionRow(offer, decide(offer)), { text: 'VO · seule version de ce film', openable: false, note: null });
+});
+test('PANNEAU VERSION: question en attente → la ligne montre la version gardée par défaut, la question vient au lancement', () => {
+  const offer = { vf: true, vo: true, fr: false, en: true };
+  assert.deepEqual(K.readyVersionRow(offer, decide(offer, null, VC.VOSTFR)), { text: 'VO, sous-titres anglais', openable: true, note: null });
+});
+test('PANNEAU VERSION: rien de lisible → la ligne ne s\'ouvre pas et dit pourquoi', () => {
+  const offer = { vf: false, vo: false, fr: false, en: false };
+  assert.deepEqual(K.readyVersionRow(offer, decide(offer)), { text: '—', openable: false, note: "Ce film n'a aucune version lisible pour le moment." });
+});
+
+const BACK_BASE = { playerOpen: false, noticeOpen: false, noticeClosable: true, authOpen: false, phrasePending: false, searchOpen: false };
+test('PANNEAU VERSION: geste retour — la question revient au panneau avant de le fermer', () => {
+  assert.equal(K.kioskBackAction({ ...BACK_BASE, readyOpen: true, questionOpen: true }), 'close-question');
+  assert.equal(K.kioskBackAction({ ...BACK_BASE, readyOpen: true, questionOpen: false }), 'close-ready');
+});
+test('PANNEAU VERSION: geste retour — la liste revient au panneau avant de le fermer', () => {
+  assert.equal(K.kioskBackAction({ ...BACK_BASE, readyOpen: true, versionOpen: true }), 'close-version');
+  assert.equal(K.kioskBackAction({ ...BACK_BASE, readyOpen: true, versionOpen: false }), 'close-ready');
+});
+test('PANNEAU VERSION: geste retour — la question passe avant la liste, et passe avant le compte resté dessous', () => {
+  assert.equal(K.kioskBackAction({ ...BACK_BASE, readyOpen: true, versionOpen: true, questionOpen: true }), 'close-question');
+  assert.equal(K.kioskBackAction({ ...BACK_BASE, readyOpen: true, versionOpen: true, accountOpen: true, prefOpen: true }), 'close-version');
+});
+test('PANNEAU VERSION: geste retour — le lecteur, un message et l\'attente restent au-dessus de la question et de la liste', () => {
+  assert.equal(K.kioskBackAction({ ...BACK_BASE, readyOpen: true, questionOpen: true, playerOpen: true }), 'close-player');
+  assert.equal(K.kioskBackAction({ ...BACK_BASE, readyOpen: true, versionOpen: true, noticeOpen: true }), 'close-notice');
+  assert.equal(K.kioskBackAction({ ...BACK_BASE, waiting: true, questionOpen: true }), 'none');
+});

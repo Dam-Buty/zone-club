@@ -17,7 +17,8 @@ import { useBackGuard } from '../../hooks/useBackGuard';
 import { buildCastSubtitleTracks, activeSubtitleId } from '../../utils/cast-subtitles';
 import { appleAirPlay, localAutoPlay, noticeHoldsPlayback, playerWithoutRental, playsHere, rewindPromptFor } from '../../utils/cast-on-open';
 import { failureHoldsPlayback, failurePanel, failureTrace, type DeviceFailureKind } from '../../utils/playback-failure';
-import { versionOffer } from '../../utils/version-choice';
+import { resolvedVersion, versionOffer } from '../../utils/version-choice';
+import { versionDecisionFor } from '../../store/slices/version';
 import { REVIEW_MIN_LENGTH, REVIEW_RATING_LABELS } from '../../utils/review-rules';
 import styles from './VHSPlayer.module.css';
 import castStyles from './CastPanels.module.css';
@@ -87,8 +88,11 @@ export function VHSPlayer() {
   const isMobile = useIsMobile();
   const videoRef = useRef<HTMLVideoElement>(null);
   const [playerState, setPlayerState] = useState<PlayerState>('paused');
-  const [audioTrack, setAudioTrack] = useState<AudioTrack>('vf');
-  const [subtitleTrack, setSubtitleTrack] = useState<SubtitleTrack>('fr');
+  // Le film part dans la version décidée (choix du film, préférence, défaut : spec 2026-11-19, § 4.4), lue à l'ouverture
+  // — le lecteur est monté à chaque ouverture. Pont jusqu'à la tâche 8, qui remplace ces états par usePlayerVersion.
+  const [opening] = useState(() => (currentPlayingFilm === null ? null : resolvedVersion(versionDecisionFor(useStore.getState(), currentPlayingFilm))));
+  const [audioTrack, setAudioTrack] = useState<AudioTrack>(opening?.audio ?? 'vf');
+  const [subtitleTrack, setSubtitleTrack] = useState<SubtitleTrack>(opening?.subtitle ?? 'fr');
   const [currentTime, setCurrentTime] = useState(0);
   const [showBlueScreen, setShowBlueScreen] = useState(false);
   const [remoteError, setRemoteError] = useState<string | null>(null);
@@ -799,8 +803,7 @@ export function VHSPlayer() {
     if (currentPlayingFilm === null) return;
     setRemoteError(null);
     castFilm(currentPlayingFilm, {
-      audio: audioTrack,
-      subtitle: subtitleTrack,
+      version: { audio: audioTrack, subtitle: subtitleTrack },
       startAt: Math.max(videoRef.current?.currentTime || 0, rental?.watchPosition || 0),
     });
   }, [currentPlayingFilm, castFilm, audioTrack, subtitleTrack, rental?.watchPosition]);

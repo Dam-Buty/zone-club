@@ -7,6 +7,9 @@ import { castMediaRequest, rentalGoneFilm, settle } from '../../cast/cast-wire'
 import { getCastState, initCast, sendCast, setCastSubtitle, subscribeCast } from '../../cast/cast-service'
 import type { CastPorts } from '../../cast/cast-service'
 import { buildCastSubtitleTracks } from '../../utils/cast-subtitles'
+import { resolvedVersion } from '../../utils/version-choice'
+import type { VersionChoice } from '../../utils/version-choice'
+import { versionDecisionFor } from './version'
 
 // Tranche « Cast » du magasin (docs/superpowers/specs/2026-11-18-cast-refonte-design.md, § 5.3) : le SEUL endroit
 // de l'application qui parle au service (src/cast/cast-service.ts). Elle publie son état, lui branche l'API et le
@@ -23,11 +26,11 @@ export interface CastSlice {
   /**
    * « Regarder sur TV ». À appeler DIRECTEMENT dans le gestionnaire de l'appui : le sélecteur d'appareils exige son
    * activation, aucune attente ne doit précéder l'envoi. Sans source, un message `no_source` et rien d'autre.
-   * `startAt` : par défaut la position de la location, 0 si elle est vue jusqu'au bout. `audio` : 'vf', avec repli
-   * sur 'vo' si la location n'a que celle-là. `subtitle` : sans choix, comme le lecteur d'avant — le français s'il
-   * existe, sinon la première langue disponible, sinon aucun ; 'off' les coupe.
+   * `startAt` : par défaut la position de la location, 0 si elle est vue jusqu'au bout. `version` : celle que
+   * l'appelant a décidée (le lecteur, le panneau de la borne) ; sans elle, la décision unique pour ce film
+   * (`versionDecisionFor`, spec 2026-11-19, § 4.4) — jamais une piste choisie ici.
    */
-  castFilm: (filmId: number, opts?: { audio?: 'vf' | 'vo'; subtitle?: 'off' | 'fr' | 'en'; startAt?: number }) => void
+  castFilm: (filmId: number, opts?: { version?: VersionChoice; startAt?: number }) => void
   castToggle: () => void
   castSeekBy: (seconds: number) => void
   castVolume: (level: number) => void
@@ -159,14 +162,15 @@ export const createCastSlice: StateCreator<VideoClubState, [['zustand/persist', 
       get().startCast()
       const s = get()
       const rental = s.getRental(filmId)
-      const tracks = buildCastSubtitleTracks(rental?.streamingUrls)
-      const media = castMediaRequest({
+      // La version jouée sur la TV : la même décision que partout ; sans version lisible, rien à envoyer.
+      const version = opts?.version ?? resolvedVersion(versionDecisionFor(s, filmId))
+      const media = version && castMediaRequest({
         rental,
-        audio: opts?.audio ?? 'vf',
+        audio: version.audio,
         title: titleOf(s, filmId),
         startAt: opts?.startAt,
-        subtitles: tracks,
-        subtitle: opts?.subtitle,
+        subtitles: buildCastSubtitleTracks(rental?.streamingUrls),
+        subtitle: version.subtitle,
       })
       if (!media) {
         noSource = { code: 'no_source', filmId, deviceName: null }

@@ -539,9 +539,10 @@ test('CAST BORNE: « Sur ma télé » — le Cast part dans l\'appui, jamais sur
   assert.ok(airplay.includes("openPlayer(filmId, { from: 'kiosk', ask: true })"), 'AirPlay : le lecteur s\'ouvre avec son invite, qui porte AirPlay');
   assert.ok(!airplay.includes('castFilm('), 'AirPlay : jamais le Cast de Google');
   const cast = fn.slice(branchEnd);
-  const castAt = cast.indexOf('castFilm(filmId)');
+  // Versions, tâche 7 : le Cast part dans la version décidée par le panneau (spec 2026-11-19, § 4.4).
+  const castAt = cast.indexOf('castFilm(filmId, { version })');
   const openAt = cast.indexOf("openPlayer(filmId, { from: 'kiosk', ask: false })");
-  assert.ok(castAt >= 0 && openAt > castAt, 'ailleurs : castFilm(filmId) puis openPlayer(…, ask: false)');
+  assert.ok(castAt >= 0 && openAt > castAt, 'ailleurs : castFilm(filmId, { version }) puis openPlayer(…, ask: false)');
   // Un seul appel au Cast dans toute la borne : celui-là, après la sortie de la branche AirPlay.
   assert.equal((view.match(/castFilm\(/g) || []).length, 1, 'un seul castFilm( dans KioskView');
   assert.ok(view.indexOf('castFilm(') > view.indexOf("if (entry === 'airplay') {"), 'castFilm vient après la branche AirPlay');
@@ -549,7 +550,9 @@ test('CAST BORNE: « Sur ma télé » — le Cast part dans l\'appui, jamais sur
     if (file.endsWith('KioskView.tsx')) continue;
     assert.ok(!readText(file).includes('castFilm('), `${path.basename(file)} : pas de Cast hors du gestionnaire de la borne`);
   }
-  assert.match(view, /onTv=\{\(entry\) => watchOnTv\(filmId, entry\)\}/, 'le panneau passe son choix à watchOnTv');
+  // Versions, tâche 7 : le choix du panneau passe d'abord par la décision de version (question des sous-titres), qui
+  // mène à watchOnTv (tests « PANNEAU VERSION » plus bas).
+  assert.match(view, /onTv=\{\(entry\) => launchFromReady\(filmId, entry\)\}/, 'le panneau passe son choix à launchFromReady');
   // Le choix AirPlay / Cast est la fonction testée, sur la détection lue sur l'élément vidéo.
   const dist = KIOSK('KioskDistribution.tsx');
   assert.ok(dist.includes('tvEntry(') && dist.includes('appleAirPlay('), 'KioskReady choisit par tvEntry(appleAirPlay(…))');
@@ -788,4 +791,110 @@ test('LISTE DES VERSIONS: en attente, aria-busy et les appuis sur les lignes ign
   assert.equal(more, 0);
   buttons.find((b) => b.props.className === 'B').props.onClick();
   assert.equal(back, 1, 'la liste n\'enferme jamais le visiteur');
+});
+
+// ===== Versions, tâche 7 (spec 2026-11-19, § 4.1, 4.3 a et 4.4) : la ligne « Version » du panneau, la question des
+// sous-titres, et le lancement qui part de la même décision que tout le reste =====
+/** Le corps du composant KioskReady, jusqu'à la fin du fichier. */
+const readySrc = () => {
+  const dist = KIOSK('KioskDistribution.tsx');
+  return dist.slice(dist.indexOf('export function KioskReady'));
+};
+
+test('PANNEAU VERSION: la ligne « Version » est entre l\'échéance et les deux boutons, la note dessous', () => {
+  const ready = readySrc();
+  const until = ready.indexOf('readyUntilText(expiresAt)');
+  const line = ready.indexOf('<span>Version</span>');
+  const note = ready.indexOf('{version.note}');
+  const here = ready.indexOf('{labels.here}');
+  assert.ok(until > 0, 'échéance');
+  assert.ok(line > until, 'la ligne vient après l\'échéance');
+  assert.ok(note > line, 'la note de substitution s\'écrit sous la ligne');
+  assert.ok(here > note, 'les deux boutons viennent après');
+  assert.match(ready, /\{version\.note && <p className=\{styles\.kReadyVersionNote\}>\{version\.note\}<\/p>\}/, 'la note seulement quand il y en a une');
+  assert.ok(ready.includes('{version.text}'), 'la valeur de la ligne vient de la logique (readyVersionRow)');
+});
+
+test('PANNEAU VERSION: la ligne s\'ouvre seulement quand le film a plusieurs versions — sinon du texte, sans chevron', () => {
+  const ready = readySrc();
+  const branch = ready.slice(ready.indexOf('{version.openable ? ('), ready.indexOf('{version.note &&'));
+  const [openable, fixed] = branch.split(') : (');
+  assert.ok(fixed !== undefined, 'deux branches');
+  assert.match(openable, /<button type="button" className=\{`\$\{styles\.kPrefLine\} \$\{styles\.kReadyVersion\}`\} onClick=\{onOpenVersions\}>/, 'un bouton, avec le chevron de .kPrefLine, qui ouvre la liste');
+  assert.ok(!fixed.includes('<button') && !fixed.includes('onClick'), 'film à un seul couple : pas un bouton');
+  assert.ok(!fixed.includes('kPrefLine'), 'ni le cadre ni le chevron de .kPrefLine');
+  assert.ok(fixed.includes('styles.kReadyVersionFixed'), 'une ligne de texte');
+  const css = readText(path.join(ROOT, 'src/components/kiosk/KioskPanels.module.css'));
+  assert.ok(!/\.kReadyVersionFixed::after/.test(css), 'aucun chevron dessiné sur la ligne fixe');
+});
+
+test('PANNEAU VERSION: un appui sur la ligne remplace le contenu par la liste partagée, titrée « Version »', () => {
+  const ready = readySrc();
+  assert.ok(KIOSK('KioskDistribution.tsx').includes("import { VersionList } from '../version/VersionList'"), 'la liste partagée, pas une copie');
+  assert.match(ready, /view === 'versions' \? \(\s*<VersionList\s+title="Version"\s+rows=\{rows\}/, 'la liste, ses lignes viennent de KioskView');
+  const list = ready.slice(ready.indexOf('<VersionList'), ready.indexOf('/>', ready.indexOf('<VersionList')));
+  for (const cls of ['list: styles.kVersionList', 'row: styles.kVersionRow', 'rowSelected: styles.kVersionRowOn', 'absent: styles.kVersionAbsent', 'more: styles.kVersionMore', 'back: `${styles.kAuthBack} ${styles.kVersionBack}`']) {
+    assert.ok(list.includes(cls), `classes de la borne : ${cls}`);
+  }
+  assert.ok(list.includes('onMore={onMoreVersions}') && list.includes('onBack={onCloseSub}'), '« Autres versions » et « Retour »');
+  assert.match(list, /onPick=\{\(v\) => \{\s*if \(v\) onPickVersion\(v\);\s*\}\}/, 'un appui choisit la version de ce film');
+});
+
+test('PANNEAU VERSION: la question remplace le contenu — titre, texte, et les deux réponses de la décision', () => {
+  const ready = readySrc();
+  const q = ready.slice(ready.indexOf("view === 'question' && question ? ("), ready.indexOf('/* Le panneau */'));
+  assert.ok(q.length > 0, 'une branche « question »');
+  assert.ok(q.includes('{question.title}') && q.includes('{question.body}'), 'titre et texte de la décision, tels quels');
+  assert.match(q, /onClick=\{\(\) => onAnswer\(question\.keep\.version\)\}>\s*\{question\.keep\.label\}/, '« Continuer en … »');
+  assert.match(q, /onClick=\{\(\) => onAnswer\(question\.other\.version\)\}>\s*\{question\.other\.label\}/, '« Passer en VF »');
+  assert.ok(!/\bdisabled\b/.test(KIOSK('KioskDistribution.tsx')), 'aucun bouton grisé');
+});
+
+test('PANNEAU VERSION: KioskView calcule la ligne, la liste et la question à partir de la décision unique, hors sélecteur', () => {
+  const view = KIOSK('KioskView.tsx');
+  // versionDecisionFor rend un objet neuf à chaque appel : jamais en sélecteur du magasin (boucle de rendu).
+  assert.ok(!/useStore\(\(state\) => [^)]*versionDecisionFor\(/.test(view), 'pas de sélecteur sur la décision');
+  assert.match(view, /versionDecisionFor\(useStore\.getState\(\), readyFilmId\)/, 'la décision, lue sur l\'état du magasin');
+  assert.ok(view.includes('readyVersionRow(readyOffer, readyDecision)'), 'la ligne vient de readyVersionRow (testée)');
+  assert.ok(view.includes('versionRows({ offer: readyOffer, current: resolvedVersion(readyDecision), expanded: readySub.expanded, withAuto: false })'), 'la liste : versions du film, sans « Automatique »');
+  const ready = view.slice(view.indexOf('<KioskReady'), view.indexOf('/>', view.indexOf('onCloseSub=')));
+  for (const prop of ['version={', 'view={readySub.view}', 'rows={', 'question={', 'onOpenVersions=', 'onPickVersion=', 'onMoreVersions=', 'onAnswer=', 'onCloseSub=']) {
+    assert.ok(ready.includes(prop), `KioskReady reçoit ${prop}`);
+  }
+  assert.match(ready, /onWatch=\{\(\) => launchFromReady\(filmId, 'here'\)\}/, '« Sur ce téléphone » passe par la décision');
+});
+
+test('PANNEAU VERSION: « Sur ce téléphone » / « Sur ma télé » — lancer, demander, ou dire qu\'aucune version n\'est lisible', () => {
+  const view = KIOSK('KioskView.tsx');
+  const fn = arrowBody(view, 'launchFromReady');
+  assert.ok(fn.includes('readyLaunchStep(versionDecisionFor(useStore.getState(), filmId))') || /const decision = versionDecisionFor\(useStore\.getState\(\), filmId\);[\s\S]*readyLaunchStep\(decision\)/.test(fn), 'la décision lue au moment de l\'appui, puis readyLaunchStep');
+  assert.match(fn, /if \(step === 'ask'\) \{\s*setReadySub\(\{ view: 'question', target \}\);\s*return;/, 'la question remplace le panneau, la cible est retenue');
+  assert.match(fn, /title: NO_PLAYABLE_VERSION/, 'refus : le message exact (kiosk-logic)');
+  assert.ok(fn.includes('launch(filmId, target, version)'), 'sinon le lancement, dans la version décidée');
+  assert.ok(!/\bawait\b|\basync\b|\.then\(|setTimeout|requestAnimationFrame/.test(fn), 'rien n\'attend : le sélecteur d\'appareils exige l\'activation de l\'appui');
+  const launch = arrowBody(view, 'launch');
+  assert.match(launch, /if \(target === 'here'\) watchHere\(filmId\);\s*else watchOnTv\(filmId, target, version\);/, 'ici, ou la télé avec la version');
+});
+
+test('PANNEAU VERSION: la réponse devient le choix de ce film et lance le film dans le même appui, sans toucher à la préférence', () => {
+  const view = KIOSK('KioskView.tsx');
+  const answer = arrowBody(view, 'answerQuestion');
+  const choose = answer.indexOf('chooseFilmVersion(filmId, v)');
+  const go = answer.indexOf('launch(filmId, target, v)');
+  assert.ok(choose >= 0 && go > choose, 'chooseFilmVersion puis le lancement vers la cible retenue');
+  assert.ok(!/\bawait\b|\basync\b|\.then\(|setTimeout|requestAnimationFrame/.test(answer), 'dans le gestionnaire de l\'appui, sans attente');
+  assert.match(view, /onAnswer=\{\(v\) => \{\s*if \(readySub\.view === 'question'\) answerQuestion\(filmId, readySub\.target, v\);\s*\}\}/, 'la cible retenue à la question');
+  assert.ok(!view.includes('setVersionPref'), 'la borne ne change jamais la version préférée hors de « Mon compte »');
+  const pick = arrowBody(view, 'pickVersion');
+  assert.ok(pick.indexOf('chooseFilmVersion(filmId, v)') >= 0 && pick.indexOf("setReadySub(READY_PANEL)") > pick.indexOf('chooseFilmVersion(filmId, v)'), 'un choix dans la liste : ce film, puis retour au panneau');
+});
+
+test('PANNEAU VERSION: le geste retour ferme la question ou la liste avant le panneau', () => {
+  const view = KIOSK('KioskView.tsx');
+  const back = view.slice(view.indexOf('const action = kioskBackAction({'), view.indexOf('});', view.indexOf('const action = kioskBackAction({')));
+  assert.match(back, /questionOpen: readyOpen && readySub\.view === 'question'/, 'la question est ouverte');
+  assert.match(back, /versionOpen: readyOpen && readySub\.view === 'versions'/, 'la liste est ouverte');
+  assert.match(view, /else if \(action === 'close-question' \|\| action === 'close-version'\) setReadySub\(READY_PANEL\);/, 'retour au panneau, rien n\'est lancé');
+  // Chaque ouverture du panneau repart de son contenu (ni liste ni question d'une ouverture précédente).
+  assert.ok(view.includes("setDistribution({ phase: 'ready', filmId, fresh: false })") && /onRented = useCallback\(\(filmId: number\) => setDistribution\(\{ phase: 'ready', filmId, fresh: true \}\)/.test(view), 'les ouvertures ne portent pas de sous-vue');
 });
