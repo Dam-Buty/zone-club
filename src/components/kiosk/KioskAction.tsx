@@ -3,7 +3,7 @@ import { useStore, useCredits } from '../../store';
 import { RENTAL_COSTS, type Film } from '../../types';
 import { getRentalTier } from '../../utils/rental-tier';
 import type { KioskNoticeSpec } from './KioskNotice';
-import { actionLabel, confirmRentText, creditsLabel, offersRelogin, rentAction, rentFlow } from './kiosk-logic';
+import { actionLabel, confirmRentText, creditsLabel, NO_PLAYABLE_VERSION, offersRelogin, rentAction, rentFlow } from './kiosk-logic';
 import styles from './KioskBrowse.module.css';
 
 // Le bouton d'action de la fiche. Il ne se grise jamais : quand il ne peut pas louer, il le dit
@@ -66,7 +66,9 @@ export function KioskAction({ film, detail, onNotice, onRequestAuth, onRenting, 
   const cost = RENTAL_COSTS[getRentalTier(film)];
   const copiesLeft = detail ? detail.copiesLeft : null;
   const isAvailable = film.is_available !== false;
-  const action = rentAction({ isAuthenticated, isRented, isAvailable, copiesLeft, credits, cost });
+  // Sans détail (pas encore arrivé, ou en échec), le film est supposé lisible : le serveur tranchera à la location.
+  const playable = detail ? detail.vf || detail.vo : true;
+  const action = rentAction({ isAuthenticated, isRented, isAvailable, playable, copiesLeft, credits, cost });
 
   const shown = actionLabel(action, cost, renting);
 
@@ -128,6 +130,7 @@ export function KioskAction({ film, detail, onNotice, onRequestAuth, onRenting, 
       isAuthenticated: state.isAuthenticated,
       isRented: state.rentals.some((r) => r.filmId === film.id),
       isAvailable,
+      playable,
       copiesLeft,
       credits: nowCredits,
       cost,
@@ -149,6 +152,10 @@ export function KioskAction({ film, detail, onNotice, onRequestAuth, onRenting, 
     }
     if (now === 'unavailable') {
       say('Film indisponible', "Ce film n'est pas encore en rayon.");
+      return;
+    }
+    if (now === 'unplayable') {
+      say('Film indisponible', NO_PLAYABLE_VERSION);
       return;
     }
     if (now === 'out-of-stock') {

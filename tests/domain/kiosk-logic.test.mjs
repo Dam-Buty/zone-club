@@ -62,13 +62,24 @@ test('BORNE: libellés de la fiche', () => {
   assert.equal(K.tabLabel(undefined), '—');
 });
 test('BORNE: décision du bouton d\'action, par ordre de priorité', () => {
-  const base = { isAuthenticated: true, isRented: false, isAvailable: true, copiesLeft: 2, credits: 3, cost: 1 };
+  const base = { isAuthenticated: true, isRented: false, isAvailable: true, playable: true, copiesLeft: 2, credits: 3, cost: 1 };
   assert.equal(K.rentAction({ ...base, isRented: true }), 'watch');
   assert.equal(K.rentAction({ ...base, isAuthenticated: false }), 'login');
   assert.equal(K.rentAction({ ...base, isAvailable: false }), 'unavailable');
   assert.equal(K.rentAction({ ...base, copiesLeft: 0 }), 'out-of-stock');
   assert.equal(K.rentAction({ ...base, credits: 1, cost: 2 }), 'insufficient');
   assert.equal(K.rentAction({ ...base, copiesLeft: null }), 'rent');
+});
+// Contrôle des fichiers (spec 2026-11-19-versions-et-erreurs-de-lecture, § 6) : un film dont plus aucune version n'est
+// lisible ne se loue pas, et la fiche le dit avant l'appui.
+test('BORNE: un film sans version lisible → « unplayable », juste après « unavailable »', () => {
+  const base = { isAuthenticated: true, isRented: false, isAvailable: true, playable: false, copiesLeft: 2, credits: 3, cost: 1 };
+  assert.equal(K.rentAction(base), 'unplayable');
+  assert.equal(K.rentAction({ ...base, copiesLeft: 0 }), 'unplayable', 'avant le stock');
+  assert.equal(K.rentAction({ ...base, credits: 0 }), 'unplayable', 'avant les crédits');
+  assert.equal(K.rentAction({ ...base, isAvailable: false }), 'unavailable', 'après la disponibilité');
+  assert.equal(K.rentAction({ ...base, isRented: true }), 'watch', 'une location en cours se regarde (le panneau dit le reste)');
+  assert.equal(K.rentAction({ ...base, isAuthenticated: false }), 'login');
 });
 test('BORNE: un double appui ne lance qu\'une location', async () => {
   let rents = 0; let release;
@@ -235,6 +246,7 @@ test('BORNE: le bouton d\'action dit l\'action, le prix est donné à part et en
 test('BORNE: quand il n\'y a rien à payer, le bouton ne montre pas de prix', () => {
   assert.deepEqual(K.actionLabel('watch', 2, false), { text: 'Regarder', price: null });
   assert.deepEqual(K.actionLabel('unavailable', 2, false), { text: 'Indisponible', price: null });
+  assert.deepEqual(K.actionLabel('unplayable', 2, false), { text: 'Indisponible', price: null });
   assert.deepEqual(K.actionLabel('out-of-stock', 2, false), { text: 'Toutes louées', price: null });
   assert.deepEqual(K.actionLabel('rent', 2, true), { text: 'Location…', price: null });
 });

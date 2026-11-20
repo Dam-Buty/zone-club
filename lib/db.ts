@@ -158,6 +158,19 @@ for (const sql of versionPrefMigrations) {
   } catch { /* idempotent: column/index already exists */ }
 }
 
+// Migrate: versions marquées illisibles par le contrôle des fichiers (spec 2026-11-19-versions-et-erreurs-de-lecture,
+// § 6, scripts/media-check.ts --mark). 0 pour les films existants = jouable si le fichier transcodé existe.
+const unplayableMigrations = [
+  "ALTER TABLE films ADD COLUMN vf_unplayable INTEGER DEFAULT 0",
+  "ALTER TABLE films ADD COLUMN vo_unplayable INTEGER DEFAULT 0",
+];
+
+for (const sql of unplayableMigrations) {
+  try {
+    db.exec(sql);
+  } catch { /* idempotent: column/index already exists */ }
+}
+
 // Set stock based on aisle (only on first migration)
 try {
   const columns = db.prepare("PRAGMA table_info(films)").all() as {

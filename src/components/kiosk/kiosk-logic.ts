@@ -233,13 +233,17 @@ export function creditsLine(
 
 // ===== Bouton d'action =====
 
-export type RentAction = 'login' | 'watch' | 'unavailable' | 'out-of-stock' | 'insufficient' | 'rent';
+export type RentAction = 'login' | 'watch' | 'unavailable' | 'unplayable' | 'out-of-stock' | 'insufficient' | 'rent';
 
-/** Ce que fait le bouton d'action de la fiche, par ordre de priorité. `copiesLeft` vaut `null` tant que le stock est inconnu. */
+/**
+ * Ce que fait le bouton d'action de la fiche, par ordre de priorité. `copiesLeft` vaut `null` tant que le stock est
+ * inconnu ; `playable` : le film a au moins une version lisible (`has_vf` / `has_vo` de la fiche, spec 2026-11-19 § 6).
+ */
 export function rentAction(i: {
   isAuthenticated: boolean;
   isRented: boolean;
   isAvailable: boolean;
+  playable: boolean;
   copiesLeft: number | null;
   credits: number;
   cost: number;
@@ -247,6 +251,7 @@ export function rentAction(i: {
   if (i.isRented) return 'watch';
   if (!i.isAuthenticated) return 'login';
   if (!i.isAvailable) return 'unavailable';
+  if (!i.playable) return 'unplayable';
   if (i.copiesLeft !== null && i.copiesLeft <= 0) return 'out-of-stock';
   if (i.credits < i.cost) return 'insufficient';
   return 'rent';
@@ -260,7 +265,7 @@ export function rentAction(i: {
 export function actionLabel(action: RentAction, cost: number, renting: boolean): { text: string; price: string | null } {
   if (renting) return { text: 'Location…', price: null };
   if (action === 'watch') return { text: 'Regarder', price: null };
-  if (action === 'unavailable') return { text: 'Indisponible', price: null };
+  if (action === 'unavailable' || action === 'unplayable') return { text: 'Indisponible', price: null };
   if (action === 'out-of-stock') return { text: 'Toutes louées', price: null };
   return { text: 'Louer', price: creditsLabel(cost) };
 }

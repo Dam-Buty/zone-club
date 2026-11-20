@@ -41,6 +41,8 @@ npm run logs             # Logs suivis des 3 services applicatifs (app, cinema-s
 npm run seed             # Seed catalogue depuis src/data/mock/films.json
 npm run refresh          # Rafraîchit les métadonnées TMDB
 npm run report           # Rapport de collection
+npm run media:check      # Contrôle des fichiers des films disponibles : rapport seul, code 1 s'il y a des anomalies
+                         # (-- --film <id> : un film ; -- --mark : marque les versions défectueuses). Sur la machine des fichiers
 npm run migrate          # Migration media reset (--keep pour conserver)
 npm run configure:radarr # Configuration Radarr déclarative et idempotente (--dry)
 npm run test:phase       # Garde-fous (node --test) — test:phase:full = lint + tests + build
@@ -219,6 +221,7 @@ Colonnes clés de `films` :
 | `original_language` | Pilote le choix du profil de qualité et l'identification VO |
 | `media_dir` | Dossier de sortie (nom de dossier Radarr, « Titre (Année) ») |
 | `file_path_vo_transcoded` / `file_path_vf_transcoded` | MP4 finaux |
+| `vf_unplayable` / `vo_unplayable` | 1 = version marquée illisible par `npm run media:check -- --mark` (fichier absent, illisible, sans piste, fin indécodable, sous 90 % de la durée TMDB) : elle compte comme **absente partout** — `has_vf` / `has_vo` de la fiche, adresses et liens de la location. Sans version jouable, la location est refusée (aucun crédit dépensé). Le script ne touche ni `is_available` ni `duration_sec`. Un fichier refait par le pipeline garde son drapeau : relancer `--mark`, qui le retire d'une version redevenue saine. La prévisualisation `/admin` ignore les drapeaux |
 | `subtitle_fr_vtt` / `_srt`, `subtitle_en_vtt` / `_srt` | Sous-titres extraits |
 | `transcode_status` / `_progress` / `_error` | `pending` · `done` · `error` · `qc_failed` · `rejected_release` |
 | `qc_attempts` / `qc_force` | Compteur de rejets QC / laissez-passer manuel |
@@ -1414,9 +1417,12 @@ Vulkan/NVIDIA et sur Metal iOS. L'atlas 2D de `CassetteTextureArray.ts` existe p
 **Boutons `disabled` = échec silencieux sur mobile** — `<button disabled>` avale le tap sans aucun
 retour. Laisser le bouton actif, laisser le `onClick` décider et afficher une popup explicative.
 
-**Dispo VF/VO = le fichier TRANSCODÉ** — la version réellement jouable est
+**Dispo VF/VO = le fichier TRANSCODÉ, non marqué** — la version réellement jouable est
 `file_path_v{f,o}_transcoded` (c'est ce dont `streaming_urls` et les symlinks se servent), jamais
-`file_path_v*` ni `radarr_v*_id` (colonnes mortes). Ça se teste désormais en local : le seed pose une
+`file_path_v*` ni `radarr_v*_id` (colonnes mortes). Une version marquée illisible (`v{f,o}_unplayable = 1`,
+posé par `npm run media:check -- --mark`) compte comme **absente** : un chemin rempli ne suffit pas. Toujours
+passer par `playableVersions` (`lib/media/file-check.ts`), qu'utilisent la fiche, `buildStreamingUrls` et
+`rentFilm` ; ne jamais retester le chemin à la main. Ça se teste désormais en local : le seed pose une
 dispo VF/VO/ST **par film**, aux proportions de la prod. `FORCED_RENTAL_VIDEO_URL`, lui, force
 toujours les deux versions sans sous-titres — s'il est défini, il gagne sur le seed et on ne teste
 plus rien de tout ça.

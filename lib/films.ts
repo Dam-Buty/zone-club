@@ -41,6 +41,12 @@ export interface Film {
     transcode_error: string | null;
     file_path_vo_transcoded: string | null;
     file_path_vf_transcoded: string | null;
+    /**
+     * 1 = version marquée illisible par `npm run media:check -- --mark` : elle compte comme absente partout (fiche,
+     * location). Toujours lue par `playableVersions` (lib/media/file-check.ts), jamais à la main.
+     */
+    vf_unplayable: number;
+    vo_unplayable: number;
     created_at: string;
 }
 

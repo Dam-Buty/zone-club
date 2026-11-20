@@ -54,7 +54,11 @@ CREATE TABLE IF NOT EXISTS films (
     sub_genre TEXT DEFAULT NULL,
     stock INTEGER DEFAULT 2,
     duration_sec REAL DEFAULT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    -- Version marquée illisible par `npm run media:check -- --mark` (scripts/media-check.ts) : 1 = elle compte comme
+    -- absente partout (fiche, location). 0 = jouable si son fichier transcodé existe.
+    vf_unplayable INTEGER DEFAULT 0,
+    vo_unplayable INTEGER DEFAULT 0
 );
 
 -- Genres table (rayons)

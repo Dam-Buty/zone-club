@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { getFilmByTmdbId, type Film } from '@/lib/films';
+import { playableVersions } from '@/lib/media/file-check';
 import { getFilmRentalStatus } from '@/lib/rentals';
 import { getUserFromSession } from '@/lib/session';
 
@@ -25,13 +26,14 @@ export async function GET(
     const user = getUserFromSession(cookieStore.get('session')?.value);
     const rentalStatus = getFilmRentalStatus(film.id, user?.id || null);
 
-    // Les versions réellement jouables = le fichier TRANSCODÉ existe (même source de vérité que les
-    // streaming_urls de lib/rentals.ts). Exposées en booléens : la fiche a besoin de savoir quelles
-    // versions existent, pas d'où elles sont sur le disque.
+    // Les versions réellement jouables = le fichier TRANSCODÉ existe et n'est pas marqué illisible
+    // (même source de vérité que les streaming_urls de lib/rentals.ts : playableVersions). Exposées en
+    // booléens : la fiche a besoin de savoir quelles versions existent, pas d'où elles sont sur le disque.
+    const playable = playableVersions(film);
     return NextResponse.json({
         ...omitInternalColumns(film),
-        has_vf: !!film.file_path_vf_transcoded,
-        has_vo: !!film.file_path_vo_transcoded,
+        has_vf: playable.vf,
+        has_vo: playable.vo,
         rental_status: rentalStatus
     });
 }
@@ -46,6 +48,7 @@ const INTERNAL_FILM_COLUMNS = [
     'subtitle_fr_vtt', 'subtitle_fr_srt', 'subtitle_en_vtt', 'subtitle_en_srt',
     'radarr_id', 'radarr_vo_id', 'radarr_vf_id',
     'qc_attempts', 'qc_force', 'transcode_error',
+    'vf_unplayable', 'vo_unplayable',
 ] as const;
 
 function omitInternalColumns(film: Film): Omit<Film, typeof INTERNAL_FILM_COLUMNS[number]> {

@@ -2,6 +2,7 @@ import { db } from './db';
 import { markWatchStarted } from './rental-marks';
 import { createRentalSymlinks, deleteRentalSymlinks, getStreamingUrl, isDirectMediaUrl } from './symlinks';
 import { getFilmById, getFilmTier, parseFilm, type Film } from './films';
+import { playableVersions } from './media/file-check';
 import { RENTAL_COSTS, RENTAL_DURATIONS } from '../src/types';
 import { access } from 'fs/promises';
 import { join } from 'path';
@@ -69,7 +70,8 @@ const IS_FORCED_RENTAL_MODE = !!(FORCED_RENTAL_VIDEO_URL || FORCED_RENTAL_FILE_P
 
 /** Colonnes média d'un film, seul sous-ensemble dont dépend le calcul des URLs. */
 type StreamableFilm = Pick<Film,
-    'file_path_vf_transcoded' | 'file_path_vo_transcoded' | 'subtitle_fr_vtt' | 'subtitle_en_vtt'
+    'file_path_vf_transcoded' | 'file_path_vo_transcoded' | 'subtitle_fr_vtt' | 'subtitle_en_vtt' |
+    'vf_unplayable' | 'vo_unplayable'
 >;
 
 /**
@@ -90,9 +92,11 @@ export function buildStreamingUrls(film: StreamableFilm, symlinkUuid: string): R
     if (FORCED_RENTAL_VIDEO_URL) {
         return { vf: FORCED_RENTAL_VIDEO_URL, vo: FORCED_RENTAL_VIDEO_URL, subtitles: null, subtitles_en: null };
     }
+    // Une version marquée illisible (scripts/media-check.ts --mark) compte comme absente : adresse nulle.
+    const playable = playableVersions(film);
     return {
-        vf: mediaUrl(film.file_path_vf_transcoded, symlinkUuid, 'film_vf.mp4'),
-        vo: mediaUrl(film.file_path_vo_transcoded, symlinkUuid, 'film_vo.mp4'),
+        vf: playable.vf ? mediaUrl(film.file_path_vf_transcoded, symlinkUuid, 'film_vf.mp4') : null,
+        vo: playable.vo ? mediaUrl(film.file_path_vo_transcoded, symlinkUuid, 'film_vo.mp4') : null,
         subtitles: mediaUrl(film.subtitle_fr_vtt, symlinkUuid, 'subs_fr.vtt'),
         subtitles_en: mediaUrl(film.subtitle_en_vtt, symlinkUuid, 'subs_en.vtt'),
     };
@@ -137,7 +141,8 @@ export function getUserActiveRentals(userId: number): RentalWithFilm[] {
                f.transcode_status as f_transcode_status, f.transcode_progress as f_transcode_progress,
                f.transcode_error as f_transcode_error, f.file_path_vo_transcoded as f_file_path_vo_transcoded,
                f.file_path_vf_transcoded as f_file_path_vf_transcoded, f.created_at as f_created_at,
-               f.subtitle_fr_vtt as f_subtitle_fr_vtt, f.subtitle_en_vtt as f_subtitle_en_vtt
+               f.subtitle_fr_vtt as f_subtitle_fr_vtt, f.subtitle_en_vtt as f_subtitle_en_vtt,
+               f.vf_unplayable as f_vf_unplayable, f.vo_unplayable as f_vo_unplayable
         FROM rentals r
         JOIN films f ON r.film_id = f.id
         WHERE r.user_id = ? AND r.is_active = 1 AND r.expires_at > datetime('now')
@@ -161,6 +166,7 @@ export function getUserActiveRentals(userId: number): RentalWithFilm[] {
             transcode_error: row.f_transcode_error, file_path_vo_transcoded: row.f_file_path_vo_transcoded,
             file_path_vf_transcoded: row.f_file_path_vf_transcoded, created_at: row.f_created_at,
             subtitle_fr_vtt: row.f_subtitle_fr_vtt, subtitle_en_vtt: row.f_subtitle_en_vtt,
+            vf_unplayable: row.f_vf_unplayable, vo_unplayable: row.f_vo_unplayable,
         });
 
         const expiresAt = new Date(row.expires_at + 'Z');
@@ -253,6 +259,13 @@ export async function rentFilm(userId: number, filmId: number): Promise<RentalWi
         throw new Error('Ce film n\'est pas disponible');
     }
 
+    // Plus aucune version jouable (fichiers absents, ou marqués illisibles par scripts/media-check.ts --mark) : refus
+    // avant le stock et les crédits, donc aucun crédit dépensé. Le mode FORCED_RENTAL_* sert sa propre vidéo.
+    const playable = playableVersions(film);
+    if (!IS_FORCED_RENTAL_MODE && !playable.vf && !playable.vo) {
+        throw new Error("Ce film n'a aucune version lisible pour le moment");
+    }
+
     // Multi-copy stock check
     const stock = getFilmStock(filmId);
     const activeRentals = getActiveRentalsForFilm(filmId);
@@ -281,8 +294,9 @@ export async function rentFilm(userId: number, filmId: number): Promise<RentalWi
     const symlinks = IS_FORCED_RENTAL_MODE
         ? { uuid: `forced-${randomUUID()}` }
         : await createRentalSymlinks(film.tmdb_id, {
-            vf: film.file_path_vf_transcoded,
-            vo: film.file_path_vo_transcoded,
+            // Une version marquée n'a pas de lien : elle compte comme absente pour toute la location.
+            vf: playable.vf ? film.file_path_vf_transcoded : null,
+            vo: playable.vo ? film.file_path_vo_transcoded : null,
             subtitles: {
                 fr: film.subtitle_fr_vtt,
                 en: film.subtitle_en_vtt
