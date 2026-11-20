@@ -5,7 +5,8 @@ import { readFileSync } from 'node:fs';
 import Database from 'better-sqlite3';
 import { readText } from '../helpers/repo.mjs';
 import { parsePlaybackFailure, briefBrowser, PLAYBACK_FAILURE_MAX_BODY_BYTES } from '../../lib/playback-failure-parse.ts';
-import { savePlaybackFailure, summarizePlaybackFailures, recentPlaybackFailures } from '../../lib/playback-failures.ts';
+import { savePlaybackFailure, summarizePlaybackFailures, recentPlaybackFailures, withoutVisitor, clampDays } from '../../lib/playback-failures.ts';
+import { failureVersionLabel, failurePlaceLabel, failureDateLabel, parseDbDate } from '../../app/admin/types.ts';
 
 // Trace serveur des lectures en échec (docs/superpowers/specs/2026-11-19-versions-et-erreurs-de-lecture-design.md) :
 // quand un film ne démarre pas, le navigateur envoie une ligne courte — quel film, quelle version, où, quel genre
@@ -253,4 +254,103 @@ test('LECTURE EN ÉCHEC: le client envoie en keepalive et avale toute erreur', (
   assert.match(block, /JSON\.stringify\(\{ filmId, audio, subtitle, place, kind, position \}\)/, 'six champs nommés');
   assert.doesNotMatch(block, /JSON\.stringify\(failure\)/, 'jamais l\'objet reçu tel quel');
   assert.match(src.slice(src.indexOf('export const api = {')), /playbackFailures,/, 'exposé dans api');
+});
+
+// ---------- /admin : la liste des lectures en échec (tâche 4) ----------
+
+test('LECTURES EN ÉCHEC ADMIN: la route répond 403 hors administrateur, avant de lire la moindre trace', () => {
+  const src = readText(path.join(ROOT, 'app/api/admin/playback-failures/route.ts'));
+  assert.match(src, /export async function GET\(/, 'lecture seule : GET');
+  assert.doesNotMatch(src, /export async function (POST|PUT|PATCH|DELETE)\b/, 'aucune écriture');
+  assert.match(src, /getUserFromSession\(cookieStore\.get\('session'\)\?\.value\)/, 'session lue dans le cookie');
+  assert.match(src, /!user\?\.is_admin/, 'is_admin vérifié');
+  assert.match(src, /status:\s*403/, '403 hors admin');
+  const gate = src.indexOf('is_admin');
+  assert.ok(gate > 0, 'garde présente');
+  for (const call of ['summarizePlaybackFailures(', 'recentPlaybackFailures(']) {
+    const at = src.indexOf(call);
+    assert.ok(at > gate, `${call} n'est appelé qu'après la garde (garde ${gate}, appel ${at})`);
+  }
+  assert.match(src, /import \{ db \} from '@\/lib\/db'/, 'la base est passée en paramètre, comme la route des traces');
+  assert.doesNotMatch(src, /console\.log/, 'aucun console.log');
+});
+
+test('LECTURES EN ÉCHEC ADMIN: la route rend { days, groups, recent } sur 30 jours par défaut, bornés', () => {
+  const src = readText(path.join(ROOT, 'app/api/admin/playback-failures/route.ts'));
+  assert.match(src, /searchParams\.get\('days'\)/, '?days=');
+  assert.match(src, /\?\?\s*30\b/, '30 jours quand rien n\'est demandé');
+  assert.match(src, /clampDays\(/, 'la borne est celle du module, pas une seconde copie');
+  assert.match(src, /NextResponse\.json\(\{\s*days\s*,\s*groups\s*,\s*recent\s*\}\)/, 'les trois clés de la réponse');
+  // Le visiteur ne part pas vers le navigateur : les traces passent par withoutVisitor avant d'être rendues.
+  assert.match(src, /withoutVisitor\(recentPlaybackFailures\(/, 'les traces récentes perdent le visiteur');
+  assert.doesNotMatch(src, /user_id|userId/, 'la route ne touche jamais au visiteur');
+});
+
+test('LECTURES EN ÉCHEC ADMIN: clampDays — entier entre 1 et 365, une valeur illisible vaut une semaine', () => {
+  assert.equal(clampDays(30), 30);
+  assert.equal(clampDays(30.4), 30);
+  assert.equal(clampDays(0), 1);
+  assert.equal(clampDays(-5), 1);
+  assert.equal(clampDays(365), 365);
+  assert.equal(clampDays(9999), 365);
+  assert.equal(clampDays(NaN), 7);
+  assert.equal(clampDays(Infinity), 7);
+});
+
+test('LECTURES EN ÉCHEC ADMIN: les traces rendues à l\'admin ne portent jamais le visiteur', () => {
+  const { db, u, f } = freshDb();
+  save(db, u, valid(f, { audio: 'vo', subtitle: 'fr', place: 'tv', kind: 'tv_load', position: 812.5 }), 'Chrome 157 · Android');
+  const full = recentPlaybackFailures(db, 10);
+  assert.equal(full[0].user_id, u, 'la ligne lue le porte bien : c\'est withoutVisitor qui le retire');
+  const rows = withoutVisitor(full);
+  assert.equal(rows.length, 1);
+  assert.deepEqual(
+    Object.keys(rows[0]).sort(),
+    ['audio', 'browser', 'created_at', 'film_id', 'id', 'kind', 'place', 'position_sec', 'subtitle', 'title'],
+  );
+  assert.equal(JSON.stringify(rows).includes('user'), false, 'ni clé ni valeur de visiteur dans ce qui part');
+  assert.equal(rows[0].title, 'Get Out');
+  assert.equal(rows[0].position_sec, 812.5);
+  assert.deepEqual(withoutVisitor([]), []);
+  // Un champ de plus sur la ligne lue ne traverse pas : la liste est nommée, pas un « tout sauf ».
+  assert.equal('extra' in withoutVisitor([{ ...full[0], extra: 'x' }])[0], false);
+});
+
+test('LECTURES EN ÉCHEC ADMIN: la section appelle la route avec la session, dit le vide, et n\'a aucun bouton grisé', () => {
+  const src = readText(path.join(ROOT, 'app/admin/PlaybackFailures.tsx'));
+  assert.match(src, /^'use client';/, 'composant client');
+  assert.match(src, /fetch\(\s*`\/api\/admin\/playback-failures\?days=\$\{[A-Z_]+\}`\s*,\s*\{\s*credentials:\s*'include'\s*\}\s*,?\s*\)/, 'route admin, session envoyée');
+  assert.match(src, /export function PlaybackFailures\(/, 'composant exporté sous son nom');
+  assert.match(src, /Lectures en échec/, 'titre de la section');
+  assert.match(src, /Aucun échec sur \{data\.days\} jours\./, 'vide : « Aucun échec sur 30 jours. » (les jours sont ceux de la réponse)');
+  for (const column of ['Film', 'Version', 'Lieu', 'Échecs', 'Dernier échec']) assert.match(src, new RegExp(`>${column}<`), `colonne ${column}`);
+  assert.doesNotMatch(src, /disabled/, 'aucun bouton grisé');
+  assert.doesNotMatch(src, /user_id|userId/, 'le visiteur n\'est pas affiché');
+  assert.doesNotMatch(src, /console\.(log|error)/, 'aucune sortie console');
+});
+
+test('LECTURES EN ÉCHEC ADMIN: /admin monte la section au-dessus des filtres', () => {
+  const src = readText(path.join(ROOT, 'app/admin/AdminPageClient.tsx'));
+  assert.match(src, /import \{ PlaybackFailures \} from '\.\/PlaybackFailures'/, 'import');
+  const mounted = src.indexOf('<PlaybackFailures');
+  const filters = src.indexOf('<section className={styles.filters}>');
+  assert.ok(mounted > 0, '<PlaybackFailures monté');
+  assert.ok(filters > 0, 'section des filtres trouvée');
+  assert.ok(mounted < filters, `la section est avant les filtres (${mounted} < ${filters})`);
+});
+
+test('LECTURES EN ÉCHEC ADMIN: version, lieu et date de chaque ligne se lisent en français', () => {
+  assert.equal(failureVersionLabel('vf'), 'VF');
+  assert.equal(failureVersionLabel('vo'), 'VO');
+  assert.equal(failureVersionLabel('xx'), 'xx', 'une valeur inconnue se montre telle quelle, jamais remplacée par « VF »');
+  assert.equal(failurePlaceLabel('device'), 'appareil');
+  assert.equal(failurePlaceLabel('tv'), 'télé');
+  assert.equal(failurePlaceLabel('salon'), 'salon');
+  // SQLite écrit « maintenant » en UTC, sans fuseau : la date se lit en UTC, quel que soit le fuseau de l'administrateur.
+  assert.equal(parseDbDate('2026-11-20 10:05:09')?.toISOString(), '2026-11-20T10:05:09.000Z');
+  assert.equal(parseDbDate('2026-11-20 23:59:59')?.toISOString(), '2026-11-20T23:59:59.000Z');
+  assert.equal(parseDbDate('hier'), null);
+  assert.equal(parseDbDate(''), null);
+  assert.equal(failureDateLabel('hier'), 'hier', 'une date illisible se montre telle quelle');
+  assert.match(failureDateLabel('2026-11-20 10:05:09'), /20/, 'le jour y est');
 });

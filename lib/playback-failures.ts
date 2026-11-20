@@ -24,7 +24,7 @@ export function savePlaybackFailure(db: Db, i: PlaybackFailure & { userId: numbe
 }
 
 /** Un nombre de jours entier entre 1 et 365 ; une valeur illisible vaut une semaine. */
-function clampDays(days: number): number {
+export function clampDays(days: number): number {
   return Number.isFinite(days) ? Math.max(1, Math.min(365, Math.round(days))) : 7;
 }
 
@@ -80,4 +80,26 @@ export function recentPlaybackFailures(db: Db, limit: number): PlaybackFailureRo
        ORDER BY p.id DESC LIMIT ?`,
     )
     .all(n) as PlaybackFailureRow[];
+}
+
+/** Une trace telle qu'elle part vers le navigateur de l'administrateur : celle du film et de la version, pas du visiteur. */
+export type PublicPlaybackFailure = Omit<PlaybackFailureRow, 'user_id'>;
+
+/**
+ * Les traces sans le visiteur. La liste est nommée champ par champ : un champ de plus sur la ligne lue ne part pas
+ * vers le navigateur sans qu'on l'ait décidé. L'administration lit des échecs par film et par version, pas des gens.
+ */
+export function withoutVisitor(rows: PlaybackFailureRow[]): PublicPlaybackFailure[] {
+  return rows.map((r) => ({
+    id: r.id,
+    created_at: r.created_at,
+    film_id: r.film_id,
+    title: r.title,
+    audio: r.audio,
+    subtitle: r.subtitle,
+    place: r.place,
+    kind: r.kind,
+    position_sec: r.position_sec,
+    browser: r.browser,
+  }));
 }

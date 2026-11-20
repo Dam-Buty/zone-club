@@ -360,6 +360,38 @@
   font-size: 0.85rem;
 }
 
+/* ---------- Lectures en échec ---------- */
+
+.failures {
+  margin-bottom: 18px;
+}
+
+.sectionTitle {
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  font-weight: 400;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.sectionHint {
+  margin: 4px 0 10px;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.table .numberCell {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.dateCell {
+  white-space: nowrap;
+  color: rgba(255, 255, 255, 0.62);
+}
+
 /* ---------- Login / denied ---------- */
 
 .gate {
@@ -472,5 +504,20 @@
 
   .hideMobile {
     display: none;
+  }
+
+  /* Lectures en échec : cinq colonnes tiennent à 360 px sans défiler, la date passe sur deux lignes. */
+  .failures .table th,
+  .failures .table td {
+    padding: 8px 5px;
+  }
+
+  .failures .table th {
+    white-space: normal;
+    letter-spacing: 0.04em;
+  }
+
+  .failures .dateCell {
+    white-space: normal;
   }
 }

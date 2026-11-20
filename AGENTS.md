@@ -184,6 +184,7 @@ Notes d'infra qui ont coûté cher :
 | `GET / POST` | `/api/board` | publique | Post-it (lecture publique) |
 | `DELETE` | `/api/board/[noteId]` | session | Supprimer un post-it |
 | `POST / PATCH / DELETE` | `/api/cast-sessions` | session | Suivi des sessions Cast |
+| `POST` | `/api/playback-failures` | session | Trace d'une lecture en échec : film, version, lieu, genre d'échec, position (corps de 1 024 octets au plus, 30 par quart d'heure ; jamais l'adresse de diffusion). 204 sans corps |
 | `POST` | `/api/chat` · `/api/chat/close` | mixte | Gérant LLM (cookie OU `x-api-key`) |
 | `GET` | `/api/poster/[...path]` | publique | Proxy TMDB (cache disque 30 j) |
 | `POST` | `/api/push-subscribe` | session | Abonnement Web Push |
@@ -196,6 +197,7 @@ Notes d'infra qui ont coûté cher :
 | `GET` | `/api/admin/stats` | admin | Stats globales |
 | `POST` | `/api/perf` | publique | Mesure de terrain d'une entrée dans la boutique (anonyme, `sendBeacon`) |
 | `GET` | `/api/admin/perf` | admin | Mesures agrégées par appareil et par build (`?days=`, `?recent=`, `?automated=1`) |
+| `GET` | `/api/admin/playback-failures` | admin | Lectures en échec par film, piste audio et lieu, puis les 50 dernières traces, sans le visiteur (`?days=`, 30 par défaut, 1 à 365) → `{ days, groups, recent }` ; 403 hors admin |
 
 Il n'y a **pas** de `DELETE /api/rentals/[filmId]` (utiliser `POST /return`), ni de
 `DELETE /api/reviews/[filmId]` (`PUT` à la place), ni de `DELETE /api/requests`.
@@ -204,7 +206,7 @@ Il n'y a **pas** de `DELETE /api/rentals/[filmId]` (utiliser `POST /return`), ni
 
 Tables : `users`, `films`, `genres`, `film_genres`, `rentals`, `reviews`, `film_requests`,
 `weekly_bonuses`, `return_requests`, `user_facts`, `board_notes`, `film_processing_runs`,
-`push_subscriptions`, `cast_sessions`, `client_perf_runs`.
+`push_subscriptions`, `cast_sessions`, `client_perf_runs`, `playback_failures`.
 
 Colonnes clés de `films` :
 
@@ -548,6 +550,19 @@ des sous-titres coupés à la main. Côté `<video>`, une seule `<track>` est mo
 `key` par langue : swapper le `src` d'une `<track>` déjà montée ne rafraîchit pas la textTrack, et
 l'attribut `default` d'une `<track>` insérée après le parse n'est pas honoré de façon fiable — d'où
 l'effet qui force `track.mode` explicitement (`addtrack` inclus, la piste pouvant arriver après le rendu).
+
+**Une version qui ne se lance pas** (`src/utils/playback-failure.ts`, `PlaybackFailurePanel.tsx`). Le lecteur
+annonce « Cette version ne se lance pas » sur une erreur de la vidéo (écouteur `error` en phase de capture : celles du
+`<source>` comptent) ou après 15 s sans métadonnées (`PLAYBACK_START_TIMEOUT_MS`) — **armé seulement quand la lecture est
+voulue** (`startTimerArmed` : jamais sous l'invite « Regarder sur TV ? », pendant un Cast ni sous « BE KIND REWIND »).
+Trois sorties, aucun `<button disabled>` : « Essayer en {nom} » (l'autre piste, à la même position ; absent sans autre
+piste), « Réessayer » (remonte le `<video>`), « Retour ». Le panneau retient la vidéo, et rien de tout cela ne touche la
+version préférée du compte. **Une trace par échec affiché** (pas par essai) part par `POST /api/playback-failures` dans
+`playback_failures` : film, piste, sous-titres, lieu, genre, position, navigateur — **jamais l'adresse du fichier**, secret
+de la location (pas de colonne pour, six champs nommés côté client, rien pour une prévisualisation /admin). `/admin` la
+montre dans « Lectures en échec » : une ligne par film, version (« VF » ou « VO ») et lieu (« appareil » ou « télé »), avec le
+nombre d'échecs et la date du dernier ; le visiteur n'y figure jamais (`withoutVisitor`). Seul le lecteur d'appareil
+envoie des traces pour l'instant ; la route accepte déjà le lieu `tv` et le genre `tv_load`.
 
 **Sous-titres en Cast** — les `<track>` du `<video>` local ne traversent pas le réseau. Les WebVTT
 sont donc **side-loadés** dans le `MediaInfo` (`mediaInfo.tracks`, `text/vtt`, IDs stables fr=1/en=2)

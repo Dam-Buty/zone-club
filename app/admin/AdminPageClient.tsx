@@ -19,6 +19,7 @@ import {
     type AvailabilityFilter,
     type SubtitleFilter,
 } from './types';
+import { PlaybackFailures } from './PlaybackFailures';
 import styles from './AdminPage.module.css';
 
 // Le player est le composant réel du vidéoclub. On le charge à l'ouverture pour
@@ -207,6 +208,8 @@ export function AdminPageClient({ username }: AdminPageClientProps) {
                         <span className={styles.statValue}>{filteredCoverage.total}</span>
                     </div>
                 </div>
+
+                <PlaybackFailures />
 
                 <section className={styles.filters}>
                     <label className={styles.field}>
