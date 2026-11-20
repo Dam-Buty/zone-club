@@ -37,7 +37,8 @@ test('REMBOBINAGE: le lecteur applique la règle une fois par ouverture et ne la
   const player = readText(path.join(process.cwd(), 'src/components/player/VHSPlayer.tsx'));
   // rewindPromptFor applique rewindOfferOnOpen, qui applique shouldOfferRewindOnOpen.
   assert.ok(player.includes('rewindPromptFor('), 'le lecteur consulte la règle');
-  assert.match(player, /autoPlay=\{localAutoPlay\(\{[^}]*rewind: rewindPhase !== 'none'/, 'pas de lecture automatique derrière la proposition');
+  assert.match(player, /const playWanted = localAutoPlay\(\{[^}]*rewind: rewindPhase !== 'none'/, 'pas de lecture automatique derrière la proposition');
+  assert.ok(player.includes('autoPlay={playWanted}'), 'la vidéo part selon cette règle');
 });
 
 // Relecture finale : la décision était prise une seule fois, parfois sur des données périmées (page

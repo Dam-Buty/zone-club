@@ -74,7 +74,10 @@ test('CAST LECTEUR: le service démarre au montage, la demande part dans la pile
 test('CAST LECTEUR: jamais de lecture locale lancée d\'office, jamais sur les deux écrans', () => {
   const src = read(PLAYER);
   // La règle est localAutoPlay (cast-on-open, testée) : la vidéo a la main, invite répondue, sans lancement raté (B4, B5, B9).
-  assert.match(src, /autoPlay=\{localAutoPlay\(\{ view, prompt: showMobileRemotePrompt, rewind: rewindPhase !== 'none', castHeld: castFailedHere, pending: castPendingHere \}\)\}/, 'autoPlay seulement quand la vidéo a la main, invite répondue, sans lancement raté');
+  // Calculée une fois : la même valeur arme la lecture automatique et le délai « rien ne vient » (usePlaybackFailure).
+  assert.match(src, /const playWanted = localAutoPlay\(\{ view, prompt: showMobileRemotePrompt, rewind: rewindPhase !== 'none', castHeld: castFailedHere, pending: castPendingHere \}\);/, 'autoPlay seulement quand la vidéo a la main, invite répondue, sans lancement raté');
+  assert.ok(src.includes('autoPlay={playWanted}'), 'la vidéo part selon cette règle');
+  assert.ok(src.includes('wanted: playWanted'), 'le délai « rien ne vient » ne court que sous la même règle');
   // L'invite est calculée dès le premier rendu : la vidéo ne doit pas partir avant elle.
   assert.match(src, /useState\(\(\) => isMobile && playsHere\(view\) && \(playerAsk \|\| castFailedHere\)\)/, 'invite à l\'ouverture');
   assert.ok(callback(src, 'handleWatchHere').includes('.play()'), '« Continuer sur ce téléphone » lance la lecture');
@@ -182,7 +185,8 @@ test('CAST LECTEUR A3: ouvert sans location, il se ferme lui-même et Échap fon
 // indisponible retient la vidéo comme un lancement raté ; le film mémorisé attendu aussi ; l'invite dit l'appareil.
 test('CAST LECTEUR B4 / B5 / B9: lecture automatique par la règle testée, film mémorisé attendu compris', () => {
   const src = read(PLAYER);
-  assert.match(src, /autoPlay=\{localAutoPlay\(\{ view, prompt: showMobileRemotePrompt, rewind: rewindPhase !== 'none', castHeld: castFailedHere, pending: castPendingHere \}\)\}/, 'autoPlay = localAutoPlay');
+  assert.match(src, /const playWanted = localAutoPlay\(\{ view, prompt: showMobileRemotePrompt, rewind: rewindPhase !== 'none', castHeld: castFailedHere, pending: castPendingHere \}\);/, 'autoPlay = localAutoPlay');
+  assert.ok(src.includes('autoPlay={playWanted}'), 'autoPlay = playWanted');
   assert.match(src, /const castPendingHere = useStore\(state => castPending\(state\.cast, state\.currentPlayingFilm, state\.lastCastFilmId\)\);/, 'castPending lu dans la machine, avec le film mémorisé');
   assert.match(src, /const castFailedHere = noticeHere !== null && noticeHoldsPlayback\(noticeHere\.code\);/, 'Cast raté OU absent : même règle');
   assert.match(src, /useState\(\(\) => isMobile && playsHere\(view\) && \(playerAsk \|\| castFailedHere\)\)/, 'invite à l\'ouverture, même règle pour un autre film sur la TV');

@@ -4,6 +4,9 @@ import { VHSEffects } from './VHSEffects';
 import { VHSControls } from './VHSControls';
 import { CastPanels, readHereLabel } from './CastPanels';
 import { CastNoticeLine, OtherFilmBanner } from './CastNotices';
+import { PlaybackFailurePanel } from './PlaybackFailurePanel';
+import { usePlaybackFailure } from './usePlaybackFailure';
+import { useAirPlay, type AirPlayVideoElement } from './useAirPlay';
 import { RentalTimer } from '../ui/RentalTimer';
 import api, { type ReviewsResponse } from '../../api';
 import type { PlayerState } from '../../types';
@@ -13,6 +16,8 @@ import { useIsMobile } from '../../hooks/useIsMobile';
 import { useBackGuard } from '../../hooks/useBackGuard';
 import { buildCastSubtitleTracks, activeSubtitleId } from '../../utils/cast-subtitles';
 import { appleAirPlay, localAutoPlay, noticeHoldsPlayback, playerWithoutRental, playsHere, rewindPromptFor } from '../../utils/cast-on-open';
+import { failurePanel, failureTrace, type DeviceFailureKind } from '../../utils/playback-failure';
+import { versionOffer } from '../../utils/version-choice';
 import { REVIEW_MIN_LENGTH, REVIEW_RATING_LABELS } from '../../utils/review-rules';
 import styles from './VHSPlayer.module.css';
 import castStyles from './CastPanels.module.css';
@@ -38,11 +43,6 @@ const TV_SUBTITLE_ERROR = 'Sous-titres indisponibles sur la TV.';
 
 // Rewind state machine
 type RewindPhase = 'none' | 'prompt' | 'rewinding';
-
-type AirPlayVideoElement = HTMLVideoElement & {
-  webkitShowPlaybackTargetPicker?: () => void;
-  webkitCurrentPlaybackTargetIsWireless?: boolean;
-};
 
 export function VHSPlayer() {
   const isPlayerOpen = useStore(state => state.isPlayerOpen);
@@ -94,9 +94,6 @@ export function VHSPlayer() {
   const [remoteError, setRemoteError] = useState<string | null>(null);
   const [showMirroringHelp, setShowMirroringHelp] = useState(false);
   const [mirroringContext, setMirroringContext] = useState<'generic' | 'cast' | 'airplay'>('generic');
-  const [isAirPlaySupported, setIsAirPlaySupported] = useState(false);
-  const [isAirPlayAvailable, setIsAirPlayAvailable] = useState(false);
-  const [isAirPlayConnected, setIsAirPlayConnected] = useState(false);
   // « Regarder sur TV ? » à l'ouverture : sur mobile, quand la TV n'a pas déjà ce film, si l'appelant la demande ou si le
   // dernier lancement vers la TV a échoué. Calculée dès le premier rendu (le lecteur est monté à chaque ouverture) : la
   // vidéo locale ne part pas avant elle.
@@ -259,6 +256,19 @@ export function VHSPlayer() {
 
   const videoUrl = getVideoUrl();
 
+  // La lecture locale est voulue : la vidéo part d'elle-même (localAutoPlay). Le délai « rien ne vient » ne court que là.
+  const playWanted = localAutoPlay({ view, prompt: showMobileRemotePrompt, rewind: rewindPhase !== 'none', castHeld: castFailedHere, pending: castPendingHere });
+  // Une version qui ne se lance pas : le panneau, et une trace au serveur (jamais pour une prévisualisation de /admin).
+  const isPreview = useStore(state => state.previewRental?.filmId === state.currentPlayingFilm);
+  const reportFailure = useCallback((kind: DeviceFailureKind) => {
+    const trace = failureTrace({ filmId: currentPlayingFilm, preview: isPreview, version: { audio: audioTrack, subtitle: subtitleTrack }, kind, currentTime: videoRef.current?.currentTime ?? 0, savedPosition: rental?.watchPosition });
+    if (trace) void api.playbackFailures.report(trace);
+  }, [currentPlayingFilm, isPreview, audioTrack, subtitleTrack, rental?.watchPosition]);
+  const { failure, retry, attempt } = usePlaybackFailure({ videoRef, videoKey: `${audioTrack}-${videoUrl}`, wanted: playWanted, onFailure: reportFailure });
+  // La key de l'élément <video> : remonté à chaque autre source et à chaque « Réessayer ».
+  const videoKey = `${audioTrack}-${videoUrl}-${attempt}`;
+  const { isAirPlaySupported, isAirPlayAvailable, isAirPlayConnected, openAirPlayPicker } = useAirPlay(videoRef, isPlayerOpen, videoKey);
+
   // Handle audio track change - preserve current time
   const handleAudioTrackChange = useCallback((newTrack: AudioTrack) => {
     const video = videoRef.current;
@@ -301,7 +311,7 @@ export function VHSPlayer() {
   // inséré APRÈS le parse n'est pas honoré de façon fiable (la piste reste en mode 'disabled') ; avec une
   // seule langue le symptôme était intermittent, avec deux il devient un « je clique STEN et rien ne
   // change ». `addtrack` couvre le cas où la piste est montée après ce rendu (remount du <video> sur
-  // changement VF/VO).
+  // changement VF/VO, ou « Réessayer »).
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
@@ -314,7 +324,7 @@ export function VHSPlayer() {
     applySelection();
     tracks.addEventListener('addtrack', applySelection);
     return () => tracks.removeEventListener('addtrack', applySelection);
-  }, [subtitleTrack, videoUrl]);
+  }, [subtitleTrack, videoKey]);
 
   // Multi-device sync: refresh rental data on player open so seek picks up
   // progress made elsewhere (other browser/device, or background cast).
@@ -342,7 +352,8 @@ export function VHSPlayer() {
     closePlayer();
   }, [withoutRental, currentPlayingFilm, castRentalGone, closePlayer]);
 
-  // Resume from saved position when player opens
+  // Resume from saved position when player opens — et sur chaque nouvel élément <video> (« Réessayer », « Essayer en … »
+  // d'une version qui n'avait rien joué) : sa position est celle de la location.
   useEffect(() => {
     if (!isPlayerOpen || !rental?.watchPosition) return;
     const video = videoRef.current;
@@ -356,7 +367,7 @@ export function VHSPlayer() {
 
     video.addEventListener('canplay', handleCanPlay, { once: true });
     return () => video.removeEventListener('canplay', handleCanPlay);
-  }, [isPlayerOpen, rental?.watchPosition]);
+  }, [isPlayerOpen, rental?.watchPosition, videoKey]);
 
   // ===== FF/RW Logic =====
 
@@ -774,58 +785,13 @@ export function VHSPlayer() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isPlayerOpen, playerState, rewindingToStart, rewindPhase, pendingEject, closePlayer, closeRewindModal, ejectAfterPrompt, handleEject, handleStop, handleFFCycle, handleRWCycle, handleRewindToStart, resumePlayFromRW, hasVF, hasVO, availableSubtitles, cycleSubtitleTrack, audioTrack, handleAudioTrackChange, stopRW, remoteActive, view, castToggle]);
 
-  // ===== Remote playback (AirPlay) =====
-  useEffect(() => {
-    if (!isPlayerOpen) return;
-
-    const video = videoRef.current as AirPlayVideoElement | null;
-    if (!video) return;
-
-    video.setAttribute('x-webkit-airplay', 'allow');
-    video.setAttribute('airplay', 'allow');
-    (video as HTMLVideoElement & { disableRemotePlayback?: boolean }).disableRemotePlayback = false;
-
-    const supportsAirPlay = typeof video.webkitShowPlaybackTargetPicker === 'function';
-    setIsAirPlaySupported(supportsAirPlay);
-    setIsAirPlayAvailable(supportsAirPlay);
-    setIsAirPlayConnected(Boolean(video.webkitCurrentPlaybackTargetIsWireless));
-
-    const handleAvailability = (event: Event) => {
-      const availability = (event as Event & { availability?: string }).availability;
-      setIsAirPlayAvailable(availability === 'available');
-    };
-
-    const handleWirelessChange = () => {
-      setIsAirPlayConnected(Boolean(video.webkitCurrentPlaybackTargetIsWireless));
-    };
-
-    video.addEventListener('webkitplaybacktargetavailabilitychanged', handleAvailability as EventListener);
-    video.addEventListener('webkitcurrentplaybacktargetiswirelesschanged', handleWirelessChange as EventListener);
-
-    return () => {
-      video.removeEventListener('webkitplaybacktargetavailabilitychanged', handleAvailability as EventListener);
-      video.removeEventListener('webkitcurrentplaybacktargetiswirelesschanged', handleWirelessChange as EventListener);
-    };
-  }, [isPlayerOpen, videoUrl]);
-
+  // ===== Remote playback (AirPlay, voir useAirPlay) =====
+  // Sélecteur d'Apple dans l'appui ; s'il ne s'ouvre pas, la raison dans l'en-tête et le panneau « recopie d'écran ».
   const handleAirPlayPicker = useCallback(() => {
-    setRemoteError(null);
-
-    const video = videoRef.current as AirPlayVideoElement | null;
-    if (!video || typeof video.webkitShowPlaybackTargetPicker !== 'function') {
-      setRemoteError('AirPlay indisponible sur ce navigateur.');
-      openMirroringFallback('airplay');
-      return;
-    }
-
-    if (!isAirPlayAvailable && !isAirPlayConnected) {
-      setRemoteError('Aucun appareil AirPlay détecté sur le même réseau.');
-      openMirroringFallback('airplay');
-      return;
-    }
-
-    video.webkitShowPlaybackTargetPicker();
-  }, [isAirPlayAvailable, isAirPlayConnected, openMirroringFallback]);
+    const problem = openAirPlayPicker();
+    setRemoteError(problem);
+    if (problem) openMirroringFallback('airplay');
+  }, [openAirPlayPicker, openMirroringFallback]);
 
   // « Regarder sur TV » : la demande part DANS le gestionnaire de l'appui (le sélecteur d'appareils exige son
   // activation), avec la version, les sous-titres et la position d'ici. La machine du Cast décide du reste.
@@ -963,7 +929,8 @@ export function VHSPlayer() {
 
     const interval = setInterval(() => {
       const video = videoRef.current;
-      if (!video || video.duration === 0 || video.paused) return;
+      // Durée inconnue (NaN : version en panne, relancée par play()) : rien à écrire, surtout pas la position 0.
+      if (!video || !(video.duration > 0) || video.paused) return;
 
       const progress = Math.round((video.currentTime / video.duration) * 100);
       updateRentalProgress(currentPlayingFilm, progress, video.currentTime).catch(() => {});
@@ -1143,9 +1110,6 @@ export function VHSPlayer() {
       setRemoteError(null);
       setShowMirroringHelp(false);
       setMirroringContext('generic');
-      setIsAirPlaySupported(false);
-      setIsAirPlayAvailable(false);
-      setIsAirPlayConnected(false);
       setShowMobileRemotePrompt(false);
       setConfirmReplace(false);
       setRewindPhase('none');
@@ -1348,11 +1312,11 @@ export function VHSPlayer() {
           machine sait que la TV ne joue pas ce film (localAutoPlay) : jamais
           le film sur les deux écrans, jamais de lecture lancée d'office. */}
       <video
-        key={`${audioTrack}-${videoUrl}`}
+        key={videoKey}
         ref={videoRef}
         className={styles.video}
         crossOrigin={hasRemoteSubtitles ? 'anonymous' : undefined}
-        autoPlay={localAutoPlay({ view, prompt: showMobileRemotePrompt, rewind: rewindPhase !== 'none', castHeld: castFailedHere, pending: castPendingHere })}
+        autoPlay={playWanted}
         playsInline
         onPlay={() => {
           // La TV a ce film, le prend ou vient de le finir : la vidéo locale ne joue pas en même temps.
@@ -1410,6 +1374,16 @@ export function VHSPlayer() {
         <div className={styles.blueScreen}>
           <div className={styles.blueScreenText}>NO SIGNAL</div>
         </div>
+      )}
+
+      {/* « Cette version ne se lance pas » : l'autre version à la même position, la même à nouveau, ou la sortie. */}
+      {failure && (
+        <PlaybackFailurePanel
+          panel={failurePanel({ title: currentFilm?.title ?? '', version: { audio: audioTrack, subtitle: subtitleTrack }, offer: versionOffer(streamingUrls) })}
+          onTryOther={v => { handleAudioTrackChange(v.audio); setSubtitleTrack(v.subtitle); }}
+          onRetry={retry}
+          onBack={closePlayer}
+        />
       )}
 
       {/* Le Cast de ce film : attente (sélecteur, connexion, lancement), télécommande ou liaison perdue. Rien en
