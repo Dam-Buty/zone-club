@@ -1,22 +1,33 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useCredits, useStore } from '../../store';
 import type { Film } from '../../types';
+import { FULL_OFFER, versionName, versionRows, type VersionChoice } from '../../utils/version-choice';
+import { VersionList } from '../version/VersionList';
 import { KioskPoster } from './KioskBrowse';
 import { accountHistoryRows, creditsLabel, dayLabel, rentalRows, reviewStateFor, type KioskReviewState } from './kiosk-logic';
 import styles from './KioskPanels.module.css';
 
 // « Mon compte » : ouvert par « Compte » à tout moment, sans avoir à louer d'abord
-// (docs/superpowers/specs/2026-11-17-borne-mon-compte-design.md, § 4). Crédits, locations en cours, tout
-// l'historique avec le rembobinage, le retour anticipé et la critique de chaque film.
+// (docs/superpowers/specs/2026-11-17-borne-mon-compte-design.md, § 4). Crédits, version préférée, locations en
+// cours, tout l'historique avec le rembobinage, le retour anticipé et la critique de chaque film.
 
 interface KioskAccountProps {
   /** Tout le catalogue, sans doublon : jaquettes et titres. */
   films: Film[];
+  /**
+   * La liste « Version préférée » remplace le contenu de l'écran. La borne tient cet état : son geste retour ferme la
+   * liste avant le compte (`kioskBackAction`, « close-pref »).
+   */
+  prefOpen: boolean;
+  onPrefOpen: (open: boolean) => void;
   onWatch: (filmId: number) => void;
   onReview: (filmId: number) => void;
   onLogout: () => void;
   onBack: () => void;
 }
+
+/** Durée pendant laquelle la ligne « Version préférée » dit « Enregistré » après un choix accepté par le serveur. */
+const PREF_SAVED_MS = 2000;
 
 /** Coche ou croix dessinées (aucun glyphe tiré d'une police de secours). */
 function Mark({ ok }: { ok: boolean }) {
@@ -51,14 +62,45 @@ function ReviewLine({ state, onWrite }: { state: KioskReviewState; onWrite: () =
   return <span className={styles.kAccountReason}>{state.reason}</span>;
 }
 
-export function KioskAccount({ films, onWatch, onReview, onLogout, onBack }: KioskAccountProps) {
+export function KioskAccount({ films, prefOpen, onPrefOpen, onWatch, onReview, onLogout, onBack }: KioskAccountProps) {
   const authUser = useStore((state) => state.authUser);
   const rentals = useStore((state) => state.rentals);
   const history = useStore((state) => state.rentalHistory);
   const userReviews = useStore((state) => state.userReviews);
   const eligibility = useStore((state) => state.reviewEligibility);
   const fetchMe = useStore((state) => state.fetchMe);
+  const versionPref = useStore((state) => state.versionPref);
+  const setVersionPref = useStore((state) => state.setVersionPref);
   const credits = useCredits();
+
+  // ----- « Version préférée » : un réglage que le visiteur fait lui-même, jamais déduit (spec 2026-11-19, § 4.2) -----
+  const [expanded, setExpanded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [failed, setFailed] = useState(false);
+  // Compteur plutôt que booléen : un second choix accepté relance les deux secondes de « Enregistré ».
+  const [savedTick, setSavedTick] = useState(0);
+  useEffect(() => {
+    if (savedTick === 0) return;
+    const id = window.setTimeout(() => setSavedTick(0), PREF_SAVED_MS);
+    return () => window.clearTimeout(id);
+  }, [savedTick]);
+  const prefRows = useMemo(() => versionRows({ offer: FULL_OFFER, current: versionPref, expanded, withAuto: true }), [versionPref, expanded]);
+  const openPref = () => {
+    setExpanded(false);
+    setFailed(false);
+    onPrefOpen(true);
+  };
+  // Le magasin n'écrit la préférence qu'après le oui du serveur : la liste se ferme alors, sinon elle reste et le dit.
+  const pickPref = async (pref: VersionChoice | null) => {
+    setSaving(true);
+    setFailed(false);
+    const ok = await setVersionPref(pref);
+    setSaving(false);
+    if (ok) {
+      setSavedTick((tick) => tick + 1);
+      onPrefOpen(false);
+    } else setFailed(true);
+  };
 
   // Les données du compte sont relues à l'ouverture : un retour, un rembobinage ou une critique faits
   // ailleurs (vidéoclub, autre appareil, serveur à la fin d'un Cast) doivent s'y voir.
@@ -78,6 +120,37 @@ export function KioskAccount({ films, onWatch, onReview, onLogout, onBack }: Kio
   const past = useMemo(() => accountHistoryRows(history, reviewed, eligibility), [history, reviewed, eligibility]);
   const filmById = useMemo(() => new Map(films.map((f) => [f.id, f])), [films]);
 
+  if (prefOpen) {
+    return (
+      <div className={`${styles.kSearchPane} ${styles.kAccount}`}>
+        <VersionList
+          title="Version préférée"
+          rows={prefRows}
+          classes={{
+            list: styles.kVersionList,
+            title: styles.kRentalsTitle,
+            row: styles.kVersionRow,
+            rowSelected: styles.kVersionRowOn,
+            absent: styles.kVersionAbsent,
+            name: styles.kVersionName,
+            sub: styles.kVersionSub,
+            more: styles.kVersionMore,
+            back: `${styles.kAuthBack} ${styles.kVersionBack}`,
+          }}
+          onPick={(pref) => void pickPref(pref)}
+          onMore={() => setExpanded(true)}
+          onBack={() => onPrefOpen(false)}
+          busy={saving}
+        />
+        {failed && (
+          <p className={styles.kAuthError} role="alert">
+            L'enregistrement n'a pas abouti. Réessayez.
+          </p>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className={`${styles.kSearchPane} ${styles.kAccount}`}>
       <button type="button" className={styles.kAuthBack} onClick={onBack}>
@@ -88,6 +161,16 @@ export function KioskAccount({ films, onWatch, onReview, onLogout, onBack }: Kio
         <span>{authUser?.username ?? ''}</span>
         <span className={styles.kAccountCredits}>{creditsLabel(credits)}</span>
       </p>
+      <button type="button" className={styles.kPrefLine} onClick={openPref}>
+        <span>Version préférée</span>
+        <span className={styles.kPrefValue}>
+          {savedTick > 0 ? (
+            <>
+              <Mark ok /> Enregistré
+            </>
+          ) : versionPref === null ? 'Automatique' : versionName(versionPref)}
+        </span>
+      </button>
 
       <div className={styles.kSearchResults}>
         <h3 className={styles.kAccountSection}>En cours</h3>

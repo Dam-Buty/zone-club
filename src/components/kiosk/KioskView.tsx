@@ -275,6 +275,8 @@ export function KioskView() {
   const [distribution, setDistribution] = useState<{ phase: 'waiting' | 'ready'; filmId: number; fresh: boolean } | null>(null);
   // « Mon compte » (spec 2026-11-17-borne-mon-compte) : ouvert par « Compte » ou depuis le panneau d'après location.
   const [accountOpen, setAccountOpen] = useState(false);
+  // La liste « Version préférée », ouverte depuis « Mon compte » à la place de son contenu.
+  const [prefOpen, setPrefOpen] = useState(false);
   // Film dont la critique s'écrit (formulaire de la tâche 6 du plan « Mon compte »).
   const [reviewFilmId, setReviewFilmId] = useState<number | null>(null);
   const onRenting = useCallback((filmId: number | null) => {
@@ -516,6 +518,7 @@ export function KioskView() {
       readyOpen: distribution?.phase === 'ready',
       accountOpen,
       reviewOpen: reviewFilmId !== null,
+      prefOpen: accountOpen && prefOpen,
       noticeClosable: catalog !== 'unavailable',
       authOpen,
       phrasePending: pendingPhrase !== null,
@@ -531,6 +534,7 @@ export function KioskView() {
     }
     else if (action === 'close-ready') closeReady();
     else if (action === 'close-review') setReviewFilmId(null);
+    else if (action === 'close-pref') setPrefOpen(false);
     else if (action === 'close-account') setAccountOpen(false);
     else if (action === 'cancel-auth') cancelAuth();
     else if (action === 'close-trailer') setDetailTab('resume');
@@ -667,6 +671,8 @@ export function KioskView() {
                   <div className={styles.kLayer} inert={overlay !== null || distribution !== null || authVisible || reviewFilmId !== null}>
                     <KioskAccount
                       films={catalogue}
+                      prefOpen={prefOpen}
+                      onPrefOpen={setPrefOpen}
                       onWatch={watch}
                       onReview={(filmId) => setReviewFilmId(filmId)}
                       onLogout={() => {

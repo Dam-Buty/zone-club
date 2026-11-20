@@ -534,6 +534,16 @@ test('CRITIQUE (borne): le geste retour ferme le formulaire avant le compte', ()
   const base = { playerOpen: false, noticeOpen: false, noticeClosable: true, authOpen: false, phrasePending: false, searchOpen: false };
   assert.equal(K.kioskBackAction({ ...base, reviewOpen: true, accountOpen: true }), 'close-review');
 });
+// Tâche 6 du plan des versions : la liste « Version préférée » remplace le contenu de « Mon compte » ; le geste retour
+// la referme d'abord (retour au compte), puis le compte.
+test('VERSION PRÉFÉRÉE: le geste retour ferme la liste, puis le compte', () => {
+  const base = { playerOpen: false, noticeOpen: false, noticeClosable: true, authOpen: false, phrasePending: false, searchOpen: false };
+  assert.equal(K.kioskBackAction({ ...base, accountOpen: true, prefOpen: true }), 'close-pref', 'la liste d\'abord');
+  assert.equal(K.kioskBackAction({ ...base, accountOpen: true, prefOpen: false }), 'close-account', 'liste fermée : le compte');
+  assert.equal(K.kioskBackAction({ ...base, accountOpen: true, prefOpen: true, detailOpen: true, searchOpen: true }), 'close-pref', 'la liste passe avant ce qui est sous le compte');
+  assert.equal(K.kioskBackAction({ ...base, accountOpen: true, prefOpen: true, noticeOpen: true }), 'close-notice', 'un message reste au-dessus');
+  assert.equal(K.kioskBackAction({ ...base, accountOpen: true, prefOpen: true, playerOpen: true }), 'close-player', 'le lecteur reste au-dessus');
+});
 test('PANNEAU: « Où voulez-vous regarder ? » dit où et comment', () => {
   assert.equal(K.watchHereLabel({ coarsePointer: true, shortSide: 412 }), 'Sur ce téléphone');
   assert.equal(K.watchHereLabel({ coarsePointer: true, shortSide: 820 }), 'Sur cette tablette');

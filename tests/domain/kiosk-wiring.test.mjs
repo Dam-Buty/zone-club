@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { readText, walkFiles } from '../helpers/repo.mjs';
 
 const ROOT = process.cwd();
@@ -621,4 +622,170 @@ test('CAST BORNE: « Location terminée » est dit par la borne, et le fermer ef
   assert.match(view, /title: 'Location terminée'[\s\S]{0,200}onPress: castDismiss/, '« Fermer » appelle castDismiss');
   assert.match(view, /action === 'close-notice'[\s\S]{0,80}castDismiss\(\)/, 'le geste retour aussi');
   assert.match(view, /rentalStep === 'close-player'\) closePlayer\(\)/, 'un lecteur resté ouvert sans location se ferme');
+});
+
+// ===== Versions, tâche 6 (docs/superpowers/specs/2026-11-19-versions-et-erreurs-de-lecture-design.md, § 4.2, § 4.3) =====
+// La liste des versions est la même partout ; « Mon compte » l'ouvre depuis la ligne « Version préférée ».
+const VERSION_LIST = path.join(ROOT, 'src/components/version/VersionList.tsx');
+
+test('VERSION PRÉFÉRÉE: « Mon compte » porte la ligne « Version préférée », qui ouvre la liste partagée', () => {
+  const src = KIOSK('KioskAccount.tsx');
+  assert.ok(src.includes('Version préférée'), '« Version préférée »');
+  assert.ok(src.includes("import { VersionList } from '../version/VersionList'"), 'la liste partagée, pas une copie');
+  assert.match(src, /<VersionList[\s\S]*?title="Version préférée"/, 'la liste a pour titre « Version préférée »');
+  assert.ok(src.includes('versionRows({ offer: FULL_OFFER, current: versionPref, expanded, withAuto: true })'), 'ses lignes : tout est offert, « Automatique » en tête');
+  assert.ok(src.includes("versionPref === null ? 'Automatique' : versionName(versionPref)"), 'la valeur de la ligne');
+  assert.ok(/prefOpen: boolean;/.test(src) && /onPrefOpen: \(open: boolean\) => void;/.test(src), 'la liste ouverte est tenue par la borne (geste retour)');
+  // La ligne est sous le solde, hors de la zone qui défile.
+  const who = src.indexOf('styles.kAccountWho');
+  const line = src.indexOf('styles.kPrefLine');
+  assert.ok(who > 0 && line > who && line < src.indexOf('styles.kSearchResults'), 'sous le solde, avant les locations');
+});
+
+test('VERSION PRÉFÉRÉE: un choix attend le oui du serveur — « Enregistré » 2 s, ou la liste reste avec le message', () => {
+  const src = KIOSK('KioskAccount.tsx');
+  const pick = arrowBody(src, 'pickPref');
+  const saveAt = pick.indexOf('await setVersionPref(pref)');
+  assert.ok(saveAt > 0, 'le choix part au serveur et on attend sa réponse');
+  const closeAt = pick.indexOf('onPrefOpen(false)');
+  assert.ok(closeAt > saveAt, 'la liste ne se ferme qu\'après la réponse');
+  assert.match(pick.slice(saveAt), /if \(ok\) \{[^}]*setSavedTick[^}]*onPrefOpen\(false\)[^}]*\} else setFailed\(true\)/, 'oui → « Enregistré » et fermeture ; non → le message, la liste reste');
+  assert.ok(src.includes('const PREF_SAVED_MS = 2000;') && src.includes('Enregistré'), '« Enregistré » pendant 2 s');
+  assert.match(src, /setTimeout\(\(\) => setSavedTick\(0\), PREF_SAVED_MS\)/, '« Enregistré » s\'efface au bout de ce délai');
+  assert.match(src, /role="alert">\s*L'enregistrement n'a pas abouti\. Réessayez\./, 'le message d\'échec, exact');
+  assert.ok(src.includes('busy={saving}'), 'pendant l\'appel, la liste est en attente');
+});
+
+test('VERSION PRÉFÉRÉE: aucun bouton grisé, ni dans « Mon compte » ni dans la liste partagée', () => {
+  for (const file of [path.join(ROOT, 'src/components/kiosk/KioskAccount.tsx'), VERSION_LIST]) {
+    assert.ok(!/\bdisabled\b/.test(readText(file)), `${path.basename(file)} : aucun disabled`);
+  }
+});
+
+test('VERSION PRÉFÉRÉE: la liste partagée n\'a pas de feuille de style à elle', () => {
+  const src = readText(VERSION_LIST);
+  assert.ok(!/\.css['"]/.test(src), 'aucune feuille importée : chaque écran passe ses classes');
+  for (const key of ['list', 'title', 'row', 'rowSelected', 'absent', 'name', 'sub', 'more', 'back']) {
+    assert.ok(src.includes(`classes.${key}`), `classes.${key} est utilisée`);
+  }
+});
+
+test('VERSION PRÉFÉRÉE: la borne tient la liste ouverte et le geste retour la ferme avant le compte', () => {
+  const view = KIOSK('KioskView.tsx');
+  const back = view.slice(view.indexOf('const action = kioskBackAction({'), view.indexOf('});', view.indexOf('const action = kioskBackAction({')));
+  assert.ok(/\bprefOpen\b/.test(back), 'kioskBackAction sait que la liste est ouverte');
+  assert.match(view, /action === 'close-pref'\) setPrefOpen\(false\)/, '« close-pref » referme la liste, le compte reste');
+  const account = view.slice(view.indexOf('<KioskAccount'), view.indexOf('/>', view.indexOf('<KioskAccount')));
+  assert.ok(account.includes('prefOpen={prefOpen}') && account.includes('onPrefOpen={setPrefOpen}'), 'la borne passe l\'état de la liste à « Mon compte »');
+});
+
+// VersionList n'a ni état ni crochet : on la transpile (TypeScript, JSX classique sur le React du dépôt) et on l'appelle
+// comme une fonction. L'arbre rendu se lit, et ses gestionnaires d'appui se déclenchent, sans navigateur.
+async function loadVersionList() {
+  const require = createRequire(import.meta.url);
+  const ts = require('typescript');
+  globalThis.React = require('react');
+  const { outputText } = ts.transpileModule(readText(VERSION_LIST), {
+    compilerOptions: { jsx: ts.JsxEmit.React, module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+  });
+  return import(`data:text/javascript,${encodeURIComponent(outputText)}`);
+}
+/** Les éléments de l'arbre, dans l'ordre du document. */
+function treeElements(node, out = []) {
+  if (Array.isArray(node)) for (const child of node) treeElements(child, out);
+  else if (node && typeof node === 'object' && 'props' in node) {
+    out.push(node);
+    treeElements(node.props.children, out);
+  }
+  return out;
+}
+/** Le texte d'un élément, enfants compris. */
+function textOf(node) {
+  if (node === null || node === undefined || typeof node === 'boolean') return '';
+  if (typeof node === 'string' || typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(textOf).join('');
+  return textOf(node.props?.children);
+}
+const LIST_CLASSES = { list: 'L', title: 'T', row: 'R', rowSelected: 'RS', absent: 'A', name: 'N', sub: 'S', more: 'M', back: 'B' };
+const partOf = (el, cls) => textOf(treeElements(el.props.children).find((e) => e.props.className === cls));
+const noop = () => {};
+
+test('LISTE DES VERSIONS: une ligne par entrée de versionRows — versions en boutons pressés, l\'absente en texte, « Retour » en pied', async () => {
+  const VC = await import('../../src/utils/version-choice.ts');
+  const { VersionList } = await loadVersionList();
+  const rows = VC.versionRows({ offer: VC.FULL_OFFER, current: VC.VOSTFR, expanded: false, withAuto: true });
+  const tree = VersionList({ title: 'Version préférée', rows, classes: LIST_CLASSES, onPick: noop, onMore: noop, onBack: noop });
+  assert.equal(tree.props.className, 'L');
+  assert.equal(tree.props['aria-busy'], undefined, 'pas en attente : pas d\'aria-busy');
+  const all = treeElements(tree);
+  assert.equal(textOf(all.find((e) => e.props.className === 'T')), 'Version préférée');
+  const buttons = all.filter((e) => e.type === 'button');
+  const versions = buttons.filter((b) => 'aria-pressed' in b.props);
+  assert.deepEqual(versions.map((b) => partOf(b, 'N')), ['Automatique', 'VF', 'VOSTFR', 'VO']);
+  assert.deepEqual(versions.map((b) => partOf(b, 'S')), ['VF quand elle existe, sinon VOSTFR', 'version française', 'version originale, sous-titres français', 'version originale, sans sous-titres']);
+  assert.deepEqual(versions.map((b) => b.props['aria-pressed']), [false, false, true, false], 'la version courante est pressée');
+  assert.deepEqual(versions.map((b) => b.props.className.split(' ')), [['R'], ['R'], ['R', 'RS'], ['R']], 'la classe de la ligne choisie, sur elle seule');
+  const more = buttons.find((b) => b.props.className === 'M');
+  assert.equal(textOf(more), 'Autres versions');
+  assert.equal(buttons.at(-1).props.className, 'B');
+  assert.equal(textOf(buttons.at(-1)), 'Retour', '« Retour » ferme la liste, en pied');
+
+  // Un film sans VF : la VF est une ligne de texte avec sa raison, jamais un bouton ; sans « Automatique » demandée, pas de ligne auto.
+  const film = VersionList({
+    title: 'Version',
+    rows: VC.versionRows({ offer: { vf: false, vo: true, fr: true, en: false }, current: null, expanded: false, withAuto: false }),
+    classes: LIST_CLASSES, onPick: noop, onMore: noop, onBack: noop,
+  });
+  const filmAll = treeElements(film);
+  const absent = filmAll.filter((e) => e.props.className === 'A');
+  assert.equal(absent.length, 1);
+  assert.equal(absent[0].type, 'p');
+  assert.equal(textOf(absent[0]), 'VF · indisponible pour ce film');
+  assert.deepEqual(filmAll.filter((e) => e.type === 'button' && 'aria-pressed' in e.props).map((b) => partOf(b, 'N')), ['VOSTFR', 'VO']);
+});
+
+test('LISTE DES VERSIONS: un appui choisit la version (« Automatique » = null), ouvre les autres versions ou revient', async () => {
+  const VC = await import('../../src/utils/version-choice.ts');
+  const { VersionList } = await loadVersionList();
+  const picks = []; let more = 0; let back = 0;
+  const tree = VersionList({
+    title: 'Version préférée',
+    rows: VC.versionRows({ offer: VC.FULL_OFFER, current: null, expanded: false, withAuto: true }),
+    classes: LIST_CLASSES, onPick: (v) => picks.push(v), onMore: () => { more++; }, onBack: () => { back++; },
+  });
+  const buttons = treeElements(tree).filter((e) => e.type === 'button');
+  const byName = (name) => buttons.find((b) => partOf(b, 'N') === name);
+  byName('Automatique').props.onClick();
+  byName('VOSTFR').props.onClick();
+  assert.equal(picks.length, 2);
+  assert.equal(picks[0], null, '« Automatique » efface la préférence');
+  assert.equal(picks[1], VC.VOSTFR, 'le couple de la ligne, tel quel');
+  buttons.find((b) => b.props.className === 'M').props.onClick();
+  assert.equal(more, 1);
+  buttons.find((b) => b.props.className === 'B').props.onClick();
+  assert.equal(back, 1);
+});
+
+test('LISTE DES VERSIONS: en attente, aria-busy et les appuis sur les lignes ignorés ; « Retour » répond', async () => {
+  const VC = await import('../../src/utils/version-choice.ts');
+  const { VersionList } = await loadVersionList();
+  const picks = []; let more = 0; let back = 0;
+  const tree = VersionList({
+    title: 'Version préférée',
+    rows: VC.versionRows({ offer: VC.FULL_OFFER, current: VC.VF, expanded: false, withAuto: true }),
+    classes: LIST_CLASSES, busy: true, onPick: (v) => picks.push(v), onMore: () => { more++; }, onBack: () => { back++; },
+  });
+  assert.equal(tree.props['aria-busy'], true);
+  const buttons = treeElements(tree).filter((e) => e.type === 'button');
+  const versions = buttons.filter((b) => 'aria-pressed' in b.props);
+  assert.equal(versions.length, 4);
+  for (const b of versions) {
+    assert.equal(b.props['aria-busy'], true, `${partOf(b, 'N')} : en attente`);
+    b.props.onClick();
+  }
+  buttons.find((b) => b.props.className === 'M').props.onClick();
+  assert.deepEqual(picks, [], 'aucun choix pendant l\'enregistrement');
+  assert.equal(more, 0);
+  buttons.find((b) => b.props.className === 'B').props.onClick();
+  assert.equal(back, 1, 'la liste n\'enferme jamais le visiteur');
 });
