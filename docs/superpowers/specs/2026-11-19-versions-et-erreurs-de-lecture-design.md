@@ -70,7 +70,7 @@ Même relevé : 370 films ont VF et VO, 9 n'ont que la VO, aucun n'a que la VF.
 
 | | Approche | Pour | Contre |
 |---|---|---|---|
-| **A — retenue** | Un réglage « Version » à trois valeurs (+ « Autres versions »), mémorisé sur le compte ; sur la télé, changer de piste audio recharge l'autre fichier à la même position | Un seul axe à comprendre ; marche avec le récepteur standard | Coupure d'une ou deux secondes sur la télé au changement de piste audio |
+| **A — retenue** | Un réglage « Version » à trois valeurs (+ « Autres versions »), le même partout, avec une version préférée que le visiteur règle dans « Mon compte » ; sur la télé, changer de piste audio recharge l'autre fichier à la même position | Un seul axe à comprendre ; marche avec le récepteur standard | Sur la télé, changer de piste audio passe par un rechargement, dont la durée n'est pas encore mesurée |
 | B | Garder deux rangées (audio, sous-titres) et les ajouter à la télécommande | Peu de code | Deux axes ; « VOSTFR », le mot que les gens connaissent, n'existe nulle part |
 | C | Demander la version avant chaque film | Choix toujours explicite | Une question de plus à chaque film ; contraire au but |
 | D | Un fichier à deux pistes audio et un récepteur maison | Changement sans coupure | Écarté par décision ; d'après la documentation de Google, le récepteur standard ne gère que les pistes de texte |
@@ -93,10 +93,9 @@ Une quatrième ligne de la liste, « Autres versions », ouvre les deux combinai
 offre : **VF sous-titrée** (`vf`, `fr` — piste française avec les sous-titres français, utile aux malentendants)
 et **VO, sous-titres anglais** (`vo`, `en`).
 
-Une fonction pure décide de ce qui joue, à partir de la préférence (ou de son absence) et de ce que la location
-offre (`streamingUrls` : `vf`, `vo`, `subtitles`, `subtitles_en`) :
-
-Ce qui est demandé vient de trois sources, dans cet ordre :
+Une fonction pure décide de ce qui joue, à partir de ce qui est demandé et de ce que la location offre
+(`streamingUrls` : `vf`, `vo`, `subtitles`, `subtitles_en`). Ce qui est demandé vient de trois sources, dans cet
+ordre :
 
 1. **le choix fait pour ce film** : un appui sur une version dans la liste. Il vaut pour ce film, y compris quand
    on le rouvre, tant qu'il est loué. Il ne touche pas au réglage du compte ;
@@ -420,8 +419,8 @@ les sous-titres anglais**. Le lecteur actuel les permet déjà.
 
 - **Mon choix** : ne pas les mettre dans la liste principale, mais derrière une quatrième ligne, « Autres
   versions › », qui les ouvre. La liste reste à trois choix pour presque tout le monde, et personne ne perd une
-  possibilité qui existe aujourd'hui. Si un visiteur choisit l'une des deux, elle est retenue sur son compte comme
-  les trois autres.
+  possibilité qui existe aujourd'hui. Elles se choisissent comme les trois autres : pour un film, ou comme version
+  préférée dans « Mon compte ».
 - **L'autre possibilité** : cinq lignes d'emblée, ou supprimer ces deux combinaisons.
 
 ### 11.2 Le film n'a pas les sous-titres dont le visiteur a l'habitude
