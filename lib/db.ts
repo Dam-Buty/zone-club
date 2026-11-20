@@ -145,6 +145,19 @@ for (const sql of multiCopyMigrations) {
   } catch { /* idempotent: column/index already exists */ }
 }
 
+// Migrate: version préférée du compte (spec 2026-11-19-versions-et-erreurs-de-lecture, § 4.2, lib/version-pref.ts).
+// Nulles pour les comptes existants = « Automatique ».
+const versionPrefMigrations = [
+  "ALTER TABLE users ADD COLUMN pref_audio TEXT DEFAULT NULL",
+  "ALTER TABLE users ADD COLUMN pref_subtitle TEXT DEFAULT NULL",
+];
+
+for (const sql of versionPrefMigrations) {
+  try {
+    db.exec(sql);
+  } catch { /* idempotent: column/index already exists */ }
+}
+
 // Set stock based on aisle (only on first migration)
 try {
   const columns = db.prepare("PRAGMA table_info(films)").all() as {

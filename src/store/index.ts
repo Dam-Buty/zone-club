@@ -6,7 +6,9 @@ import { preloadPosterImage } from '../utils/CassetteTextureArray';
 import { fetchVHSCoverData } from '../utils/VHSCoverGenerator';
 import { parseServerDate } from '../utils/server-date';
 import { rentalsRefreshOutcome } from '../utils/rentals-refresh';
+import { prunedFilmVersions } from '../utils/version-choice';
 import { createCastSlice, type CastSlice } from './slices/cast';
+import { createVersionSlice, type VersionSlice } from './slices/version';
 import { createManagerSlice } from './slices/manager';
 import { createTutorialSlice, TUTORIAL_WAYPOINTS } from './slices/tutorial';
 
@@ -98,7 +100,7 @@ export interface RentalHistoryEntry {
 /** Ce qu'un film loué et pas encore critiqué permet, par identifiant de film. */
 export type ReviewEligibilityMap = Record<number, { allowed: boolean; reason: string | null; availableAtMs: number | null }>;
 
-export interface VideoClubState extends CastSlice {
+export interface VideoClubState extends CastSlice, VersionSlice {
   // Auth
   isAuthenticated: boolean;
   authUser: AuthUser | null;
@@ -461,6 +463,9 @@ export const useStore = create<VideoClubState>()(
           // Le film dont le Cast courait peut-être est celui de ce compte : le visiteur suivant sur le même appareil
           // recevrait « Location terminée » pour un film qu'il n'a pas loué.
           lastCastFilmId: null,
+          // Ni la préférence ni les choix par film de ce compte ne passent au visiteur suivant.
+          versionPref: null,
+          filmVersions: {},
         });
       },
 
@@ -485,7 +490,11 @@ export const useStore = create<VideoClubState>()(
         }
         const outcome = rentalsRefreshOutcome({ accountBefore, accountNow: get().authUser?.id ?? null, responseAccount: data.user.id });
         if (outcome !== 'write') throw new Error('Compte changé pendant la relecture des locations');
-        set({ rentals: data.activeRentals.map(apiRentalToRental), rentalHistory: historyFromApi(data.rentalHistory) });
+        set({
+          rentals: data.activeRentals.map(apiRentalToRental),
+          rentalHistory: historyFromApi(data.rentalHistory),
+          filmVersions: prunedFilmVersions(get().filmVersions, data.activeRentals.map((r) => r.film_id)),
+        });
       },
 
       fetchMe: async () => {
@@ -503,10 +512,13 @@ export const useStore = create<VideoClubState>()(
               (data.reviewEligibility || []).map((e) => [e.film_id, { allowed: e.allowed, reason: e.reason, availableAtMs: e.available_at_ms }]),
             ),
             weeklyBonusStatus: data.weeklyBonus ?? null,
+            versionPref: data.user.version_pref ?? null,
+            // Le choix fait pour un film s'oublie quand sa location se termine.
+            filmVersions: prunedFilmVersions(get().filmVersions, data.activeRentals.map((r) => r.film_id)),
           });
         } catch {
-          // Non connecté, pas d'erreur
-          set({ isAuthenticated: false, authUser: null, rentalHistory: [], userReviews: [], reviewEligibility: {}, weeklyBonusStatus: null });
+          // Non connecté, pas d'erreur. Les choix par film restent sur l'appareil.
+          set({ isAuthenticated: false, authUser: null, rentalHistory: [], userReviews: [], reviewEligibility: {}, weeklyBonusStatus: null, versionPref: null });
         }
       },
 
@@ -800,6 +812,9 @@ export const useStore = create<VideoClubState>()(
 
       // Cast — voir src/store/slices/cast.ts
       ...createCastSlice(set, get, store),
+
+      // Versions (préférence du compte, choix par film) — voir src/store/slices/version.ts
+      ...createVersionSlice(set, get, store),
 
       // Player
       isPlayerOpen: false,
@@ -1121,6 +1136,8 @@ export const useStore = create<VideoClubState>()(
         hasCompletedTutorial: state.hasCompletedTutorial,
         // Le film dont le Cast court peut-être encore (page rechargée). Jamais l'état du Cast : adresse du film, drapeaux passagers.
         lastCastFilmId: state.lastCastFilmId,
+        // Le choix fait pour chaque film loué : retenu sur l'appareil. Jamais la version préférée : le serveur la tient.
+        filmVersions: state.filmVersions,
         // Navigation state — persisted so mobile tab-switch doesn't reset to exterior
         currentScene: state.currentScene,
         currentAisle: state.currentAisle,

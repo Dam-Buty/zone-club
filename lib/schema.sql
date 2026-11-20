@@ -6,7 +6,11 @@ CREATE TABLE IF NOT EXISTS users (
     recovery_phrase_hash TEXT NOT NULL,
     credits INTEGER DEFAULT 5,
     is_admin BOOLEAN DEFAULT FALSE,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    -- Version préférée, réglée par le visiteur dans « Mon compte » (lib/version-pref.ts) : vf | vo, off | fr | en.
+    -- Toutes deux nulles = « Automatique ».
+    pref_audio TEXT DEFAULT NULL,
+    pref_subtitle TEXT DEFAULT NULL
 );
 
 -- Films table

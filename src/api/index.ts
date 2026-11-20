@@ -4,6 +4,7 @@
 
 import type { Film } from '../types';
 import type { PlaybackFailure } from '../../lib/playback-failure-parse';
+import type { VersionChoice } from '../utils/version-choice';
 
 const API_BASE = '';
 
@@ -14,6 +15,8 @@ export interface ApiUser {
   credits: number;
   is_admin: boolean;
   created_at: string;
+  /** La version préférée du compte (« Mon compte ») ; null = « Automatique ». Rendue par /api/me seulement. */
+  version_pref?: VersionChoice | null;
 }
 
 // Les routes de liste (/api/films, /api/films/aisle, /api/films/genre,
@@ -467,6 +470,15 @@ export const me = {
 
   async claimWeeklyBonus(): Promise<{ credits_awarded: number; new_balance: number }> {
     return request('/api/me/weekly-bonus', { method: 'POST' });
+  },
+
+  // Le réglage « Version préférée » de « Mon compte » ; null = « Automatique ». Les deux champs nommés partent, null
+  // compris : le serveur refuse un seul des deux. La réponse dit ce qui est enregistré.
+  async setVersionPref(pref: VersionChoice | null): Promise<{ version_pref: VersionChoice | null }> {
+    return request('/api/me/version', {
+      method: 'PATCH',
+      body: JSON.stringify({ audio: pref?.audio ?? null, subtitle: pref?.subtitle ?? null }),
+    });
   },
 };
 
