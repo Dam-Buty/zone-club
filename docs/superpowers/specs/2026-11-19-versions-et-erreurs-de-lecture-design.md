@@ -408,7 +408,9 @@ Chaque point dit la situation, ce que j'ai choisi, et l'autre possibilité.
 | 11.6 Outil de contrôle des fichiers | D'accord. |
 | 11.7 Liste des échecs dans `/admin` | D'accord. |
 | 11.8 Le compteur reste | D'accord. |
-| 11.9 Télé en pause pendant l'avance rapide | Pas compris : réexpliqué plus bas, **réponse attendue**. |
+| 11.9 Télé en pause pendant l'avance rapide | Réexpliqué, puis **accepté** : « si oui on accepte, aucun souci » — l'avance rapide sur la télé est une suite d'images figées, sans le son, parce que le film y est joué par le lecteur standard de Google et non par notre page. |
+
+Avec cette dernière réponse, **le document est approuvé** (20/11/2026). Suite : le plan d'exécution.
 
 ### 11.1 La ligne « Autres versions » de la liste
 
