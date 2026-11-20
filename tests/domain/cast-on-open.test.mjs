@@ -154,3 +154,28 @@ test('LECTEUR: une lecture qui part sous la question des sous-titres, sous le pa
   const onPlay = player.slice(player.indexOf('onPlay={() => {'), player.indexOf('onPause={() => {'));
   assert.match(onPlay, /if \(playHeldHere\(\{ tvOwnsFilm, failure: failureHoldsPlayback\(failure\), question: asking \}\)\) \{\s*videoRef\.current\?\.pause\(\);\s*return;/, 'onPlay arrête la lecture sous la question');
 });
+
+// Relecture d'ensemble de la partie A (I3) : l'éjection ignorait le clic fantôme du toucher qui ouvre le lecteur (menu
+// de la télé assise, au `touchstart`), mais la question des sous-titres, affichée dès l'ouverture dans la même zone,
+// n'avait pas cette garde : le clic fantôme répondait à la question (film lancé, choix enregistré) ou fermait le lecteur.
+test('LECTEUR: un appui dans les 500 ms qui suivent l\'ouverture est le clic fantôme, il est ignoré', async () => {
+  const { GHOST_CLICK_MS, ghostClick } = await import('../../src/utils/cast-on-open.ts');
+  assert.equal(GHOST_CLICK_MS, 500);
+  assert.equal(ghostClick(1000, 1000), true, 'à l\'ouverture même');
+  assert.equal(ghostClick(1000, 1080), true, 'le clic synthétisé, 50 à 100 ms après le toucher');
+  assert.equal(ghostClick(1000, 1499.9), true, 'juste avant la limite');
+  assert.equal(ghostClick(1000, 1500), false, 'à 500 ms, un vrai appui');
+  assert.equal(ghostClick(1000, 4200), false, 'un appui ordinaire');
+});
+test('LECTEUR: l\'éjection, les deux réponses de la question et son « Retour » passent par la même garde', () => {
+  const player = readText(path.join(process.cwd(), 'src/components/player/VHSPlayer.tsx'));
+  const guard = 'ghostClick(mountedAtRef.current, performance.now())';
+  const eject = player.slice(player.indexOf('const handleEject = useCallback('), player.indexOf('const video = videoRef.current;', player.indexOf('const handleEject = useCallback(')));
+  assert.ok(eject.includes(`if (${guard}) return;`), 'l\'éjection ignore le clic fantôme');
+  const answer = player.slice(player.indexOf('const answerQuestion = (v: VersionChoice) => {'), player.indexOf('\n  };', player.indexOf('const answerQuestion')));
+  assert.ok(answer.indexOf(`if (${guard}) return;`) >= 0 && answer.indexOf(`if (${guard}) return;`) < answer.indexOf('choose(v)'), 'la réponse : la garde avant le choix');
+  const quit = player.slice(player.indexOf('const quitQuestion = () => {'), player.indexOf('\n  };', player.indexOf('const quitQuestion')));
+  assert.match(quit, /if \(!ghostClick\(mountedAtRef\.current, performance\.now\(\)\)\) closePlayer\(\);/, '« Retour » : la garde, puis la fermeture');
+  assert.ok(player.includes('onQuit={quitQuestion}') && player.includes('onAnswer={answerQuestion}'), 'le panneau reçoit les deux gestionnaires gardés');
+  assert.ok(!/performance\.now\(\) - mountedAtRef\.current < 500/.test(player), 'plus de délai écrit à la main');
+});

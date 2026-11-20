@@ -62,12 +62,16 @@ test('VERSIONS MAGASIN: fetchMe écrit la version préférée canonique et ne ga
   const success = fetchMe.slice(0, fetchMe.indexOf('catch'));
   assert.match(success, /versionPref: parseVersionChoice\(data\.user\.version_pref\?\.audio, data\.user\.version_pref\?\.subtitle\)/, 'versionPref : le couple canonique lu sur /api/me, ou null');
   assert.match(success, AFTER_READ, 'choix du seul compte lu, élagués aux locations actives');
-  // Sur un échec (non connecté, panne) : plus de préférence de compte, mais la table et son propriétaire restent —
-  // le même visiteur retrouve ses choix à la lecture suivante.
+  // Sur un échec : la table et son propriétaire restent — le même visiteur retrouve ses choix à la lecture suivante. La
+  // préférence de compte ne part que sur un vrai 401 (keepsVersionPref, testée dans version-choice.test.mjs) : une
+  // panne réseau l'effaçait (relecture d'ensemble de la partie A, I1), et la version basculait en plein film.
   const failure = fetchMe.slice(fetchMe.indexOf('catch'));
-  assert.match(failure, /versionPref: null/, 'hors connexion, pas de préférence de compte');
+  assert.match(failure, /catch \(error\) \{/, 'l\'échec est lu');
+  assert.match(failure, /const status = error instanceof ApiError \? error\.status : null;/, 'le statut HTTP de l\'échec, null sans réponse');
+  assert.match(failure, /\.\.\.\(keepsVersionPref\(status\) \? \{\} : \{ versionPref: null \}\)/, 'la préférence ne part que si la règle le dit');
+  assert.equal((failure.match(/versionPref/g) ?? []).length, 1, 'aucune autre écriture de la préférence sur un échec');
   assert.ok(!failure.includes('filmVersions'), 'une lecture ratée ne touche ni la table ni son propriétaire');
-  assert.match(store, /import \{ parseVersionChoice \} from '\.\.\/utils\/version-choice'/);
+  assert.match(store, /import \{ keepsVersionPref, parseVersionChoice \} from '\.\.\/utils\/version-choice'/);
   assert.match(store, /import \{ createVersionSlice, filmVersionsAfterRead, type VersionSlice \} from '\.\/slices\/version'/);
   assert.ok(!store.includes('prunedFilmVersions('), 'plus d\'élagage sans propriétaire dans le magasin');
 });

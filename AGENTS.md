@@ -571,10 +571,12 @@ ligne plus discrète, **« Retour »** (décision de Rusmir du 20/11/2026), ferm
 
 **La vidéo remontée garde sa fin et sa position.** L'élément `<video>` est remonté à chaque autre piste audio et à chaque
 « Réessayer » : sa `key` vaut `${version?.audio}-${videoUrl}-${attempt}`. Tout ce qui l'écoute suit cette key — dans
-`useVideoLifecycle`, trois effets qui dépendent tous de `videoKey` (un test le vérifie) : la **fin du film** (`ended` →
-« BE KIND REWIND » ou la fermeture), la **reprise à l'ouverture** (au `canplay`, un élément encore sous 1 s part de la
-position de la location) et la **position rétablie après un remontage** (au `loadedmetadata` du nouvel élément, ou tout
-de suite s'il les a déjà, s'il est encore sous 1 s). Le crochet reçoit la position enregistrée de la location telle
+`useVideoLifecycle`, deux effets qui dépendent tous deux de `videoKey` (un test le vérifie) : la **fin du film** (`ended` →
+« BE KIND REWIND » ou la fermeture) et la **place de l'élément**, prise une seule fois, à l'ouverture comme après un
+remontage : au `loadedmetadata` du nouvel élément (ou tout de suite s'il les a déjà), un élément encore sous 1 s part de
+la seconde transmise par l'élément remplacé (0 à l'ouverture) ou de la position de la location. Jamais au `canplay` :
+entre les métadonnées et la première lecture possible, la durée est connue et quitter le lecteur enregistrait la
+position 0 ; et une sauvegarde ne réarme rien (après ⏮, le film n'est plus ramené à l'ancienne position). Le crochet reçoit la position enregistrée de la location telle
 quelle et lit la durée sur l'élément ; il ne décide rien : **une seule règle pure, `src/utils/video-swap.ts`**, sert la
 reprise à l'ouverture, le remontage et le départ sur la télé — depuis le lecteur (`startAt` de « Regarder sur TV »,
 calculé sur la durée de sa vidéo) comme depuis la borne (« Sur ma télé » n'envoie pas de départ : `castStartAt` de

@@ -18,7 +18,7 @@ import { CAST_UNAVAILABLE_TEXT, castDeviceLabel, castNoticeView, continueHereLab
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { useBackGuard } from '../../hooks/useBackGuard';
 import { buildCastSubtitleTracks, activeSubtitleId } from '../../utils/cast-subtitles';
-import { appleAirPlay, localAutoPlay, noticeHoldsPlayback, playHeldHere, playerWithoutRental, playsHere, rewindPromptFor } from '../../utils/cast-on-open';
+import { appleAirPlay, ghostClick, localAutoPlay, noticeHoldsPlayback, playHeldHere, playerWithoutRental, playsHere, rewindPromptFor } from '../../utils/cast-on-open';
 import { failureHoldsPlayback, failurePanel, failureTrace, type DeviceFailureKind } from '../../utils/playback-failure';
 import { nextSubtitle, versionName, type VersionChoice, type VersionSubtitle } from '../../utils/version-choice';
 import { swapResumeTime } from '../../utils/video-swap';
@@ -238,12 +238,27 @@ export function VHSPlayer() {
   const videoKey = `${version?.audio}-${videoUrl}-${attempt}`;
   const { isAirPlaySupported, isAirPlayAvailable, isAirPlayConnected, openAirPlayPicker } = useAirPlay(videoRef, isPlayerOpen, videoKey);
 
+  // Mobile ghost-click guard: when openPlayer fires from a touchstart on the
+  // seated TV menu (OK button), the synthesized click event arrives ~50-100ms
+  // later — by which time VHSPlayer has mounted and its eject button (or the
+  // subtitles question, shown at once) is at the same screen coordinate. Eject,
+  // the answers and « Retour » ignore that click (ghostClick, cast-on-open).
+  const mountedAtRef = useRef(performance.now());
+  useEffect(() => {
+    if (isPlayerOpen) mountedAtRef.current = performance.now();
+  }, [isPlayerOpen]);
+
   // La réponse à la question des sous-titres : le choix de CE film, jamais la version préférée. Autre piste audio : le
   // nouvel élément part de lui-même (lecture automatique) ; même piste, même élément, retenu derrière la question : il
   // part maintenant, si rien d'autre ne le retient (l'invite « Regarder sur TV ? » attend alors sa propre réponse).
   const answerQuestion = (v: VersionChoice) => {
+    if (ghostClick(mountedAtRef.current, performance.now())) return;
     choose(v);
     if (v.audio === version?.audio && localAutoPlay({ ...playHolds, question: false })) void videoRef.current?.play().catch(() => {});
+  };
+  // « Retour » sous la question ferme le lecteur, rien n'est choisi — sauf sur le clic fantôme de l'ouverture.
+  const quitQuestion = () => {
+    if (!ghostClick(mountedAtRef.current, performance.now())) closePlayer();
   };
 
   // Aligner explicitement les textTracks du <video> sur la sélection. L'attribut `default` d'un <track>
@@ -267,8 +282,8 @@ export function VHSPlayer() {
 
   // Multi-device sync: refresh rental data on player open so seek picks up
   // progress made elsewhere (other browser/device, or background cast).
-  // Non-blocking: la reprise (useVideoLifecycle) part de la position connue du
-  // magasin ; une position plus récente rendue par fetchMe réarme son écouteur.
+  // Non bloquant : useVideoLifecycle place l'élément à ses métadonnées, sur la
+  // position du magasin à cet instant ; une réponse plus tardive ne le déplace pas.
   useEffect(() => {
     if (!isPlayerOpen) {
       setRentalFreshFor(null);
@@ -498,23 +513,10 @@ export function VHSPlayer() {
     rewindToStartRafRef.current = requestAnimationFrame(animate);
   }, [rewindingToStart, stopRW]);
 
-  // Mobile ghost-click guard: when openPlayer fires from a touchstart on the
-  // seated TV menu (OK button), the synthesized click event arrives ~50-100ms
-  // later — by which time VHSPlayer has mounted and its eject button is at the
-  // same screen coordinate. That click then fires handleEject which closes the
-  // player immediately. We block eject for the first 500ms after mount to
-  // swallow the ghost click without blocking legitimate user-initiated ejects.
-  const mountedAtRef = useRef(performance.now());
-  useEffect(() => {
-    if (isPlayerOpen) mountedAtRef.current = performance.now();
-  }, [isPlayerOpen]);
-
   // Eject: save position + close player (or rewind prompt at 80%+)
   const handleEject = useCallback(() => {
-    if (performance.now() - mountedAtRef.current < 500) {
-      // Likely a ghost click from the touchstart that opened the player.
-      return;
-    }
+    // Likely a ghost click from the touchstart that opened the player (ghostClick, see mountedAtRef).
+    if (ghostClick(mountedAtRef.current, performance.now())) return;
 
     const video = videoRef.current;
     if (video && currentPlayingFilm && video.duration > 0) {
@@ -909,7 +911,7 @@ export function VHSPlayer() {
       closePlayer();
     }
   }, [currentPlayingFilm, stopRW, rental?.rewindClaimed, closePlayer, updateRentalProgress]);
-  // La fin du film, la reprise à l'ouverture et la position d'un élément remonté (autre version, « Réessayer ») suivent
+  // La fin du film et la place de chaque élément, à l'ouverture comme remonté (autre version, « Réessayer »), suivent
   // l'élément <video> courant ; où il reprend se décide dans video-swap (resumeSeek), sur la durée du fichier.
   useVideoLifecycle({ videoRef, videoKey, rentalPosition: rental?.watchPosition ?? 0, onEnded: handleEnded });
 
@@ -1330,7 +1332,7 @@ export function VHSPlayer() {
           onPick={v => { choose(v); closeVersionList(); }}
           onAnswer={answerQuestion}
           onClose={closeVersionList}
-          onQuit={closePlayer}
+          onQuit={quitQuestion}
         />
       )}
 

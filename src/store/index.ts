@@ -6,7 +6,7 @@ import { preloadPosterImage } from '../utils/CassetteTextureArray';
 import { fetchVHSCoverData } from '../utils/VHSCoverGenerator';
 import { parseServerDate } from '../utils/server-date';
 import { rentalsRefreshOutcome } from '../utils/rentals-refresh';
-import { parseVersionChoice } from '../utils/version-choice';
+import { keepsVersionPref, parseVersionChoice } from '../utils/version-choice';
 import { createCastSlice, type CastSlice } from './slices/cast';
 import { createVersionSlice, filmVersionsAfterRead, type VersionSlice } from './slices/version';
 import { createManagerSlice } from './slices/manager';
@@ -518,9 +518,14 @@ export const useStore = create<VideoClubState>()(
             // Les choix par film de ce seul compte, pour ses films encore loués ; jamais ceux d'un visiteur précédent.
             ...filmVersionsAfterRead(get(), data.user.id, data.activeRentals.map((r) => r.film_id)),
           });
-        } catch {
-          // Non connecté, pas d'erreur. Les choix par film et leur propriétaire restent sur l'appareil.
-          set({ isAuthenticated: false, authUser: null, rentalHistory: [], userReviews: [], reviewEligibility: {}, weeklyBonusStatus: null, versionPref: null });
+        } catch (error) {
+          // Non connecté, pas d'erreur. Les choix par film et leur propriétaire restent sur l'appareil. La version préférée
+          // ne part que sur un vrai 401 (keepsVersionPref) : une panne ne fait pas changer la version en plein film.
+          const status = error instanceof ApiError ? error.status : null;
+          set({
+            isAuthenticated: false, authUser: null, rentalHistory: [], userReviews: [], reviewEligibility: {}, weeklyBonusStatus: null,
+            ...(keepsVersionPref(status) ? {} : { versionPref: null }),
+          });
         }
       },
 

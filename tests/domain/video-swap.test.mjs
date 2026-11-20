@@ -93,21 +93,31 @@ function depArrays(src) {
 test('VIDÉO REMONTÉE: chaque effet de useVideoLifecycle suit la key de l\'élément <video>', () => {
   const src = read(LIFECYCLE);
   const deps = depArrays(src);
-  assert.equal(deps.length >= 3, true, `trois effets attendus, ${deps.length} tableaux trouvés`);
+  // Deux effets depuis la vague de la partie A : la fin du film, et la place de l'élément (ouverture et remontage).
+  assert.equal(deps.length >= 2, true, `deux effets attendus, ${deps.length} tableaux trouvés`);
   for (const d of deps) assert.match(d, /\bvideoKey\b/, `tableau de dépendances sans videoKey : [${d}]`);
 });
 
-test('VIDÉO REMONTÉE: fin du film, reprise à l\'ouverture et position rétablie, décidées par la fonction pure', () => {
+// Relecture d'ensemble de la partie A (I2) : la reprise à l'ouverture attendait `canplay`, alors que les sauvegardes
+// (éjection, fermeture, pause) écrivent dès que la durée est connue. Quitter entre les métadonnées et `canplay` — longue
+// attente sur une liaison lente, sans fin quand la vidéo est retenue (question, « Regarder sur TV ? ») — écrasait la
+// position enregistrée par 0. Et l'écouteur, réarmé à chaque sauvegarde, ramenait après ⏮ le film à l'ancienne position.
+test('REPRISE: l\'élément est placé dès ses métadonnées, une seule fois — jamais au canplay, jamais réarmé par une sauvegarde', () => {
   const src = read(LIFECYCLE);
   assert.match(src, /addEventListener\('ended', onEnded\)/, 'la fin du film appelle onEnded');
-  assert.match(src, /addEventListener\('canplay', [^)]*\{ once: true \}\)/, 'la reprise à l\'ouverture attend canplay');
-  assert.match(src, /addEventListener\('loadedmetadata', [^)]*\{ once: true \}\)/, 'le remontage attend les métadonnées du nouvel élément');
-  assert.ok(src.includes('readyState'), 'des métadonnées déjà là (cache) ne font pas manquer le remontage');
-  // Les deux placements passent par resumeSeek, la transmission par leavingTime : plus aucune règle écrite à la main.
-  assert.equal((src.match(/resumeSeek\(\{/g) ?? []).length, 2, 'ouverture et remontage : resumeSeek');
-  assert.match(src, /resumeSeek\(\{ currentTime: video\.currentTime, elementTime: 0, rentalPosition, duration: video\.duration \}\)/, 'ouverture : aucun élément précédent');
+  assert.ok(!/addEventListener\('canplay'/.test(src), 'plus aucun écouteur canplay');
+  assert.match(src, /addEventListener\('loadedmetadata', place, \{ once: true \}\)/, 'la place se prend aux métadonnées du nouvel élément');
+  assert.match(src, /if \(video\.readyState >= HTMLMediaElement\.HAVE_METADATA\) place\(\);/, 'des métadonnées déjà là (cache) : tout de suite');
+  // Une seule pose, la même pour l'ouverture (rien à transmettre : 0) et le remontage (la seconde de l'élément remplacé).
+  assert.equal((src.match(/resumeSeek\(\{/g) ?? []).length, 1, 'une seule pose, par resumeSeek');
+  assert.match(src, /resumeSeek\(\{ currentTime: video\.currentTime, elementTime: pending, rentalPosition: rentalPositionRef\.current, duration: video\.duration \}\)/, 'position de la location lue à l\'arrivée des métadonnées');
+  assert.match(src, /let pending: number \| null = leftRef\.current \?\? 0;/, 'à l\'ouverture, aucun élément précédent : 0');
   assert.ok(src.includes('leavingTime({'), 'la seconde transmise : leavingTime');
   assert.ok(!/Math\.max|currentTime < 1/.test(src), 'aucune règle de reprise réécrite dans le crochet');
+  // L'effet de la pose ne dépend pas de la position enregistrée : une sauvegarde (après ⏮, à la pause) ne réarme rien.
+  const at = src.indexOf("addEventListener('loadedmetadata'");
+  const deps = src.slice(src.indexOf('}, [', at), src.indexOf(']);', at) + 3);
+  assert.match(deps, /^\}, \[videoRef, videoKey\]\);$/, `dépendances de la pose : ${deps}`);
 });
 
 test('REPRISE: le départ sur la télé suit la même règle que l\'appareil', () => {

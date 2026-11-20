@@ -287,7 +287,11 @@ test('VERSION LECTEUR: « Retour » sous la question ferme le lecteur, sans rien
   const css = read('src/components/player/PlayerVersionPanel.module.css');
   assert.match(css, /\.quit\s*\{[^}]*min-height: 44px/, 'zone d\'appui de 44 px');
   const src = read(PLAYER);
-  assert.ok(src.includes('onQuit={closePlayer}'), 'le lecteur se ferme, rien n\'est choisi');
+  // Le lecteur se ferme, rien n'est choisi — par quitQuestion, qui ignore d'abord le clic fantôme de l'ouverture
+  // (relecture d'ensemble de la partie A, I3 ; garde testée dans cast-on-open.test.mjs).
+  assert.ok(src.includes('onQuit={quitQuestion}'), 'le lecteur se ferme par quitQuestion');
+  const quit = src.slice(src.indexOf('const quitQuestion = () => {'), src.indexOf('\n  };', src.indexOf('const quitQuestion')));
+  assert.ok(quit.includes('closePlayer()') && !quit.includes('choose('), 'quitQuestion ferme le lecteur sans rien choisir');
   // Échap sous la question fait la même chose que « Retour ».
   const keys = src.slice(src.indexOf('if (versionPanelShown) {'), src.indexOf('// Échap ferme le lecteur même sans vidéo montée'));
   assert.match(keys, /if \(asking\) closePlayer\(\);/, 'Échap sous la question = « Retour »');

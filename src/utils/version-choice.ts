@@ -283,3 +283,13 @@ export function keptFilmVersions(i: { map: unknown; owner: unknown; accountId: n
   if (i.owner !== i.accountId) return {};
   return prunedFilmVersions(readableFilmVersions(i.map), i.activeFilmIds);
 }
+
+/**
+ * La lecture du compte (`fetchMe`) vient d'échouer : la version préférée reste-t-elle ? Seul un 401 dit que le visiteur
+ * n'est plus connecté — sa préférence part avec lui. Une panne réseau ou une erreur du serveur la gardent : le lecteur
+ * relit le compte à chaque ouverture, et la version retombait sinon sur le défaut en plein film, sans aucune note.
+ * `failedStatus` : le statut HTTP de l'échec, null sans réponse (réseau).
+ */
+export function keepsVersionPref(failedStatus: number | null): boolean {
+  return failedStatus !== 401;
+}

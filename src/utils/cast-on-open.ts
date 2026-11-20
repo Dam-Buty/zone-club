@@ -42,6 +42,19 @@ export function playHeldHere(i: { tvOwnsFilm: boolean; failure: boolean; questio
   return i.tvOwnsFilm || i.failure || i.question;
 }
 
+/** Durée pendant laquelle un appui suivant l'ouverture du lecteur est tenu pour son clic fantôme (voir ghostClick). */
+export const GHOST_CLICK_MS = 500;
+
+/**
+ * Un appui reçu moins de GHOST_CLICK_MS après l'ouverture du lecteur est le clic fantôme du toucher qui l'a ouvert : le
+ * menu de la télé assise ouvre le lecteur au `touchstart`, et le clic synthétisé arrive 50 à 100 ms plus tard, à la même
+ * place — sur l'éjection, ou sur une réponse de la question des sous-titres et son « Retour », affichés dès l'ouverture.
+ * Il est ignoré ; un vrai appui, plus tardif, passe.
+ */
+export function ghostClick(openedAt: number, now: number): boolean {
+  return now - openedAt < GHOST_CLICK_MS;
+}
+
 /**
  * Appareil Apple dont le navigateur sait faire AirPlay — c'est-à-dire Safari : la TV y passe par
  * AirPlay, pas par le Cast. Règle de « Regarder sur TV » (lecteur et borne) : agent Apple ET AirPlay

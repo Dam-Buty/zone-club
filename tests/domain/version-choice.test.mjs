@@ -6,7 +6,7 @@ import {
   versionName, versionSubLabel, defaultVersion, otherVersion,
   decideVersion, resolvedVersion, versionRows, versionLine,
   nextAudio, nextSubtitle, prunedFilmVersions,
-  readableFilmVersions, filmChoiceIn, keptFilmVersions,
+  readableFilmVersions, filmChoiceIn, keptFilmVersions, keepsVersionPref,
 } from '../../src/utils/version-choice.ts';
 
 // Une seule décision de version (spec 2026-11-19-versions-et-erreurs-de-lecture, § 4.1) : ce que le visiteur demande
@@ -429,4 +429,14 @@ test('VERSION: après une lecture du compte, ses choix pour ses films encore lou
     assert.deepEqual(kept, {}, JSON.stringify(bad));
   }
   assert.deepEqual(map, { 42: VO, 7: VOSTFR }, 'jamais modifiée');
+});
+
+// Relecture d'ensemble de la partie A (I1) : `fetchMe` posait « aucune préférence » sur tout échec, panne réseau
+// comprise, alors que les locations restaient. Le lecteur relit le compte à chaque ouverture : une requête ratée faisait
+// retomber la décision sur le défaut, et la vidéo se remontait en VF en plein film, sans aucune note.
+test('VERSION: une lecture du compte ratée ne garde la version préférée que si le visiteur est encore connecté', () => {
+  assert.equal(keepsVersionPref(401), false, '401 : déconnecté, la préférence part avec le compte');
+  for (const status of [null, 0, 400, 403, 404, 429, 500, 502, 503]) {
+    assert.equal(keepsVersionPref(status), true, `échec ${String(status)} : la préférence reste`);
+  }
 });

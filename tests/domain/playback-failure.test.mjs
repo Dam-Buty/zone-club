@@ -161,7 +161,7 @@ test('ÉCHEC LECTURE: l\'enregistrement des 10 s n\'écrit rien sans durée conn
   assert.match(loop, /if \(!video \|\| !\(video\.duration > 0\) \|\| video\.paused\) return;/, 'durée NaN ou nulle : rien n\'est écrit');
   assert.ok(src.includes('useVideoLifecycle({ videoRef, videoKey,'), 'le lecteur confie la vie de l\'élément au crochet, avec sa key');
   const lifecycle = read('src/components/player/useVideoLifecycle.ts');
-  for (const event of ['ended', 'canplay']) {
+  for (const event of ['ended', 'loadedmetadata']) {
     const listen = lifecycle.indexOf(`video.addEventListener('${event}'`);
     assert.ok(listen > 0, `écouteur ${event} introuvable`);
     const deps = lifecycle.slice(listen, lifecycle.indexOf('\n', lifecycle.indexOf('}, [', listen)));

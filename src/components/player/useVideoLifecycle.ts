@@ -4,7 +4,7 @@ import { leavingTime, resumeSeek } from '../../utils/video-swap';
 // La vie de l'élément <video> du lecteur (docs/superpowers/specs/2026-11-19-versions-et-erreurs-de-lecture-design.md,
 // § 4.3 b). L'élément est remonté à chaque autre piste audio et à chaque « Réessayer » (sa `key`) : tout ce qui
 // l'écoute suit cette key, sinon la fin du film n'ouvrait plus « BE KIND REWIND » après un changement de version, et un
-// changement fait avant la première image repartait de zéro. Les trois effets dépendent de `videoKey`. Où placer un
+// changement fait avant la première image repartait de zéro. Les deux effets dépendent de `videoKey`. Où placer un
 // élément se décide dans src/utils/video-swap.ts (resumeSeek, leavingTime), testé : ce crochet ne fait qu'écouter.
 
 /**
@@ -28,47 +28,34 @@ export function useVideoLifecycle(i: {
     return () => video.removeEventListener('ended', onEnded);
   }, [videoRef, videoKey, onEnded]);
 
-  // Reprise à l'ouverture — et sur chaque nouvel élément qui n'a pas déjà sa position : à la première lecture possible,
-  // un élément encore au début part de la position de la location (aucun élément précédent). Une position relue après
-  // l'ouverture (fetchMe) réarme l'écouteur.
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-    const resume = () => {
-      const at = resumeSeek({ currentTime: video.currentTime, elementTime: 0, rentalPosition, duration: video.duration });
-      if (at !== null) video.currentTime = at;
-    };
-    video.addEventListener('canplay', resume, { once: true });
-    return () => video.removeEventListener('canplay', resume);
-  }, [videoRef, videoKey, rentalPosition]);
-
-  // Position rétablie après un remontage. Un élément qui s'en va laisse sa seconde (leavingTime) ; le suivant la reprend
-  // dès ses métadonnées (resumeSeek). La position de la location est lue à l'arrivée des métadonnées, pas à la pose.
+  // La place de chaque nouvel élément, une seule fois, dès ses métadonnées — à l'ouverture comme après un remontage. Pas
+  // au `canplay` : entre les métadonnées et la première lecture possible (longue sur une liaison lente, sans fin quand
+  // la vidéo est retenue), la durée est connue et quitter le lecteur enregistrait la position 0. Une sauvegarde ne
+  // réarme rien : après ⏮, l'élément n'est plus ramené à la position enregistrée. La position de la location est lue à
+  // l'arrivée des métadonnées, pas à la pose ; une position rendue plus tard (fetchMe) ne déplace plus un élément placé.
   const rentalPositionRef = useRef(rentalPosition);
   useEffect(() => {
     rentalPositionRef.current = rentalPosition;
   });
-  const leftRef = useRef<{ element: HTMLVideoElement; time: number } | null>(null);
+  // La seconde que laisse l'élément qui s'en va ; le suivant la reprend (null avant le premier élément).
+  const leftRef = useRef<number | null>(null);
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
-    const left = leftRef.current;
-    // La seconde que cet élément doit encore reprendre : celle de l'élément qu'il remplace (null à l'ouverture).
-    let pending = left !== null && left.element !== video ? left.time : null;
-    const restore = () => {
+    // La seconde que cet élément doit encore reprendre : celle de l'élément qu'il remplace, 0 à l'ouverture.
+    let pending: number | null = leftRef.current ?? 0;
+    const place = () => {
       if (pending === null) return;
       const at = resumeSeek({ currentTime: video.currentTime, elementTime: pending, rentalPosition: rentalPositionRef.current, duration: video.duration });
       pending = null;
       if (at !== null) video.currentTime = at;
     };
-    if (pending !== null) {
-      // Des métadonnées déjà là (fichier en cache) n'attendent pas un événement passé.
-      if (video.readyState >= HTMLMediaElement.HAVE_METADATA) restore();
-      else video.addEventListener('loadedmetadata', restore, { once: true });
-    }
+    // Des métadonnées déjà là (fichier en cache) n'attendent pas un événement passé.
+    if (video.readyState >= HTMLMediaElement.HAVE_METADATA) place();
+    else video.addEventListener('loadedmetadata', place, { once: true });
     return () => {
-      video.removeEventListener('loadedmetadata', restore);
-      leftRef.current = { element: video, time: leavingTime({ pending, currentTime: video.currentTime }) };
+      video.removeEventListener('loadedmetadata', place);
+      leftRef.current = leavingTime({ pending, currentTime: video.currentTime });
     };
   }, [videoRef, videoKey]);
 }
