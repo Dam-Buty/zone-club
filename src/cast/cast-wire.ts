@@ -42,19 +42,20 @@ export interface CastMediaLike {
   currentTime?: number;
 }
 
-/** La piste demandée, sinon l'autre, sinon l'adresse de la location ; une adresse vide n'est pas une source. */
+/**
+ * L'adresse de la piste demandée, ou rien. Jamais l'autre piste ni l'adresse générique de la location à sa place : la
+ * version envoyée à la télé est décidée en amont (decideVersion, qui ne rend que des pistes offertes) ; la remplacer ici
+ * jouerait en silence une autre langue que celle annoncée. Une adresse vide n'est pas une source.
+ */
 export function castSourceFor(
-  rental: { videoUrl?: string; streamingUrls?: { vf: string | null; vo: string | null } } | null | undefined,
+  rental: { streamingUrls?: { vf: string | null; vo: string | null } } | null | undefined,
   audio: 'vf' | 'vo',
 ): string | null {
-  const urls = rental?.streamingUrls;
-  const other = audio === 'vf' ? 'vo' : 'vf';
-  return urls?.[audio] || urls?.[other] || rental?.videoUrl || null;
+  return rental?.streamingUrls?.[audio] || null;
 }
 
 /** Ce que la tranche du magasin lit d'une location pour lancer le Cast : où la prendre et d'où reprendre. */
 export interface CastRentalLike {
-  videoUrl?: string;
   streamingUrls?: { vf: string | null; vo: string | null };
   /** La position enregistrée (secondes). La progression n'entre pas dans le départ : elle ne redescend jamais. */
   watchPosition: number;
@@ -77,20 +78,19 @@ export function castStartAt(rental: Pick<CastRentalLike, 'watchPosition'> | null
 }
 
 /**
- * La piste de sous-titres à activer au chargement. Un choix du visiteur est honoré tel quel : « off » coupe, une
- * langue absente ne donne rien (jamais une autre à sa place). Sans choix, comme le lecteur d'avant : le français
- * s'il existe, sinon la première langue disponible, sinon aucune.
+ * La piste de sous-titres à activer au chargement : celle de la version décidée, telle quelle. « off » coupe, une
+ * langue absente ne donne rien (jamais une autre à sa place). Plus de défaut : la version arrive toujours décidée
+ * (decideVersion), sous-titres compris — un français choisi d'office ici contredirait une VF demandée sans sous-titres.
  */
-export function castSubtitleId(subtitles: CastMediaRequest['subtitles'], asked: 'off' | 'fr' | 'en' | undefined): number | null {
+export function castSubtitleId(subtitles: CastMediaRequest['subtitles'], asked: 'off' | 'fr' | 'en'): number | null {
   if (asked === 'off') return null;
-  if (asked !== undefined) return subtitles.find((track) => track.language === asked)?.id ?? null;
-  return (subtitles.find((track) => track.language === 'fr') ?? subtitles[0])?.id ?? null;
+  return subtitles.find((track) => track.language === asked)?.id ?? null;
 }
 
 /**
- * Le média que la machine garde entre le sélecteur et le chargement. Rien sans source : la location n'a aucune
- * piste lisible, il n'y a rien à envoyer à la TV et la tranche le dit au visiteur. `subtitle` : le choix du visiteur,
- * absent s'il n'en a pas fait (voir castSubtitleId).
+ * Le média que la machine garde entre le sélecteur et le chargement. Rien sans source : la location n'a pas la piste
+ * de la version décidée, il n'y a rien à envoyer à la TV et la tranche le dit au visiteur. `audio` et `subtitle` : la
+ * version décidée (voir castSourceFor et castSubtitleId), tous deux obligatoires.
  */
 export function castMediaRequest(i: {
   rental: CastRentalLike | null | undefined;
@@ -98,7 +98,7 @@ export function castMediaRequest(i: {
   title: string | null | undefined;
   startAt?: number;
   subtitles: CastMediaRequest['subtitles'];
-  subtitle?: 'off' | 'fr' | 'en';
+  subtitle: 'off' | 'fr' | 'en';
 }): CastMediaRequest | null {
   const url = castSourceFor(i.rental, i.audio);
   if (!url) return null;
@@ -107,7 +107,8 @@ export function castMediaRequest(i: {
     title: i.title?.trim() || CAST_FALLBACK_TITLE,
     // Sans départ demandé (« Sur ma télé » de la borne), la durée du FICHIER n'est pas connue ici : le client n'a que la
     // durée TMDB (`runtime`), qui n'est pas celle du fichier (fichiers tronqués, versions longues). La position est
-    // reprise telle quelle — même dans les 10 dernières secondes, seul cas où la télé et le téléphone diffèrent.
+    // reprise telle quelle — même dans les 10 dernières secondes : l'un des trois écarts entre la télé et le téléphone
+    // (les deux autres : « Regarder sur TV » avant les métadonnées, et takeCastResume ; voir src/utils/video-swap.ts).
     startAt: castStartAt(i.rental, i.startAt, null),
     subtitles: i.subtitles,
     activeSubtitleId: castSubtitleId(i.subtitles, i.subtitle),

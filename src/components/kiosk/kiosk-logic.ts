@@ -7,7 +7,7 @@
 import type { AisleType, Film } from '../../types';
 import type { RentalHistoryEntry, ReviewEligibilityMap } from '../../store';
 import type { CastPhase, CastView } from '../../cast/cast-machine';
-import { resolvedVersion, versionLine } from '../../utils/version-choice.ts';
+import { NO_PLAYABLE_VERSION, resolvedVersion, versionLine } from '../../utils/version-choice.ts';
 import type { VersionDecision, VersionOffer } from '../../utils/version-choice.ts';
 
 // ===== Onglets =====
@@ -606,15 +606,13 @@ export function tvChoiceLine(i: { airPlay: boolean; replacing: { title: string |
 // § 4.1, 4.3 a et 4.4) =====
 // Le panneau, le lecteur et le Cast partent de la même décision (`decideVersion`, rendue par `versionDecisionFor`).
 
-/** Le film loué n'a ni VF ni VO lisible : le lancement le dit au lieu de partir. */
-export const NO_PLAYABLE_VERSION = "Ce film n'a aucune version lisible pour le moment.";
-
 /**
- * « Sur ce téléphone » / « Sur ma télé » : une version décidée se lance (une substitution comprise : sa note est déjà
- * écrite sous la ligne « Version ») ; la question des sous-titres se pose d'abord, une fois, au moment de lancer ; sans
- * aucune version lisible, le lancement est refusé (`NO_PLAYABLE_VERSION`).
+ * « Sur ce téléphone » / « Sur ma télé » : une version décidée se lance (sa note de substitution est déjà écrite) ; la
+ * question des sous-titres se pose d'abord, une fois ; sans version lisible, refus (`NO_PLAYABLE_VERSION`, version-choice).
+ * Location disparue (`rented` faux : échue ou rendue, panneau ouvert) : le panneau se ferme — pas un film sans version.
  */
-export function readyLaunchStep(d: VersionDecision): 'launch' | 'ask' | 'refuse' {
+export function readyLaunchStep(d: VersionDecision, rented: boolean): 'launch' | 'ask' | 'refuse' | 'close' {
+  if (!rented) return 'close';
   switch (d.kind) {
     case 'play': return 'launch';
     case 'ask': return 'ask';

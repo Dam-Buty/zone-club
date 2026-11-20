@@ -17,18 +17,25 @@ const getOut = (o = {}) => ({
   subtitles: [{ id: 1, url: 's', language: 'fr', label: 'Français' }], activeSubtitleId: 1, ...o,
 });
 
-test('CAST FIL: source = piste demandée, sinon l\'autre, sinon rien', () => {
+// Relecture d'ensemble de la partie A (m1) : la source retombait sur l'autre piste, puis sur l'adresse générique de la
+// location — la télé pouvait jouer en silence une autre langue que la version annoncée. La version arrive décidée
+// (decideVersion ne rend que des pistes offertes) : la source est sa piste, ou rien.
+test('CAST FIL: source = la piste demandée, sinon rien — jamais l\'autre piste', () => {
   assert.equal(castSourceFor({ streamingUrls: { vf: 'a', vo: 'b' } }, 'vo'), 'b');
-  assert.equal(castSourceFor({ streamingUrls: { vf: null, vo: 'b' } }, 'vf'), 'b');
+  assert.equal(castSourceFor({ streamingUrls: { vf: 'a', vo: 'b' } }, 'vf'), 'a');
+  assert.equal(castSourceFor({ streamingUrls: { vf: null, vo: 'b' } }, 'vf'), null, 'VF demandée, absente : rien, pas la VO');
+  assert.equal(castSourceFor({ streamingUrls: { vf: 'a', vo: null } }, 'vo'), null, 'VO demandée, absente : rien, pas la VF');
   assert.equal(castSourceFor({ streamingUrls: { vf: null, vo: null } }, 'vf'), null);
   assert.equal(castSourceFor(null, 'vf'), null);
 });
-test('CAST FIL: sans piste, l\'adresse de la location ; une adresse vide n\'est pas une source', () => {
-  assert.equal(castSourceFor({ videoUrl: 'v', streamingUrls: { vf: null, vo: null } }, 'vo'), 'v');
-  assert.equal(castSourceFor({ videoUrl: 'v' }, 'vf'), 'v');
-  // Le magasin pose videoUrl à '' quand la location n'a aucune piste.
+test('CAST FIL: jamais l\'adresse générique de la location ; une adresse vide n\'est pas une source', () => {
+  assert.equal(castSourceFor({ videoUrl: 'v', streamingUrls: { vf: null, vo: null } }, 'vo'), null);
+  assert.equal(castSourceFor({ videoUrl: 'v' }, 'vf'), null);
   assert.equal(castSourceFor({ videoUrl: '', streamingUrls: { vf: '', vo: null } }, 'vf'), null);
   assert.equal(castSourceFor(undefined, 'vo'), null);
+  const wire = readFileSync(path.join(process.cwd(), 'src/cast/cast-wire.ts'), 'utf8');
+  const fn = wire.slice(wire.indexOf('export function castSourceFor('), wire.indexOf('\n}\n', wire.indexOf('export function castSourceFor(')));
+  assert.ok(!/videoUrl|other/.test(fn), 'castSourceFor ne lit ni videoUrl ni l\'autre piste');
 });
 
 test('CAST FIL: la demande de chargement porte le film', () => {
@@ -160,15 +167,17 @@ test('CAST FIL: la règle de la progression a quitté le fil ; il délègue à l
 test('CAST FIL: la demande de Cast d\'un film = source, titre, départ, sous-titres', () => {
   const media = castMediaRequest({ rental: rental(), audio: 'vo', title: 'Get Out', subtitles: subs, subtitle: 'fr' });
   assert.deepEqual(media, { url: 'https://s/vo.mp4', title: 'Get Out', startAt: 1234, subtitles: subs, activeSubtitleId: 1 });
-  assert.equal(castMediaRequest({ rental: rental(), audio: 'vf', title: 'Get Out', startAt: 5, subtitles: [] }).startAt, 5);
+  assert.equal(castMediaRequest({ rental: rental(), audio: 'vf', title: 'Get Out', startAt: 5, subtitles: [], subtitle: 'off' }).startAt, 5);
   // Une location vue à 100 % puis revue jusqu'à 201 s : « Sur ma télé » de la borne la reprend à 201 s.
-  assert.equal(castMediaRequest({ rental: rental({ watchProgress: 100, watchPosition: 201 }), audio: 'vf', title: 'x', subtitles: [] }).startAt, 201);
+  assert.equal(castMediaRequest({ rental: rental({ watchProgress: 100, watchPosition: 201 }), audio: 'vf', title: 'x', subtitles: [], subtitle: 'off' }).startAt, 201);
 });
 test('CAST FIL: sans source il n\'y a pas de demande ; sans titre, le nom du club', () => {
-  assert.equal(castMediaRequest({ rental: rental({ videoUrl: '', streamingUrls: { vf: null, vo: null } }), audio: 'vf', title: 'x', subtitles: [] }), null);
-  assert.equal(castMediaRequest({ rental: null, audio: 'vf', title: 'x', subtitles: [] }), null);
-  assert.equal(castMediaRequest({ rental: rental(), audio: 'vf', title: null, subtitles: [] }).title, 'Zone Club');
-  assert.equal(castMediaRequest({ rental: rental(), audio: 'vf', title: '   ', subtitles: [] }).title, 'Zone Club');
+  assert.equal(castMediaRequest({ rental: rental({ videoUrl: '', streamingUrls: { vf: null, vo: null } }), audio: 'vf', title: 'x', subtitles: [], subtitle: 'off' }), null);
+  assert.equal(castMediaRequest({ rental: null, audio: 'vf', title: 'x', subtitles: [], subtitle: 'off' }), null);
+  // La piste de la version absente : pas de demande, même si l'autre piste et l'adresse générique existent.
+  assert.equal(castMediaRequest({ rental: rental({ streamingUrls: { vf: null, vo: 'https://s/vo.mp4' } }), audio: 'vf', title: 'x', subtitles: [], subtitle: 'off' }), null);
+  assert.equal(castMediaRequest({ rental: rental(), audio: 'vf', title: null, subtitles: [], subtitle: 'off' }).title, 'Zone Club');
+  assert.equal(castMediaRequest({ rental: rental(), audio: 'vf', title: '   ', subtitles: [], subtitle: 'off' }).title, 'Zone Club');
 });
 
 // La location qui disparaît pendant un Cast arrête la TV ; pendant que les locations ne sont pas encore chargées,
@@ -193,20 +202,21 @@ test('CAST FIL: rien à arrêter sans film sur la TV, ni pour une prévisualisat
   assert.equal(rentalGoneFilm(own({ tracked: false })), null);
 });
 
-// Sous-titres : sans choix du visiteur, ceux du lecteur d'avant — français s'ils existent, sinon la première langue
-// disponible, sinon aucun. Seules les URL absolues sont déclarées à la TV (buildCastSubtitleTracks) : testé avec https.
-test('CAST FIL: sans choix, le français s\'il existe', () => {
-  assert.equal(castSubtitleId([...subs, subsEn], undefined), 1);
-  assert.equal(castSubtitleId([subsEn, ...subs], undefined), 1, 'l\'ordre des pistes ne compte pas');
-  assert.equal(castMediaRequest({ rental: rental(), audio: 'vf', title: 'x', subtitles: [...subs, subsEn] }).activeSubtitleId, 1);
+// Sous-titres : ceux de la version décidée, toujours donnés (relecture d'ensemble de la partie A, m1 : le défaut
+// français de castSubtitleId, reste du lecteur d'avant, contredisait une VF demandée sans sous-titres). Seules les URL
+// absolues sont déclarées à la TV (buildCastSubtitleTracks) : testé avec https.
+test('CAST FIL: la piste de sous-titres de la version décidée, telle quelle, quel que soit l\'ordre des pistes', () => {
+  assert.equal(castSubtitleId([...subs, subsEn], 'fr'), 1);
+  assert.equal(castSubtitleId([subsEn, ...subs], 'fr'), 1, 'l\'ordre des pistes ne compte pas');
+  assert.equal(castMediaRequest({ rental: rental(), audio: 'vo', title: 'x', subtitles: [...subs, subsEn], subtitle: 'en' }).activeSubtitleId, 2);
 });
-test('CAST FIL: sans choix et sans français, la première langue disponible', () => {
-  assert.equal(castSubtitleId([subsEn], undefined), 2);
-  assert.equal(castMediaRequest({ rental: rental(), audio: 'vo', title: 'x', subtitles: [subsEn] }).activeSubtitleId, 2);
-});
-test('CAST FIL: sans choix et sans sous-titres, aucun', () => {
-  assert.equal(castSubtitleId([], undefined), null);
-  assert.equal(castMediaRequest({ rental: rental(), audio: 'vf', title: 'x', subtitles: [] }).activeSubtitleId, null);
+test('CAST FIL: VF sans sous-titres → aucune piste active, même quand le français existe (plus de défaut)', () => {
+  assert.equal(castMediaRequest({ rental: rental(), audio: 'vf', title: 'x', subtitles: [...subs, subsEn], subtitle: 'off' }).activeSubtitleId, null);
+  assert.equal(castSubtitleId([], 'off'), null);
+  const wire = readFileSync(path.join(process.cwd(), 'src/cast/cast-wire.ts'), 'utf8');
+  assert.match(wire, /export function castSubtitleId\(subtitles: CastMediaRequest\['subtitles'\], asked: 'off' \| 'fr' \| 'en'\): number \| null \{/, 'asked obligatoire');
+  assert.match(wire, /\n {2}subtitle: 'off' \| 'fr' \| 'en';\n\}\): CastMediaRequest \| null \{/, 'castMediaRequest : subtitle obligatoire');
+  assert.ok(!/subtitles\[0\]/.test(wire), 'plus de « première langue disponible » d\'office');
 });
 test('CAST FIL: « off » demandé coupe les sous-titres, même si le français existe', () => {
   assert.equal(castSubtitleId([...subs, subsEn], 'off'), null);

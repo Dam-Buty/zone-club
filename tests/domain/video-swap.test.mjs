@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { readText } from '../helpers/repo.mjs';
-import { RESUME_END_MARGIN_S, swapResumeTime, resumeSeek, leavingTime } from '../../src/utils/video-swap.ts';
+import { RESUME_END_MARGIN_S, swapResumeTime, resumeSeek, leavingTime, handedOverTime } from '../../src/utils/video-swap.ts';
 
 // La vidéo du lecteur est remontée à chaque autre piste audio (sa `key`) et à chaque « Réessayer » (spec
 // 2026-11-19-versions-et-erreurs-de-lecture, § 4.3 b). Avant la tâche 8, la fin du film et la reprise restaient
@@ -111,13 +111,27 @@ test('REPRISE: l\'élément est placé dès ses métadonnées, une seule fois �
   // Une seule pose, la même pour l'ouverture (rien à transmettre : 0) et le remontage (la seconde de l'élément remplacé).
   assert.equal((src.match(/resumeSeek\(\{/g) ?? []).length, 1, 'une seule pose, par resumeSeek');
   assert.match(src, /resumeSeek\(\{ currentTime: video\.currentTime, elementTime: pending, rentalPosition: rentalPositionRef\.current, duration: video\.duration \}\)/, 'position de la location lue à l\'arrivée des métadonnées');
-  assert.match(src, /let pending: number \| null = leftRef\.current \?\? 0;/, 'à l\'ouverture, aucun élément précédent : 0');
+  assert.match(src, /let pending: number \| null = handedOverTime\(leftRef\.current, filmId\);/, 'à l\'ouverture (ou pour un autre film) : 0');
   assert.ok(src.includes('leavingTime({'), 'la seconde transmise : leavingTime');
   assert.ok(!/Math\.max|currentTime < 1/.test(src), 'aucune règle de reprise réécrite dans le crochet');
   // L'effet de la pose ne dépend pas de la position enregistrée : une sauvegarde (après ⏮, à la pause) ne réarme rien.
   const at = src.indexOf("addEventListener('loadedmetadata'");
   const deps = src.slice(src.indexOf('}, [', at), src.indexOf(']);', at) + 3);
-  assert.match(deps, /^\}, \[videoRef, videoKey\]\);$/, `dépendances de la pose : ${deps}`);
+  assert.match(deps, /^\}, \[videoRef, videoKey, filmId\]\);$/, `dépendances de la pose : ${deps}`);
+});
+
+// Relecture d'ensemble de la partie A (m4) : la seconde transmise n'était liée à aucun film — le lecteur fermé puis
+// rouvert sur un AUTRE film faisait partir ce film à la seconde où l'on avait quitté le précédent.
+test('REPRISE: la seconde transmise vaut pour le même film seulement ; un autre film l\'ignore', () => {
+  assert.equal(handedOverTime({ filmId: 13, time: 324.5 }, 13), 324.5, 'autre version, « Réessayer » : même film');
+  assert.equal(handedOverTime({ filmId: 13, time: 324.5 }, 294), 0, 'autre film : rien de transmis');
+  assert.equal(handedOverTime(null, 13), 0, 'premier élément');
+  assert.equal(handedOverTime({ filmId: null, time: 50 }, 13), 0);
+  assert.equal(handedOverTime({ filmId: 13, time: 50 }, null), 0, 'lecteur sans film');
+  // Et le crochet la range avec son film.
+  const src = read(LIFECYCLE);
+  assert.match(src, /leftRef\.current = \{ filmId, time: leavingTime\(\{ pending, currentTime: video\.currentTime \}\) \};/);
+  assert.match(read(PLAYER), /useVideoLifecycle\(\{ videoRef, videoKey, filmId: currentPlayingFilm,/, 'le lecteur passe le film');
 });
 
 test('REPRISE: le départ sur la télé suit la même règle que l\'appareil', () => {
@@ -126,5 +140,24 @@ test('REPRISE: le départ sur la télé suit la même règle que l\'appareil', (
   const send = src.slice(start, src.indexOf('}, [', start));
   assert.match(send, /startAt: swapResumeTime\(\{ elementTime: video\?\.currentTime \?\? 0, rentalPosition: rental\?\.watchPosition \?\? 0, duration: video\?\.duration \?\? null \}\)/, 'startAt = swapResumeTime');
   assert.ok(!/Math\.max\(videoRef/.test(src), 'plus de Math.max(currentTime, watchPosition) à part');
-  assert.match(src, /useVideoLifecycle\(\{ videoRef, videoKey, rentalPosition: rental\?\.watchPosition \?\? 0, onEnded: handleEnded \}\)/, 'le crochet reçoit la position brute de la location');
+  assert.match(src, /useVideoLifecycle\(\{ videoRef, videoKey, filmId: currentPlayingFilm, rentalPosition: rental\?\.watchPosition \?\? 0, onEnded: handleEnded \}\)/, 'le crochet reçoit le film et la position brute de la location');
+});
+
+// Relecture d'ensemble de la partie A (m11) : quatre textes disaient qu'un « seul écart » restait entre la télé et le
+// téléphone ; il y en a trois — la borne sans durée de fichier, « Regarder sur TV » avant les métadonnées (sendToTv),
+// et la reprise venue de la télé (takeCastResume).
+test('REPRISE: les textes nomment les trois écarts entre la télé et le téléphone', () => {
+  const places = {
+    'AGENTS.md': read('AGENTS.md'),
+    'src/utils/video-swap.ts': read('src/utils/video-swap.ts'),
+    'src/cast/cast-wire.ts': read('src/cast/cast-wire.ts'),
+    [PLAYER]: read(PLAYER),
+  };
+  for (const [file, text] of Object.entries(places)) {
+    assert.ok(!/[Ss]eul écart|seul cas où la télé|Une seule différence reste|ne se contredisent pas/.test(text), `${file} : plus de « seul écart »`);
+    assert.match(text, /[Tt]rois écarts/, `${file} : trois écarts`);
+  }
+  for (const file of ['AGENTS.md', 'src/utils/video-swap.ts']) {
+    assert.ok(places[file].includes('sendToTv') && places[file].includes('takeCastResume'), `${file} nomme les deux autres écarts`);
+  }
 });

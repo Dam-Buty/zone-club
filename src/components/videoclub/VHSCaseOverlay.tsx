@@ -1089,7 +1089,16 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
   // cause — et pendant la location, au moment de lancer le film : c'est là qu'on veut savoir en quelle
   // langue on va regarder.
   function renderVersionBadges() {
-    if (!filmVersions || (!filmVersions.vf && !filmVersions.vo)) return null;
+    if (!filmVersions) return null;
+    // Aucune version lisible (fichiers absents, ou marqués par `npm run media:check -- --mark`) : la fiche le dit avant la
+    // location, au lieu de se taire jusqu'au refus du serveur.
+    if (!filmVersions.vf && !filmVersions.vo) {
+      return (
+        <span role="status" style={{ display: 'block', marginTop: 6, fontSize: '0.7rem', fontFamily: 'Orbitron, sans-serif', color: '#ff9a3c', letterSpacing: '0.3px', textAlign: 'center' }}>
+          Aucune version lisible pour le moment
+        </span>
+      );
+    }
     const pill = (label: string, on: boolean) => (
       <span
         style={{

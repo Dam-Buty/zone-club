@@ -5,7 +5,7 @@ import api from '../../api';
 import type { Film } from '../../types';
 import { castOwnsFilm, castView } from '../../cast/cast-machine';
 import { versionDecisionFor } from '../../store/slices/version';
-import { resolvedVersion, versionOffer, versionRows, type VersionChoice } from '../../utils/version-choice';
+import { NO_PLAYABLE_VERSION, resolvedVersion, versionOffer, versionRows, type VersionChoice } from '../../utils/version-choice';
 import { KioskAction, type KioskFilmDetail } from './KioskAction';
 import { KioskAuth } from './KioskAuth';
 import { KioskBrowse } from './KioskBrowse';
@@ -30,7 +30,6 @@ import {
   kioskBackAction,
   lcdDevicePixel,
   lcdPitchInDevicePixels,
-  NO_PLAYABLE_VERSION,
   phoneLayout,
   phoneLayoutVars,
   readyLaunchStep,
@@ -366,7 +365,12 @@ export function KioskView() {
    */
   const launchFromReady = (filmId: number, target: ReadyTarget) => {
     const decision = versionDecisionFor(useStore.getState(), filmId);
-    const step = readyLaunchStep(decision);
+    const step = readyLaunchStep(decision, useStore.getState().getRental(filmId) !== undefined);
+    // La location a disparu pendant que le panneau était ouvert : il se ferme, sans parler de version.
+    if (step === 'close') {
+      closeReady();
+      return;
+    }
     if (step === 'ask') {
       setReadySub({ view: 'question', target });
       return;

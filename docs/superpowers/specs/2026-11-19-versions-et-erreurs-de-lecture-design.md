@@ -119,7 +119,9 @@ Quand le film n'offre pas ce qui est demandé :
                      Retour
   ```
 
-  « Retour » referme la question sans lancer le film ni rien retenir — décision de Rusmir du 20/11/2026.
+  « Retour » referme la question sans lancer le film ni rien retenir — décision de Rusmir du 20/11/2026. Dans la
+  borne, il ramène au panneau ; dans le lecteur (ouvert par le vidéoclub, qui pose la question lui-même), il ferme le
+  lecteur.
 
   Si le film n'a aucun sous-titre : « Ce film n'a pas de sous-titres. » — « Continuer en VO sans sous-titres » /
   « Passer en VF ». La réponse vaut pour ce film (source 1) : la question n'est pas reposée à la réouverture. Si
@@ -435,7 +437,8 @@ mais pas de sous-titres français ; seuls des sous-titres anglais existent. Que 
   démarre : « Ce film n'a pas de sous-titres français. La VO existe avec des sous-titres anglais. » —
   « Continuer en VO, sous-titres anglais » / « Passer en VF ». La réponse vaut pour ce film ; la version préférée
   du compte ne change pas. Si le film n'a pas de VF, il n'y a rien à choisir : la VO joue et l'écran écrit ce qui
-  manque.
+  manque. Une troisième ligne, plus discrète, « Retour », referme la question sans rien lancer (décision du
+  20/11/2026, § 4.1).
 - **Ce que j'avais proposé** : lancer la VO avec les sous-titres anglais sans rien demander, en l'écrivant à
   l'écran.
 

@@ -2,10 +2,12 @@
 // lecteur est remontée à chaque autre piste audio et à chaque « Réessayer » : un nouvel élément <video> remplace
 // l'ancien. Une seule règle décide partout où un film reprend : la reprise à l'ouverture et la position rétablie après un
 // remontage (useVideoLifecycle), le départ sur la télé depuis le lecteur (`startAt` de « Regarder sur TV », avec la
-// durée de sa vidéo) et depuis la borne (castStartAt de cast-wire, « Sur ma télé »). Une seule différence reste : sur ce
-// dernier chemin, le client ne connaît pas la durée du fichier (seulement la durée TMDB, qui n'est pas celle du
-// fichier) ; une position enregistrée dans les 10 dernières secondes y est reprise telle quelle sur la télé, alors que le
-// téléphone repart du début. Dans tous les autres cas, le téléphone et la télé partent de la même seconde. Fonctions
+// durée de sa vidéo) et depuis la borne (castStartAt de cast-wire, « Sur ma télé »). Trois écarts restent entre le
+// téléphone et la télé : (1) « Sur ma télé » de la borne — le client ne connaît pas la durée du fichier (seulement la
+// durée TMDB, qui n'est pas celle du fichier) : une position enregistrée dans les 10 dernières secondes part telle quelle
+// sur la télé, alors que le téléphone repart du début ; (2) « Regarder sur TV » touché avant les métadonnées de la vidéo
+// d'ici (`sendToTv`) — durée inconnue aussi, même conséquence ; (3) la reprise venue de la télé (`takeCastResume`) place
+// la vidéo d'ici à la position de la télé (inconnue : celle de la location) sans passer par cette règle. Fonctions
 // pures, sans import : chargées telles quelles par Node dans les tests.
 
 /**
@@ -52,4 +54,13 @@ export function resumeSeek(i: { currentTime: number; elementTime: number; rental
  */
 export function leavingTime(i: { pending: number | null; currentTime: number }): number {
   return i.pending ?? i.currentTime;
+}
+
+/**
+ * La seconde que reprend un nouvel élément, transmise par celui qu'il remplace (`left`, rangée avec son film) : la
+ * sienne pour le même film (autre version, « Réessayer ») ; un autre film l'ignore et part de sa propre location
+ * (0 : rien de transmis). Sans cela, le film suivant ouvert dans le lecteur partait à la seconde du précédent.
+ */
+export function handedOverTime(left: { filmId: number | null; time: number } | null, filmId: number | null): number {
+  return left !== null && filmId !== null && left.filmId === filmId ? left.time : 0;
 }

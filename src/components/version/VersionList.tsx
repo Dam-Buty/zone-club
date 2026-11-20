@@ -33,7 +33,7 @@ export interface VersionListProps {
   /** « Autres versions » : déplier les combinaisons plus rares. */
   onMore(): void;
   onBack(): void;
-  /** Un choix est en cours d'enregistrement : la liste le dit (`aria-busy`) et ses lignes ignorent l'appui. */
+  /** Un choix est en cours d'enregistrement : la liste le dit (`aria-busy`) et ses lignes de version ignorent l'appui. */
   busy?: boolean;
 }
 
@@ -43,12 +43,10 @@ const AUTO_SUB = 'VF quand elle existe, sinon VOSTFR';
 
 export function VersionList({ title, rows, classes, onPick, onMore, onBack, busy = false }: VersionListProps) {
   const waiting = busy || undefined;
-  // Pendant l'enregistrement, un second choix ne part pas ; « Retour », lui, répond toujours (la liste n'enferme pas).
+  // Pendant l'enregistrement, un second choix ne part pas. « Autres versions » ne fait que déplier la liste, rien ne part
+  // au serveur : il répond, comme « Retour » (la liste n'enferme pas, et un appui n'est jamais avalé sans rien montrer).
   const pick = (v: VersionChoice | null) => {
     if (!busy) onPick(v);
-  };
-  const more = () => {
-    if (!busy) onMore();
   };
 
   const versionButton = (key: string, name: string, sub: string, selected: boolean, v: VersionChoice | null) => (
@@ -83,7 +81,7 @@ export function VersionList({ title, rows, classes, onPick, onMore, onBack, busy
             );
           case 'more':
             return (
-              <button key="more" type="button" className={classes.more} onClick={more}>
+              <button key="more" type="button" className={classes.more} onClick={onMore}>
                 Autres versions
               </button>
             );

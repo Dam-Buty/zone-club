@@ -6,8 +6,8 @@ import { db } from '@/lib/db';
 import { briefBrowser, parsePlaybackFailure, PLAYBACK_FAILURE_MAX_BODY_BYTES } from '@/lib/playback-failure-parse';
 import { savePlaybackFailure } from '@/lib/playback-failures';
 
-// POST — le navigateur dit qu'un film ne démarre pas : quel film, quelle version, où (appareil ou télé), quel
-// genre d'échec, où en était la lecture. Le navigateur est lu ICI, sur l'en-tête User-Agent, pas dans le corps.
+// POST — le navigateur dit qu'un film ne démarre pas : quel film (`filmId` = identifiant interne `films.id`, pas le
+// `tmdb_id`), quelle version, où (appareil ou télé), quel genre d'échec, où en était la lecture. Le navigateur est lu ICI, sur l'en-tête User-Agent, pas dans le corps.
 // Session requise. Rien d'une adresse de diffusion n'est lu ni journalisé : le corps n'est jamais écrit dans un
 // journal, et seuls les champs nommés par parsePlaybackFailure traversent. Le client n'attend rien de la réponse.
 export async function POST(request: NextRequest) {

@@ -2,8 +2,9 @@ import { useState } from 'react';
 import { useStore, useCredits } from '../../store';
 import { RENTAL_COSTS, type Film } from '../../types';
 import { getRentalTier } from '../../utils/rental-tier';
+import { NO_PLAYABLE_VERSION } from '../../utils/version-choice';
 import type { KioskNoticeSpec } from './KioskNotice';
-import { actionLabel, confirmRentText, creditsLabel, NO_PLAYABLE_VERSION, offersRelogin, rentAction, rentFlow } from './kiosk-logic';
+import { actionLabel, confirmRentText, creditsLabel, offersRelogin, rentAction, rentFlow } from './kiosk-logic';
 import styles from './KioskBrowse.module.css';
 
 // Le bouton d'action de la fiche. Il ne se grise jamais : quand il ne peut pas louer, il le dit

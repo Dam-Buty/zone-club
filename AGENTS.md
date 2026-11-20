@@ -580,10 +580,13 @@ position 0 ; et une sauvegarde ne réarme rien (après ⏮, le film n'est plus r
 quelle et lit la durée sur l'élément ; il ne décide rien : **une seule règle pure, `src/utils/video-swap.ts`**, sert la
 reprise à l'ouverture, le remontage et le départ sur la télé — depuis le lecteur (`startAt` de « Regarder sur TV »,
 calculé sur la durée de sa vidéo) comme depuis la borne (« Sur ma télé » n'envoie pas de départ : `castStartAt` de
-`src/cast/cast-wire.ts` applique la même règle). **Seul écart qui reste** : sur le chemin de la borne, le client ne
+`src/cast/cast-wire.ts` applique la même règle). **Trois écarts restent** : (1) sur le chemin de la borne, le client ne
 connaît pas la durée du fichier (il n'a que la durée TMDB, `runtime`, qui n'est pas celle du fichier : fichiers
 tronqués, versions longues), donc une position enregistrée dans les 10 dernières secondes y part telle quelle sur la
-télé, alors que le téléphone repart du début ; partout ailleurs, téléphone et télé partent de la même seconde.
+télé, alors que le téléphone repart du début ; (2) « Regarder sur TV » touché avant que la vidéo d'ici ait ses
+métadonnées (`sendToTv`) : durée inconnue, même conséquence ; (3) la reprise venue de la télé (`takeCastResume`) place la
+vidéo d'ici à la position de la télé, ou à défaut à celle de la location, sans cette règle. Ailleurs, téléphone et télé
+partent de la même seconde.
 `swapResumeTime` : la plus grande des deux positions, celle de l'élément remplacé (0 à
 l'ouverture) et celle de la location (un changement fait avant la première image ne repart pas de zéro) ; **une position
 enregistrée dans les 10 dernières secondes du fichier vaut le début** (`RESUME_END_MARGIN_S`), sinon elle est reprise
@@ -1013,7 +1016,7 @@ Règles à ne pas casser — chacune a son test dans `tests/domain/kiosk-*.test.
   (`readyVersionRow` : la décision unique `decideVersion`, la même que celle du lecteur et du Cast). Elle montre et se
   change, sans rien demander : un appui remplace le contenu du panneau par la liste partagée (`VersionList`, VF ·
   VOSTFR · VO, « Autres versions », « Retour » ; une version absente est une ligne de texte avec sa raison), et un choix
-  vaut **pour ce film** (`chooseFilmVersion`, retenu sur l'appareil tant qu'il est loué). Un film qui n'offre qu'un
+  vaut **pour ce film** (`chooseFilmVersion`, retenu sur l'appareil tant qu'il est loué — la déconnexion l'efface aussi). Un film qui n'offre qu'un
   couple n'a rien à ouvrir : « VO · seule version de ce film », sans chevron ; une substitution s'écrit dessous
   (« VOSTFR · VF indisponible pour ce film ») ; sans aucune version lisible, « Ce film n'a aucune version lisible pour
   le moment. » et le lancement est refusé (`NO_PLAYABLE_VERSION`). **La question des sous-titres** : version préférée

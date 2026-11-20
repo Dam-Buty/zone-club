@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { readText } from '../helpers/repo.mjs';
-import { PLAYBACK_START_TIMEOUT_MS, startTimerArmed, signalsFor, shownFailure, failureHoldsPlayback, failurePanel, failureTrace } from '../../src/utils/playback-failure.ts';
+import { PLAYBACK_START_TIMEOUT_MS, startTimerArmed, signalsFor, shownFailure, failureHoldsPlayback, failurePanel, failureTrace, mountedElement, failureLetsKeyThrough } from '../../src/utils/playback-failure.ts';
 import { VF, VOSTFR, VO, VF_ST } from '../../src/utils/version-choice.ts';
 
 // « Cette version ne se lance pas » (spec 2026-11-19-versions-et-erreurs-de-lecture, § 5.1 et § 5.3) : le lecteur dit
@@ -185,4 +185,38 @@ test('ÉCHEC LECTURE: la place est faite, AirPlay vit dans useAirPlay', () => {
     assert.ok(!src.includes(gone), `VHSPlayer.tsx contient encore ${gone}`);
   }
   assert.ok(read('src/components/player/useAirPlay.ts').includes('webkitplaybacktargetavailabilitychanged'), 'le crochet suit la disponibilité');
+});
+
+// Relecture d'ensemble de la partie A (m7) : l'identité d'un élément était « source#essai ». Après VF en panne → VO →
+// VF de nouveau, le troisième élément reprenait celle du premier : son échec n'envoyait pas de trace, et l'erreur
+// gardée du premier pouvait s'afficher pour lui. Un numéro de montage qui ne revient jamais.
+test('ÉCHEC LECTURE: chaque nouvel élément a son numéro de montage, qui ne revient jamais', () => {
+  const vf1 = mountedElement(null, 'vf-x', 0);
+  const vo = mountedElement(vf1, 'vo-y', 0);
+  const vf2 = mountedElement(vo, 'vf-x', 0);
+  assert.deepEqual([vf1.mount, vo.mount, vf2.mount], [1, 2, 3], 'VF → VO → VF : trois éléments');
+  assert.equal(mountedElement(vf2, 'vf-x', 0), vf2, 'rien ne change : le même élément, le même objet');
+  assert.equal(mountedElement(vf2, 'vf-x', 1).mount, 4, '« Réessayer » : un nouvel élément');
+  // L'erreur gardée du premier élément VF ne compte pas pour le troisième, revenu à la même source.
+  const failed = { element: `#${vf1.mount}`, error: true, metadata: false, timeout: false };
+  assert.equal(shownFailure(true, signalsFor(failed, `#${vf2.mount}`)), null);
+  const hook = read(HOOK);
+  assert.ok(!hook.includes('`${videoKey}#${attempt}`'), 'plus d\'identité « source#essai »');
+  assert.match(hook, /const current = mountedElement\(mounted, videoKey, attempt\);\s*if \(current !== mounted\) setMounted\(current\);\s*const element = `#\$\{current\.mount\}`;/, 'l\'identité vient du numéro de montage, ajusté au rendu');
+  assert.match(hook, /if \(failure === null \|\| reportedRef\.current === element\) return;/, 'une trace par élément en échec');
+});
+
+// Relecture d'ensemble de la partie A (m8) : sous le panneau « Cette version ne se lance pas », Espace, les flèches,
+// S, V, T… visaient encore la vidéo en panne. Seule Échap passe.
+test('ÉCHEC LECTURE: sous le panneau, seule Échap atteint le lecteur', () => {
+  for (const key of [' ', 'ArrowLeft', 'ArrowRight', 's', 'S', 'e', 'v', 'V', 't', 'T', 'r', 'm', 'f']) {
+    assert.equal(failureLetsKeyThrough(true, key), false, `touche « ${key} » sous le panneau`);
+    assert.equal(failureLetsKeyThrough(false, key), true, `touche « ${key} » sans panneau`);
+  }
+  assert.equal(failureLetsKeyThrough(true, 'Escape'), true);
+  const src = read(PLAYER);
+  const keys = src.slice(src.indexOf('const handleKeyDown'), src.indexOf("window.addEventListener('keydown', handleKeyDown)"));
+  const guard = keys.indexOf('if (!failureLetsKeyThrough(failure !== null && version !== null, e.key)) return;');
+  assert.ok(guard > 0, 'le clavier consulte la règle, sur le panneau tel qu\'il s\'affiche (échec et version)');
+  assert.ok(guard < keys.indexOf("if (e.key === 'Escape') {\n        handleEject();") && guard < keys.indexOf('switch (e.key)'), 'avant Échap et toutes les touches de la vidéo');
 });

@@ -128,7 +128,11 @@ test('CAST LECTEUR: rien de périmé ne reparaît, les lignes du Cast restent à
   assert.match(src, /if \(view !== 'remote'\) setRemoteError\(prev => \(prev === TV_SUBTITLE_ERROR \? null : prev\)\);/, 'erreur de sous-titres effacée hors télécommande');
   assert.match(src, /if \(view !== 'other-on-tv'\) setConfirmReplace\(false\);/, 'la question « Remplacer » tombe avec son bandeau');
   assert.match(src, /const castLineShown = view === 'other-on-tv' \|\| \(noticeHere !== null && !castMissing\);/, 'ligne du Cast affichée');
-  assert.match(src, /if \(checkPortraitMobile\(\) \|\| remoteActive \|\| castLineShown\) disableAutoHide\(\);/, 'l\'en-tête ne se masque pas sous une ligne du Cast');
+  // Ni sous une ligne du Cast, ni sans version lisible (relecture d'ensemble de la partie A, I4) : la note « Ce film n'a
+  // aucune version lisible pour le moment. » disparaissait au bout de 4 s, et l'écran restait noir.
+  assert.match(src, /if \(checkPortraitMobile\(\) \|\| remoteActive \|\| castLineShown \|\| version === null\) disableAutoHide\(\);/, 'l\'en-tête ne se masque pas sous une ligne du Cast ni sans version');
+  const effect = src.slice(src.indexOf('|| version === null) disableAutoHide();'), src.indexOf(']);', src.indexOf('|| version === null) disableAutoHide();')));
+  assert.match(effect, /\}, \[[^\]]*\bversion\b/, 'l\'effet suit la version');
 });
 
 test('CAST LECTEUR: la reprise, la fin, le clavier', () => {
@@ -295,4 +299,31 @@ test('VERSION LECTEUR: « Retour » sous la question ferme le lecteur, sans rien
   // Échap sous la question fait la même chose que « Retour ».
   const keys = src.slice(src.indexOf('if (versionPanelShown) {'), src.indexOf('// Échap ferme le lecteur même sans vidéo montée'));
   assert.match(keys, /if \(asking\) closePlayer\(\);/, 'Échap sous la question = « Retour »');
+});
+
+// Relecture d'ensemble de la partie A (m2, m3) : à chaque nouvel élément <video> (autre version, « Réessayer »), le
+// volume et le muet repartaient à leurs valeurs par défaut (l'écouteur de VHSControls ne s'attachait qu'une fois, au
+// premier élément), et l'avance ou le retour rapide survivait au remontage (« FF x2 » affiché, boucle visant le nouvel
+// élément).
+test('VIDÉO REMONTÉE: le volume et le muet passent au nouvel élément, l\'avance rapide s\'arrête', () => {
+  const controls = read(CONTROLS);
+  const at = controls.indexOf("video.addEventListener('volumechange'");
+  const effect = controls.slice(controls.lastIndexOf('useEffect(() => {', at), controls.indexOf(']);', at) + 3);
+  assert.match(effect, /\}, \[videoRef, videoKey\]\);$/, 'l\'écouteur suit la key de l\'élément');
+  assert.match(effect, /if \(left\) \{\s*video\.volume = left\.volume;\s*video\.muted = left\.muted;\s*\}/, 'le nouvel élément reprend le volume et le muet');
+  assert.match(effect, /levelRef\.current = \{ volume: video\.volume, muted: video\.muted \};/, 'l\'élément qui s\'en va les laisse');
+  assert.ok(effect.indexOf('levelRef.current = {') > effect.indexOf('return () => {'), 'rangés au départ de l\'élément');
+  const src = read(PLAYER);
+  assert.ok(src.includes('videoKey={videoKey}'), 'le lecteur passe la key à VHSControls');
+  assert.match(src, /useEffect\(\(\) => \{\s*stopRW\(\);\s*setFfSpeed\(0\);\s*\}, \[videoKey, stopRW\]\);/, 'avance ou retour rapide arrêtés à chaque nouvel élément');
+});
+
+// Relecture d'ensemble de la partie A (m6) : un Cast de ce film ou le rembobinage masquaient la liste « Version » sans
+// la fermer — le geste retour restait armé sur une liste invisible, qui reparaissait ensuite d'elle-même.
+test('VERSION LECTEUR: ce qui masque la liste des versions la ferme', () => {
+  const src = read(PLAYER);
+  assert.match(src, /const versionPanelMasked = remoteActive \|\| rewindPhase !== 'none' \|\| rewindingToStart;/);
+  assert.match(src, /if \(versionPanelMasked && versionListOpen\) setVersionListOpen\(false\);/, 'masquée → fermée');
+  assert.match(src, /const versionPanelShown = \(asking \|\| versionListOpen\) && !versionPanelMasked;/);
+  assert.match(src, /useBackGuard\(versionListOpen, closeVersionList\);/, 'le geste retour suit l\'état fermé');
 });

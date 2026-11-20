@@ -1,9 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type { PlayerState } from '../../types';
 import styles from './VHSControls.module.css';
 
 interface VHSControlsProps {
   videoRef: React.RefObject<HTMLVideoElement | null>;
+  /** La key de l'élément <video> : il est remonté à chaque autre version et à chaque « Réessayer ». */
+  videoKey: string;
   playerState: PlayerState;
   onStateChange: (state: PlayerState) => void;
   onStop: () => void;
@@ -30,6 +32,7 @@ interface VHSControlsProps {
  */
 export function VHSControls({
   videoRef,
+  videoKey,
   playerState,
   onStateChange,
   onStop,
@@ -45,9 +48,17 @@ export function VHSControls({
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
 
+  // Le volume et le muet suivent l'élément courant. Un nouvel élément (autre version, « Réessayer ») reprend ceux que
+  // laisse le précédent : sans cela il repartait à plein volume, son coupé levé, sous un curseur qui disait l'inverse.
+  const levelRef = useRef<{ volume: number; muted: boolean } | null>(null);
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
+    const left = levelRef.current;
+    if (left) {
+      video.volume = left.volume;
+      video.muted = left.muted;
+    }
 
     const handleVolumeChange = () => {
       setVolume(video.volume);
@@ -56,8 +67,11 @@ export function VHSControls({
 
     video.addEventListener('volumechange', handleVolumeChange);
 
-    return () => video.removeEventListener('volumechange', handleVolumeChange);
-  }, [videoRef]);
+    return () => {
+      video.removeEventListener('volumechange', handleVolumeChange);
+      levelRef.current = { volume: video.volume, muted: video.muted };
+    };
+  }, [videoRef, videoKey]);
 
   const togglePlay = useCallback(() => {
     const video = videoRef.current;

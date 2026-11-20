@@ -5,6 +5,7 @@ import Database from 'better-sqlite3';
 import { readText } from '../helpers/repo.mjs';
 import {
   judgeFilm, playableVersions, versionsToMark, reportLines, tailAnomaly, MIN_DURATION_RATIO, VF_VO_MAX_GAP_S,
+  markRefusal, MARK_ABSENT_MAX_SHARE, MARK_ABSENT_MIN_COUNT,
 } from '../../lib/media/file-check.ts';
 
 // Contrôle des fichiers (docs/superpowers/specs/2026-11-19-versions-et-erreurs-de-lecture-design.md, § 6). Un script
@@ -301,6 +302,16 @@ test('VERSIONS JOUABLES: la fiche (has_vf / has_vo) passe par playableVersions',
   assert.match(src, /'vf_unplayable', 'vo_unplayable'/);
 });
 
+// Relecture d'ensemble de la partie A (I4) : la fiche du vidéoclub 3D ne rendait rien quand les deux versions
+// manquaient — le visiteur ne l'apprenait qu'au refus du serveur, après l'appui sur « Louer ».
+test('VERSIONS JOUABLES: la fiche du vidéoclub 3D dit « Aucune version lisible pour le moment » avant la location', () => {
+  const src = readText(path.join(ROOT, 'src/components/videoclub/VHSCaseOverlay.tsx'));
+  const block = src.slice(src.indexOf('function renderVersionBadges() {'), src.indexOf('const pill = ', src.indexOf('function renderVersionBadges() {')));
+  assert.match(block, /if \(!filmVersions\) return null;/, 'rien tant que les versions ne sont pas chargées');
+  assert.match(block, /if \(!filmVersions\.vf && !filmVersions\.vo\) \{[\s\S]*Aucune version lisible pour le moment[\s\S]*\}/, 'chargées et toutes deux absentes : la phrase');
+  assert.doesNotMatch(block, /disabled/);
+});
+
 test('VERSIONS JOUABLES: buildStreamingUrls passe par playableVersions (adresse nulle pour une version marquée)', () => {
   const src = readText(path.join(ROOT, 'lib/rentals.ts'));
   const block = fnBlock(src, 'export function buildStreamingUrls');
@@ -347,4 +358,37 @@ test('BORNE: un film sans version lisible — « Indisponible », et l\'appui di
   assert.equal((src.match(/rentAction\(\{[^}]*\bplayable\b/g) || []).length, 2, 'le rendu et l\'appui passent `playable`');
   assert.match(src, /if \(now === 'unplayable'\) \{\s*say\('Film indisponible', NO_PLAYABLE_VERSION\);\s*return;\s*\}/);
   assert.doesNotMatch(src, /\bdisabled\b/, 'aucun bouton grisé');
+});
+
+// Relecture d'ensemble de la partie A (m10) : « rien n'est écrit » était inexact (les drapeaux ne sont pas touchés,
+// mais l'ouverture de la base applique les migrations de démarrage), et `--mark` marquait tout ce qui manquait — une
+// bibliothèque à moitié montée aurait retiré du site des versions saines.
+test('CONTRÔLE DES FICHIERS: --mark refuse quand une part anormale des versions est « fichier absent », sauf --force', () => {
+  assert.equal(MARK_ABSENT_MAX_SHARE, 0.1);
+  assert.equal(MARK_ABSENT_MIN_COUNT, 3);
+  // La moitié du catalogue absente : bibliothèque à moitié montée.
+  const half = markRefusal({ checked: 700, absent: 350, force: false });
+  assert.ok(half && half.includes('350 versions sur 700') && half.includes('--force'), half);
+  // Quelques fichiers vraiment perdus : on marque.
+  assert.equal(markRefusal({ checked: 700, absent: 5, force: false }), null);
+  assert.equal(markRefusal({ checked: 700, absent: 70, force: false }), null, '10 % pile : encore normal');
+  assert.notEqual(markRefusal({ checked: 700, absent: 71, force: false }), null, 'au-delà de 10 %');
+  // Un seul film (--film) : un ou deux fichiers absents ne sont jamais une part anormale.
+  assert.equal(markRefusal({ checked: 2, absent: 2, force: false }), null);
+  assert.notEqual(markRefusal({ checked: 6, absent: 3, force: false }), null);
+  // Forçage explicite.
+  assert.equal(markRefusal({ checked: 700, absent: 350, force: true }), null);
+});
+
+test('CONTRÔLE DES FICHIERS: le script dit « aucun drapeau touché » et refuse de marquer avant toute écriture', () => {
+  const src = readText(path.join(ROOT, 'scripts/media-check.ts'));
+  assert.ok(!src.includes('rien n\'est écrit') && !src.includes('rien n\\\'est écrit'), 'plus de « rien n\'est écrit »');
+  assert.ok(src.includes('aucun drapeau touché'), 'le rapport dit ce qu\'il ne touche pas');
+  assert.ok(src.includes('migrations de démarrage'), 'et dit que l\'ouverture de la base peut appliquer les migrations');
+  assert.ok(src.includes("'--force'"), 'l\'option de forçage');
+  assert.match(src, /if \(force && !mark\) return null/, '--force sans --mark : erreur d\'usage');
+  assert.match(src, /markRefusal\(\{ checked: checkedVersions, absent: absentVersions, force: args\.force \}\)/);
+  const refuse = src.indexOf('} else if (refusal !== null) {');
+  assert.ok(refuse > 0 && refuse < src.indexOf('UPDATE films SET'), 'le refus passe avant l\'écriture des drapeaux');
+  assert.match(src.slice(refuse, src.indexOf('} else if (!args.mark) {', refuse)), /return 2/, 'refus : code 2, rien d\'écrit');
 });

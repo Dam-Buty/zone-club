@@ -20,8 +20,22 @@ export function startTimerArmed(i: { wanted: boolean; hasMetadata: boolean; fail
   return i.wanted && !i.hasMetadata && !i.failed;
 }
 
-/** Ce qu'un élément <video> a signalé. `element` l'identifie : sa source et l'essai (« Réessayer » en monte un autre). */
+/** Ce qu'un élément <video> a signalé. `element` l'identifie : son numéro de montage (voir mountedElement). */
 export interface VideoSignals { element: string; error: boolean; metadata: boolean; timeout: boolean }
+
+/** L'élément <video> monté : sa source (piste et adresse), l'essai, et son numéro de montage. */
+export interface MountedElement { source: string; attempt: number; mount: number }
+
+/**
+ * L'élément monté maintenant. Son numéro change à chaque nouvel élément — autre source, ou « Réessayer » — et ne revient
+ * jamais à une valeur passée : la VF en panne, puis la VO, puis la VF de nouveau, c'est un troisième élément, avec ses
+ * propres signaux et sa propre trace. L'identité « source#essai » d'avant revenait à celle du premier élément : le
+ * second échec de la VF n'envoyait pas de trace, et l'erreur gardée du premier pouvait s'afficher pour le troisième.
+ */
+export function mountedElement(prev: MountedElement | null, source: string, attempt: number): MountedElement {
+  if (prev !== null && prev.source === source && prev.attempt === attempt) return prev;
+  return { source, attempt, mount: (prev?.mount ?? 0) + 1 };
+}
 
 /**
  * Les signaux de l'élément `element`. Ceux d'un élément précédent (autre version, « Réessayer ») ne comptent jamais pour
@@ -46,6 +60,14 @@ export function shownFailure(wanted: boolean, s: VideoSignals): DeviceFailureKin
  */
 export function failureHoldsPlayback(failure: DeviceFailureKind | null): boolean {
   return failure !== null;
+}
+
+/**
+ * Une touche du clavier atteint-elle le lecteur ? Sous le panneau affiché, seule Échap passe (elle éjecte) : Espace,
+ * les flèches, S, V, T… viseraient la vidéo en panne derrière le panneau, ou changeraient la version sans un mot.
+ */
+export function failureLetsKeyThrough(panelShown: boolean, key: string): boolean {
+  return !panelShown || key === 'Escape';
 }
 
 export interface FailurePanel {

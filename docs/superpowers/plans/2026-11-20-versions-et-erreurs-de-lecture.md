@@ -294,6 +294,11 @@ Comportement (spec § 4.1, 4.3 a, 4.4) :
   - `VHSControls` : `audioTrack`, `subtitleTrack`, `hasVF`, `hasVO`, `hasSubtitlesFr`, `hasSubtitlesEn` et leurs deux rappels laissent la place à `versionLabel: string` et `onOpenVersion(): void` ; un bouton « Version » qui affiche le nom courant.
   - `PlayerVersionPanel({ view: 'list' | 'question', … })` : la liste (`VersionList`, classes du lecteur) ou la question, dans le style du lecteur.
 
+> **Note (vague de corrections de la partie A, 20/11/2026)** : la règle « 0 pour une location vue à 100 % » de
+> `swapResumeTime` a été remplacée par la règle des 10 dernières secondes du fichier, lue sur sa durée, la même pour
+> l'appareil et pour la télé : `swapResumeTime({ elementTime, rentalPosition, duration })`, `RESUME_END_MARGIN_S = 10`
+> (`src/utils/video-swap.ts`).
+
 Ce qui disparaît de `VHSPlayer.tsx` : les états `audioTrack` / `subtitleTrack` (l. 90-91), les deux effets de recalage (l. 209-223), `getVideoUrl` (l. 241-246), `handleAudioTrackChange`, `handleSubtitleTrackChange`, `cycleSubtitleTrack` (l. 263-284), l'effet de position après changement de piste (l. 287-298), l'effet de reprise (l. 346-359), l'écouteur de fin (l. 1000-1022, sa décision passe dans `onEnded`). La `key` de la vidéo devient `${version.audio}-${videoUrl}-${attempt}`. Les touches V et T appellent `cycleAudio` / `cycleSubtitle`. La note de substitution s'affiche dans les lignes sous l'en-tête. Le panneau d'erreur de la tâche 3 passe par `choose` : « Essayer en … » devient le choix de ce film.
 
 - [ ] **Step 1: Tests (rouges)** : `swapResumeTime` (changement avant la première image → position de la location ; en cours de film → position de l'élément ; location à 100 % → 0) ; `localAutoPlay` faux avec `question` ; statique : `VHSPlayer.tsx` ne contient plus `useState<AudioTrack>` ni `getVideoUrl`, contient `usePlayerVersion` et `useVideoLifecycle`, compte moins de lignes qu'avant la tâche ; dans `useVideoLifecycle.ts`, chaque tableau de dépendances contient `videoKey` ; `VHSControls.tsx` ne contient plus `STFR` ni `disabled`, contient « Version ».

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import {
-  PLAYBACK_START_TIMEOUT_MS, failureHoldsPlayback, shownFailure, signalsFor, startTimerArmed,
-  type DeviceFailureKind, type VideoSignals,
+  PLAYBACK_START_TIMEOUT_MS, failureHoldsPlayback, mountedElement, shownFailure, signalsFor, startTimerArmed,
+  type DeviceFailureKind, type MountedElement, type VideoSignals,
 } from '../../utils/playback-failure';
 
 /**
@@ -10,8 +10,10 @@ import {
  * tenue à l'arrêt exprès (invite « Regarder sur TV ? », Cast, « BE KIND REWIND ») : une erreur vue pendant ce temps
  * attend que la lecture soit voulue. `onFailure` est appelé une fois par échec affiché.
  *
- * `videoKey` identifie la source (piste et adresse) ; `attempt` entre dans la `key` de l'élément <video> : « Réessayer »
- * (`retry`) le remonte. Chaque élément a ses propres signaux (signalsFor) : rien du précédent ne compte pour lui.
+ * `videoKey` est ici la clé de la SOURCE (piste et adresse), sans l'essai — à ne pas confondre avec la `videoKey` du
+ * lecteur, clé de l'ÉLÉMENT, qui ajoute `attempt` : « Réessayer » (`retry`) remonte l'élément. Chaque élément a son
+ * numéro de montage, qui ne revient jamais (mountedElement), et ses propres signaux (signalsFor) : rien d'un élément
+ * précédent ne compte pour lui, même revenu à la même source.
  */
 export function usePlaybackFailure(i: {
   videoRef: RefObject<HTMLVideoElement | null>;
@@ -21,7 +23,12 @@ export function usePlaybackFailure(i: {
 }): { failure: DeviceFailureKind | null; retry(): void; attempt: number } {
   const { videoRef, videoKey, wanted, onFailure } = i;
   const [attempt, setAttempt] = useState(0);
-  const element = `${videoKey}#${attempt}`;
+  // Le numéro de montage avance pendant le rendu même où la source ou l'essai change (état ajusté au rendu, comme le
+  // permet React) : aucun rendu ne lit les signaux d'un élément sous l'identité du suivant.
+  const [mounted, setMounted] = useState<MountedElement>(() => mountedElement(null, videoKey, attempt));
+  const current = mountedElement(mounted, videoKey, attempt);
+  if (current !== mounted) setMounted(current);
+  const element = `#${current.mount}`;
   const [seen, setSeen] = useState<VideoSignals | null>(null);
   const signals = signalsFor(seen, element);
   const mark = useCallback((on: string, patch: Partial<Omit<VideoSignals, 'element'>>) => {

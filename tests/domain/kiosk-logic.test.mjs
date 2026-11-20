@@ -661,33 +661,58 @@ const decide = (offer, filmChoice = null, pref = null) => VC.decideVersion({ off
 test('PANNEAU VERSION: une version jouable se lance sans question', () => {
   const d = decide(ALL);
   assert.equal(d.kind, 'play');
-  assert.equal(K.readyLaunchStep(d), 'launch');
+  assert.equal(K.readyLaunchStep(d, true), 'launch');
 });
 test('PANNEAU VERSION: une substitution écrite (VF demandée, film sans VF) se lance aussi sans question', () => {
   const d = decide({ vf: false, vo: true, fr: true, en: false }, null, VC.VF);
   assert.equal(d.kind, 'play');
   assert.equal(d.note, 'VOSTFR · VF indisponible pour ce film');
-  assert.equal(K.readyLaunchStep(d), 'launch');
+  assert.equal(K.readyLaunchStep(d, true), 'launch');
 });
 test('PANNEAU VERSION: VOSTFR préférée sur un film sans sous-titres français mais avec la VF → la question', () => {
   const d = decide({ vf: true, vo: true, fr: false, en: true }, null, VC.VOSTFR);
   assert.equal(d.kind, 'ask');
-  assert.equal(K.readyLaunchStep(d), 'ask');
+  assert.equal(K.readyLaunchStep(d, true), 'ask');
 });
 test('PANNEAU VERSION: la réponse rangée en choix du film, la même décision se lance sans reposer la question', () => {
   const offer = { vf: true, vo: true, fr: false, en: true };
   const asked = decide(offer, null, VC.VOSTFR);
   for (const answer of [asked.keep.version, asked.other.version]) {
     const again = decide(offer, answer, VC.VOSTFR);
-    assert.equal(K.readyLaunchStep(again), 'launch', `réponse ${answer.audio}/${answer.subtitle}`);
+    assert.equal(K.readyLaunchStep(again, true), 'launch', `réponse ${answer.audio}/${answer.subtitle}`);
     assert.equal(again.version, answer, 'la version de la réponse, telle quelle');
   }
 });
 test('PANNEAU VERSION: aucune piste lisible → refus, avec le message exact', () => {
   const d = decide({ vf: false, vo: false, fr: true, en: true });
   assert.equal(d.kind, 'none');
-  assert.equal(K.readyLaunchStep(d), 'refuse');
-  assert.equal(K.NO_PLAYABLE_VERSION, "Ce film n'a aucune version lisible pour le moment.");
+  assert.equal(K.readyLaunchStep(d, true), 'refuse');
+  assert.equal(VC.NO_PLAYABLE_VERSION, "Ce film n'a aucune version lisible pour le moment.");
+});
+
+// Relecture d'ensemble de la partie A (m9) : la location disparue (échue, rendue) pendant que le panneau était ouvert
+// donnait une décision « none » — la borne annonçait « aucune version lisible » pour un film qui en avait. Le panneau
+// se ferme, quelle que soit la décision.
+test('PANNEAU VERSION: la location n\'existe plus → le panneau se ferme, sans parler de version', () => {
+  for (const d of [decide(ALL), decide({ vf: true, vo: true, fr: false, en: true }, null, VC.VOSTFR), decide({ vf: false, vo: false, fr: false, en: false })]) {
+    assert.equal(K.readyLaunchStep(d, false), 'close', d.kind);
+  }
+  // Toujours louée : la décision tranche, comme avant.
+  assert.equal(K.readyLaunchStep(decide({ vf: false, vo: false, fr: false, en: false }), true), 'refuse');
+});
+
+// Relecture d'ensemble de la partie A (m5) : le lecteur importait ce texte de la logique de la borne. Il vit avec la
+// décision de version, d'où la borne et le lecteur le prennent tous deux.
+test('PANNEAU VERSION: le texte d\'un film sans version lisible vit dans version-choice, la borne et le lecteur l\'en importent', () => {
+  assert.equal('NO_PLAYABLE_VERSION' in K, false, 'kiosk-logic ne le définit plus');
+  const src = (rel) => readText(path.join(process.cwd(), rel));
+  assert.match(src('src/components/kiosk/kiosk-logic.ts'), /import \{ NO_PLAYABLE_VERSION, [^}]*\} from '\.\.\/\.\.\/utils\/version-choice\.ts';/);
+  for (const rel of ['src/components/kiosk/KioskAction.tsx', 'src/components/kiosk/KioskView.tsx', 'src/components/player/usePlayerVersion.ts']) {
+    const code = src(rel);
+    assert.match(code, /import \{[^}]*\bNO_PLAYABLE_VERSION\b[^}]*\} from '\.\.\/\.\.\/utils\/version-choice'/, `${rel} l'importe de version-choice`);
+    const fromKiosk = code.match(/import \{([^}]*)\} from '(?:\.\/|\.\.\/kiosk\/)kiosk-logic'/);
+    assert.ok(!fromKiosk || !fromKiosk[1].includes('NO_PLAYABLE_VERSION'), `${rel} ne le prend plus dans kiosk-logic`);
+  }
 });
 
 test('PANNEAU VERSION: la ligne d\'un film VF + VO dit « VF » et s\'ouvre, sans note', () => {

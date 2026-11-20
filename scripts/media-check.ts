@@ -7,14 +7,20 @@
  * ne descendent pas sous 90 % de la durée TMDB. Le jugement vit dans lib/media/file-check.ts.
  *
  * Usage :
- *   npm run media:check                    # rapport seul : une ligne par anomalie, rien n'est écrit
+ *   npm run media:check                    # rapport seul : une ligne par anomalie, aucun drapeau touché
  *   npm run media:check -- --film <id>     # un seul film (id INTERNE, films.id)
  *   npm run media:check -- --mark          # marque les versions défectueuses (vf_unplayable / vo_unplayable)
+ *   npm run media:check -- --mark --force  # marque même si une part anormale des fichiers est absente
  *
- * Code de sortie : 0 sans anomalie, 1 s'il y en a (avec ou sans --mark), 2 sur une erreur d'usage ou d'environnement.
+ * Le rapport seul ne touche à aucun drapeau, mais il ouvre la base comme le site : les migrations de démarrage
+ * (lib/db.ts) peuvent s'y appliquer.
+ *
+ * Code de sortie : 0 sans anomalie, 1 s'il y en a (avec ou sans --mark), 2 sur une erreur d'usage ou d'environnement
+ * (dont le refus de marquer d'une bibliothèque à moitié montée).
  *
  * `--mark` pose le drapeau d'une version qui a ses propres anomalies et le retire d'une version redevenue saine ; un
- * écart VF / VO seul ne marque rien. Une version marquée compte comme absente partout (fiche, location), et un film qui
+ * écart VF / VO seul ne marque rien. Il refuse quand une part anormale des versions contrôlées est « fichier absent »
+ * (markRefusal : une bibliothèque à moitié montée retirerait du site des versions saines), sauf avec `--force`. Une version marquée compte comme absente partout (fiche, location), et un film qui
  * n'a plus de version lisible ne se loue plus. Le script ne touche ni à la disponibilité des films ni à `duration_sec`
  * (la durée de la chaîne 24/7). Un fichier refait par le pipeline garde son drapeau : relancer `--mark` pour le lever.
  *
@@ -26,7 +32,7 @@ import { spawn } from 'child_process'
 import { access, readdir } from 'fs/promises'
 import { resolve } from 'path'
 import { db } from '../lib/db'
-import { judgeFilm, reportLines, tailAnomaly, versionsToMark, type FileProbe } from '../lib/media/file-check'
+import { judgeFilm, markRefusal, reportLines, tailAnomaly, versionsToMark, type FileProbe } from '../lib/media/file-check'
 import { probeStreams } from '../lib/media/probe'
 import { isDirectMediaUrl } from '../lib/symlinks'
 
@@ -55,17 +61,21 @@ const count = (n: number, one: string, many: string): string => `${n} ${n > 1 ? 
 
 function usage(): void {
     console.log(`Usage :
-  npm run media:check                    rapport seul (rien n'est écrit)
+  npm run media:check                    rapport seul (aucun drapeau touché)
   npm run media:check -- --film <id>     un seul film (id interne, films.id)
-  npm run media:check -- --mark          marque les versions défectueuses`)
+  npm run media:check -- --mark          marque les versions défectueuses
+  npm run media:check -- --mark --force  marque même si une part anormale des fichiers est absente`)
 }
 
-function parseArgs(argv: string[]): { mark: boolean; filmId: number | null } | null {
+function parseArgs(argv: string[]): { mark: boolean; force: boolean; filmId: number | null } | null {
     let mark = false
+    let force = false
     let filmId: number | null = null
     for (let i = 0; i < argv.length; i++) {
         if (argv[i] === '--mark') {
             mark = true
+        } else if (argv[i] === '--force') {
+            force = true
         } else if (argv[i] === '--film') {
             const id = Number(argv[++i])
             if (!Number.isInteger(id) || id <= 0) return null
@@ -74,7 +84,9 @@ function parseArgs(argv: string[]): { mark: boolean; filmId: number | null } | n
             return null
         }
     }
-    return { mark, filmId }
+    // --force ne vaut qu'avec --mark : seul, il ne forcerait rien.
+    if (force && !mark) return null
+    return { mark, force, filmId }
 }
 
 /** Chemin d'une version sous MEDIA_FILMS_PATH ; `null` pour une version absente ou un média direct du seed. */
@@ -195,16 +207,24 @@ async function main(): Promise<number> {
     }
 
     console.log(`Contrôle de ${count(toCheck.length, 'film', 'films')} sous ${MEDIA_FILMS_PATH}`
-        + (args.mark ? ' — marquage demandé (--mark)' : ' — rapport seul, rien n\'est écrit'))
+        + (args.mark ? ' — marquage demandé (--mark)' : ' — rapport seul, aucun drapeau touché'))
 
     let anomalies = 0
     let filmsWithAnomaly = 0
+    // Les versions contrôlées, et celles dont le fichier manque : une part anormale fait refuser --mark (markRefusal).
+    let checkedVersions = 0
+    let absentVersions = 0
     const changes: { film: FilmRow; before: Flags; after: Flags }[] = []
     for (const film of toCheck) {
         const vfPath = realPath(film.file_path_vf_transcoded)
         const voPath = realPath(film.file_path_vo_transcoded)
         const vf = vfPath ? await probeFile(vfPath) : null
         const vo = voPath ? await probeFile(voPath) : null
+        for (const probe of [vf, vo]) {
+            if (probe === null) continue
+            checkedVersions++
+            if (!probe.exists) absentVersions++
+        }
         const judgement = judgeFilm({ runtimeMin: film.runtime, vf, vo })
         const lines = reportLines(film, judgement)
         for (const line of lines) console.log(line)
@@ -223,8 +243,14 @@ async function main(): Promise<number> {
         + `${filmsWithAnomaly} avec anomalie (${count(anomalies, 'anomalie', 'anomalies')})`
         + (ignored.length > 0 ? ` ; ignorés : ${ignored.join(', ')}` : '') + '.')
 
+    const refusal = args.mark ? markRefusal({ checked: checkedVersions, absent: absentVersions, force: args.force }) : null
     if (changes.length === 0) {
         console.log('Drapeaux : rien à changer.')
+    } else if (refusal !== null) {
+        console.error(refusal)
+        console.log(`Avec --mark --force, ${count(changes.length, 'film changerait', 'films changeraient')} :`)
+        for (const c of changes) console.log(`  ${describeChange(c.film, c.before, c.after)}`)
+        return 2
     } else if (!args.mark) {
         console.log(`Avec --mark, ${count(changes.length, 'film changerait', 'films changeraient')} :`)
         for (const c of changes) console.log(`  ${describeChange(c.film, c.before, c.after)}`)

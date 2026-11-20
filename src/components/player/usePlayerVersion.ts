@@ -2,11 +2,10 @@ import { useCallback, useMemo } from 'react';
 import { useStore } from '../../store';
 import { versionDecisionFor } from '../../store/slices/version';
 import {
-  nextAudio, nextSubtitle, resolvedVersion, sameVersion, versionOffer,
+  NO_PLAYABLE_VERSION, nextAudio, nextSubtitle, resolvedVersion, sameVersion, versionOffer,
   type VersionChoice, type VersionDecision, type VersionOffer,
 } from '../../utils/version-choice';
 import type { StreamingUrls } from '../../types';
-import { NO_PLAYABLE_VERSION } from '../kiosk/kiosk-logic';
 
 // La version que joue le lecteur (docs/superpowers/specs/2026-11-19-versions-et-erreurs-de-lecture-design.md, § 4.1,
 // 4.3 b et 4.4) : la décision unique, celle de la borne et du Cast — le choix fait pour ce film, sinon la version

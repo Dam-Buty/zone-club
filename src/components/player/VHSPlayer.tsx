@@ -19,7 +19,7 @@ import { useIsMobile } from '../../hooks/useIsMobile';
 import { useBackGuard } from '../../hooks/useBackGuard';
 import { buildCastSubtitleTracks, activeSubtitleId } from '../../utils/cast-subtitles';
 import { appleAirPlay, ghostClick, localAutoPlay, noticeHoldsPlayback, playHeldHere, playerWithoutRental, playsHere, rewindPromptFor } from '../../utils/cast-on-open';
-import { failureHoldsPlayback, failurePanel, failureTrace, type DeviceFailureKind } from '../../utils/playback-failure';
+import { failureHoldsPlayback, failureLetsKeyThrough, failurePanel, failureTrace, type DeviceFailureKind } from '../../utils/playback-failure';
 import { nextSubtitle, versionName, type VersionChoice, type VersionSubtitle } from '../../utils/version-choice';
 import { swapResumeTime } from '../../utils/video-swap';
 import { REVIEW_MIN_LENGTH, REVIEW_RATING_LABELS } from '../../utils/review-rules';
@@ -162,8 +162,11 @@ export function VHSPlayer() {
   // la vidéo joue ici ; elle retient la vidéo et passe avant l'invite « Regarder sur TV ? ».
   const asking = question !== null && playsHere(view);
   // Le panneau « Version » (la question, sinon la liste ouverte) : jamais sous un Cast de ce film, « BE KIND REWIND » ou
-  // le rembobinage — comme les commandes.
-  const versionPanelShown = (asking || versionListOpen) && !remoteActive && rewindPhase === 'none' && !rewindingToStart;
+  // le rembobinage — comme les commandes. Ce qui le masque ferme aussi la liste : le geste retour ne reste pas armé sur
+  // une liste invisible, qui ne reparaît pas d'elle-même ensuite.
+  const versionPanelMasked = remoteActive || rewindPhase !== 'none' || rewindingToStart;
+  if (versionPanelMasked && versionListOpen) setVersionListOpen(false);
+  const versionPanelShown = (asking || versionListOpen) && !versionPanelMasked;
 
   // Get film title for display. La page admin ouvre un film qui n'est pas
   // forcément dans le cache d'un rayon : `previewFilm` est alors la seule source.
@@ -234,7 +237,8 @@ export function VHSPlayer() {
     if (trace) void api.playbackFailures.report(trace);
   }, [currentPlayingFilm, isPreview, version, rental?.watchPosition]);
   const { failure, retry, attempt } = usePlaybackFailure({ videoRef, videoKey: `${version?.audio}-${videoUrl}`, wanted: playWanted, onFailure: reportFailure });
-  // La key de l'élément <video> : remonté à chaque autre piste audio et à chaque « Réessayer » (useVideoLifecycle le suit).
+  // Deux clés : celle passée à usePlaybackFailure (`videoKey` du crochet) est la clé de la SOURCE, piste et adresse ; celle
+  // d'ici est la clé de l'ÉLÉMENT <video>, avec l'essai : remonté à chaque autre piste audio et à chaque « Réessayer ».
   const videoKey = `${version?.audio}-${videoUrl}-${attempt}`;
   const { isAirPlaySupported, isAirPlayAvailable, isAirPlayConnected, openAirPlayPicker } = useAirPlay(videoRef, isPlayerOpen, videoKey);
 
@@ -318,6 +322,13 @@ export function VHSPlayer() {
     rwCleanupRef.current = null;
     rwSpeedRef.current = 0;
   }, []);
+
+  // Un nouvel élément <video> (autre version, « Réessayer ») part à vitesse normale : l'avance ou le retour rapide de
+  // l'ancien s'arrête avec lui (sa boucle visait sinon le nouvel élément, et « FF x2 » restait affiché).
+  useEffect(() => {
+    stopRW();
+    setFfSpeed(0);
+  }, [videoKey, stopRW]);
 
   // Resume play after RW/FF — pause first for clean decoder state
   const resumePlayFromRW = useCallback(() => {
@@ -641,6 +652,8 @@ export function VHSPlayer() {
         }
         return;
       }
+      // Sous le panneau « Cette version ne se lance pas », seule Échap passe (elle éjecte) : rien ne vise la vidéo en panne.
+      if (!failureLetsKeyThrough(failure !== null && version !== null, e.key)) return;
 
       // Échap ferme le lecteur même sans vidéo montée (lecteur ouvert sur un film dont la location vient de disparaître).
       if (e.key === 'Escape') {
@@ -713,7 +726,7 @@ export function VHSPlayer() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isPlayerOpen, playerState, rewindingToStart, rewindPhase, pendingEject, closePlayer, closeRewindModal, ejectAfterPrompt, handleEject, handleStop, handleFFCycle, handleRWCycle, handleRewindToStart, resumePlayFromRW, cycleAudio, cycleSubtitle, subtitleToTv, offer, version, versionPanelShown, asking, closeVersionList, stopRW, remoteActive, view, castToggle]);
+  }, [isPlayerOpen, playerState, rewindingToStart, rewindPhase, pendingEject, closePlayer, closeRewindModal, ejectAfterPrompt, handleEject, handleStop, handleFFCycle, handleRWCycle, handleRewindToStart, resumePlayFromRW, cycleAudio, cycleSubtitle, subtitleToTv, offer, version, versionPanelShown, asking, closeVersionList, stopRW, remoteActive, view, castToggle, failure]);
 
   // ===== Remote playback (AirPlay, voir useAirPlay) =====
   // Sélecteur d'Apple dans l'appui ; s'il ne s'ouvre pas, la raison dans l'en-tête et le panneau « recopie d'écran ».
@@ -725,7 +738,8 @@ export function VHSPlayer() {
 
   // « Regarder sur TV » : la demande part DANS le gestionnaire de l'appui (le sélecteur d'appareils exige son
   // activation), avec la version que joue le lecteur et la position d'ici — à la règle de reprise de l'appareil
-  // (swapResumeTime) : la télé et le téléphone ne se contredisent pas. La machine du Cast décide du reste.
+  // (swapResumeTime). Trois écarts restent entre télé et téléphone (src/utils/video-swap.ts) : la borne sans durée de
+  // fichier, cet appui avant les métadonnées d'ici (durée inconnue), et takeCastResume. La machine du Cast décide du reste.
   const sendToTv = useCallback(() => {
     if (currentPlayingFilm === null) return;
     setRemoteError(null);
@@ -913,7 +927,7 @@ export function VHSPlayer() {
   }, [currentPlayingFilm, stopRW, rental?.rewindClaimed, closePlayer, updateRentalProgress]);
   // La fin du film et la place de chaque élément, à l'ouverture comme remonté (autre version, « Réessayer »), suivent
   // l'élément <video> courant ; où il reprend se décide dans video-swap (resumeSeek), sur la durée du fichier.
-  useVideoLifecycle({ videoRef, videoKey, rentalPosition: rental?.watchPosition ?? 0, onEnded: handleEnded });
+  useVideoLifecycle({ videoRef, videoKey, filmId: currentPlayingFilm, rentalPosition: rental?.watchPosition ?? 0, onEnded: handleEnded });
 
   // ===== BE KIND REWIND : fin vue par la TV, ou film déjà fini à l'ouverture =====
   // Une seule décision (rewindPromptFor). Fin vue par la TV : ÉJECTER, ou la sortie si le rembobinage est déjà
@@ -1073,7 +1087,8 @@ export function VHSPlayer() {
   }, []);
 
   // Une ligne du Cast est sous l'en-tête (message, bandeau d'un autre film, question « Remplacer … ? ») : l'en-tête ne se
-  // masque pas, « Réessayer », « Oui », « Non » et ✕ restent visibles et actifs sans bouger la souris.
+  // masque pas, « Réessayer », « Oui », « Non » et ✕ restent visibles et actifs sans bouger la souris. Sans version
+  // lisible non plus (`version === null`) : sa note est tout ce que montre un écran resté noir.
   const castLineShown = view === 'other-on-tv' || (noticeHere !== null && !castMissing);
 
   useEffect(() => {
@@ -1110,7 +1125,7 @@ export function VHSPlayer() {
       // primary UI the user needs (play/pause/stop on the TV). Letting them
       // fade out after 4s of inactivity leaves only the info overlay visible,
       // which feels like "no controls at all" to the user.
-      if (checkPortraitMobile() || remoteActive || castLineShown) disableAutoHide();
+      if (checkPortraitMobile() || remoteActive || castLineShown || version === null) disableAutoHide();
       else enableAutoHide();
     };
 
@@ -1121,7 +1136,7 @@ export function VHSPlayer() {
       window.removeEventListener('resize', apply);
       disableAutoHide();
     };
-  }, [isPlayerOpen, rewindPhase, rewindingToStart, resetIdleTimer, isMobile, remoteActive, castLineShown]);
+  }, [isPlayerOpen, rewindPhase, rewindingToStart, resetIdleTimer, isMobile, remoteActive, castLineShown, version]);
 
   if (!isPlayerOpen || !rental) return null;
   const connectedTvLabel = tvDeviceName || (isAirPlayConnected ? 'TV AirPlay connectée' : null);
@@ -1639,6 +1654,7 @@ export function VHSPlayer() {
         }}>
         <VHSControls
           videoRef={videoRef}
+          videoKey={videoKey}
           playerState={playerState}
           onStateChange={setPlayerState}
           onStop={handleStop}

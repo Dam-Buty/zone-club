@@ -17,6 +17,7 @@ export type PlaybackPlace = 'device' | 'tv';
 export type PlaybackFailureKind = 'error' | 'timeout' | 'tv_load';
 
 export interface PlaybackFailure {
+  /** L'identifiant INTERNE du film (`films.id`, celui de la location et de `currentPlayingFilm`), jamais son `tmdb_id`. */
   filmId: number;
   audio: VersionAudio;
   subtitle: VersionSubtitle;

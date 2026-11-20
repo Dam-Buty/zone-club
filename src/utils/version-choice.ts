@@ -125,6 +125,12 @@ export function otherVersion(offer: VersionOffer, failed: VersionChoice): Versio
   return defaultVersion({ ...offer, vf: offer.vf && failed.audio !== 'vf', vo: offer.vo && failed.audio !== 'vo' });
 }
 
+/**
+ * Le film n'a ni VF ni VO lisible (décision `none`) : la borne refuse le lancement avec ce texte, le lecteur l'écrit
+ * sous son en-tête, la location est refusée par le serveur avec la même phrase.
+ */
+export const NO_PLAYABLE_VERSION = "Ce film n'a aucune version lisible pour le moment.";
+
 export type VersionDecision =
   | { kind: 'none' }
   | { kind: 'play'; version: VersionChoice; note: string | null }

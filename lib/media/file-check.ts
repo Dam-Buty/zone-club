@@ -79,6 +79,25 @@ export function versionsToMark(j: FilmJudgement): { vf: boolean; vo: boolean } {
   return { vf: j.vf.length > 0, vo: j.vo.length > 0 };
 }
 
+/**
+ * Au-delà de cette part de versions contrôlées en « fichier absent », la bibliothèque est sans doute à moitié montée
+ * (un disque, un partage manquant) plutôt que vidée de ses fichiers : `--mark` retirerait du site des versions saines.
+ */
+export const MARK_ABSENT_MAX_SHARE = 0.1;
+/** Sous ce nombre de versions absentes, aucune part n'est anormale : `--film`, ou un ou deux fichiers vraiment perdus. */
+export const MARK_ABSENT_MIN_COUNT = 3;
+
+/**
+ * `--mark` refuse-t-il de marquer ? Oui quand une part anormale des versions contrôlées est « fichier absent » — au moins
+ * MARK_ABSENT_MIN_COUNT et plus de MARK_ABSENT_MAX_SHARE d'entre elles —, sauf forçage explicite (`--force`). Rend la
+ * raison, ou null pour marquer. Le rapport, lui, s'affiche toujours.
+ */
+export function markRefusal(i: { checked: number; absent: number; force: boolean }): string | null {
+  if (i.force || i.absent < MARK_ABSENT_MIN_COUNT || i.absent <= MARK_ABSENT_MAX_SHARE * i.checked) return null;
+  return `${i.absent} versions sur ${i.checked} contrôlées sont « fichier absent » : la bibliothèque semble à moitié montée. `
+    + 'Aucun drapeau n\'est touché ; relancer avec --mark --force pour marquer quand même.';
+}
+
 /** Longueur maximale de la ligne d'erreur de ffmpeg recopiée dans une anomalie. */
 const STDERR_LINE_MAX = 120;
 

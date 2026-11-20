@@ -769,7 +769,9 @@ test('LISTE DES VERSIONS: un appui choisit la version (« Automatique » = null)
   assert.equal(back, 1);
 });
 
-test('LISTE DES VERSIONS: en attente, aria-busy et les appuis sur les lignes ignorés ; « Retour » répond', async () => {
+// Relecture d'ensemble de la partie A (point 12) : « Autres versions » avalait l'appui pendant l'enregistrement sans rien
+// montrer, alors que déplier la liste n'envoie rien. Il répond désormais, comme « Retour » ; seuls les choix attendent.
+test('LISTE DES VERSIONS: en attente, aria-busy et les appuis sur les versions ignorés ; « Autres versions » et « Retour » répondent', async () => {
   const VC = await import('../../src/utils/version-choice.ts');
   const { VersionList } = await loadVersionList();
   const picks = []; let more = 0; let back = 0;
@@ -788,7 +790,7 @@ test('LISTE DES VERSIONS: en attente, aria-busy et les appuis sur les lignes ign
   }
   buttons.find((b) => b.props.className === 'M').props.onClick();
   assert.deepEqual(picks, [], 'aucun choix pendant l\'enregistrement');
-  assert.equal(more, 0);
+  assert.equal(more, 1, '« Autres versions » déplie la liste : rien ne part au serveur');
   buttons.find((b) => b.props.className === 'B').props.onClick();
   assert.equal(back, 1, 'la liste n\'enferme jamais le visiteur');
 });
@@ -882,7 +884,10 @@ test('PANNEAU VERSION: KioskView calcule la ligne, la liste et la question à pa
 test('PANNEAU VERSION: « Sur ce téléphone » / « Sur ma télé » — lancer, demander, ou dire qu\'aucune version n\'est lisible', () => {
   const view = KIOSK('KioskView.tsx');
   const fn = arrowBody(view, 'launchFromReady');
-  assert.ok(fn.includes('readyLaunchStep(versionDecisionFor(useStore.getState(), filmId))') || /const decision = versionDecisionFor\(useStore\.getState\(\), filmId\);[\s\S]*readyLaunchStep\(decision\)/.test(fn), 'la décision lue au moment de l\'appui, puis readyLaunchStep');
+  assert.match(fn, /const decision = versionDecisionFor\(useStore\.getState\(\), filmId\);[\s\S]*readyLaunchStep\(decision, useStore\.getState\(\)\.getRental\(filmId\) !== undefined\)/, 'la décision et la location lues au moment de l\'appui, puis readyLaunchStep');
+  // Location disparue (relecture d'ensemble de la partie A, m9) : le panneau se ferme, avant tout message de version.
+  assert.match(fn, /if \(step === 'close'\) \{\s*closeReady\(\);\s*return;\s*\}/, 'location disparue : le panneau se ferme');
+  assert.ok(fn.indexOf("step === 'close'") < fn.indexOf('NO_PLAYABLE_VERSION'), 'avant le refus « aucune version lisible »');
   assert.match(fn, /if \(step === 'ask'\) \{\s*setReadySub\(\{ view: 'question', target \}\);\s*return;/, 'la question remplace le panneau, la cible est retenue');
   assert.match(fn, /title: NO_PLAYABLE_VERSION/, 'refus : le message exact (kiosk-logic)');
   assert.ok(fn.includes('launch(filmId, target, version)'), 'sinon le lancement, dans la version décidée');
