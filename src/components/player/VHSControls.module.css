@@ -1,5 +1,5 @@
 /* Barre de contrôle locale : deux coins ancrés en bas de l'écran.
-   Le transport VCR à gauche, le volume + les versions à droite. Pas de
+   Le transport VCR à gauche, la version + le volume à droite. Pas de
    compteur de bande — il a été retiré au profit des contrôles. */
 .controls {
   position: absolute;
@@ -125,61 +125,41 @@
   gap: 8px;
 }
 
-/* Track controls */
-.trackControls {
-  display: flex;
+/* Le bouton « Version » : son libellé, puis le nom de la version qui joue, en rose néon comme la piste active d'avant. */
+.versionBtn {
+  display: inline-flex;
   align-items: center;
-  gap: 4px;
-}
-
-.trackSelector {
-  display: flex;
-  gap: 2px;
+  justify-content: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0.4rem 0.8rem;
   background: rgba(0, 0, 0, 0.5);
-  border-radius: 4px;
-  padding: 2px;
   border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 150ms ease;
 }
 
-.trackBtn {
-  background: transparent;
-  border: none;
-  color: rgba(255, 255, 255, 0.5);
+.versionBtn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--color-neon-pink);
+}
+
+.versionBtnLabel {
   font-family: var(--font-display);
-  font-size: 0.7rem;
+  font-size: 0.6rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.versionBtnValue {
+  font-family: var(--font-display);
+  font-size: 0.72rem;
   font-weight: bold;
   letter-spacing: 0.05em;
-  padding: 0.35rem 0.6rem;
-  cursor: pointer;
-  border-radius: 3px;
-  transition: all 150ms ease;
-  text-transform: uppercase;
-}
-
-/* Boutons de sous-titres : hors du groupe VF/VO, il leur faut leur propre cadre
-   pour rester lisibles comme des bascules et non comme du texte flottant. */
-.trackBtnAlone {
-  background: rgba(0, 0, 0, 0.5);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 4px;
-  padding: 0.4rem 0.6rem;
-}
-
-.trackBtn:hover:not(:disabled) {
-  color: white;
-  background: rgba(255, 255, 255, 0.1);
-}
-
-.trackBtn:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
-}
-
-.trackBtn.trackActive {
-  background: var(--color-neon-pink);
-  border-color: var(--color-neon-pink);
-  color: white;
-  box-shadow: 0 0 10px var(--color-neon-pink);
+  color: var(--color-neon-pink);
+  text-shadow: 0 0 8px rgba(255, 0, 128, 0.5);
 }
 
 /* Volume */
@@ -282,20 +262,9 @@
     gap: 0.5rem;
   }
 
-  /* Audio + subtitles in a single row */
-  .trackControls {
-    justify-content: center;
-    gap: 6px;
-  }
-
-  .trackSelector {
-    flex: 1;
-  }
-
-  .trackBtn {
-    flex: 1;
-    padding: 0.5rem 0.5rem;
-    font-size: 0.75rem;
+  /* « Version » sur toute la largeur de la télécommande */
+  .versionBtn {
+    width: 100%;
   }
 
   /* Volume + mute + fullscreen on one row, slider expands */

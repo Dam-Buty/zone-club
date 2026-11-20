@@ -543,21 +543,50 @@ page. Chaque pièce a maintenant un seul rôle :
 `wasCastConnectedRef`, `lastKnownCastTimeRef`, `endCast()` et le drapeau `castOnOpen` : ne pas les réintroduire (des
 gardes de `tests/domain/cast-player.test.mjs` et `cast-store.test.mjs` le vérifient).
 
-**Pistes** : `AudioTrack` (`'vf' | 'vo'`) et `SubtitleTrack` (`'off' | 'fr' | 'en'`). Les quatre
-peuvent manquer indépendamment — un film est régulièrement VF-only, ou VO avec les seuls sous-titres
-anglais. Deux effets « snap » ramènent la sélection sur quelque chose qui existe, sans jamais rallumer
-des sous-titres coupés à la main. Côté `<video>`, une seule `<track>` est montée à la fois, avec une
-`key` par langue : swapper le `src` d'une `<track>` déjà montée ne rafraîchit pas la textTrack, et
-l'attribut `default` d'une `<track>` insérée après le parse n'est pas honoré de façon fiable — d'où
-l'effet qui force `track.mode` explicitement (`addtrack` inclus, la piste pouvant arriver après le rendu).
+**Pistes : une seule décision de version** (spec `docs/superpowers/specs/2026-11-19-versions-et-erreurs-de-lecture-design.md`,
+§ 4.1, 4.3 b et 4.4). Le lecteur n'a plus de piste à lui : `usePlayerVersion(filmId, streamingUrls)` lui rend la
+version jouée — un couple `{ audio: 'vf' | 'vo', subtitle: 'off' | 'fr' | 'en' }` (`VersionChoice`) —, décidée par
+`decideVersion` (`src/utils/version-choice.ts`, via `versionDecisionFor` de `slices/version.ts`) comme pour la borne et
+le Cast : le choix fait pour ce film, sinon la version préférée du compte, sinon le défaut (VF si elle existe, sinon
+VOSTFR, sinon VO + sous-titres anglais, sinon VO). Les quatre pistes peuvent manquer indépendamment ; une version
+demandée que le film n'a pas est remplacée **et l'écran le dit** : la note (« VOSTFR · VF indisponible pour ce film »)
+s'écrit dans les lignes sous l'en-tête (`VersionNoteLine`). Un seul bouton « Version » (`VHSControls`, le nom de la
+version qui joue) ouvre la liste partagée (`VersionList`, dans `PlayerVersionPanel`, classes de sa propre feuille) ; une
+version absente y est une ligne de texte avec sa raison, jamais un bouton grisé. Les touches `V` (l'autre piste audio,
+`nextAudio`) et `T` (sans sous-titres → français → anglais, `nextSubtitle`) restent. Un choix dans la liste, `V`, `T` et
+« Essayer en … » du panneau d'échec écrivent le **choix de ce film** (`chooseFilmVersion`) : la version préférée, que
+seul « Mon compte » règle, n'est jamais touchée par le lecteur. **La question des sous-titres** (décision `ask` : version
+préférée VOSTFR, film sans sous-titres français mais avec la VF) : la borne la pose avant d'ouvrir le lecteur, le
+vidéoclub non — le lecteur la pose donc lui-même quand la vidéo joue ici, par-dessus elle, **vidéo en pause derrière**
+(`localAutoPlay` reçoit `question`), avant l'invite « Regarder sur TV ? ». La réponse devient le choix de ce film et lance
+la lecture : autre piste, le nouvel élément part de lui-même ; même piste, le lecteur appelle `play()` si rien d'autre
+ne retient la vidéo. Elle n'est pas reposée à la réouverture. Échap éjecte sans rien choisir ; sous la liste, Échap et le
+geste retour la referment.
+
+**La vidéo remontée garde sa fin et sa position.** L'élément `<video>` est remonté à chaque autre piste audio et à chaque
+« Réessayer » : sa `key` vaut `${version?.audio}-${videoUrl}-${attempt}`. Tout ce qui l'écoute suit cette key — dans
+`useVideoLifecycle`, trois effets qui dépendent tous de `videoKey` (un test le vérifie) : la **fin du film** (`ended` →
+« BE KIND REWIND » ou la fermeture), la **reprise à l'ouverture** (au `canplay`, un élément encore sous 1 s part de la
+position de la location) et la **position rétablie après un remontage** (au `loadedmetadata` du nouvel élément, ou tout
+de suite s'il les a déjà, s'il est encore sous 1 s). Où reprend le nouvel élément : `swapResumeTime`
+(`src/utils/video-swap.ts`, pur) — la plus grande des deux positions, celle de l'élément remplacé et celle de la
+location (un changement fait avant la première image ne repart pas de zéro) ; la position d'une location vue à 100 %
+ne compte plus (fin du film, ou périmée). Un élément remplacé avant d'avoir repris sa position la transmet au suivant.
+Avant, l'écouteur de fin et la reprise restaient sur l'ancien élément : plus de « BE KIND REWIND » après un changement
+de version, et un changement avant la première image repartait de zéro.
+
+Côté `<video>`, une seule `<track>` est montée à la fois, avec une `key` par langue : swapper le `src` d'une `<track>`
+déjà montée ne rafraîchit pas la textTrack, et l'attribut `default` d'une `<track>` insérée après le parse n'est pas
+honoré de façon fiable — d'où l'effet qui force `track.mode` explicitement (`addtrack` inclus, la piste pouvant arriver
+après le rendu).
 
 **Une version qui ne se lance pas** (`src/utils/playback-failure.ts`, `PlaybackFailurePanel.tsx`). Le lecteur
 annonce « Cette version ne se lance pas » sur une erreur de la vidéo (écouteur `error` en phase de capture : celles du
 `<source>` comptent) ou après 15 s sans métadonnées (`PLAYBACK_START_TIMEOUT_MS`) — **armé seulement quand la lecture est
 voulue** (`startTimerArmed` : jamais sous l'invite « Regarder sur TV ? », pendant un Cast ni sous « BE KIND REWIND »).
 Trois sorties, aucun `<button disabled>` : « Essayer en {nom} » (l'autre piste, à la même position ; absent sans autre
-piste), « Réessayer » (remonte le `<video>`), « Retour ». Le panneau retient la vidéo, et rien de tout cela ne touche la
-version préférée du compte. **Une trace par échec affiché** (pas par essai) part par `POST /api/playback-failures` dans
+piste — elle devient le choix de ce film : rouvert, il part dans cette version), « Réessayer » (remonte le `<video>`),
+« Retour ». Le panneau retient la vidéo, et rien de tout cela ne touche la version préférée du compte. **Une trace par échec affiché** (pas par essai) part par `POST /api/playback-failures` dans
 `playback_failures` : film, piste, sous-titres, lieu, genre, position, navigateur — **jamais l'adresse du fichier**, secret
 de la location (pas de colonne pour, six champs nommés côté client, rien pour une prévisualisation /admin). `/admin` la
 montre dans « Lectures en échec » : une ligne par film, version (« VF » ou « VO ») et lieu (« appareil » ou « télé »), avec le
@@ -568,7 +597,9 @@ envoie des traces pour l'instant ; la route accepte déjà le lieu `tv` et le ge
 sont donc **side-loadés** dans le `MediaInfo` (`mediaInfo.tracks`, `text/vtt`, IDs stables fr=1/en=2)
 et la langue active part dans `request.activeTrackIds`. Pendant le cast, un changement de piste passe
 par l'action `castSubtitle` → `setCastSubtitle` du service (`editTracksInfo` sur la séance média, avec accusé
-ou délai) sans recharger le film (boutons STFR/STEN de la télécommande + touche `T`) ; la séance média
+ou délai) sans recharger le film (boutons STFR/STEN de la télécommande + touche `T`, qui changent aussi la version
+de ce film, même piste audio) ; « Regarder sur TV » envoie la version que joue le lecteur
+(`castFilm(filmId, { version, startAt })`). Changer de piste audio pendant un Cast n'existe pas encore ; la séance média
 vivant dans le service, la bascule marche aussi après fermeture et réouverture du lecteur.
 `buildCastSubtitleTracks()` (`src/utils/cast-subtitles.ts`) n'accepte que les URLs
 absolues : un chemin `/seed-media/...` n'est pas joignable par le Chromecast, et déclarer des tracks
@@ -624,8 +655,9 @@ Règles que suit le lecteur (`VHSPlayer.tsx` lit la vue et envoie des intentions
   (`playsHere` : vue `local`, ou `other-on-tv` — un AUTRE film sur la TV n'est pas le même film sur deux écrans), que
   l'invite « Regarder sur TV ? » n'attend pas de réponse, qu'aucun rembobinage n'est proposé ou en cours, qu'aucun
   message n'attend de choix (`noticeHoldsPlayback` : lancement raté `connect_failed` / `load_failed`, ou Cast absent
-  du navigateur `unavailable`, sous le panneau « recopie d'écran ») et que la machine n'attend plus la TV ou le serveur
-  pour ce film (`castPending`). L'invite n'existe que sur mobile : posée à l'ouverture quand l'appelant la demande
+  du navigateur `unavailable`, sous le panneau « recopie d'écran »), que la machine n'attend plus la TV ou le serveur
+  pour ce film (`castPending`) et que la question des sous-titres n'est pas affichée (`question`, voir « Pistes »).
+  L'invite n'existe que sur mobile, et passe après la question des sous-titres : posée à l'ouverture quand l'appelant la demande
   (`playerAsk`) ou quand un tel message est là, elle revient quand une attente (sélecteur, connexion, lancement)
   retombe sur `local` ; son second bouton dit « Continuer sur ce téléphone » (ou tablette, ordinateur :
   `continueHereLabel`). Toute vue où la vidéo d'ici n'a pas la main (attente, télécommande, liaison perdue, film
@@ -947,7 +979,8 @@ Règles à ne pas casser — chacune a son test dans `tests/domain/kiosk-*.test.
   déjà répondu, le film démarre ici — même si la TV joue un autre film ; seule exception, une page rechargée dont la
   machine ne sait pas encore si la TV joue CE film (`castPending`) : il attend, en pause. « Sur ma télé » (`watchOnTv`,
   d'après `tvEntry`) fait partir le
-  Cast **dans l'appui même** — `castFilm(filmId)` avant tout `await`, le sélecteur d'appareils exige l'activation —,
+  Cast **dans l'appui même** — `castFilm(filmId, { version })` avant tout `await`, dans la version décidée par le panneau
+  (voir la règle suivante) ; le sélecteur d'appareils exige l'activation —,
   puis ouvre le lecteur (`ask: false`), qui montre l'attente ; le panneau a démarré le service du Cast à son
   ouverture pour que le SDK soit prêt. **Branche AirPlay** : sur un appareil Apple qui sait faire AirPlay
   (`appleAirPlay`, lu sur l'élément vidéo), le Cast de Google n'existe pas : le lecteur s'ouvre avec son invite
@@ -955,6 +988,21 @@ Règles à ne pas casser — chacune a son test dans `tests/domain/kiosk-*.test.
   bouton « Sur ma télé » le dit **avant** l'appui — « remplace {titre} sur {nom} » à la place de « via Chromecast »
   (`tvChoiceLine`) : l'appui remplace sans demander, parce qu'une confirmation en deux temps ferait perdre
   l'activation dont le sélecteur a besoin.
+- **La ligne « Version » du panneau** (spec `docs/superpowers/specs/2026-11-19-versions-et-erreurs-de-lecture-design.md`,
+  § 4.1, 4.3 a et 4.4). Entre l'échéance et les deux boutons, « Version » et le nom de la version qui jouera
+  (`readyVersionRow` : la décision unique `decideVersion`, la même que celle du lecteur et du Cast). Elle montre et se
+  change, sans rien demander : un appui remplace le contenu du panneau par la liste partagée (`VersionList`, VF ·
+  VOSTFR · VO, « Autres versions », « Retour » ; une version absente est une ligne de texte avec sa raison), et un choix
+  vaut **pour ce film** (`chooseFilmVersion`, retenu sur l'appareil tant qu'il est loué). Un film qui n'offre qu'un
+  couple n'a rien à ouvrir : « VO · seule version de ce film », sans chevron ; une substitution s'écrit dessous
+  (« VOSTFR · VF indisponible pour ce film ») ; sans aucune version lisible, « Ce film n'a aucune version lisible pour
+  le moment. » et le lancement est refusé (`NO_PLAYABLE_VERSION`). **La question des sous-titres** : version préférée
+  VOSTFR sur un film sans sous-titres français qui a la VF — « Sur ce téléphone » ou « Sur ma télé » demande d'abord
+  « Ce film n'a pas de sous-titres français / La VO existe avec des sous-titres anglais. » (ou « Ce film n'a pas de
+  sous-titres. ») avec « Continuer en … » et « Passer en VF » ; la réponse devient le choix de ce film et le film part
+  vers la cible retenue **dans le même appui**. Le lecteur ouvert par la borne n'a donc plus rien à demander ; ouvert par
+  le vidéoclub, il pose la même question lui-même (voir « Pistes » dans « Player + Cast »). Le geste retour referme la
+  question ou la liste avant le panneau (`kioskBackAction`).
 - **La barre du Cast** (`KioskCastBar`) remplace la puce flottante dans la borne, qui recouvrait la rangée de K7.
   Lecteur fermé, quand la TV a un film à signaler (`castOwnsFilm` : elle le joue, ne répond plus, ou vient de le
   finir), un bouton dessiné dans le langage de la borne — l'aplat et le filet de « Recherche », sa police et sa casse
@@ -975,7 +1023,13 @@ Règles à ne pas casser — chacune a son test dans `tests/domain/kiosk-*.test.
 - **« Mon compte » et les critiques** (`KioskAccount`, `KioskReview`, spec
   `docs/superpowers/specs/2026-11-17-borne-mon-compte-design.md`). « Compte » ouvre l'écran à tout moment, sans avoir à
   louer : crédits, locations en cours, **tout l'historique** (rendu / expiré / terminée, rembobiné, rendu en avance,
-  critique). La règle des critiques est **au serveur** (`lib/review-eligibility.ts`, renvoyée par `/api/me` →
+  critique). Une ligne **« Version préférée »** et sa valeur (« Automatique » quand rien n'est réglé) ouvre la même
+  liste, précédée d'« Automatique » (« VF quand elle existe, sinon VOSTFR ») : c'est le **seul** chemin qui écrit la
+  préférence du compte (`setVersionPref` → `PATCH /api/me/version`, colonnes `users.pref_audio` / `pref_subtitle`, nulles
+  = « Automatique ») — l'application ne la déduit jamais de ce qui a été regardé, et ni un choix fait sur un film, ni
+  « Essayer en … », ni une réponse à la question des sous-titres ne la changent. Le magasin ne l'écrit qu'après le oui
+  du serveur : la ligne dit alors « Enregistré », un refus laisse la liste ouverte avec « L'enregistrement n'a pas
+  abouti. Réessayez. ». La règle des critiques est **au serveur** (`lib/review-eligibility.ts`, renvoyée par `/api/me` →
   `reviewEligibility`) : une location suffit si elle est vue à 80 % **et** si 80 % de la durée se sont écoulés depuis son
   lancement (`rentals.watch_started_at`, posé par `lib/rental-marks.ts` sur une location sans progression) ; une seule
   critique par film et par visiteur, modifiable. Minimum **144 caractères** et intitulés **Réalisation / Scénario / Jeu
@@ -1181,8 +1235,9 @@ chemins VO/VF et les sous-titres.
   relatif à `MEDIA_FILMS_PATH` et continue de passer par les symlinks : les deux cohabitent.
 
 La répartition VO/VF/sous-titres **reproduit celle de la prod** (constante `SEED_DISTRIBUTION`), parce
-que les cas qui cassent le player sont les buckets minoritaires : un film sans VF force le snap de
-piste audio, un film sans sous-titre FR celui des sous-titres. Le tirage est déterministe (haché sur
+que les cas qui cassent le player sont les buckets minoritaires : un film sans VF fait remplacer la
+version demandée (et l'écrire), un film sans sous-titre FR fait poser la question des sous-titres à qui
+préfère la VOSTFR. Le tirage est déterministe (haché sur
 le `tmdb_id`), donc reproductible d'une machine à l'autre et stable d'un run au suivant.
 
 Relancer le seed sur une base existante **ne réécrit que les états média de seed** : un chemin de

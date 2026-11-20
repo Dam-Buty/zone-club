@@ -87,7 +87,8 @@ test('CAST STORE VERSION: le lecteur passe sa version courante à castFilm, avec
   const start = player.indexOf('const sendToTv = useCallback(');
   assert.ok(start > 0, 'sendToTv introuvable');
   const send = player.slice(start, player.indexOf('}, [', start));
-  assert.match(send, /castFilm\(currentPlayingFilm, \{\s*version: \{ audio: audioTrack, subtitle: subtitleTrack \},\s*startAt: Math\.max\(/, 'version d\'ici et position');
+  // La version que joue le lecteur (usePlayerVersion, la décision unique) ; sans version lisible, la tranche décide.
+  assert.match(send, /castFilm\(currentPlayingFilm, \{\s*version: version \?\? undefined,\s*startAt: Math\.max\(/, 'version d\'ici et position');
 });
 
 // La chaîne que castFilm compose, rejouée sur les vraies fonctions pures : la décision → la source et la piste de

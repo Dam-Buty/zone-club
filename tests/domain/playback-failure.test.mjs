@@ -151,17 +151,20 @@ test('ÉCHEC LECTURE: l\'erreur d\'un <source> se capture sur <video>, les méta
 // en pause, durée NaN ; l'enregistrement des 10 s (garde `duration === 0`) écrivait position 0 et progression NaN, et
 // « Essayer en … » repartait du début.
 // Relecture de la tâche 3 : la fin du film restait écoutée sur l'élément détaché après « Réessayer » ou « Essayer en … » —
-// ni 100 %, ni « BE KIND REWIND ». Tout écouteur posé sur la vidéo suit la key de l'élément.
+// ni 100 %, ni « BE KIND REWIND ». Tout écouteur posé sur la vidéo suit la key de l'élément. Depuis la tâche 8, ces
+// écouteurs vivent dans useVideoLifecycle (tests/domain/video-swap.test.mjs y vérifie chaque tableau de dépendances).
 test('ÉCHEC LECTURE: l\'enregistrement des 10 s n\'écrit rien sans durée connue, et la vidéo est suivie après remontage', () => {
   const src = read(PLAYER);
   const at = src.indexOf('// ===== Watch Progress Reporting (every 10s) =====');
   assert.ok(at > 0, 'boucle des 10 s introuvable');
   const loop = src.slice(at, src.indexOf('}, 10000);', at));
   assert.match(loop, /if \(!video \|\| !\(video\.duration > 0\) \|\| video\.paused\) return;/, 'durée NaN ou nulle : rien n\'est écrit');
+  assert.ok(src.includes('useVideoLifecycle({ videoRef, videoKey,'), 'le lecteur confie la vie de l\'élément au crochet, avec sa key');
+  const lifecycle = read('src/components/player/useVideoLifecycle.ts');
   for (const event of ['ended', 'canplay']) {
-    const listen = src.indexOf(`video.addEventListener('${event}'`);
+    const listen = lifecycle.indexOf(`video.addEventListener('${event}'`);
     assert.ok(listen > 0, `écouteur ${event} introuvable`);
-    const deps = src.slice(listen, src.indexOf('\n', src.indexOf('}, [', listen)));
+    const deps = lifecycle.slice(listen, lifecycle.indexOf('\n', lifecycle.indexOf('}, [', listen)));
     assert.match(deps, /\}, \[[^\]]*\bvideoKey\b[^\]]*\]\);/, `l'effet de '${event}' suit la key de l'élément <video>`);
   }
 });

@@ -5,7 +5,10 @@ import { VHSControls } from './VHSControls';
 import { CastPanels, readHereLabel } from './CastPanels';
 import { CastNoticeLine, OtherFilmBanner } from './CastNotices';
 import { PlaybackFailurePanel } from './PlaybackFailurePanel';
+import { PlayerVersionPanel, VersionNoteLine } from './PlayerVersionPanel';
 import { usePlaybackFailure } from './usePlaybackFailure';
+import { usePlayerVersion } from './usePlayerVersion';
+import { useVideoLifecycle } from './useVideoLifecycle';
 import { useAirPlay, type AirPlayVideoElement } from './useAirPlay';
 import { RentalTimer } from '../ui/RentalTimer';
 import api, { type ReviewsResponse } from '../../api';
@@ -17,27 +20,16 @@ import { useBackGuard } from '../../hooks/useBackGuard';
 import { buildCastSubtitleTracks, activeSubtitleId } from '../../utils/cast-subtitles';
 import { appleAirPlay, localAutoPlay, noticeHoldsPlayback, playerWithoutRental, playsHere, rewindPromptFor } from '../../utils/cast-on-open';
 import { failureHoldsPlayback, failurePanel, failureTrace, type DeviceFailureKind } from '../../utils/playback-failure';
-import { resolvedVersion, versionOffer } from '../../utils/version-choice';
-import { versionDecisionFor } from '../../store/slices/version';
+import { nextSubtitle, versionName, type VersionChoice, type VersionSubtitle } from '../../utils/version-choice';
+import { swapResumeTime } from '../../utils/video-swap';
 import { REVIEW_MIN_LENGTH, REVIEW_RATING_LABELS } from '../../utils/review-rules';
 import styles from './VHSPlayer.module.css';
 import castStyles from './CastPanels.module.css';
 
 const MIN_CONTENT_LENGTH = REVIEW_MIN_LENGTH;
 
-export type AudioTrack = 'vf' | 'vo';
-
-/**
- * Piste de sous-titres affichée. Le pipeline média extrait FR et EN séparément
- * (`subtitle_fr_vtt` / `subtitle_en_vtt`) et la location les expose toutes les deux ;
- * les deux peuvent manquer indépendamment, d'où un état à trois valeurs plutôt qu'un booléen.
- */
-export type SubtitleTrack = 'off' | 'fr' | 'en';
-
-const SUBTITLE_LABELS: Record<Exclude<SubtitleTrack, 'off'>, { button: string; label: string; title: string }> = {
-  fr: { button: 'STFR', label: 'Français', title: 'Sous-titres français [T]' },
-  en: { button: 'STEN', label: 'English', title: 'Sous-titres anglais [T]' },
-};
+/** Libellé de la piste de sous-titres montée dans le <video>. */
+const SUBTITLE_LABELS: Record<Exclude<VersionSubtitle, 'off'>, string> = { fr: 'Français', en: 'English' };
 
 /** Échec d'une bascule de sous-titres sur la TV : montré dans la télécommande, effacé quand on la quitte. */
 const TV_SUBTITLE_ERROR = 'Sous-titres indisponibles sur la TV.';
@@ -88,12 +80,6 @@ export function VHSPlayer() {
   const isMobile = useIsMobile();
   const videoRef = useRef<HTMLVideoElement>(null);
   const [playerState, setPlayerState] = useState<PlayerState>('paused');
-  // Le film part dans la version décidée (choix du film, préférence, défaut : spec 2026-11-19, § 4.4), lue à l'ouverture
-  // — le lecteur est monté à chaque ouverture. Pont jusqu'à la tâche 8, qui remplace ces états par usePlayerVersion.
-  const [opening] = useState(() => (currentPlayingFilm === null ? null : resolvedVersion(versionDecisionFor(useStore.getState(), currentPlayingFilm))));
-  const [audioTrack, setAudioTrack] = useState<AudioTrack>(opening?.audio ?? 'vf');
-  const [subtitleTrack, setSubtitleTrack] = useState<SubtitleTrack>(opening?.subtitle ?? 'fr');
-  const [currentTime, setCurrentTime] = useState(0);
   const [showBlueScreen, setShowBlueScreen] = useState(false);
   const [remoteError, setRemoteError] = useState<string | null>(null);
   const [showMirroringHelp, setShowMirroringHelp] = useState(false);
@@ -164,6 +150,20 @@ export function VHSPlayer() {
 
   const rental = currentPlayingFilm ? getRental(currentPlayingFilm) : null;
   const streamingUrls = rental?.streamingUrls;
+  // La version jouée : la décision unique, celle de la borne et du Cast (spec 2026-11-19, § 4.1 et 4.4). Le lecteur n'a
+  // plus de piste à lui ; la liste « Version », V, T, « Essayer en … » et la question changent le choix de CE film.
+  const { offer, version, note, question, choose, cycleAudio, cycleSubtitle } = usePlayerVersion(currentPlayingFilm, streamingUrls);
+  const subtitle = version?.subtitle ?? 'off';
+  const [versionListOpen, setVersionListOpen] = useState(false);
+  const closeVersionList = useCallback(() => setVersionListOpen(false), []);
+  // Le geste retour referme la liste avant le lecteur.
+  useBackGuard(versionListOpen, closeVersionList);
+  // La question des sous-titres (décision « ask » : la borne la pose avant d'ouvrir, le vidéoclub non) se pose ici quand
+  // la vidéo joue ici ; elle retient la vidéo et passe avant l'invite « Regarder sur TV ? ».
+  const asking = question !== null && playsHere(view);
+  // Le panneau « Version » (la question, sinon la liste ouverte) : jamais sous un Cast de ce film, « BE KIND REWIND » ou
+  // le rembobinage — comme les commandes.
+  const versionPanelShown = (asking || versionListOpen) && !remoteActive && rewindPhase === 'none' && !rewindingToStart;
 
   // Get film title for display. La page admin ouvre un film qui n'est pas
   // forcément dans le cache d'un rayon : `previewFilm` est alors la seule source.
@@ -172,12 +172,6 @@ export function VHSPlayer() {
   const currentFilm = previewFilm?.id === currentPlayingFilm
     ? previewFilm
     : allFilms.find(f => f.id === currentPlayingFilm);
-
-  // Determine available tracks
-  const hasVF = !!streamingUrls?.vf;
-  const hasVO = !!streamingUrls?.vo;
-  const hasSubtitlesFr = !!streamingUrls?.subtitles;
-  const hasSubtitlesEn = !!streamingUrls?.subtitles_en;
 
   // Un <track> distant (sous-domaine storage) n'est chargé que si l'élément
   // <video> est en mode CORS : le navigateur refuse la piste sans l'attribut
@@ -190,11 +184,6 @@ export function VHSPlayer() {
   const hasRemoteSubtitles =
     /^https?:\/\//i.test(streamingUrls?.subtitles ?? '') ||
     /^https?:\/\//i.test(streamingUrls?.subtitles_en ?? '');
-  // Ordre d'affichage et de cycle clavier : FR d'abord, EN ensuite, et seulement ce qui existe.
-  const availableSubtitles = useMemo(
-    () => (['fr', 'en'] as const).filter(lang => (lang === 'fr' ? hasSubtitlesFr : hasSubtitlesEn)),
-    [hasSubtitlesFr, hasSubtitlesEn]
-  );
 
   // Pistes que la TV peut charger (adresses absolues seulement, voir cast-subtitles) : les boutons STFR/STEN de la
   // télécommande. La tranche du magasin les déclare elle-même au lancement.
@@ -203,30 +192,10 @@ export function VHSPlayer() {
     [streamingUrls]
   );
 
-  // Snap the selected audio track to a version that ACTUALLY exists for this rental. A film can be VF-only
-  // (e.g. The Big Short) or VO-only; without this the player keeps the default 'vf' and getVideoUrl
-  // silently serves the other version → UI says one thing, audio is another. Here we make the selection
-  // honest so the controls + the served stream agree.
-  useEffect(() => {
-    if (!streamingUrls) return;
-    if (audioTrack === 'vf' && !hasVF && hasVO) setAudioTrack('vo');
-    else if (audioTrack === 'vo' && !hasVO && hasVF) setAudioTrack('vf');
-  }, [streamingUrls, hasVF, hasVO, audioTrack]);
-
-  // Même principe pour les sous-titres : le défaut est FR, mais un film peut n'avoir que l'EN (ou rien).
-  // On ne retombe QUE depuis une langue absente — 'off' est un choix explicite de l'utilisateur et ne doit
-  // jamais être réactivé tout seul.
-  useEffect(() => {
-    if (!streamingUrls || subtitleTrack === 'off') return;
-    if (!availableSubtitles.includes(subtitleTrack)) {
-      setSubtitleTrack(availableSubtitles[0] ?? 'off');
-    }
-  }, [streamingUrls, availableSubtitles, subtitleTrack]);
-
   // Sous-titres choisis par le visiteur pendant que la TV joue ce film (boutons STFR/STEN, touche T) : la TV suit sans
-  // recharger le film. Seulement sur son geste : au lancement, la TV a reçu le choix d'ici avec le film, et le recalage
-  // automatique d'une langue absente n'est pas un choix.
-  const subtitleToTv = useCallback((next: SubtitleTrack) => {
+  // recharger le film. Seulement sur son geste : au lancement, la TV a reçu la version d'ici avec le film. Le choix de
+  // ce film, lui, est écrit par l'appelant (choose, cycleSubtitle).
+  const subtitleToTv = useCallback((next: VersionSubtitle) => {
     if (view !== 'remote' || castSubtitles.length === 0) return;
     void castSubtitle(activeSubtitleId(castSubtitles, next)).then(ok => {
       setRemoteError(ok ? null : TV_SUBTITLE_ERROR);
@@ -237,14 +206,6 @@ export function VHSPlayer() {
   useEffect(() => {
     if (view !== 'remote') setRemoteError(prev => (prev === TV_SUBTITLE_ERROR ? null : prev));
   }, [view]);
-
-  // Get current video URL based on selected track
-  const getVideoUrl = useCallback(() => {
-    if (!streamingUrls) return rental?.videoUrl || '';
-    if (audioTrack === 'vf' && hasVF) return streamingUrls.vf!;
-    if (audioTrack === 'vo' && hasVO) return streamingUrls.vo!;
-    return streamingUrls.vf || streamingUrls.vo || rental?.videoUrl || '';
-  }, [streamingUrls, audioTrack, hasVF, hasVO, rental?.videoUrl]);
 
   // Check if 80%+ of the film has been watched locally (sur la TV, c'est le service qui suit la fin)
   const hasReachedMilestone = useCallback(() => {
@@ -258,58 +219,32 @@ export function VHSPlayer() {
     setShowMirroringHelp(true);
   }, []);
 
-  const videoUrl = getVideoUrl();
+  // L'adresse de la version décidée, et rien d'autre (sans version lisible : aucune source).
+  const videoUrl = (version && streamingUrls?.[version.audio]) || '';
 
   // La lecture locale est voulue : la vidéo part d'elle-même (localAutoPlay). Le délai « rien ne vient » ne court que là.
-  const playWanted = localAutoPlay({ view, prompt: showMobileRemotePrompt, rewind: rewindPhase !== 'none', castHeld: castFailedHere, pending: castPendingHere });
+  // `playHolds` : ce qui la retient hors de la question des sous-titres (la réponse la lance si rien d'autre ne la tient).
+  const playHolds = { view, prompt: showMobileRemotePrompt, rewind: rewindPhase !== 'none', castHeld: castFailedHere, pending: castPendingHere };
+  const playWanted = localAutoPlay({ ...playHolds, question: asking });
   // Une version qui ne se lance pas : le panneau, et une trace au serveur (jamais pour une prévisualisation de /admin).
   const isPreview = useStore(state => state.previewRental?.filmId === state.currentPlayingFilm);
   const reportFailure = useCallback((kind: DeviceFailureKind) => {
-    const trace = failureTrace({ filmId: currentPlayingFilm, preview: isPreview, version: { audio: audioTrack, subtitle: subtitleTrack }, kind, currentTime: videoRef.current?.currentTime ?? 0, savedPosition: rental?.watchPosition });
+    if (!version) return;
+    const trace = failureTrace({ filmId: currentPlayingFilm, preview: isPreview, version, kind, currentTime: videoRef.current?.currentTime ?? 0, savedPosition: rental?.watchPosition });
     if (trace) void api.playbackFailures.report(trace);
-  }, [currentPlayingFilm, isPreview, audioTrack, subtitleTrack, rental?.watchPosition]);
-  const { failure, retry, attempt } = usePlaybackFailure({ videoRef, videoKey: `${audioTrack}-${videoUrl}`, wanted: playWanted, onFailure: reportFailure });
-  // La key de l'élément <video> : remonté à chaque autre source et à chaque « Réessayer ».
-  const videoKey = `${audioTrack}-${videoUrl}-${attempt}`;
+  }, [currentPlayingFilm, isPreview, version, rental?.watchPosition]);
+  const { failure, retry, attempt } = usePlaybackFailure({ videoRef, videoKey: `${version?.audio}-${videoUrl}`, wanted: playWanted, onFailure: reportFailure });
+  // La key de l'élément <video> : remonté à chaque autre piste audio et à chaque « Réessayer » (useVideoLifecycle le suit).
+  const videoKey = `${version?.audio}-${videoUrl}-${attempt}`;
   const { isAirPlaySupported, isAirPlayAvailable, isAirPlayConnected, openAirPlayPicker } = useAirPlay(videoRef, isPlayerOpen, videoKey);
 
-  // Handle audio track change - preserve current time
-  const handleAudioTrackChange = useCallback((newTrack: AudioTrack) => {
-    const video = videoRef.current;
-    if (video) {
-      setCurrentTime(video.currentTime);
-    }
-    setAudioTrack(newTrack);
-  }, []);
-
-  // Bouton STFR/STEN : cliquer la langue active la coupe, cliquer l'autre bascule dessus.
-  const handleSubtitleTrackChange = useCallback((lang: Exclude<SubtitleTrack, 'off'>) => {
-    const next: SubtitleTrack = subtitleTrack === lang ? 'off' : lang;
-    setSubtitleTrack(next);
-    subtitleToTv(next);
-  }, [subtitleTrack, subtitleToTv]);
-
-  // Touche T : off → FR → EN → off, en ne s'arrêtant que sur les langues réellement présentes.
-  const cycleSubtitleTrack = useCallback(() => {
-    const cycle: SubtitleTrack[] = ['off', ...availableSubtitles];
-    const next = cycle[(cycle.indexOf(subtitleTrack) + 1) % cycle.length] ?? 'off';
-    setSubtitleTrack(next);
-    subtitleToTv(next);
-  }, [availableSubtitles, subtitleTrack, subtitleToTv]);
-
-  // Restore playback position after track change
-  useEffect(() => {
-    const video = videoRef.current;
-    if (video && currentTime > 0) {
-      video.currentTime = currentTime;
-      if (playerState === 'playing') {
-        video.play().catch(() => {});
-      }
-    }
-    // Volontairement déclenché par le seul changement de piste : ajouter currentTime relancerait un
-    // seek à chaque timeupdate, et playerState ferait rejouer la vidéo à chaque pause.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [audioTrack]);
+  // La réponse à la question des sous-titres : le choix de CE film, jamais la version préférée. Autre piste audio : le
+  // nouvel élément part de lui-même (lecture automatique) ; même piste, même élément, retenu derrière la question : il
+  // part maintenant, si rien d'autre ne le retient (l'invite « Regarder sur TV ? » attend alors sa propre réponse).
+  const answerQuestion = (v: VersionChoice) => {
+    choose(v);
+    if (v.audio === version?.audio && localAutoPlay({ ...playHolds, question: false })) void videoRef.current?.play().catch(() => {});
+  };
 
   // Aligner explicitement les textTracks du <video> sur la sélection. L'attribut `default` d'un <track>
   // inséré APRÈS le parse n'est pas honoré de façon fiable (la piste reste en mode 'disabled') ; avec une
@@ -322,18 +257,18 @@ export function VHSPlayer() {
     const tracks = video.textTracks;
     const applySelection = () => {
       for (const track of Array.from(tracks)) {
-        track.mode = subtitleTrack !== 'off' && track.language === subtitleTrack ? 'showing' : 'disabled';
+        track.mode = subtitle !== 'off' && track.language === subtitle ? 'showing' : 'disabled';
       }
     };
     applySelection();
     tracks.addEventListener('addtrack', applySelection);
     return () => tracks.removeEventListener('addtrack', applySelection);
-  }, [subtitleTrack, videoKey]);
+  }, [subtitle, videoKey]);
 
   // Multi-device sync: refresh rental data on player open so seek picks up
   // progress made elsewhere (other browser/device, or background cast).
-  // Non-blocking: local seek effect below uses current store value immediately;
-  // when fetchMe resolves with a newer watchPosition, that effect re-runs.
+  // Non-blocking: la reprise (useVideoLifecycle) part de la position connue du
+  // magasin ; une position plus récente rendue par fetchMe réarme son écouteur.
   useEffect(() => {
     if (!isPlayerOpen) {
       setRentalFreshFor(null);
@@ -355,23 +290,6 @@ export function VHSPlayer() {
     if (currentPlayingFilm !== null) castRentalGone(currentPlayingFilm);
     closePlayer();
   }, [withoutRental, currentPlayingFilm, castRentalGone, closePlayer]);
-
-  // Resume from saved position when player opens — et sur chaque nouvel élément <video> (« Réessayer », « Essayer en … »
-  // d'une version qui n'avait rien joué) : sa position est celle de la location.
-  useEffect(() => {
-    if (!isPlayerOpen || !rental?.watchPosition) return;
-    const video = videoRef.current;
-    if (!video) return;
-
-    const handleCanPlay = () => {
-      if (rental.watchPosition > 0 && video.currentTime < 1) {
-        video.currentTime = rental.watchPosition;
-      }
-    };
-
-    video.addEventListener('canplay', handleCanPlay, { once: true });
-    return () => video.removeEventListener('canplay', handleCanPlay);
-  }, [isPlayerOpen, rental?.watchPosition, videoKey]);
 
   // ===== FF/RW Logic =====
 
@@ -684,8 +602,9 @@ export function VHSPlayer() {
         } else if (e.key === ' ' && view === 'remote') {
           e.preventDefault();
           castToggle();
-        } else if ((e.key === 't' || e.key === 'T') && availableSubtitles.length > 0) {
-          cycleSubtitleTrack();
+        } else if ((e.key === 't' || e.key === 'T') && version) {
+          cycleSubtitle();
+          subtitleToTv(nextSubtitle(offer, version).subtitle);
         }
         return;
       }
@@ -708,6 +627,15 @@ export function VHSPlayer() {
           } else if (rewindPhase === 'rewinding') {
             closeRewindModal();
           }
+        }
+        return;
+      }
+      // Le panneau « Version » attend un choix : les touches ne visent plus la vidéo dessous. Échap ferme la liste ; sous la
+      // question, il éjecte sans rien choisir.
+      if (versionPanelShown) {
+        if (e.key === 'Escape') {
+          if (asking) handleEject();
+          else closeVersionList();
         }
         return;
       }
@@ -768,15 +696,11 @@ export function VHSPlayer() {
           break;
         case 'v':
         case 'V':
-          if (hasVF && hasVO) {
-            handleAudioTrackChange(audioTrack === 'vf' ? 'vo' : 'vf');
-          }
+          cycleAudio();
           break;
         case 't':
         case 'T':
-          if (availableSubtitles.length > 0) {
-            cycleSubtitleTrack();
-          }
+          cycleSubtitle();
           break;
         case 'r':
         case 'R':
@@ -787,7 +711,7 @@ export function VHSPlayer() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isPlayerOpen, playerState, rewindingToStart, rewindPhase, pendingEject, closePlayer, closeRewindModal, ejectAfterPrompt, handleEject, handleStop, handleFFCycle, handleRWCycle, handleRewindToStart, resumePlayFromRW, hasVF, hasVO, availableSubtitles, cycleSubtitleTrack, audioTrack, handleAudioTrackChange, stopRW, remoteActive, view, castToggle]);
+  }, [isPlayerOpen, playerState, rewindingToStart, rewindPhase, pendingEject, closePlayer, closeRewindModal, ejectAfterPrompt, handleEject, handleStop, handleFFCycle, handleRWCycle, handleRewindToStart, resumePlayFromRW, cycleAudio, cycleSubtitle, subtitleToTv, offer, version, versionPanelShown, asking, closeVersionList, stopRW, remoteActive, view, castToggle]);
 
   // ===== Remote playback (AirPlay, voir useAirPlay) =====
   // Sélecteur d'Apple dans l'appui ; s'il ne s'ouvre pas, la raison dans l'en-tête et le panneau « recopie d'écran ».
@@ -798,15 +722,15 @@ export function VHSPlayer() {
   }, [openAirPlayPicker, openMirroringFallback]);
 
   // « Regarder sur TV » : la demande part DANS le gestionnaire de l'appui (le sélecteur d'appareils exige son
-  // activation), avec la version, les sous-titres et la position d'ici. La machine du Cast décide du reste.
+  // activation), avec la version que joue le lecteur et la position d'ici. La machine du Cast décide du reste.
   const sendToTv = useCallback(() => {
     if (currentPlayingFilm === null) return;
     setRemoteError(null);
     castFilm(currentPlayingFilm, {
-      version: { audio: audioTrack, subtitle: subtitleTrack },
+      version: version ?? undefined,
       startAt: Math.max(videoRef.current?.currentTime || 0, rental?.watchPosition || 0),
     });
-  }, [currentPlayingFilm, castFilm, audioTrack, subtitleTrack, rental?.watchPosition]);
+  }, [currentPlayingFilm, castFilm, version, rental?.watchPosition]);
 
   const handleWatchOnTV = useCallback(() => {
     // D'abord la vidéo d'ici se tait, quelle que soit la suite (Cast, AirPlay, message, confirmation) : sans pause(),
@@ -856,11 +780,12 @@ export function VHSPlayer() {
   }, [tvOwnsFilm, stopRW]);
 
   // Lancement vers la TV raté pour ce film, ou Cast absent de ce navigateur (sous le panneau « recopie d'écran »), même
-  // vu à l'ouverture du lecteur, même au bureau : la vidéo d'ici ne part pas d'elle-même. pause() désarme aussi la
-  // lecture automatique d'un élément qui n'a encore rien joué.
+  // vu à l'ouverture du lecteur, même au bureau, ou question des sous-titres affichée (même si la décision change en
+  // cours de film) : la vidéo d'ici ne part pas d'elle-même. pause() désarme aussi la lecture automatique d'un élément
+  // qui n'a encore rien joué.
   useEffect(() => {
-    if (castFailedHere) videoRef.current?.pause();
-  }, [castFailedHere, videoUrl]);
+    if (castFailedHere || asking) videoRef.current?.pause();
+  }, [castFailedHere, asking, videoUrl]);
 
   // La question « Remplacer … ? » tombe avec son bandeau : elle ne reparaît pas d'elle-même au film suivant sur la TV.
   useEffect(() => {
@@ -967,30 +892,26 @@ export function VHSPlayer() {
   }, [isPlayerOpen]);
 
   // ===== End of Film — Rewind Prompt =====
-  // videoKey : l'écouteur suit l'élément remonté (autre version, « Réessayer »), sinon la fin du film n'est plus vue.
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    const handleEnded = () => {
-      stopRW();
-      setFfSpeed(0);
-      // Send final progress (100%) + reset position to 0
-      if (currentPlayingFilm) {
-        updateRentalProgress(currentPlayingFilm, 100, 0).catch(() => {});
-      }
-      // Same flow as eject — pendingEject=true since film ended
-      if (!rental?.rewindClaimed) {
-        setPendingEject(true);
-        setRewindPhase('prompt');
-      } else {
-        closePlayer();
-      }
-    };
-
-    video.addEventListener('ended', handleEnded);
-    return () => video.removeEventListener('ended', handleEnded);
-  }, [currentPlayingFilm, stopRW, rental?.rewindClaimed, closePlayer, updateRentalProgress, videoKey]);
+  const handleEnded = useCallback(() => {
+    stopRW();
+    setFfSpeed(0);
+    // Send final progress (100%) + reset position to 0
+    if (currentPlayingFilm) {
+      updateRentalProgress(currentPlayingFilm, 100, 0).catch(() => {});
+    }
+    // Same flow as eject — pendingEject=true since film ended
+    if (!rental?.rewindClaimed) {
+      setPendingEject(true);
+      setRewindPhase('prompt');
+    } else {
+      closePlayer();
+    }
+  }, [currentPlayingFilm, stopRW, rental?.rewindClaimed, closePlayer, updateRentalProgress]);
+  // La fin du film, la reprise à l'ouverture et la position d'un élément remonté (autre version, « Réessayer ») suivent
+  // l'élément <video> courant. Un élément qui n'a rien joué reprend à la position de la location — au début pour une
+  // location vue à 100 % (swapResumeTime, sans élément précédent).
+  const resumeAt = swapResumeTime({ elementTime: 0, rentalPosition: rental?.watchPosition ?? 0, rentalProgress: rental?.watchProgress ?? 0 });
+  useVideoLifecycle({ videoRef, videoKey, resumeAt, onEnded: handleEnded });
 
   // ===== BE KIND REWIND : fin vue par la TV, ou film déjà fini à l'ouverture =====
   // Une seule décision (rewindPromptFor). Fin vue par la TV : ÉJECTER, ou la sortie si le rembobinage est déjà
@@ -1204,18 +1125,23 @@ export function VHSPlayer() {
   const connectedTvLabel = tvDeviceName || (isAirPlayConnected ? 'TV AirPlay connectée' : null);
 
   // STFR / STEN de la télécommande (les pistes que la TV sait charger), et l'échec d'une bascule, qui sans eux
-  // resterait muet : les commandes VHS sont démontées pendant le Cast.
+  // resterait muet : les commandes VHS sont démontées pendant le Cast. Un appui sur la langue active la coupe, sur
+  // l'autre bascule dessus : la version de ce film change (même piste audio), et la TV suit.
   const castSubtitleRow = castSubtitles.length === 0 ? null : (
     <>
       {castSubtitles.map(track => {
-        const isActive = activeSubtitleId(castSubtitles, subtitleTrack) === track.id;
+        const isActive = activeSubtitleId(castSubtitles, subtitle) === track.id;
+        const next = isActive ? 'off' : track.language;
         return (
           <button
             key={track.id}
             type="button"
             className={`${castStyles.nowPlayingSecondaryBtn} ${isActive ? castStyles.nowPlayingSubtitleBtnActive : ''}`}
             aria-pressed={isActive}
-            onClick={() => handleSubtitleTrackChange(track.language)}
+            onClick={() => {
+              if (version) choose({ audio: version.audio, subtitle: next });
+              subtitleToTv(next);
+            }}
           >
             {track.language === 'fr' ? 'STFR' : 'STEN'}
           </button>
@@ -1306,15 +1232,17 @@ export function VHSPlayer() {
             />
           )}
           <CastNoticeLine filmId={rental.filmId} onRetry={sendToTv} />
+          {note && <VersionNoteLine text={note} />}
         </div>
       )}
 
-      {/* Video element with key to force reload on track change. La vidéo
+      {/* L'élément est remonté à chaque autre piste audio (key). La vidéo
           locale ne part d'elle-même que si elle a la main (la TV n'a pas ce
-          film, ou en joue un autre), qu'aucune question n'attend, qu'aucun
-          lancement vers la TV n'a échoué ou trouvé le Cast absent, et que la
-          machine sait que la TV ne joue pas ce film (localAutoPlay) : jamais
-          le film sur les deux écrans, jamais de lecture lancée d'office. */}
+          film, ou en joue un autre), qu'aucune question n'attend (invite,
+          sous-titres), qu'aucun lancement vers la TV n'a échoué ou trouvé le
+          Cast absent, et que la machine sait que la TV ne joue pas ce film
+          (localAutoPlay) : jamais le film sur les deux écrans, jamais de
+          lecture lancée d'office. */}
       <video
         key={videoKey}
         ref={videoRef}
@@ -1359,13 +1287,13 @@ export function VHSPlayer() {
         {/* Une seule piste montée à la fois, avec `default` pour qu'elle s'affiche : swapper le `src`
             d'un <track> déjà monté ne rafraîchit pas la textTrack côté navigateur, alors qu'un
             démontage/remontage (via la key) est le chemin que le toggle on/off empruntait déjà. */}
-        {subtitleTrack !== 'off' && (
+        {subtitle !== 'off' && (
           <track
-            key={subtitleTrack}
+            key={subtitle}
             kind="subtitles"
-            src={(subtitleTrack === 'fr' ? streamingUrls?.subtitles : streamingUrls?.subtitles_en) ?? undefined}
-            srcLang={subtitleTrack}
-            label={SUBTITLE_LABELS[subtitleTrack].label}
+            src={(subtitle === 'fr' ? streamingUrls?.subtitles : streamingUrls?.subtitles_en) ?? undefined}
+            srcLang={subtitle}
+            label={SUBTITLE_LABELS[subtitle]}
             default
           />
         )}
@@ -1380,13 +1308,27 @@ export function VHSPlayer() {
         </div>
       )}
 
-      {/* « Cette version ne se lance pas » : l'autre version à la même position, la même à nouveau, ou la sortie. */}
-      {failure && (
+      {/* « Cette version ne se lance pas » : l'autre version à la même position (le choix de ce film, jamais la version
+          préférée), la même à nouveau, ou la sortie. */}
+      {failure && version && (
         <PlaybackFailurePanel
-          panel={failurePanel({ title: currentFilm?.title ?? '', version: { audio: audioTrack, subtitle: subtitleTrack }, offer: versionOffer(streamingUrls) })}
-          onTryOther={v => { handleAudioTrackChange(v.audio); setSubtitleTrack(v.subtitle); }}
+          panel={failurePanel({ title: currentFilm?.title ?? '', version, offer })}
+          onTryOther={choose}
           onRetry={retry}
           onBack={closePlayer}
+        />
+      )}
+
+      {/* « Version » : la liste des versions de ce film, ou la question des sous-titres (vidéo retenue derrière). */}
+      {versionPanelShown && (
+        <PlayerVersionPanel
+          view={asking ? 'question' : 'list'}
+          offer={offer}
+          current={version}
+          question={question}
+          onPick={v => { choose(v); closeVersionList(); }}
+          onAnswer={answerQuestion}
+          onClose={closeVersionList}
         />
       )}
 
@@ -1400,7 +1342,7 @@ export function VHSPlayer() {
         posterUrl={currentFilm?.poster_path ? `/api/poster/w200${currentFilm.poster_path}` : undefined}
       />
 
-      {showMobileRemotePrompt && rewindPhase === 'none' && !remoteActive && (
+      {showMobileRemotePrompt && !asking && rewindPhase === 'none' && !remoteActive && (
         <div className={styles.mobileRemotePrompt}>
           <div className={styles.mobileRemotePromptTitle}>Regarder sur TV ?</div>
           <div className={styles.mobileRemotePromptText}>
@@ -1702,14 +1644,8 @@ export function VHSPlayer() {
           onRWCycle={handleRWCycle}
           onRewindToStart={handleRewindToStart}
           onResumeFromRW={resumePlayFromRW}
-          audioTrack={audioTrack}
-          onAudioTrackChange={handleAudioTrackChange}
-          subtitleTrack={subtitleTrack}
-          onSubtitleTrackChange={handleSubtitleTrackChange}
-          hasVF={hasVF}
-          hasVO={hasVO}
-          hasSubtitlesFr={hasSubtitlesFr}
-          hasSubtitlesEn={hasSubtitlesEn}
+          versionLabel={version ? versionName(version) : '—'}
+          onOpenVersion={() => setVersionListOpen(true)}
         />
         </div>
       )}

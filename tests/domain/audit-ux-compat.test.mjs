@@ -274,7 +274,8 @@ test('SUB-02: cast must side-load the WebVTT tracks on the receiver', () => {
   assert.ok(service.includes('load.activeTrackIds'), 'LoadRequest must carry activeTrackIds');
   assert.ok(service.includes('EditTracksInfoRequest'), 'Language switch during cast must use editTracksInfo');
   assert.ok(slice.includes('buildCastSubtitleTracks'), 'the cast slice must build the cast subtitle tracks');
-  assert.ok(player.includes('subtitle: subtitleTrack'), 'VHSPlayer must pass its subtitle choice to castFilm');
+  // Depuis la tâche 8 des versions, le lecteur passe sa version (piste audio ET sous-titres), celle de la décision unique.
+  assert.ok(player.includes('version: version ?? undefined'), 'VHSPlayer must pass its version (audio + subtitles) to castFilm');
   assert.ok(player.includes('buildCastSubtitleTracks') && player.includes('castSubtitle('), 'VHSPlayer switches the TV subtitles during cast');
 });
 

@@ -24,11 +24,12 @@ export function noticeHoldsPlayback(code: CastNotice): boolean {
 /**
  * La vidéo d'ici part-elle d'elle-même ? Seulement si elle a la main (`playsHere`) et que rien ne la retient : l'invite
  * « Regarder sur TV ? » (`prompt`), « BE KIND REWIND » ou son rembobinage (`rewind`), un message qui attend une réponse
- * (`castHeld`, voir noticeHoldsPlayback), ou la machine qui ne sait pas encore si la TV joue ce film (`pending` :
- * `castPending`, page rechargée). Jamais de lecture lancée d'office, jamais le même film sur deux écrans.
+ * (`castHeld`, voir noticeHoldsPlayback), la machine qui ne sait pas encore si la TV joue ce film (`pending` :
+ * `castPending`, page rechargée), ou la question des sous-titres affichée (`question`, spec 2026-11-19, § 4.1). Jamais
+ * de lecture lancée d'office, jamais le même film sur deux écrans.
  */
-export function localAutoPlay(i: { view: CastView; prompt: boolean; rewind: boolean; castHeld: boolean; pending: boolean }): boolean {
-  return playsHere(i.view) && !i.prompt && !i.rewind && !i.castHeld && !i.pending;
+export function localAutoPlay(i: { view: CastView; prompt: boolean; rewind: boolean; castHeld: boolean; pending: boolean; question: boolean }): boolean {
+  return playsHere(i.view) && !i.prompt && !i.rewind && !i.castHeld && !i.pending && !i.question;
 }
 
 /**

@@ -37,7 +37,9 @@ test('REMBOBINAGE: le lecteur applique la règle une fois par ouverture et ne la
   const player = readText(path.join(process.cwd(), 'src/components/player/VHSPlayer.tsx'));
   // rewindPromptFor applique rewindOfferOnOpen, qui applique shouldOfferRewindOnOpen.
   assert.ok(player.includes('rewindPromptFor('), 'le lecteur consulte la règle');
-  assert.match(player, /const playWanted = localAutoPlay\(\{[^}]*rewind: rewindPhase !== 'none'/, 'pas de lecture automatique derrière la proposition');
+  // Les retenues de localAutoPlay sont posées une fois (`playHolds`), la question des sous-titres s'y ajoute.
+  assert.match(player, /const playHolds = \{[^}]*rewind: rewindPhase !== 'none'/, 'pas de lecture automatique derrière la proposition');
+  assert.match(player, /const playWanted = localAutoPlay\(\{ \.\.\.playHolds, question: asking \}\);/, 'la même règle arme la lecture automatique');
   assert.ok(player.includes('autoPlay={playWanted}'), 'la vidéo part selon cette règle');
 });
 
@@ -102,7 +104,7 @@ test('LECTEUR A3: ouvert sur un film sans location, données relues → il se fe
 // Relecture finale, B4 / B5 / B9 : quand la vidéo d'ici part-elle d'elle-même ? Une seule règle, pure.
 test('LECTEUR B5: un AUTRE film sur la TV n\'empêche pas ce film de jouer ici ; ce film sur la TV, si', async () => {
   const { playsHere, localAutoPlay } = await import('../../src/utils/cast-on-open.ts');
-  const free = { prompt: false, rewind: false, castHeld: false, pending: false };
+  const free = { prompt: false, rewind: false, castHeld: false, pending: false, question: false };
   assert.equal(playsHere('local'), true);
   assert.equal(playsHere('other-on-tv'), true, 'ce n\'est pas le même film sur deux écrans');
   for (const view of ['choosing', 'connecting', 'loading', 'remote', 'lost', 'ended']) {
@@ -114,9 +116,9 @@ test('LECTEUR B5: un AUTRE film sur la TV n\'empêche pas ce film de jouer ici ;
 });
 test('LECTEUR B4 / B9: une question, un Cast raté ou absent, un film mémorisé encore attendu → rien ne part seul', async () => {
   const { localAutoPlay, noticeHoldsPlayback } = await import('../../src/utils/cast-on-open.ts');
-  const free = { prompt: false, rewind: false, castHeld: false, pending: false };
+  const free = { prompt: false, rewind: false, castHeld: false, pending: false, question: false };
   for (const view of ['local', 'other-on-tv']) {
-    for (const held of ['prompt', 'rewind', 'castHeld', 'pending']) {
+    for (const held of ['prompt', 'rewind', 'castHeld', 'pending', 'question']) {
       assert.equal(localAutoPlay({ view, ...free, [held]: true }), false, `${view} / ${held}`);
     }
   }
@@ -124,4 +126,16 @@ test('LECTEUR B4 / B9: une question, un Cast raté ou absent, un film mémorisé
   for (const code of ['connect_failed', 'load_failed', 'unavailable']) assert.equal(noticeHoldsPlayback(code), true, code);
   // Les autres messages n'attendent pas de réponse : un arrêt laisse déjà le lecteur en pause (reprise `play: false`).
   for (const code of ['stopped_elsewhere', 'tv_error', 'rental_over', 'no_source']) assert.equal(noticeHoldsPlayback(code), false, code);
+});
+
+// Tâche 8 (spec 2026-11-19-versions-et-erreurs-de-lecture, § 4.1) : ouvert hors de la borne avec une décision « ask »
+// (version préférée VOSTFR, film sans sous-titres français), le lecteur pose la question des sous-titres ; la vidéo
+// attend la réponse derrière elle, et part dès qu'elle est donnée.
+test('LECTEUR: la question des sous-titres retient la vidéo d\'ici tant qu\'elle est affichée', async () => {
+  const { localAutoPlay } = await import('../../src/utils/cast-on-open.ts');
+  const free = { prompt: false, rewind: false, castHeld: false, pending: false, question: false };
+  assert.equal(localAutoPlay({ view: 'local', ...free, question: true }), false, 'question affichée : rien ne part');
+  assert.equal(localAutoPlay({ view: 'local', ...free }), true, 'réponse donnée : la vidéo part');
+  // La réponse ne lève pas les autres retenues : l'invite « Regarder sur TV ? » attend encore la sienne.
+  assert.equal(localAutoPlay({ view: 'local', ...free, prompt: true }), false);
 });

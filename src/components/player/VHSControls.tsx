@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { PlayerState } from '../../types';
-import type { AudioTrack, SubtitleTrack } from './VHSPlayer';
 import styles from './VHSControls.module.css';
 
 interface VHSControlsProps {
@@ -15,22 +14,17 @@ interface VHSControlsProps {
   onRWCycle: () => void;
   onRewindToStart: () => void;
   onResumeFromRW: () => void;
-  // Audio track props
-  audioTrack: AudioTrack;
-  onAudioTrackChange: (track: AudioTrack) => void;
-  subtitleTrack: SubtitleTrack;
-  onSubtitleTrackChange: (lang: Exclude<SubtitleTrack, 'off'>) => void;
-  hasVF: boolean;
-  hasVO: boolean;
-  hasSubtitlesFr: boolean;
-  hasSubtitlesEn: boolean;
+  /** Le nom de la version qui joue (« VF », « VOSTFR »…), montré sur le bouton « Version ». */
+  versionLabel: string;
+  /** Le bouton « Version » : la liste des versions de ce film (spec 2026-11-19-versions-et-erreurs-de-lecture, § 4.3 b). */
+  onOpenVersion(): void;
 }
 
 /**
  * Barre de contrôle locale (lecture sur l'appareil, pas de cast).
  *
  * Disposition en deux coins, sans compteurs : le transport VCR occupe le coin
- * bas-gauche, le volume puis les sélecteurs de version le coin bas-droit. Le
+ * bas-gauche, le bouton « Version » puis le volume le coin bas-droit. Le
  * cast / AirPlay / miroir et le retour au vidéoclub vivent dans le chrome haut
  * de `VHSPlayer` — ils ne dépendent pas de la lecture locale.
  */
@@ -45,14 +39,8 @@ export function VHSControls({
   onRWCycle,
   onRewindToStart,
   onResumeFromRW,
-  audioTrack,
-  onAudioTrackChange,
-  subtitleTrack,
-  onSubtitleTrackChange,
-  hasVF,
-  hasVO,
-  hasSubtitlesFr,
-  hasSubtitlesEn,
+  versionLabel,
+  onOpenVersion,
 }: VHSControlsProps) {
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
@@ -157,61 +145,14 @@ export function VHSControls({
         </div>
       </div>
 
-      {/* ===== Bas droite : sélecteurs de version puis volume ===== */}
+      {/* ===== Bas droite : la version puis le volume ===== */}
       <div className={styles.optionsBlock}>
-        {/* Track selector */}
-        <div className={styles.trackControls}>
-          {(hasVF || hasVO) && (
-            <div className={styles.trackSelector}>
-              {/* Unavailable version: greyed + a clear "indisponible" label instead of a dead disabled
-                  button (a disabled button swallows the tap with no feedback on mobile). onClick is
-                  guarded so an unavailable version can't be selected. */}
-              <button
-                onClick={() => hasVF && onAudioTrackChange('vf')}
-                className={`${styles.trackBtn} ${audioTrack === 'vf' ? styles.trackActive : ''}`}
-                style={!hasVF ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
-                aria-disabled={!hasVF}
-                title={hasVF ? 'Version Française [V]' : 'VF indisponible pour ce film'}
-              >
-                VF
-              </button>
-              <button
-                onClick={() => hasVO && onAudioTrackChange('vo')}
-                className={`${styles.trackBtn} ${audioTrack === 'vo' ? styles.trackActive : ''}`}
-                style={!hasVO ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
-                aria-disabled={!hasVO}
-                title={hasVO ? 'Version Originale [V]' : 'VO indisponible pour ce film'}
-              >
-                VO
-              </button>
-              {hasVF !== hasVO && (
-                <span style={{ fontSize: '0.62rem', opacity: 0.7, alignSelf: 'center', marginLeft: 6, letterSpacing: '0.3px', whiteSpace: 'nowrap' }}>
-                  {hasVF ? 'VO' : 'VF'} indisponible
-                </span>
-              )}
-            </div>
-          )}
-          {/* Une langue absente n'a pas de bouton du tout : contrairement à VF/VO, l'absence de
-              sous-titres n'a rien à expliquer à l'utilisateur — il n'a pas payé pour eux. */}
-          {hasSubtitlesFr && (
-            <button
-              onClick={() => onSubtitleTrackChange('fr')}
-              className={`${styles.trackBtn} ${styles.trackBtnAlone} ${subtitleTrack === 'fr' ? styles.trackActive : ''}`}
-              title="Sous-titres français [T]"
-            >
-              STFR
-            </button>
-          )}
-          {hasSubtitlesEn && (
-            <button
-              onClick={() => onSubtitleTrackChange('en')}
-              className={`${styles.trackBtn} ${styles.trackBtnAlone} ${subtitleTrack === 'en' ? styles.trackActive : ''}`}
-              title="Sous-titres anglais [T]"
-            >
-              STEN
-            </button>
-          )}
-        </div>
+        {/* Un seul bouton : la version qui joue, et un appui ouvre la liste des versions de ce film. Une version absente
+            y est écrite avec sa raison — jamais un bouton grisé. Les touches V (piste) et T (sous-titres) restent. */}
+        <button type="button" onClick={onOpenVersion} className={styles.versionBtn} title="Changer de version [V : piste, T : sous-titres]">
+          <span className={styles.versionBtnLabel}>Version</span>
+          <span className={styles.versionBtnValue}>{versionLabel}</span>
+        </button>
 
         {/* Volume */}
         <div className={styles.volumeGroup}>
