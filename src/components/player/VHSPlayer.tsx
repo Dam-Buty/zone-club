@@ -16,7 +16,7 @@ import { useIsMobile } from '../../hooks/useIsMobile';
 import { useBackGuard } from '../../hooks/useBackGuard';
 import { buildCastSubtitleTracks, activeSubtitleId } from '../../utils/cast-subtitles';
 import { appleAirPlay, localAutoPlay, noticeHoldsPlayback, playerWithoutRental, playsHere, rewindPromptFor } from '../../utils/cast-on-open';
-import { failurePanel, failureTrace, type DeviceFailureKind } from '../../utils/playback-failure';
+import { failureHoldsPlayback, failurePanel, failureTrace, type DeviceFailureKind } from '../../utils/playback-failure';
 import { versionOffer } from '../../utils/version-choice';
 import { REVIEW_MIN_LENGTH, REVIEW_RATING_LABELS } from '../../utils/review-rules';
 import styles from './VHSPlayer.module.css';
@@ -964,6 +964,7 @@ export function VHSPlayer() {
   }, [isPlayerOpen]);
 
   // ===== End of Film — Rewind Prompt =====
+  // videoKey : l'écouteur suit l'élément remonté (autre version, « Réessayer »), sinon la fin du film n'est plus vue.
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
@@ -986,7 +987,7 @@ export function VHSPlayer() {
 
     video.addEventListener('ended', handleEnded);
     return () => video.removeEventListener('ended', handleEnded);
-  }, [currentPlayingFilm, stopRW, rental?.rewindClaimed, closePlayer, updateRentalProgress]);
+  }, [currentPlayingFilm, stopRW, rental?.rewindClaimed, closePlayer, updateRentalProgress, videoKey]);
 
   // ===== BE KIND REWIND : fin vue par la TV, ou film déjà fini à l'ouverture =====
   // Une seule décision (rewindPromptFor). Fin vue par la TV : ÉJECTER, ou la sortie si le rembobinage est déjà
@@ -1319,8 +1320,8 @@ export function VHSPlayer() {
         autoPlay={playWanted}
         playsInline
         onPlay={() => {
-          // La TV a ce film, le prend ou vient de le finir : la vidéo locale ne joue pas en même temps.
-          if (tvOwnsFilm) {
+          // La TV a ce film, le prend ou vient de le finir, ou le panneau d'échec est affiché : la vidéo locale ne joue pas.
+          if (tvOwnsFilm || failureHoldsPlayback(failure)) {
             videoRef.current?.pause();
             return;
           }

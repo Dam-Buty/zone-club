@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { readText } from '../helpers/repo.mjs';
-import { PLAYBACK_START_TIMEOUT_MS, startTimerArmed, signalsFor, shownFailure, failurePanel, failureTrace } from '../../src/utils/playback-failure.ts';
+import { PLAYBACK_START_TIMEOUT_MS, startTimerArmed, signalsFor, shownFailure, failureHoldsPlayback, failurePanel, failureTrace } from '../../src/utils/playback-failure.ts';
 import { VF, VOSTFR, VO, VF_ST } from '../../src/utils/version-choice.ts';
 
 // « Cette version ne se lance pas » (spec 2026-11-19-versions-et-erreurs-de-lecture, § 5.1 et § 5.3) : le lecteur dit
@@ -66,6 +66,18 @@ test('ÉCHEC LECTURE: les signaux d\'un élément <video> précédent ne compten
   assert.equal(shownFailure(true, signalsFor(failed, 'vf-x#1')), null);
   assert.equal(signalsFor(failed, 'vf-x#0'), failed, 'le même élément garde ce qu\'il a signalé');
   assert.deepEqual(signalsFor(null, 'vf-x#0'), { element: 'vf-x#0', ...NOTHING }, 'rien encore');
+});
+
+// Relecture de la tâche 3 : après le délai, l'élément continuait de charger avec sa lecture automatique ; des métadonnées
+// arrivées tard lançaient le film, avec le son, derrière « Cette version ne se lance pas ».
+test('ÉCHEC LECTURE: un délai écoulé reste affiché même si les métadonnées arrivent ensuite', () => {
+  assert.equal(shownFailure(true, { element: 'a', error: false, metadata: true, timeout: true }), 'timeout');
+});
+
+test('ÉCHEC LECTURE: tant que le panneau est affiché, la vidéo est retenue ; sans panneau, rien ne la retient', () => {
+  assert.equal(failureHoldsPlayback('timeout'), true);
+  assert.equal(failureHoldsPlayback('error'), true);
+  assert.equal(failureHoldsPlayback(null), false);
 });
 
 test('ÉCHEC LECTURE: le panneau dit que cette version ne se lance pas, avec le titre et la version', () => {
@@ -138,12 +150,28 @@ test('ÉCHEC LECTURE: l\'erreur d\'un <source> se capture sur <video>, les méta
 // Vu à l'écran le 20/11 : sur téléphone, « Continuer sur ce téléphone » appelle play() sur une version en panne — plus
 // en pause, durée NaN ; l'enregistrement des 10 s (garde `duration === 0`) écrivait position 0 et progression NaN, et
 // « Essayer en … » repartait du début.
-test('ÉCHEC LECTURE: l\'enregistrement des 10 s n\'écrit rien pour une vidéo sans durée connue', () => {
+// Relecture de la tâche 3 : la fin du film restait écoutée sur l'élément détaché après « Réessayer » ou « Essayer en … » —
+// ni 100 %, ni « BE KIND REWIND ». Tout écouteur posé sur la vidéo suit la key de l'élément.
+test('ÉCHEC LECTURE: l\'enregistrement des 10 s n\'écrit rien sans durée connue, et la vidéo est suivie après remontage', () => {
   const src = read(PLAYER);
   const at = src.indexOf('// ===== Watch Progress Reporting (every 10s) =====');
   assert.ok(at > 0, 'boucle des 10 s introuvable');
   const loop = src.slice(at, src.indexOf('}, 10000);', at));
   assert.match(loop, /if \(!video \|\| !\(video\.duration > 0\) \|\| video\.paused\) return;/, 'durée NaN ou nulle : rien n\'est écrit');
+  for (const event of ['ended', 'canplay']) {
+    const listen = src.indexOf(`video.addEventListener('${event}'`);
+    assert.ok(listen > 0, `écouteur ${event} introuvable`);
+    const deps = src.slice(listen, src.indexOf('\n', src.indexOf('}, [', listen)));
+    assert.match(deps, /\}, \[[^\]]*\bvideoKey\b[^\]]*\]\);/, `l'effet de '${event}' suit la key de l'élément <video>`);
+  }
+});
+
+test('ÉCHEC LECTURE: le panneau retient la vidéo, aucun chargement tardif ne la lance derrière lui', () => {
+  const hook = read(HOOK);
+  assert.match(hook, /if \(failureHoldsPlayback\(failure\)\) videoRef\.current\?\.pause\(\);/, 'le crochet met la vidéo en pause dès que le panneau s\'affiche');
+  const src = read(PLAYER);
+  const onPlay = src.slice(src.indexOf('onPlay={() => {'), src.indexOf('onPause={() => {'));
+  assert.match(onPlay, /if \(tvOwnsFilm \|\| failureHoldsPlayback\(failure\)\) \{\s*videoRef\.current\?\.pause\(\);\s*return;/, 'une lecture qui part sous le panneau est arrêtée');
 });
 
 test('ÉCHEC LECTURE: la place est faite, AirPlay vit dans useAirPlay', () => {

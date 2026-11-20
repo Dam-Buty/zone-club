@@ -39,6 +39,15 @@ export function shownFailure(wanted: boolean, s: VideoSignals): DeviceFailureKin
   return s.timeout ? 'timeout' : null;
 }
 
+/**
+ * Le panneau affiché retient la vidéo : en pause, et elle ne repart pas d'elle-même — des métadonnées arrivées après le
+ * délai lanceraient sinon le film, avec le son, derrière « Cette version ne se lance pas ». Le panneau reste ;
+ * « Réessayer » remonte l'élément, « Essayer en … » en monte un autre.
+ */
+export function failureHoldsPlayback(failure: DeviceFailureKind | null): boolean {
+  return failure !== null;
+}
+
 export interface FailurePanel {
   heading: string;
   line: string;

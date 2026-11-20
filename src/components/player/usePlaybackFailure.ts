@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import {
-  PLAYBACK_START_TIMEOUT_MS, shownFailure, signalsFor, startTimerArmed,
+  PLAYBACK_START_TIMEOUT_MS, failureHoldsPlayback, shownFailure, signalsFor, startTimerArmed,
   type DeviceFailureKind, type VideoSignals,
 } from '../../utils/playback-failure';
 
@@ -55,6 +55,12 @@ export function usePlaybackFailure(i: {
     const timer = setTimeout(() => mark(element, { timeout: true }), PLAYBACK_START_TIMEOUT_MS);
     return () => clearTimeout(timer);
   }, [armed, videoRef, element, mark]);
+
+  // Le panneau affiché retient la vidéo : pause(), qui désarme aussi sa lecture automatique — des métadonnées arrivées
+  // après le délai ne lancent pas le film derrière le panneau (le lecteur arrête en plus toute lecture qui partirait).
+  useEffect(() => {
+    if (failureHoldsPlayback(failure)) videoRef.current?.pause();
+  }, [failure, videoRef]);
 
   // Une trace par échec affiché : un panneau masqué puis réaffiché (Cast ouvert puis abandonné) ne la renvoie pas.
   const reportedRef = useRef<string | null>(null);
