@@ -573,8 +573,13 @@ ligne plus discrète, **« Retour »** (décision de Rusmir du 20/11/2026), ferm
 position de la location) et la **position rétablie après un remontage** (au `loadedmetadata` du nouvel élément, ou tout
 de suite s'il les a déjà, s'il est encore sous 1 s). Le crochet reçoit la position enregistrée de la location telle
 quelle et lit la durée sur l'élément ; il ne décide rien : **une seule règle pure, `src/utils/video-swap.ts`**, sert la
-reprise à l'ouverture, le remontage et le départ sur la télé (`startAt` de « Regarder sur TV ») — le téléphone et la télé
-ne se contredisent pas. `swapResumeTime` : la plus grande des deux positions, celle de l'élément remplacé (0 à
+reprise à l'ouverture, le remontage et le départ sur la télé — depuis le lecteur (`startAt` de « Regarder sur TV »,
+calculé sur la durée de sa vidéo) comme depuis la borne (« Sur ma télé » n'envoie pas de départ : `castStartAt` de
+`src/cast/cast-wire.ts` applique la même règle). **Seul écart qui reste** : sur le chemin de la borne, le client ne
+connaît pas la durée du fichier (il n'a que la durée TMDB, `runtime`, qui n'est pas celle du fichier : fichiers
+tronqués, versions longues), donc une position enregistrée dans les 10 dernières secondes y part telle quelle sur la
+télé, alors que le téléphone repart du début ; partout ailleurs, téléphone et télé partent de la même seconde.
+`swapResumeTime` : la plus grande des deux positions, celle de l'élément remplacé (0 à
 l'ouverture) et celle de la location (un changement fait avant la première image ne repart pas de zéro) ; **une position
 enregistrée dans les 10 dernières secondes du fichier vaut le début** (`RESUME_END_MARGIN_S`), sinon elle est reprise
 quel que soit le pourcentage — la progression ne redescend jamais, et un film fini puis revu jusqu'à 200 s reprend à
@@ -988,7 +993,9 @@ Règles à ne pas casser — chacune a son test dans `tests/domain/kiosk-*.test.
   machine ne sait pas encore si la TV joue CE film (`castPending`) : il attend, en pause. « Sur ma télé » (`watchOnTv`,
   d'après `tvEntry`) fait partir le
   Cast **dans l'appui même** — `castFilm(filmId, { version })` avant tout `await`, dans la version décidée par le panneau
-  (voir la règle suivante) ; le sélecteur d'appareils exige l'activation —,
+  (voir la règle suivante), à la position de la location par la règle de reprise de l'appareil (`castStartAt`, sans
+  durée de fichier connue ici : voir « La vidéo remontée » dans « Player + Cast ») ; le sélecteur d'appareils exige
+  l'activation —,
   puis ouvre le lecteur (`ask: false`), qui montre l'attente ; le panneau a démarré le service du Cast à son
   ouverture pour que le SDK soit prêt. **Branche AirPlay** : sur un appareil Apple qui sait faire AirPlay
   (`appleAirPlay`, lu sur l'élément vidéo), le Cast de Google n'existe pas : le lecteur s'ouvre avec son invite

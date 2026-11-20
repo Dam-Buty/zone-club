@@ -42,12 +42,17 @@ test('CAST SERVICE: le sélecteur s\'ouvre dans la pile de l\'appui', () => {
   assert.ok(!/await\s+[\w.?]*requestSession/.test(src), 'requestSession n\'est jamais attendu');
 });
 
-test('CAST SERVICE: la machine et le fil n\'importent aucune valeur', () => {
-  for (const name of ['cast-machine.ts', 'cast-wire.ts']) {
-    const src = readText(path.join(ROOT, 'src/cast', name));
-    assert.ok(!/^\s*import\s+(?!type\s)/m.test(src), `${name} : seul « import type » est permis`);
-    assert.ok(!/\bimport\s*\(/.test(src), `${name} : pas d'import dynamique`);
-  }
+// La machine n'importe aucune valeur. Le fil, une seule depuis la tâche 8 des versions (deuxième relecture) : la règle de
+// reprise de l'appareil (swapResumeTime), pour que « Sur ma télé » parte de la même seconde que le téléphone — un module
+// pur qui n'importe rien lui-même, avec son extension : le fil se charge toujours seul, dans Node comme dans le service.
+test('CAST SERVICE: la machine n\'importe aucune valeur ; le fil, seulement la règle de reprise (pure, sans import)', () => {
+  const machine = readText(path.join(ROOT, 'src/cast/cast-machine.ts'));
+  assert.ok(!/^\s*import\s+(?!type\s)/m.test(machine), 'cast-machine.ts : seul « import type » est permis');
+  const wire = readText(path.join(ROOT, 'src/cast/cast-wire.ts'));
+  const valueImports = (wire.match(/^\s*import\s+(?!type\s).*$/gm) ?? []).map((line) => line.trim());
+  assert.deepEqual(valueImports, ["import { swapResumeTime } from '../utils/video-swap.ts';"], 'cast-wire.ts : la règle de reprise, et rien d\'autre');
+  assert.ok(!/^\s*import\s/m.test(readText(path.join(ROOT, 'src/utils/video-swap.ts'))), 'video-swap.ts n\'importe rien');
+  for (const src of [machine, wire]) assert.ok(!/\bimport\s*\(/.test(src), 'pas d\'import dynamique');
 });
 
 test('CAST SERVICE: la remise à neuf réservée aux tests n\'est appelée nulle part dans l\'application', () => {

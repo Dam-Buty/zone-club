@@ -1,12 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import {
   CAST_SERVER_GIVE_UP_MS, castMediaRequest, castSourceFor, castStartAt, castSubtitleId, loadRequestData, mediaStatusEvent,
   rentalGoneFilm, settle,
 } from '../../src/cast/cast-wire.ts';
+import { swapResumeTime } from '../../src/utils/video-swap.ts';
 
 // Le fil entre la machine du Cast et le SDK (src/cast/cast-wire.ts) : ce que le service envoie à la TV, et ce
-// qu'il comprend de ce qu'elle répond. Pur, sans import de valeur : Node le charge tel quel.
+// qu'il comprend de ce qu'elle répond. Pur ; son seul import de valeur (la règle de reprise, video-swap.ts) porte son
+// extension : Node le charge tel quel.
 
 const getOut = (o = {}) => ({
   url: 'u', title: 'Get Out', startAt: 42,
@@ -110,26 +114,55 @@ const rental = (o = {}) => ({
 const subs = [{ id: 1, url: 'https://s/fr.vtt', language: 'fr', label: 'Français' }];
 const subsEn = { id: 2, url: 'https://s/en.vtt', language: 'en', label: 'English' };
 
-test('CAST FIL: le départ par défaut est la position de la location, 0 si elle est vue jusqu\'au bout', () => {
-  assert.equal(castStartAt(rental(), undefined), 1234);
-  assert.equal(castStartAt(rental({ watchProgress: 100, watchPosition: 5400 }), undefined), 0);
-  assert.equal(castStartAt(rental({ watchProgress: 99, watchPosition: 5300 }), undefined), 5300);
-  assert.equal(castStartAt(null, undefined), 0);
-  assert.equal(castStartAt(rental({ watchPosition: Number.NaN }), undefined), 0);
-  assert.equal(castStartAt(rental({ watchPosition: -5 }), undefined), 0);
+// Relecture de la tâche 8 des versions (deuxième tour) : le départ par défaut (castFilm sans `startAt`, celui de « Sur ma
+// télé » de la borne) suit la règle de reprise de l'appareil, swapResumeTime — la position est reprise quel que soit le
+// pourcentage ; elle vaut le début seulement si la durée du fichier est connue et qu'elle est dans ses 10 dernières
+// secondes. L'ancienne règle « 100 % → 0 » faisait partir de 0 sur la télé un film que le téléphone reprenait à 201 s.
+const DURATION = 596.48;
+
+test('CAST FIL: le départ par défaut est la position de la location, quel que soit le pourcentage', () => {
+  // Chemin de la borne : le client ne connaît pas la durée du fichier (null) — la position est reprise telle quelle.
+  assert.equal(castStartAt(rental(), undefined, null), 1234);
+  assert.equal(castStartAt(rental({ watchProgress: 100, watchPosition: 201 }), undefined, null), 201, 'film fini puis revu jusqu\'à 201 s : la télé reprend à 201 s, comme le téléphone');
+  assert.equal(castStartAt(rental({ watchProgress: 99, watchPosition: 590 }), undefined, null), 590, 'durée inconnue : la position telle quelle');
+  assert.equal(castStartAt(null, undefined, null), 0);
+  assert.equal(castStartAt(rental({ watchPosition: Number.NaN }), undefined, null), 0);
+  assert.equal(castStartAt(rental({ watchPosition: -5 }), undefined, null), 0);
+});
+test('CAST FIL: durée connue — une position dans les 10 dernières secondes du fichier vaut le début, comme sur l\'appareil', () => {
+  assert.equal(castStartAt(rental({ watchProgress: 99, watchPosition: 590 }), undefined, DURATION), 0);
+  assert.equal(castStartAt(rental({ watchProgress: 100, watchPosition: 300 }), undefined, DURATION), 300);
+  // La même décision que l'appareil (swapResumeTime, sans élément précédent), pour chaque cas.
+  for (const [position, duration] of [[0, DURATION], [201, DURATION], [586.48, DURATION], [586, DURATION], [590, null], [590, Number.NaN], [-1, DURATION]]) {
+    assert.equal(
+      castStartAt(rental({ watchPosition: position }), undefined, duration),
+      swapResumeTime({ elementTime: 0, rentalPosition: position, duration }),
+      `${position} / ${duration}`,
+    );
+  }
 });
 test('CAST FIL: un départ demandé prime, même 0 ; un départ illisible vaut « pas demandé »', () => {
-  assert.equal(castStartAt(rental(), 600), 600);
-  assert.equal(castStartAt(rental(), 0), 0);
-  assert.equal(castStartAt(rental({ watchProgress: 100, watchPosition: 5400 }), 90), 90);
-  assert.equal(castStartAt(rental(), Number.NaN), 1234);
-  assert.equal(castStartAt(rental(), -3), 1234);
+  assert.equal(castStartAt(rental(), 600, null), 600);
+  assert.equal(castStartAt(rental(), 0, null), 0);
+  assert.equal(castStartAt(rental({ watchProgress: 100, watchPosition: 5400 }), 90, null), 90);
+  assert.equal(castStartAt(rental({ watchPosition: 590 }), 590, DURATION), 590, 'le départ demandé n\'est pas réinterprété');
+  assert.equal(castStartAt(rental(), Number.NaN, null), 1234);
+  assert.equal(castStartAt(rental(), -3, null), 1234);
+});
+test('CAST FIL: la règle de la progression a quitté le fil ; il délègue à la règle de l\'appareil', () => {
+  const wire = readFileSync(path.join(process.cwd(), 'src/cast/cast-wire.ts'), 'utf8');
+  const fn = wire.slice(wire.indexOf('export function castStartAt('), wire.indexOf('\n}\n', wire.indexOf('export function castStartAt(')));
+  assert.ok(!/watchProgress/.test(fn), 'castStartAt ne lit plus la progression');
+  assert.ok(fn.includes('swapResumeTime({ elementTime: 0, rentalPosition:'), 'castStartAt = swapResumeTime sans élément précédent');
+  assert.match(wire, /import \{ swapResumeTime \} from '\.\.\/utils\/video-swap\.ts';/, 'l\'import porte son extension (Node le charge tel quel)');
 });
 
 test('CAST FIL: la demande de Cast d\'un film = source, titre, départ, sous-titres', () => {
   const media = castMediaRequest({ rental: rental(), audio: 'vo', title: 'Get Out', subtitles: subs, subtitle: 'fr' });
   assert.deepEqual(media, { url: 'https://s/vo.mp4', title: 'Get Out', startAt: 1234, subtitles: subs, activeSubtitleId: 1 });
   assert.equal(castMediaRequest({ rental: rental(), audio: 'vf', title: 'Get Out', startAt: 5, subtitles: [] }).startAt, 5);
+  // Une location vue à 100 % puis revue jusqu'à 201 s : « Sur ma télé » de la borne la reprend à 201 s.
+  assert.equal(castMediaRequest({ rental: rental({ watchProgress: 100, watchPosition: 201 }), audio: 'vf', title: 'x', subtitles: [] }).startAt, 201);
 });
 test('CAST FIL: sans source il n\'y a pas de demande ; sans titre, le nom du club', () => {
   assert.equal(castMediaRequest({ rental: rental({ videoUrl: '', streamingUrls: { vf: null, vo: null } }), audio: 'vf', title: 'x', subtitles: [] }), null);

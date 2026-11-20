@@ -1,8 +1,12 @@
 // Où reprend un film (docs/superpowers/specs/2026-11-19-versions-et-erreurs-de-lecture-design.md, § 4.3 b). La vidéo du
 // lecteur est remontée à chaque autre piste audio et à chaque « Réessayer » : un nouvel élément <video> remplace
-// l'ancien. Une seule règle décide aux trois endroits — la reprise à l'ouverture, la position rétablie après un
-// remontage (useVideoLifecycle) et le départ sur la télé (`startAt` de « Regarder sur TV ») : le téléphone et la télé ne
-// peuvent pas se contredire. Fonctions pures, sans import : chargées telles quelles par Node dans les tests.
+// l'ancien. Une seule règle décide partout où un film reprend : la reprise à l'ouverture et la position rétablie après un
+// remontage (useVideoLifecycle), le départ sur la télé depuis le lecteur (`startAt` de « Regarder sur TV », avec la
+// durée de sa vidéo) et depuis la borne (castStartAt de cast-wire, « Sur ma télé »). Une seule différence reste : sur ce
+// dernier chemin, le client ne connaît pas la durée du fichier (seulement la durée TMDB, qui n'est pas celle du
+// fichier) ; une position enregistrée dans les 10 dernières secondes y est reprise telle quelle sur la télé, alors que le
+// téléphone repart du début. Dans tous les autres cas, le téléphone et la télé partent de la même seconde. Fonctions
+// pures, sans import : chargées telles quelles par Node dans les tests.
 
 /**
  * Une position enregistrée dans les 10 dernières secondes du fichier est la fin du film (ou un enregistrement arrondi

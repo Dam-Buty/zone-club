@@ -5,9 +5,11 @@
 // qu'une TV dit mal (identifiant douteux, état inconnu, durée remise à zéro) ne doit jamais devenir une
 // valeur fausse dans l'état.
 //
-// Aucun import de valeur : Node le charge tel quel dans les tests (tests/domain/cast-wire.test.mjs).
+// Un seul import de valeur, la règle de reprise de l'appareil (video-swap.ts), avec son extension : Node le charge tel
+// quel dans les tests (tests/domain/cast-wire.test.mjs).
 
 import type { CastEvent, CastMediaRequest } from './cast-machine';
+import { swapResumeTime } from '../utils/video-swap.ts';
 
 type MediaStatus = Extract<CastEvent, { type: 'MEDIA_STATUS' }>;
 
@@ -54,22 +56,24 @@ export function castSourceFor(
 export interface CastRentalLike {
   videoUrl?: string;
   streamingUrls?: { vf: string | null; vo: string | null };
-  watchProgress: number;             // 0-100
-  watchPosition: number;             // secondes
+  /** La position enregistrée (secondes). La progression n'entre pas dans le départ : elle ne redescend jamais. */
+  watchPosition: number;
 }
 
 /** Titre envoyé à la TV quand le catalogue chargé ne connaît pas le film. */
 const CAST_FALLBACK_TITLE = 'Zone Club';
 
 /**
- * D'où le film part. Un départ demandé prime, même 0 ; sinon la position de la location, et 0 pour une location
- * vue jusqu'au bout (100 %) : « Regarder sur TV » d'un film fini le reprend au début, pas à sa dernière seconde.
- * Une valeur illisible (NaN, négative) vaut « pas demandée » ou « pas de position » : jamais un départ faux.
+ * D'où le film part. Un départ demandé prime, même 0 (le lecteur le calcule par la même règle, sur la durée de sa
+ * vidéo). Sinon la règle de reprise de l'appareil (swapResumeTime, sans élément précédent) : la position de la location,
+ * quel que soit le pourcentage (la progression ne redescend jamais : un film fini puis revu jusqu'à 200 s reprend à
+ * 200 s) ; elle vaut le début seulement si la durée du fichier est connue (`duration`) et qu'elle est dans ses 10
+ * dernières secondes. Durée inconnue (null) : la position est reprise telle quelle. Une valeur illisible (NaN,
+ * négative) vaut « pas demandée » ou « pas de position » : jamais un départ faux.
  */
-export function castStartAt(rental: Pick<CastRentalLike, 'watchProgress' | 'watchPosition'> | null | undefined, asked: number | undefined): number {
+export function castStartAt(rental: Pick<CastRentalLike, 'watchPosition'> | null | undefined, asked: number | undefined, duration: number | null): number {
   if (typeof asked === 'number' && Number.isFinite(asked) && asked >= 0) return asked;
-  if (!rental || rental.watchProgress >= 100) return 0;
-  return Number.isFinite(rental.watchPosition) && rental.watchPosition > 0 ? rental.watchPosition : 0;
+  return swapResumeTime({ elementTime: 0, rentalPosition: rental?.watchPosition ?? 0, duration });
 }
 
 /**
@@ -101,7 +105,10 @@ export function castMediaRequest(i: {
   return {
     url,
     title: i.title?.trim() || CAST_FALLBACK_TITLE,
-    startAt: castStartAt(i.rental, i.startAt),
+    // Sans départ demandé (« Sur ma télé » de la borne), la durée du FICHIER n'est pas connue ici : le client n'a que la
+    // durée TMDB (`runtime`), qui n'est pas celle du fichier (fichiers tronqués, versions longues). La position est
+    // reprise telle quelle — même dans les 10 dernières secondes, seul cas où la télé et le téléphone diffèrent.
+    startAt: castStartAt(i.rental, i.startAt, null),
     subtitles: i.subtitles,
     activeSubtitleId: castSubtitleId(i.subtitles, i.subtitle),
   };

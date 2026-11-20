@@ -26,7 +26,10 @@ export interface CastSlice {
   /**
    * « Regarder sur TV ». À appeler DIRECTEMENT dans le gestionnaire de l'appui : le sélecteur d'appareils exige son
    * activation, aucune attente ne doit précéder l'envoi. Sans source, un message `no_source` et rien d'autre.
-   * `startAt` : par défaut la position de la location, 0 si elle est vue jusqu'au bout. `version` : celle que
+   * `startAt` : celui de l'appelant (le lecteur le calcule par swapResumeTime sur la durée de sa vidéo) ; par défaut
+   * (« Sur ma télé » de la borne) la position de la location, quel que soit le pourcentage, par la même règle mais sans
+   * durée de fichier connue ici — une position dans les 10 dernières secondes est donc reprise telle quelle (castStartAt,
+   * cast-wire). `version` : celle que
    * l'appelant a décidée (le lecteur, le panneau de la borne) ; sans elle, la décision unique pour ce film
    * (`versionDecisionFor`, spec 2026-11-19, § 4.4) — jamais une piste choisie ici.
    */
