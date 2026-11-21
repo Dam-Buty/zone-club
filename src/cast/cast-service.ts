@@ -14,7 +14,12 @@
 //   déjà tout remis à zéro (F3, D4) ;
 // - le sélecteur refermé rejette 'cancel' ; appelé sur une séance existante, il ouvre une fenêtre native
 //   « Arrêter la diffusion » ; la fin de séance avec arrêt libère la TV ;
-// - Chrome gèle une page cachée après 60 s et la reprend au retour (`resume`) ;
+// - Chrome gèle une page cachée après 60 s et la reprend au retour (`resume`). Au retour la liaison de la page est
+//   coupée (« Presentation connection is disconnected ») alors que le SDK se dit connecté, séance et objet média à
+//   l'appui : tout envoi lève, et rien ne revient seul (30 s d'essais refusés). `chrome.cast.requestSessionById`
+//   rejoint la séance sans fenêtre native : un NOUVEL objet de séance, où un envoi repasse 370 ms après — mais
+//   SESSION_RESUMED n'est pas toujours annoncé (mesuré le 21/11/2026). D'où statusSendFailed : reprise demandée,
+//   puis la demande de statut réessayée toutes les CAST_REJOIN_RETRY_MS sur la séance courante ;
 // - sur une séance NEUVE (la TV lance l'application), le chargement se dit réglé avant d'avoir eu lieu : objet média
 //   provisoire (IDLE) annoncé 86 ms après l'envoi puis abandonné, promesse réglée sans objet média ; la TV charge
 //   le film 2 s plus tard et le SDK crée alors un autre objet, sans MEDIA_SESSION (mesuré le 21/11/2026). D'où
@@ -54,6 +59,8 @@ export const CAST_RESUME_SETTLE_MS = 500;
 const POSITION_EVERY_MS = 1000;
 /** Pendant le chargement, la séance est relue à cette cadence : son objet média peut arriver sans annonce. */
 export const CAST_LOAD_LOOK_EVERY_MS = 1000;
+/** Séance redemandée après un envoi impossible : la demande de statut est réessayée à cette cadence. */
+export const CAST_REJOIN_RETRY_MS = 500;
 
 type PhaseTimer = 'connect' | 'load';
 type ServerEffect = Extract<CastEffect, { type: 'SERVER_OPEN' | 'SERVER_REPORT' | 'SERVER_CLOSE' }>;
@@ -83,6 +90,12 @@ const phaseTimers: Partial<Record<PhaseTimer, ReturnType<typeof setTimeout>>> = 
 /** Échéance de la demande de statut en attente ; null : aucune demande sans réponse. */
 let statusDeadline: ReturnType<typeof setTimeout> | null = null;
 let statusRequestId = 0;
+/**
+ * Reprise de la séance pour la demande de statut en attente : demandée, ou déjà faite. Une seule par demande —
+ * une séance rejointe dont l'envoi lève encore conclut à la liaison perdue, sans boucle.
+ */
+let rejoin: 'none' | 'asked' | 'done' = 'none';
+let rejoinLoop: ReturnType<typeof setInterval> | null = null;
 let tickLoop: ReturnType<typeof setInterval> | null = null;
 let positionLoop: ReturnType<typeof setInterval> | null = null;
 let loadLoop: ReturnType<typeof setInterval> | null = null;
@@ -363,6 +376,8 @@ function onSessionState(event: CafContextEvent): void {
     case 'SESSION_STARTED': case 'SESSION_RESUMED':
       if (session) watchSession(session);
       fromTv({ type: 'SESSION_STARTED', deviceName: deviceNameOf(session), resumed: event.sessionState === 'SESSION_RESUMED' });
+      // La séance rejointe après un envoi impossible, quand le SDK l'annonce : la demande de statut repart aussitôt.
+      if (rejoin === 'asked') retryStatus();
       return;
     case 'SESSION_ENDED':
       onSessionEnded();
@@ -666,7 +681,7 @@ function buildLoadRequest(chromeCast: CafChromeCast, data: CastLoadData): CafLoa
 
 /**
  * REQUEST_STATUS : GET_STATUS sur le canal média (F2). La réponse revient par onMediaMessage ou par la séance
- * média ; exception, rejet ou silence au-delà de CAST_STATUS_TIMEOUT_MS → STATUS_FAILED.
+ * média ; silence au-delà de CAST_STATUS_TIMEOUT_MS → STATUS_FAILED ; exception ou rejet → statusSendFailed.
  */
 function requestStatus(): void {
   const session = currentSession();
@@ -679,15 +694,74 @@ function requestStatus(): void {
   statusDeadline ??= setTimeout(statusFailed, CAST_STATUS_TIMEOUT_MS);
   statusRequestId += 1;
   try {
-    session.sendMessage(MEDIA_NAMESPACE, { type: 'GET_STATUS', requestId: statusRequestId }).then(undefined, statusFailed);
+    session.sendMessage(MEDIA_NAMESPACE, { type: 'GET_STATUS', requestId: statusRequestId }).then(undefined, () => statusSendFailed(session));
   } catch {
-    statusFailed();
+    statusSendFailed(session);
+  }
+}
+
+/**
+ * La demande de statut n'a pas pu partir. Cas mesuré : la page revient d'un gel, sa liaison est coupée et le SDK ne
+ * le sait pas (voir l'en-tête). On rejoint la séance par son identifiant, une fois par demande, puis la demande est
+ * réessayée (retryStatus) jusqu'à ce qu'un envoi passe ; sinon l'échéance de la demande conclut à la liaison perdue,
+ * et le TICK suivant retentera. Sans identifiant, sans cette fonction du SDK, ou envoi encore refusé après la
+ * reprise : liaison perdue.
+ */
+function statusSendFailed(session: CafCastSession): void {
+  if (rejoin === 'asked') return;                    // reprise en route
+  if (rejoin === 'none' && askRejoin(session)) {
+    rejoin = 'asked';
+    statusDeadline ??= setTimeout(statusFailed, CAST_STATUS_TIMEOUT_MS);
+    rejoinLoop ??= setInterval(retryStatus, CAST_REJOIN_RETRY_MS);
+    trace('séance redemandée');
+    return;
+  }
+  statusFailed();
+}
+
+/**
+ * La demande de statut, renvoyée sur la séance courante — après la reprise c'est un autre objet. L'envoi lève
+ * encore : la reprise n'a pas abouti, on réessaiera. Il passe : la réponse ou l'échéance concluront, et un refus
+ * tardif de cet envoi conclut à la liaison perdue (`done`).
+ */
+function retryStatus(): void {
+  if (rejoin !== 'asked') return;                    // un tour déjà programmé quand l'envoi est passé
+  const session = currentSession();
+  if (!session) return;
+  watchSession(session);
+  statusRequestId += 1;
+  try {
+    const sent = session.sendMessage(MEDIA_NAMESPACE, { type: 'GET_STATUS', requestId: statusRequestId });
+    stopRejoinLoop();
+    rejoin = 'done';
+    trace('séance rejointe');
+    sent.then(undefined, () => statusSendFailed(session));
+  } catch {
+    // Liaison encore coupée : le prochain tour réessaie, l'échéance borne l'attente.
+  }
+}
+
+function stopRejoinLoop(): void {
+  if (rejoinLoop !== null) clearInterval(rejoinLoop);
+  rejoinLoop = null;
+}
+
+function askRejoin(session: CafCastSession): boolean {
+  try {
+    const id = session.getSessionId?.();
+    if (!id || !sdk || typeof sdk.chromeCast.requestSessionById !== 'function') return false;
+    sdk.chromeCast.requestSessionById(id);
+    return true;
+  } catch {
+    return false;                                    // l'appelant conclut : liaison perdue
   }
 }
 
 function clearStatusDeadline(): void {
   if (statusDeadline !== null) clearTimeout(statusDeadline);
   statusDeadline = null;
+  rejoin = 'none';
+  stopRejoinLoop();
 }
 
 function statusFailed(): void {

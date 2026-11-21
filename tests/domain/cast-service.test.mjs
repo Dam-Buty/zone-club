@@ -122,11 +122,17 @@ test('CAST SERVICE (d): GET_STATUS sans réponse → liaison perdue à l\'éché
   assert.equal(state().phase, 'lost');
 });
 
-test('CAST SERVICE (e): liaison morte, l\'envoi lève dans le SDK → liaison perdue, rien ne remonte', async (t) => {
-  const { tv, state } = await remoteOn(t);
+test('CAST SERVICE (e): liaison morte, l\'envoi lève dans le SDK → rien ne remonte ; sans reprise de la séance, liaison perdue à l\'échéance', async (t) => {
+  const { fake, tv, state } = await remoteOn(t);
   tv.sendMessageImpl = () => { throw new DOMException('PresentationConnection is closed', 'InvalidStateError'); };
   assert.doesNotThrow(() => service.sendCast({ type: 'TICK' }));
+  assert.deepEqual(fake.calls.requestSessionById, [tv.getSessionId()], 'la séance est redemandée par son identifiant');
+  assert.equal(state().phase, 'remote', 'pas encore perdue : la reprise est en route');
+  t.mock.timers.tick(CAST_STATUS_TIMEOUT_MS);
   assert.equal(state().phase, 'lost');
+  // Perdue, chaque TICK retente la reprise : la liaison peut revenir toute seule.
+  t.mock.timers.tick(CAST_REPORT_EVERY_MS);
+  assert.equal(fake.calls.requestSessionById.length, 2);
 });
 
 test('CAST SERVICE (f): film A remplacé par B, puis l\'ancien objet A parle et meurt → B continue', async (t) => {
@@ -449,4 +455,80 @@ test('CAST SERVICE R1: un objet média au repos n\'est pas repris sur un signal 
   // L'objet mort n'est pas redevenu le média courant : aucune commande ne part vers lui.
   assert.equal(await service.setCastSubtitle(1), false);
   assert.deepEqual(fake.calls.commands, []);
+});
+
+// Recette sur le Pixel 9a, 21/11/2026 : Chrome gèle la page cachée depuis 60 s ; au retour le SDK se dit toujours
+// connecté (CONNECTED, SESSION_STARTED, objet média « PLAYING ») mais tout envoi lève InvalidStateError
+// (« Presentation connection is disconnected ») : « La télé ne répond plus », la télé en lecture.
+// chrome.cast.requestSessionById(id) rejoint la séance sans fenêtre native : SESSION_RESUMED, nouvel objet de séance.
+test('CAST SERVICE R2: retour d\'un gel — la séance est rejointe par son identifiant, la télécommande ne tombe pas', async (t) => {
+  const { fake, tv, ports, state } = await remoteOn(t);
+  tv.sendMessageImpl = () => { throw new DOMException('Presentation connection is disconnected.', 'InvalidStateError'); };
+  fake.setVisibility('hidden');
+  fake.setVisibility('visible');                                        // PAGE_VISIBLE : demande de statut, l'envoi lève
+  assert.deepEqual(fake.calls.requestSessionById, [tv.getSessionId()]);
+  assert.equal(state().phase, 'remote');
+  // Le SDK tient un nouvel objet de séance, sans l'annoncer (pas de SESSION_RESUMED) : le service réessaie seul.
+  const rejoined = fake.makeSession('Salon');
+  fake.context.session = rejoined;
+  const asked = fake.getStatusCount();
+  t.mock.timers.tick(service.CAST_REJOIN_RETRY_MS);
+  assert.equal(fake.getStatusCount(), asked + 1, 'le statut est redemandé sur la séance rejointe');
+  t.mock.timers.tick(service.CAST_REJOIN_RETRY_MS * 3);
+  assert.equal(fake.getStatusCount(), asked + 1, 'une fois l\'envoi passé, plus de nouvel essai');
+  rejoined.reply({ type: 'MEDIA_STATUS', status: [{ mediaSessionId: 9, playerState: 'PLAYING', currentTime: 90, media: { duration: 600, customData: { filmId: 7 } } }] });
+  assert.equal(state().phase, 'remote');
+  assert.equal(state().position, 90);
+  t.mock.timers.tick(CAST_STATUS_TIMEOUT_MS);
+  assert.equal(state().phase, 'remote', 'l\'échéance est levée');
+  assert.equal(fake.calls.requestSessionById.length, 1, 'une seule reprise');
+  assert.equal(named(ports, 'serverClose').length, 0);
+});
+
+test('CAST SERVICE R2: la reprise est annoncée (SESSION_RESUMED) → le statut repart aussitôt, sans attendre le tour suivant', async (t) => {
+  const { fake, tv, state } = await remoteOn(t);
+  tv.sendMessageImpl = () => { throw new DOMException('Presentation connection is disconnected.', 'InvalidStateError'); };
+  service.sendCast({ type: 'TICK' });
+  const rejoined = fake.makeSession('Salon');
+  fake.context.session = rejoined;
+  const asked = fake.getStatusCount();
+  fake.context.emitSession('SESSION_RESUMED', rejoined);
+  assert.equal(fake.getStatusCount(), asked + 1);
+  assert.equal(state().phase, 'remote');
+});
+
+test('CAST SERVICE R2: reprise sans effet, l\'envoi lève toujours → liaison perdue à l\'échéance, une seule reprise demandée', async (t) => {
+  const { fake, tv, state } = await remoteOn(t);
+  tv.sendMessageImpl = () => { throw new DOMException('Presentation connection is disconnected.', 'InvalidStateError'); };
+  service.sendCast({ type: 'TICK' });
+  t.mock.timers.tick(CAST_STATUS_TIMEOUT_MS - 1);
+  assert.equal(state().phase, 'remote');
+  assert.equal(fake.calls.requestSessionById.length, 1, 'les essais renvoient la demande, pas la reprise');
+  t.mock.timers.tick(1);
+  assert.equal(state().phase, 'lost');
+  const sent = fake.calls.sendMessage.length;
+  t.mock.timers.tick(service.CAST_REJOIN_RETRY_MS * 4);
+  assert.equal(fake.calls.sendMessage.length, sent, 'perdue : les essais s\'arrêtent jusqu\'au TICK suivant');
+});
+
+test('CAST SERVICE R2: séance rejointe, envoi parti puis refusé → liaison perdue, sans seconde reprise', async (t) => {
+  const { fake, tv, state } = await remoteOn(t);
+  tv.sendMessageImpl = () => { throw new DOMException('Presentation connection is disconnected.', 'InvalidStateError'); };
+  service.sendCast({ type: 'TICK' });
+  const rejoined = fake.makeSession('Salon');
+  rejoined.sendMessageImpl = () => Promise.reject(new Error('session_error'));
+  fake.context.session = rejoined;
+  t.mock.timers.tick(service.CAST_REJOIN_RETRY_MS);
+  await flush();
+  assert.equal(state().phase, 'lost');
+  assert.equal(fake.calls.requestSessionById.length, 1);
+});
+
+test('CAST SERVICE R2: une promesse d\'envoi rejetée tente la même reprise', async (t) => {
+  const { fake, tv, state } = await remoteOn(t);
+  tv.sendMessageImpl = () => Promise.reject(new Error('session_error'));
+  service.sendCast({ type: 'TICK' });
+  await flush();
+  assert.deepEqual(fake.calls.requestSessionById, [tv.getSessionId()]);
+  assert.equal(state().phase, 'remote');
 });

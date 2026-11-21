@@ -31,6 +31,7 @@ export interface CafCastSession {
   getMediaSession: () => CafMedia | null;
   loadMedia: (request: CafLoadRequest) => Promise<unknown>;
   sendMessage: (namespace: string, data: object) => Promise<unknown>;
+  getSessionId?: () => string;
   addMessageListener: (namespace: string, listener: (namespace: string, message: unknown) => void) => void;
   addEventListener: (type: string, handler: (event: { mediaSession?: CafMedia | null }) => void) => void;
   setVolume: (level: number) => Promise<unknown>;
@@ -99,6 +100,8 @@ export interface CafSeekRequest {
 
 export interface CafChromeCast {
   AutoJoinPolicy: { ORIGIN_SCOPED: string };
+  /** Rejoint une séance existante par son identifiant, sans fenêtre native (API de base du Web Sender). */
+  requestSessionById?: (sessionId: string) => void;
   media: {
     DEFAULT_MEDIA_RECEIVER_APP_ID: string;
     StreamType: { BUFFERED: string };

@@ -19,7 +19,7 @@ const emit = (map, type, data) => { for (const fn of map[type] ?? []) fn(data); 
  * chargeur pose sa balise de script : `fake.scripts[0].onerror()` simule un navigateur sans Cast.
  */
 export function installFakeCastSdk({ sdk = true } = {}) {
-  const calls = { setOptions: [], requestSession: 0, endCurrentSession: [], sendMessage: [], loadMedia: [], commands: [], setVolume: [] };
+  const calls = { setOptions: [], requestSession: 0, requestSessionById: [], endCurrentSession: [], sendMessage: [], loadMedia: [], commands: [], setVolume: [] };
   const docListeners = {};
   const scripts = [];
   globalThis.window = globalThis;
@@ -35,6 +35,7 @@ export function installFakeCastSdk({ sdk = true } = {}) {
   delete globalThis.chrome;
 
   let nextMediaSessionId = 1;
+  let nextSessionId = 1;
   const fake = {
     calls,
     scripts,
@@ -51,8 +52,10 @@ export function installFakeCastSdk({ sdk = true } = {}) {
     makeSession(friendlyName = 'Salon') {
       const listeners = {};
       const messageListeners = [];
+      const sessionId = `seance-${nextSessionId++}`;
       const session = {
         mediaSession: null,
+        getSessionId: () => sessionId,
         sendMessageImpl: () => Promise.resolve(),
         loadMediaImpl: () => Promise.resolve(),
         setVolumeImpl: () => Promise.resolve(),
@@ -187,6 +190,8 @@ export function installFakeCastSdk({ sdk = true } = {}) {
   globalThis.chrome = {
     cast: {
       AutoJoinPolicy: { ORIGIN_SCOPED: 'origin_scoped' },
+      /** Rejoindre une séance par son identifiant : le test annonce ensuite SESSION_RESUMED, ou se tait. */
+      requestSessionById: (id) => { calls.requestSessionById.push(id); },
       media: {
         DEFAULT_MEDIA_RECEIVER_APP_ID: 'CC1AD845',
         StreamType: { BUFFERED: 'BUFFERED' },
