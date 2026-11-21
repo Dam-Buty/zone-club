@@ -117,6 +117,15 @@ export function createBackGuardStack(deps: { history: () => GuardHistory; defer:
         if (orphanEntries > 0) orphanEntries--;
         return;
       }
+      // Retenue : la garde du dessus n'a pas encore d'entrée, le geste a donc dépilé celle d'une autre — une orpheline
+      // s'il y en a, sinon celle de la plus haute garde qui en avait une : elle en recevra une neuve à la libération.
+      if (top.pending) {
+        if (orphanEntries > 0) orphanEntries--;
+        else {
+          const owner = [...handlers].reverse().find((h) => !h.pending);
+          if (owner) owner.pending = true;
+        }
+      }
       // S'il restait une entrée orpheline, c'est elle que le geste a dépilée ; celle de la garde
       // qu'on ferme la remplace alors comme orpheline — le compte reste juste.
       top.consumed = true;

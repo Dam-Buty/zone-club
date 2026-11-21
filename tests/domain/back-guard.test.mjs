@@ -184,6 +184,24 @@ test('RETOUR: historique retenu — une garde ouverte à la place d\'une garde r
   assert.equal(b.left, false);
 });
 
+// Relecture du 21/11 : le geste retour arrive à la page pendant la retenue (SDK encore en chargement, ordinateur). Il
+// ferme la garde du dessus, qui n'avait pas d'entrée : c'est celle de la borne qui est partie, elle en reçoit une neuve.
+test('RETOUR: historique retenu — un geste retour ferme la garde en attente sans faire quitter la page ensuite', () => {
+  const b = fakeBrowser(); const closed = [];
+  b.stack.open(() => closed.push('borne'));
+  b.settle();
+  b.stack.hold(true);
+  b.stack.open(() => closed.push('lecteur'));
+  b.userBack();
+  assert.deepEqual(closed, ['lecteur']);
+  b.stack.hold(false);
+  b.settle();
+  assert.equal(b.depth, 1, 'la borne a retrouvé une entrée');
+  b.userBack();
+  assert.deepEqual(closed, ['lecteur', 'borne']);
+  assert.equal(b.left, false, 'la page n\'est pas quittée');
+});
+
 test('RETOUR: le sélecteur d\'appareils du Cast retient l\'historique', () => {
   const hook = readText(path.join(process.cwd(), 'src/hooks/useBackGuard.ts'));
   assert.ok(/export function holdBackGuards\(/.test(hook), 'le crochet expose la retenue');

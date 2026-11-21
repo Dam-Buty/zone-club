@@ -85,6 +85,8 @@ let settled = false;
 let media: CafMedia | null = null;
 let watchedSessions = new WeakSet<CafCastSession>();
 let watchedMedia = new WeakSet<CafMedia>();
+/** Séances média finies : la séance peut les garder, avec leur dernier état — jamais reprises (lookForMedia). */
+let deadMedia = new WeakSet<CafMedia>();
 
 const phaseTimers: Partial<Record<PhaseTimer, ReturnType<typeof setTimeout>>> = {};
 /** Échéance de la demande de statut en attente ; null : aucune demande sans réponse. */
@@ -161,6 +163,7 @@ export function __resetCastForTests(): void {
   media = null;
   watchedSessions = new WeakSet<CafCastSession>();
   watchedMedia = new WeakSet<CafMedia>();
+  deadMedia = new WeakSet<CafMedia>();
   statusRequestId = 0;
   serverQueue = Promise.resolve();
   __resetCastSdkForTests();
@@ -221,14 +224,19 @@ export function setCastSubtitle(trackId: number | null): Promise<boolean> {
  * pas de la machine, et ce que le SDK rend au chargement. Ni adresse ni contenu d'événement : des noms et des numéros.
  * C'est elle qui a montré, sur le Pixel, où la réalité du SDK quittait nos hypothèses (voir l'en-tête).
  */
-function trace(what: string, detail?: unknown): void {
+function traceSink(): unknown[] | null {
   const sink = (globalThis as { __castTrace?: unknown }).__castTrace;
-  if (Array.isArray(sink)) sink.push({ at: new Date().toISOString().slice(11, 23), what, detail });
+  return Array.isArray(sink) ? sink : null;
+}
+
+function trace(what: string, detail?: () => unknown): void {
+  traceSink()?.push({ at: new Date().toISOString().slice(11, 23), what, detail: detail?.() });
 }
 
 function apply(event: CastEvent): void {
   const step = castReduce(state, event);
-  trace(event.type, { from: state.phase, to: step.state.phase, filmId: step.state.filmId, notice: step.state.notice?.code ?? null, effects: step.effects.map((e) => e.type) });
+  const from = state.phase;
+  trace(event.type, () => ({ from, to: step.state.phase, filmId: step.state.filmId, notice: step.state.notice?.code ?? null, effects: step.effects.map((e) => e.type) }));
   if (step.state !== state) {
     state = step.state;
     for (const listener of [...listeners]) {
@@ -451,6 +459,7 @@ function adoptMedia(next: CafMedia | null): void {
  * morte, durée encore lisible sur l'objet. La courante qui meurt sans dire IDLE n'a plus de média à montrer.
  */
 function onMediaUpdate(updated: CafMedia, isAlive: boolean): void {
+  if (!isAlive) deadMedia.add(updated);
   if (updated !== media) return;
   if (!isAlive) media = null;
   if (!isAlive && updated.playerState !== 'IDLE') {
@@ -485,7 +494,7 @@ function adoptSessionMedia(session: CafCastSession): void {
     fromTv({ type: 'STATUS_FAILED' });
     return;
   }
-  if (found) adoptMedia(found);
+  if (found && !deadMedia.has(found)) adoptMedia(found);
 }
 
 /**
@@ -501,7 +510,7 @@ function lookForMedia(): void {
   } catch {
     return;                                          // séance illisible : le délai du chargement ou le TICK concluront
   }
-  if (found && found !== media && found.playerState !== 'IDLE') adoptMedia(found);
+  if (found && found !== media && !deadMedia.has(found) && found.playerState !== 'IDLE') adoptMedia(found);
 }
 
 /**
@@ -631,7 +640,7 @@ function loadMedia(filmId: number, request: CastMediaRequest): void {
     const load = buildLoadRequest(sdk.chromeCast, loadRequestData(filmId, request, state.tracked));
     session.loadMedia(load).then(
       () => {
-        trace('loadMedia réglé', { media: mediaStateOf(session) });
+        trace('loadMedia réglé', () => ({ media: mediaStateOf(session) }));
         adoptSessionMedia(session);
       },
       () => sendCast({ type: 'LOAD_FAILED' }),
@@ -694,7 +703,10 @@ function requestStatus(): void {
   statusDeadline ??= setTimeout(statusFailed, CAST_STATUS_TIMEOUT_MS);
   statusRequestId += 1;
   try {
-    session.sendMessage(MEDIA_NAMESPACE, { type: 'GET_STATUS', requestId: statusRequestId }).then(undefined, () => statusSendFailed(session));
+    session.sendMessage(MEDIA_NAMESPACE, { type: 'GET_STATUS', requestId: statusRequestId }).then(undefined, () => {
+      // Rejet tardif d'une demande déjà répondue : rien à conclure.
+      if (statusDeadline !== null) statusSendFailed(session);
+    });
   } catch {
     statusSendFailed(session);
   }
@@ -731,11 +743,14 @@ function retryStatus(): void {
   watchSession(session);
   statusRequestId += 1;
   try {
-    const sent = session.sendMessage(MEDIA_NAMESPACE, { type: 'GET_STATUS', requestId: statusRequestId });
-    stopRejoinLoop();
-    rejoin = 'done';
-    trace('séance rejointe');
-    sent.then(undefined, () => statusSendFailed(session));
+    // Accepté : la reprise est faite, la réponse ou l'échéance concluront. Refusé (la séance rejointe n'est pas
+    // encore la courante) : le tour suivant réessaie.
+    session.sendMessage(MEDIA_NAMESPACE, { type: 'GET_STATUS', requestId: statusRequestId }).then(() => {
+      if (rejoin !== 'asked') return;
+      stopRejoinLoop();
+      rejoin = 'done';
+      trace('séance rejointe');
+    }, () => undefined);
   } catch {
     // Liaison encore coupée : le prochain tour réessaie, l'échéance borne l'attente.
   }
@@ -941,8 +956,30 @@ function sendPosition(): void {
 
 function listenToPage(): void {
   document.addEventListener('visibilitychange', () => {
-    sendCast({ type: document.visibilityState === 'hidden' ? 'PAGE_HIDDEN' : 'PAGE_VISIBLE' });
+    const visible = document.visibilityState !== 'hidden';
+    sendCast({ type: visible ? 'PAGE_VISIBLE' : 'PAGE_HIDDEN' });
+    if (visible) probeLink();
   });
   // Page gelée (cachée depuis 60 s) puis reprise : la TV a pu finir ou s'arrêter entre-temps.
-  document.addEventListener('resume', () => sendCast({ type: 'PAGE_VISIBLE' }));
+  document.addEventListener('resume', () => {
+    sendCast({ type: 'PAGE_VISIBLE' });
+    probeLink();
+  });
+}
+
+/**
+ * Au retour de la page, hors télécommande (là, PAGE_VISIBLE demande déjà le statut) : une séance restée ouverte —
+ * film fini, film arrêté ailleurs — a pu perdre sa liaison pendant le gel (F6). Sans cette sonde le film suivant
+ * partirait sur la liaison morte et « Réessayer » aussi, sans jamais repasser par le sélecteur. Un envoi qui lève :
+ * la séance est redemandée. Rien d'autre n'en dépend : ni échéance, ni événement.
+ */
+function probeLink(): void {
+  if (state.phase === 'remote' || state.phase === 'lost' || statusDeadline !== null) return;
+  const session = currentSession();
+  if (!session) return;
+  try {
+    session.sendMessage(MEDIA_NAMESPACE, { type: 'GET_STATUS', requestId: ++statusRequestId }).then(undefined, () => undefined);
+  } catch {
+    if (askRejoin(session)) trace('séance redemandée (sonde)');
+  }
 }

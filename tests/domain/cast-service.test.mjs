@@ -442,6 +442,29 @@ test('CAST SERVICE R1: séance neuve — sans aucun signal, le service retrouve 
   assert.equal(fake.calls.loadMedia.length, 1, 'un seul chargement');
 });
 
+// Relecture du 21/11 (I1) : l'objet meurt sans se dire IDLE, la séance le garde avec son dernier « PLAYING ».
+test('CAST SERVICE R1: un objet média mort n\'est jamais repris, même resté « en lecture »', async (t) => {
+  const { fake, tv, ports, state, playing } = await remoteOn(t);
+  await flush();
+  const reports = named(ports, 'serverReport').length;
+  playing.update({}, false);                                           // mort sans IDLE : la location est relue
+  assert.equal(tv.mediaSession, playing);
+  fake.controller.signal('playerstatechanged');
+  fake.controller.signal('ismedialoadedchanged');
+  await flush();
+  assert.notEqual(state().phase, 'remote', 'pas de télécommande sur un fantôme');
+  assert.equal(await service.setCastSubtitle(1), false);
+  assert.deepEqual(fake.calls.commands, []);
+  assert.equal(named(ports, 'serverReport').length, reports, 'aucune position envoyée pour un fantôme');
+});
+
+test('CAST SERVICE R1: séance neuve — le signal « playerState » de RemotePlayer suffit', async (t) => {
+  const { fake, tv, state } = await freshSessionLoading(t);
+  tv.mediaSession = fake.makeMedia({ filmId: 7, currentTime: 0 });
+  fake.controller.signal('playerstatechanged');
+  assert.equal(state().phase, 'remote');
+});
+
 test('CAST SERVICE R1: un objet média au repos n\'est pas repris sur un signal de RemotePlayer', async (t) => {
   const { fake, tv, ports, state, playing } = await remoteOn(t);
   playing.update({ playerState: 'IDLE', idleReason: 'FINISHED' }, false);  // fin du film : l'objet meurt, la séance le garde
@@ -474,6 +497,7 @@ test('CAST SERVICE R2: retour d\'un gel — la séance est rejointe par son iden
   const asked = fake.getStatusCount();
   t.mock.timers.tick(service.CAST_REJOIN_RETRY_MS);
   assert.equal(fake.getStatusCount(), asked + 1, 'le statut est redemandé sur la séance rejointe');
+  await flush();                                                       // l'envoi est accepté : la reprise est faite
   t.mock.timers.tick(service.CAST_REJOIN_RETRY_MS * 3);
   assert.equal(fake.getStatusCount(), asked + 1, 'une fois l\'envoi passé, plus de nouvel essai');
   rejoined.reply({ type: 'MEDIA_STATUS', status: [{ mediaSessionId: 9, playerState: 'PLAYING', currentTime: 90, media: { duration: 600, customData: { filmId: 7 } } }] });
@@ -511,17 +535,77 @@ test('CAST SERVICE R2: reprise sans effet, l\'envoi lève toujours → liaison p
   assert.equal(fake.calls.sendMessage.length, sent, 'perdue : les essais s\'arrêtent jusqu\'au TICK suivant');
 });
 
-test('CAST SERVICE R2: séance rejointe, envoi parti puis refusé → liaison perdue, sans seconde reprise', async (t) => {
+// Relecture du 21/11 (M1) : la liaison morte peut REJETER l'envoi au lieu de lever. Un envoi rejeté pendant la reprise
+// ne conclut rien : la séance rejointe n'est peut-être pas encore la courante.
+test('CAST SERVICE R2: envois rejetés pendant la reprise → on réessaie ; la séance rejointe arrive, la télécommande reste', async (t) => {
   const { fake, tv, state } = await remoteOn(t);
-  tv.sendMessageImpl = () => { throw new DOMException('Presentation connection is disconnected.', 'InvalidStateError'); };
+  tv.sendMessageImpl = () => Promise.reject(new Error('session_error'));
   service.sendCast({ type: 'TICK' });
+  await flush();
+  assert.equal(fake.calls.requestSessionById.length, 1);
+  t.mock.timers.tick(service.CAST_REJOIN_RETRY_MS);                     // l'ancienne séance est encore la courante
+  await flush();
+  assert.equal(state().phase, 'remote', 'un rejet pendant la reprise ne conclut pas');
   const rejoined = fake.makeSession('Salon');
-  rejoined.sendMessageImpl = () => Promise.reject(new Error('session_error'));
   fake.context.session = rejoined;
   t.mock.timers.tick(service.CAST_REJOIN_RETRY_MS);
   await flush();
-  assert.equal(state().phase, 'lost');
+  rejoined.reply({ type: 'MEDIA_STATUS', status: [{ mediaSessionId: 9, playerState: 'PLAYING', currentTime: 40, media: { duration: 600, customData: { filmId: 7 } } }] });
+  assert.equal(state().phase, 'remote');
+  assert.equal(state().position, 40);
   assert.equal(fake.calls.requestSessionById.length, 1);
+});
+
+test('CAST SERVICE R2: envois toujours rejetés → liaison perdue à l\'échéance, et les essais s\'arrêtent', async (t) => {
+  const { fake, tv, state } = await remoteOn(t);
+  tv.sendMessageImpl = () => Promise.reject(new Error('session_error'));
+  service.sendCast({ type: 'TICK' });
+  await flush();
+  t.mock.timers.tick(CAST_STATUS_TIMEOUT_MS);
+  await flush();
+  assert.equal(state().phase, 'lost');
+  const sent = fake.calls.sendMessage.length;
+  t.mock.timers.tick(service.CAST_REJOIN_RETRY_MS * 4);
+  assert.equal(fake.calls.sendMessage.length, sent);
+});
+
+// Relecture (M2) : le rejet tardif d'une demande déjà répondue ne relance rien.
+test('CAST SERVICE R2: rejet tardif d\'une demande déjà répondue → aucune reprise, la télécommande reste', async (t) => {
+  const { fake, tv, state, playing } = await remoteOn(t);
+  let reject = null;
+  tv.sendMessageImpl = () => new Promise((_, ko) => { reject = ko; });
+  service.sendCast({ type: 'TICK' });
+  tv.reply({ type: 'MEDIA_STATUS', status: [{ mediaSessionId: playing.mediaSessionId, playerState: 'PLAYING', currentTime: 20 }] });
+  reject(new Error('timeout'));
+  await flush();
+  assert.deepEqual(fake.calls.requestSessionById, []);
+  t.mock.timers.tick(CAST_STATUS_TIMEOUT_MS);
+  assert.equal(state().phase, 'remote');
+});
+
+// Relecture (I3) : film fini, séance restée ouverte, page gelée. Sans sonde, le film suivant partait sur la liaison
+// morte, et « Réessayer » aussi.
+test('CAST SERVICE R2: retour d\'un gel hors télécommande → la liaison est sondée et la séance redemandée', async (t) => {
+  const { fake, tv, state, playing } = await remoteOn(t);
+  playing.update({ playerState: 'IDLE', idleReason: 'FINISHED' }, false);
+  assert.equal(state().phase, 'ended');
+  tv.sendMessageImpl = () => { throw new DOMException('Presentation connection is disconnected.', 'InvalidStateError'); };
+  fake.setVisibility('hidden');
+  fake.setVisibility('visible');
+  assert.deepEqual(fake.calls.requestSessionById, [tv.getSessionId()]);
+  assert.equal(state().phase, 'ended', 'la sonde ne change rien à l\'état');
+  t.mock.timers.tick(CAST_STATUS_TIMEOUT_MS);
+  assert.equal(state().phase, 'ended', 'ni échéance ni liaison perdue');
+});
+
+test('CAST SERVICE R2: retour sans gel hors télécommande → la sonde passe, aucune reprise', async (t) => {
+  const { fake, state, playing } = await remoteOn(t);
+  playing.update({ playerState: 'IDLE', idleReason: 'FINISHED' }, false);
+  fake.setVisibility('hidden');
+  fake.setVisibility('visible');
+  await flush();
+  assert.deepEqual(fake.calls.requestSessionById, []);
+  assert.equal(state().phase, 'ended');
 });
 
 test('CAST SERVICE R2: une promesse d\'envoi rejetée tente la même reprise', async (t) => {
