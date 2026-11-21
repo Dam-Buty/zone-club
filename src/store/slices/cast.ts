@@ -5,6 +5,7 @@ import { castOwnsFilm, initialCastState } from '../../cast/cast-machine'
 import type { CastEvent, CastState } from '../../cast/cast-machine'
 import { castMediaRequest, rentalGoneFilm, settle } from '../../cast/cast-wire'
 import { getCastState, initCast, sendCast, setCastSubtitle, subscribeCast } from '../../cast/cast-service'
+import { holdBackGuards } from '../../hooks/useBackGuard'
 import type { CastPorts } from '../../cast/cast-service'
 import { buildCastSubtitleTracks } from '../../utils/cast-subtitles'
 import { resolvedVersion } from '../../utils/version-choice'
@@ -132,6 +133,8 @@ export const createCastSlice: StateCreator<VideoClubState, [['zustand/persist', 
 
   /** Publie l'état du service : les composants le lisent (`castView`, `castOwnsFilm`), aucun ne l'écrit. */
   const publish = (service: CastState): void => {
+    // Sélecteur d'appareils ouvert : aucune garde du geste retour ne touche à l'historique (Chrome le refermerait).
+    holdBackGuards(service.phase === 'choosing')
     set({ cast: shown(service) })
   }
 

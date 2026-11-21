@@ -14,7 +14,11 @@
 //   déjà tout remis à zéro (F3, D4) ;
 // - le sélecteur refermé rejette 'cancel' ; appelé sur une séance existante, il ouvre une fenêtre native
 //   « Arrêter la diffusion » ; la fin de séance avec arrêt libère la TV ;
-// - Chrome gèle une page cachée après 60 s et la reprend au retour (`resume`).
+// - Chrome gèle une page cachée après 60 s et la reprend au retour (`resume`) ;
+// - sur une séance NEUVE (la TV lance l'application), le chargement se dit réglé avant d'avoir eu lieu : objet média
+//   provisoire (IDLE) annoncé 86 ms après l'envoi puis abandonné, promesse réglée sans objet média ; la TV charge
+//   le film 2 s plus tard et le SDK crée alors un autre objet, sans MEDIA_SESSION (mesuré le 21/11/2026). D'où
+//   lookForMedia : sur un signal de RemotePlayer, et chaque seconde pendant le chargement.
 //
 // Règle : tout `catch` mène à un événement de la machine, aucune erreur avalée sans état. Deux exceptions
 // voulues : un port serveur d'écriture qui rejette (l'envoi suivant rattrape ; une relecture de location qui rejette,
@@ -48,6 +52,8 @@ const MEDIA_NAMESPACE = 'urn:x-cast:com.google.cast.media';
 export const CAST_RESUME_SETTLE_MS = 500;
 /** Position de la télécommande : au plus une fois par seconde (spec § 5.3). */
 const POSITION_EVERY_MS = 1000;
+/** Pendant le chargement, la séance est relue à cette cadence : son objet média peut arriver sans annonce. */
+export const CAST_LOAD_LOOK_EVERY_MS = 1000;
 
 type PhaseTimer = 'connect' | 'load';
 type ServerEffect = Extract<CastEffect, { type: 'SERVER_OPEN' | 'SERVER_REPORT' | 'SERVER_CLOSE' }>;
@@ -79,6 +85,7 @@ let statusDeadline: ReturnType<typeof setTimeout> | null = null;
 let statusRequestId = 0;
 let tickLoop: ReturnType<typeof setInterval> | null = null;
 let positionLoop: ReturnType<typeof setInterval> | null = null;
+let loadLoop: ReturnType<typeof setInterval> | null = null;
 let serverQueue: Promise<unknown> = Promise.resolve();
 
 // ---------------------------------------------------------------------------------------------------------
@@ -127,8 +134,10 @@ export function __resetCastForTests(): void {
   clearStatusDeadline();
   if (tickLoop !== null) clearInterval(tickLoop);
   if (positionLoop !== null) clearInterval(positionLoop);
+  if (loadLoop !== null) clearInterval(loadLoop);
   tickLoop = null;
   positionLoop = null;
+  loadLoop = null;
   ports = null;
   state = initialCastState;
   listeners.clear();
@@ -194,8 +203,19 @@ export function setCastSubtitle(trackId: number | null): Promise<boolean> {
 // La machine
 // ---------------------------------------------------------------------------------------------------------
 
+/**
+ * Trace de recette, inerte tant que personne ne pose `window.__castTrace = []` dans la console (ou par CDP) : chaque
+ * pas de la machine, et ce que le SDK rend au chargement. Ni adresse ni contenu d'événement : des noms et des numéros.
+ * C'est elle qui a montré, sur le Pixel, où la réalité du SDK quittait nos hypothèses (voir l'en-tête).
+ */
+function trace(what: string, detail?: unknown): void {
+  const sink = (globalThis as { __castTrace?: unknown }).__castTrace;
+  if (Array.isArray(sink)) sink.push({ at: new Date().toISOString().slice(11, 23), what, detail });
+}
+
 function apply(event: CastEvent): void {
   const step = castReduce(state, event);
+  trace(event.type, { from: state.phase, to: step.state.phase, filmId: step.state.filmId, notice: step.state.notice?.code ?? null, effects: step.effects.map((e) => e.type) });
   if (step.state !== state) {
     state = step.state;
     for (const listener of [...listeners]) {
@@ -286,6 +306,9 @@ function setUpSdk(): void {
     context.addEventListener(framework.CastContextEventType.SESSION_STATE_CHANGED, onSessionState);
     context.addEventListener(framework.CastContextEventType.CAST_STATE_CHANGED, onCastState);
     controller.addEventListener(framework.RemotePlayerEventType.VOLUME_LEVEL_CHANGED, onVolumeChanged);
+    // RemotePlayer ne sert ici que de SIGNAL (jamais de source, D4) : « quelque chose a changé, relis la séance ».
+    controller.addEventListener(framework.RemotePlayerEventType.IS_MEDIA_LOADED_CHANGED, lookForMedia);
+    controller.addEventListener(framework.RemotePlayerEventType.PLAYER_STATE_CHANGED, lookForMedia);
   } catch {
     sdk = null;
     sdkMissing();
@@ -451,6 +474,22 @@ function adoptSessionMedia(session: CafCastSession): void {
 }
 
 /**
+ * La séance tient-elle un objet média que nous ne suivons pas encore ? Un objet au repos ne dit rien de neuf (le
+ * provisoire d'un chargement, le dernier d'un film fini) : seul un objet en lecture est repris.
+ */
+function lookForMedia(): void {
+  const session = currentSession();
+  if (!session) return;
+  let found: CafMedia | null;
+  try {
+    found = session.getMediaSession();
+  } catch {
+    return;                                          // séance illisible : le délai du chargement ou le TICK concluront
+  }
+  if (found && found !== media && found.playerState !== 'IDLE') adoptMedia(found);
+}
+
+/**
  * Réponse à GET_STATUS sur le canal média, lue telle quelle : après un rechargement le SDK n'a pas encore d'objet
  * média (F2), seule la réponse brute dit ce que joue la TV. Liste vide : plus de média. Sinon, sa première entrée
  * fait le statut ; l'objet du SDK, quand il existe, est repris au tour suivant pour les commandes et la fin du
@@ -576,11 +615,23 @@ function loadMedia(filmId: number, request: CastMediaRequest): void {
     // `tracked` n'est pas dans l'effet : c'est celui de la demande en cours, posé par le pas qui l'a émis.
     const load = buildLoadRequest(sdk.chromeCast, loadRequestData(filmId, request, state.tracked));
     session.loadMedia(load).then(
-      () => adoptSessionMedia(session),
+      () => {
+        trace('loadMedia réglé', { media: mediaStateOf(session) });
+        adoptSessionMedia(session);
+      },
       () => sendCast({ type: 'LOAD_FAILED' }),
     );
   } catch {
     sendCast({ type: 'LOAD_FAILED' });
+  }
+}
+
+/** Pour la trace : l'état de l'objet média de la séance au moment où le chargement se dit réglé. */
+function mediaStateOf(session: CafCastSession): string {
+  try {
+    return session.getMediaSession()?.playerState ?? 'aucun';
+  } catch {
+    return 'illisible';
   }
 }
 
@@ -781,12 +832,16 @@ function pageVisible(): boolean {
   return typeof document === 'undefined' || document.visibilityState !== 'hidden';
 }
 
-/** TICK toutes les CAST_REPORT_EVERY_MS en `remote` ou `lost`, POSITION chaque seconde en `remote` ; page visible. */
+/**
+ * TICK toutes les CAST_REPORT_EVERY_MS en `remote` ou `lost`, POSITION chaque seconde en `remote` ; page visible.
+ * En `loading`, la séance est relue chaque seconde (lookForMedia), page visible ou non.
+ */
 function syncLoops(): void {
   const visible = pageVisible();
   const watching = state.phase === 'remote' || state.phase === 'lost';
   tickLoop = keepLoop(tickLoop, visible && watching, CAST_REPORT_EVERY_MS, () => sendCast({ type: 'TICK' }));
   positionLoop = keepLoop(positionLoop, visible && state.phase === 'remote', POSITION_EVERY_MS, sendPosition);
+  loadLoop = keepLoop(loadLoop, state.phase === 'loading', CAST_LOAD_LOOK_EVERY_MS, lookForMedia);
 }
 
 function keepLoop(

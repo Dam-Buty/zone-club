@@ -390,3 +390,63 @@ test('CAST SERVICE B15: « Arrêter » — la séance passe par SESSION_ENDING p
   assert.deepEqual(seen, ['SESSION_ENDING', 'SESSION_ENDED']);
   assert.equal(state().connected, false); assert.equal(state().stopping, false);
 });
+
+// Recette sur le Pixel 9a et le vidéoprojecteur, 21/11/2026 (trace du service) : sur une séance NEUVE — la télé lance
+// l'application —, le SDK annonce un objet média provisoire (IDLE) 86 ms après l'envoi, l'abandonne, et règle la
+// promesse du chargement sans objet média. La télé ne charge réellement le film que 2 s plus tard : le SDK crée alors
+// un autre objet, sans MEDIA_SESSION. Le service n'en apprenait rien : « Le film n'a pas pu démarrer » au bout de
+// 20 s, pendant que la télé jouait.
+async function freshSessionLoading(t) {
+  const ctx = await start(t);
+  const tv = ctx.fake.makeSession('Salon');
+  ctx.fake.context.requestSessionImpl = () => new Promise(() => {});
+  service.sendCast(ask(7));
+  ctx.fake.context.emitSession('SESSION_STARTING', tv);
+  ctx.fake.context.session = tv;
+  ctx.fake.context.emitSession('SESSION_STARTED', tv);
+  const provisional = ctx.fake.makeMedia({ filmId: 7, playerState: 'IDLE', currentTime: 0, duration: 0 });
+  tv.announceMedia(provisional);
+  provisional.update({}, false);
+  tv.mediaSession = null;
+  await flush();                                                       // la promesse du chargement se règle : pas de média
+  assert.equal(ctx.state().phase, 'loading', 'préalable : toujours en chargement');
+  return { ...ctx, tv };
+}
+
+test('CAST SERVICE R1: séance neuve — l\'objet média réel, signalé par RemotePlayer, ouvre la télécommande', async (t) => {
+  const { fake, tv, ports, state } = await freshSessionLoading(t);
+  tv.mediaSession = fake.makeMedia({ filmId: 7, playerState: 'BUFFERING', currentTime: 0 });   // sans MEDIA_SESSION
+  fake.controller.signal('ismedialoadedchanged');
+  assert.equal(state().phase, 'remote');
+  assert.equal(state().filmId, 7);
+  await flush();                                                       // la file des appels au serveur
+  assert.deepEqual(named(ports, 'serverOpen'), [[7, 0, 600]]);
+  // Ses statuts suivants sont écoutés : la pause vue sur la télé arrive.
+  tv.mediaSession.update({ playerState: 'PAUSED' });
+  assert.equal(state().paused, true);
+  t.mock.timers.tick(CAST_LOAD_TIMEOUT_MS);
+  assert.equal(state().phase, 'remote', 'le délai de chargement est levé');
+});
+
+test('CAST SERVICE R1: séance neuve — sans aucun signal, le service retrouve l\'objet média en une seconde', async (t) => {
+  const { fake, tv, state } = await freshSessionLoading(t);
+  tv.mediaSession = fake.makeMedia({ filmId: 7, currentTime: 2 });
+  t.mock.timers.tick(service.CAST_LOAD_LOOK_EVERY_MS);
+  assert.equal(state().phase, 'remote');
+  assert.equal(fake.calls.loadMedia.length, 1, 'un seul chargement');
+});
+
+test('CAST SERVICE R1: un objet média au repos n\'est pas repris sur un signal de RemotePlayer', async (t) => {
+  const { fake, tv, ports, state, playing } = await remoteOn(t);
+  playing.update({ playerState: 'IDLE', idleReason: 'FINISHED' }, false);  // fin du film : l'objet meurt, la séance le garde
+  assert.equal(state().phase, 'ended');
+  const closes = named(ports, 'serverClose').length;
+  assert.equal(tv.mediaSession, playing);
+  fake.controller.signal('playerstatechanged');
+  fake.controller.signal('ismedialoadedchanged');
+  assert.equal(state().phase, 'ended');
+  assert.equal(named(ports, 'serverClose').length, closes, 'aucune seconde clôture');
+  // L'objet mort n'est pas redevenu le média courant : aucune commande ne part vers lui.
+  assert.equal(await service.setCastSubtitle(1), false);
+  assert.deepEqual(fake.calls.commands, []);
+});

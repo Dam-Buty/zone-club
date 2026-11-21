@@ -25,6 +25,14 @@ function ensureGlobalListener(): void {
 }
 
 /**
+ * Retient ou libère l'historique pour toutes les gardes (voir « RETENUE » dans back-guard-stack.ts). Appelé par la
+ * tranche du Cast : vrai tant que le sélecteur d'appareils est ouvert.
+ */
+export function holdBackGuards(held: boolean): void {
+  stack.hold(held)
+}
+
+/**
  * Register a back-gesture handler while `isOpen` is true. On system back press `onClose` is
  * called and the guard's history entry is consumed by the browser. On UI-button close (state
  * changes externally), the entry is rewound so entries don't accumulate across open/close cycles.

@@ -11,6 +11,12 @@
 // qui arrivait en développement, où React rejoue l'effet d'un composant à son montage — effet,
 // nettoyage, effet : après la fermeture du lecteur ouvert depuis la borne, le geste retour
 // suivant sortait du site (tracé le 17/11/2026).
+//
+// RETENUE (`hold`) : pendant que la fenêtre native « Caster sur » de Chrome Android s'ouvre, une entrée posée dans
+// l'historique la referme aussitôt (`requestSession` rejette « cancel » ; expérience contrôlée sur le Pixel 9a,
+// Chrome 157, le 21/11/2026). Tant que l'historique est retenu, la pile n'y touche pas : une garde qui s'ouvre
+// attend son entrée, un retrait attend aussi. À la libération, elle rattrape. Pendant la retenue la fenêtre native
+// a le geste retour : aucune garde n'en a besoin.
 
 export interface GuardHistory {
   pushState(data: unknown, unused: string): void;
@@ -22,6 +28,8 @@ interface Handler {
   id: number;
   close: () => void;
   consumed: boolean;
+  /** Ouverte pendant une retenue : son entrée d'historique n'est pas encore posée. */
+  pending: boolean;
 }
 
 export interface BackGuardStack {
@@ -29,6 +37,8 @@ export interface BackGuardStack {
   open(close: () => void): () => void;
   /** À appeler sur chaque `popstate` de la fenêtre. */
   handlePop(): void;
+  /** Retient (vrai) ou libère (faux) l'historique : voir « RETENUE » en tête de fichier. */
+  hold(held: boolean): void;
 }
 
 export function createBackGuardStack(deps: { history: () => GuardHistory; defer: (task: () => void) => void }): BackGuardStack {
@@ -38,9 +48,36 @@ export function createBackGuardStack(deps: { history: () => GuardHistory; defer:
   /** Entrées posées par des gardes refermées, pas encore retirées de l'historique. */
   let orphanEntries = 0;
   let rewindScheduled = false;
+  let held = false;
 
-  const rewindOrphans = () => {
+  const scheduleRewind = () => {
+    if (rewindScheduled) return;
+    rewindScheduled = true;
+    deps.defer(rewindOrphans);
+  };
+
+  /** L'entrée d'une garde : celle d'une garde tout juste refermée si elle attend son retrait, sinon une neuve. */
+  const enter = (handler: Handler): boolean => {
+    if (orphanEntries > 0) {
+      orphanEntries--;
+      return true;
+    }
+    try {
+      deps.history().pushState({ overlayGuard: handler.id }, '');
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const drop = (handler: Handler) => {
+    const index = handlers.indexOf(handler);
+    if (index >= 0) handlers.splice(index, 1);
+  };
+
+  function rewindOrphans(): void {
     rewindScheduled = false;
+    if (held) return;       // la libération relancera le retrait
     const count = orphanEntries;
     orphanEntries = 0;
     if (count === 0) return;
@@ -50,34 +87,23 @@ export function createBackGuardStack(deps: { history: () => GuardHistory; defer:
     } catch {
       suppressedPops = Math.max(0, suppressedPops - 1);
     }
-  };
+  }
 
   return {
     open(close) {
-      const handler: Handler = { id: ++nextId, close, consumed: false };
+      const handler: Handler = { id: ++nextId, close, consumed: false, pending: held };
       handlers.push(handler);
-      if (orphanEntries > 0) {
-        // Une garde vient d'être refermée : on reprend son entrée, sans toucher à l'historique.
-        orphanEntries--;
-      } else {
-        try {
-          deps.history().pushState({ overlayGuard: handler.id }, '');
-        } catch {
-          const index = handlers.indexOf(handler);
-          if (index >= 0) handlers.splice(index, 1);
-          return () => {};
-        }
+      // Une garde vient d'être refermée : `enter` reprend son entrée, sans toucher à l'historique.
+      if (!held && !enter(handler)) {
+        drop(handler);
+        return () => {};
       }
       return () => {
-        const index = handlers.indexOf(handler);
-        if (index >= 0) handlers.splice(index, 1);
-        if (handler.consumed) return;
+        drop(handler);
+        if (handler.consumed || handler.pending) return;   // `pending` : elle n'a jamais eu d'entrée
         // Refermée par l'interface : son entrée devient orpheline, retirée à la tâche suivante.
         orphanEntries++;
-        if (!rewindScheduled) {
-          rewindScheduled = true;
-          deps.defer(rewindOrphans);
-        }
+        scheduleRewind();
       };
     },
     handlePop() {
@@ -99,6 +125,18 @@ export function createBackGuardStack(deps: { history: () => GuardHistory; defer:
       } catch {
         // Une fermeture qui échoue ne doit jamais bloquer le geste retour.
       }
+    },
+    hold(next) {
+      if (held === next) return;
+      held = next;
+      if (held) return;
+      // Libération : les gardes ouvertes entre-temps (et encore ouvertes) reçoivent leur entrée, dans l'ordre.
+      for (const handler of [...handlers]) {
+        if (!handler.pending) continue;
+        handler.pending = false;
+        if (!enter(handler)) drop(handler);
+      }
+      if (orphanEntries > 0) scheduleRewind();
     },
   };
 }

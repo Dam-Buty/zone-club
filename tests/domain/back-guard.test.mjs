@@ -113,3 +113,80 @@ test('RETOUR: useBackGuard s\'appuie sur cette pile', () => {
   assert.ok(src.includes('createBackGuardStack('), 'le crochet délègue à la pile testée');
   assert.ok(!/history\.back\(\)/.test(src), 'plus de retrait d\'entrée direct dans le crochet');
 });
+
+// Constat du 21/11/2026 sur le Pixel 9a (Chrome 157), par une expérience contrôlée : une entrée d'historique posée
+// pendant que la fenêtre native « Caster sur » s'ouvre la referme aussitôt (`requestSession` rejette « cancel » en
+// moins d'une seconde) ; sans cette entrée, la fenêtre reste. « Sur ma télé » de la borne ouvrait le lecteur — et sa
+// garde — dans le même appui : la fenêtre ne s'affichait jamais. Tant que l'historique est retenu, la pile n'y touche
+// pas ; à la libération elle rattrape.
+test('RETOUR: historique retenu — une garde ouverte ne pose son entrée qu\'à la libération', () => {
+  const b = fakeBrowser(); const closed = [];
+  b.stack.open(() => closed.push('borne'));
+  b.settle();
+  b.stack.hold(true);
+  b.stack.open(() => closed.push('lecteur'));
+  b.settle();
+  assert.equal(b.depth, 1, 'retenu : seule l\'entrée de la borne existe');
+  b.stack.hold(false);
+  b.settle();
+  assert.equal(b.depth, 2, 'libéré : le lecteur a son entrée');
+  b.userBack();
+  assert.deepEqual(closed, ['lecteur']);
+  b.userBack();
+  assert.deepEqual(closed, ['lecteur', 'borne']);
+  assert.equal(b.left, false, 'la page n\'est pas quittée');
+});
+
+test('RETOUR: historique retenu — une garde ouverte puis refermée pendant la retenue ne laisse rien', () => {
+  const b = fakeBrowser(); const closed = [];
+  b.stack.open(() => closed.push('borne'));
+  b.settle();
+  b.stack.hold(true);
+  const release = b.stack.open(() => closed.push('lecteur'));
+  release();
+  b.stack.hold(false);
+  b.settle();
+  assert.equal(b.depth, 1, 'ni entrée posée, ni entrée retirée');
+  b.userBack();
+  assert.deepEqual(closed, ['borne']);
+  assert.equal(b.left, false);
+});
+
+test('RETOUR: historique retenu — le retrait d\'une entrée attend la libération', () => {
+  const b = fakeBrowser(); const closed = [];
+  b.stack.open(() => closed.push('borne'));
+  const release = b.stack.open(() => closed.push('panneau'));
+  b.settle();
+  b.stack.hold(true);
+  release();
+  b.settle();
+  assert.equal(b.depth, 2, 'retenu : l\'entrée du panneau est encore là');
+  b.stack.hold(true);                       // répété : sans effet
+  b.stack.hold(false);
+  b.settle();
+  assert.equal(b.depth, 1, 'libéré : elle est retirée');
+  assert.deepEqual(closed, [], 'sans rien fermer');
+});
+
+test('RETOUR: historique retenu — une garde ouverte à la place d\'une garde refermée reprend son entrée', () => {
+  const b = fakeBrowser(); const closed = [];
+  b.stack.open(() => closed.push('borne'));
+  const release = b.stack.open(() => closed.push('panneau'));
+  b.settle();
+  b.stack.hold(true);
+  release();
+  b.stack.open(() => closed.push('lecteur'));
+  b.stack.hold(false);
+  b.settle();
+  assert.equal(b.depth, 2, 'une entrée pour la borne, une pour le lecteur');
+  b.userBack();
+  assert.deepEqual(closed, ['lecteur']);
+  assert.equal(b.left, false);
+});
+
+test('RETOUR: le sélecteur d\'appareils du Cast retient l\'historique', () => {
+  const hook = readText(path.join(process.cwd(), 'src/hooks/useBackGuard.ts'));
+  assert.ok(/export function holdBackGuards\(/.test(hook), 'le crochet expose la retenue');
+  const slice = readText(path.join(process.cwd(), 'src/store/slices/cast.ts'));
+  assert.ok(/holdBackGuards\(service\.phase === 'choosing'\)/.test(slice), 'retenu tant que le sélecteur est ouvert');
+});

@@ -8,6 +8,8 @@ const SESSION_STATE_CHANGED = 'sessionstatechanged';
 const CAST_STATE_CHANGED = 'caststatechanged';
 const MEDIA_SESSION = 'mediasession';
 const VOLUME_LEVEL_CHANGED = 'volumelevelchanged';
+const IS_MEDIA_LOADED_CHANGED = 'ismedialoadedchanged';
+const PLAYER_STATE_CHANGED = 'playerstatechanged';
 
 const on = (map, type, fn) => { (map[type] ??= []).push(fn); };
 const emit = (map, type, data) => { for (const fn of map[type] ?? []) fn(data); };
@@ -163,6 +165,8 @@ export function installFakeCastSdk({ sdk = true } = {}) {
       fake.controller = this;
     }
     addEventListener(type, fn) { on(this.listeners, type, fn); }
+    /** RemotePlayer change : « isMediaLoaded » ou « playerState » (le service n'y lit rien, il va voir la séance). */
+    signal(type) { emit(this.listeners, type); }
     /** Le récepteur annonce un nouveau volume. */
     setVolume(level) {
       this.player.volumeLevel = level;
@@ -177,7 +181,7 @@ export function installFakeCastSdk({ sdk = true } = {}) {
       SessionEventType: { MEDIA_SESSION },
       RemotePlayer,
       RemotePlayerController,
-      RemotePlayerEventType: { VOLUME_LEVEL_CHANGED },
+      RemotePlayerEventType: { VOLUME_LEVEL_CHANGED, IS_MEDIA_LOADED_CHANGED, PLAYER_STATE_CHANGED },
     },
   };
   globalThis.chrome = {

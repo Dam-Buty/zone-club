@@ -68,7 +68,7 @@ export interface CafFramework {
   SessionEventType: { MEDIA_SESSION: string };
   RemotePlayer: new () => CafRemotePlayer;
   RemotePlayerController: new (player: CafRemotePlayer) => CafRemotePlayerController;
-  RemotePlayerEventType: { VOLUME_LEVEL_CHANGED: string };
+  RemotePlayerEventType: { VOLUME_LEVEL_CHANGED: string; IS_MEDIA_LOADED_CHANGED: string; PLAYER_STATE_CHANGED: string };
 }
 
 export interface CafTrack {
