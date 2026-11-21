@@ -239,6 +239,41 @@ position, durée, pause, volume. `activeCastFilmId` en devient une valeur dériv
 
 Non vérifiable en local : les sous-titres en Cast (URL absolues du stockage, en production seulement).
 
+## Résultats de la recette (21/11/2026)
+
+Pixel 9a (Android, Chrome 157) piloté par adb et CDP, vidéoprojecteur « Téléviseur Pièce à vivre » (récepteur standard),
+build de production servi sur le port 3002, base de seed. L'état de la télé est lu sur elle (pychromecast), jamais
+déduit du téléphone. Trois défauts ont été trouvés, corrigés et rejoués sur place (commits `2df71cf` et `9986719`) ;
+ils sont décrits dans `AGENTS.md`, faits F4 à F6.
+
+| Point | Attendu | Observé | Verdict |
+|---|---|---|---|
+| 1. « Sur ma télé » depuis la borne, choix après plus de 10 s | sélecteur, lecture | **D'abord en échec, deux fois** : sélecteur refermé en 0,5 s (F4), puis « Le film n'a pas pu démarrer » alors que la télé jouait (F5). Après correction : sélecteur ouvert 17 s, télécommande 2 s après le chargement, télé en lecture | bon après correction |
+| 2. Sélecteur refermé | retour silencieux, invite présente | refermé par le geste retour : aucun message, lecteur en pause avec « Regarder sur TV ? » ; le geste retour suivant ramène à la borne | bon |
+| 3. Pause, lecture, ±15 s, volume | vus sur la télé | pause et lecture relues sur la télé ; +15 s et −15 s relus sur sa position ; volume 0,05 → 0,10 relu sur la télé, curseur à la même valeur | bon |
+| 4. Geste retour, trois allers-retours | la télé continue, barre, télécommande immédiate | trois fois : barre « Télécommande », télé en lecture, télécommande au premier appui ; historique stable ; pause obéit | bon |
+| 5. Arrière-plan 75 s puis retour | télécommande juste et obéissante | **d'abord en échec** : « La télé ne répond plus », télé en lecture (F6). Après correction (80 s d'arrière-plan) : séance rejointe en 0,6 s, télécommande restée à l'écran, pause et lecture obéissent | bon après correction |
+| 6. Rechargement pendant le film | barre, télécommande, aucune lecture locale | séance reprise, barre « Télécommande », pas de vidéo locale | bon |
+| 7. Fin du film, lecteur ouvert | « BE KIND REWIND », location à 100 % | panneau affiché, location à 100 % et position 0, séance serveur close (`finished`) | bon |
+| 8. Fin du film, lecteur fermé | barre « Film terminé », puis rembobinage | barre « Film terminé » ; rembobinage, +1 crédit | bon |
+| 9. « Arrêter » ; « Sur ce téléphone » | télé à l'accueil, séance close ; reprise locale à la position | « Arrêter » : télé à l'accueil, séance close. « Sur ce téléphone » : télé libérée, lecture locale qui continue à la même position | bon |
+| 10. Télé déjà connectée, second film | pas de fenêtre native, séance serveur créée | chargement direct, aucune fenêtre, `POST /api/cast-sessions` 200 | bon |
+| 11. Avec Rusmir (arrêt et extinction depuis la télé, Wi-Fi coupé, téléphone verrouillé jusqu'après la fin, déconnexion du compte) | — | non fait | à faire |
+| 12. Chrome sur le Mac | lancement, télécommande, fin | non fait (le sélecteur de Chrome sur ordinateur ne se pilote pas d'ici) | à faire |
+
+Hypothèses levées : le récepteur renvoie `customData` au chargement et dans sa réponse à `GET_STATUS` ; il accepte
+des sous-titres servis avec l'en-tête CORS « * », et la bascule de piste ne recharge pas le film (détail dans la spec
+des versions, § 10).
+
+Vu au passage, non traité :
+
+- « Sur ce téléphone » sur un film déjà vu en entier et non rembobiné : le lecteur demande « Rembobiner pour +1
+  crédit ? » avant de reprendre, puis reste en pause après « Non merci ».
+- Après « Rembobinage terminé », le panneau recouvre l'en-tête : « ← Retour à la borne » ne répond pas tant que le
+  panneau n'est pas fermé par sa croix.
+- Le rembobinage d'un film du seed dure environ deux minutes (compteur parti de 6 601).
+- Après le chargement raté d'avant la correction F5, la télé jouait un film sans séance serveur ouverte.
+
 ## 7. Laissé à l'exécutant
 
 Noms des fichiers et des fonctions, forme exacte de l'état et des événements, valeurs des délais, CSS, découpage en

@@ -396,6 +396,48 @@ récepteur standard. Retenu sur l'appareil.
 - Taille des sous-titres : effet réel sur le vidéoprojecteur.
 - Panneau d'erreur sur le Pixel, avec une adresse volontairement fausse.
 
+### Résultats du 21/11/2026 — sous-titres en Cast
+
+Pixel 9a (Chrome 157) et « Téléviseur Pièce à vivre » (récepteur standard). Film de test du seed, ses deux fichiers de
+sous-titres servis depuis le Mac avec `Access-Control-Allow-Origin: *`, comme le stockage de production.
+
+- **L'en-tête « * » est accepté.** La télé vient chercher les deux fichiers (`Origin: https://www.gstatic.com`), le
+  film se lance, la piste française est active (`activeTrackIds = [1]`). La crainte tirée de la documentation de
+  Google ne se vérifie pas sur ce récepteur.
+- Depuis la télécommande, anglais, coupés puis français : la piste active change à chaque appui, le film ne se
+  recharge pas.
+- **Non vu par moi** : l'image. Que le texte s'affiche bien à l'écran reste à confirmer par Rusmir devant le
+  vidéoprojecteur.
+
+### Résultats du 21/11/2026 — essai du défilement par sauts (tâche 11 du plan)
+
+Essai jetable, hors du site : `.superpowers/sdd/2026-11-20-versions-et-erreurs-de-lecture/essai-defilement/` (script
+`scan.js`, relevés bruts `releves-2026-11-21.json`). Chaque saut part à l'accusé du précédent, sa taille vaut vitesse ×
+temps écoulé, la télé reste en pause entre deux sauts.
+
+| Passe | Durée | Sauts | Sauts par seconde | Accusé (médiane / max) | Vitesse réelle |
+|---|---|---|---|---|---|
+| Avance ×2 | 30,1 s | 263 | 8,74 | 111 ms / 222 ms | 2,00 |
+| Avance ×4 | 30,0 s | 261 | 8,70 | 111 ms / 220 ms | 4,00 |
+| Retour ×2 | 15,1 s | 139 | 9,22 | 109 ms / 213 ms | −2,05 |
+| Retour ×4 | 15,1 s | 130 | 8,62 | 111 ms / 260 ms | −4,00 |
+| Avance ×4, lecture entre les sauts | 12,0 s | 111 | 9,22 | 106 ms / 249 ms | 4,05 |
+
+- Aucun saut refusé sur les cinq passes. La télé se dit en pause pendant tout le défilement et sa position, lue sur
+  elle, suit (196 s, 213 s, 231 s à trois relevés de la passe ×2).
+- `SeekRequest.resumeState` : les deux valeurs du SDK, `PLAYBACK_START` et `PLAYBACK_PAUSE`, sont acceptées. La
+  reprise de la lecture en fin de défilement est accusée en 0,1 à 0,9 s.
+- Variante « lecture entre les sauts » : même vitesse, la télé se dit en lecture ; le son sort donc par fragments.
+  Rien ne la recommande.
+- **Page cachée en plein défilement** (Chrome mis en arrière-plan, 16 s) : `visibilitychange` part aussitôt, et la
+  page continue d'envoyer ses sauts tant qu'elle n'est pas gelée — la télé continue d'avancer, en pause. La règle du
+  § 7.2 (à la page cachée : arrêt du défilement, reprise de la lecture) est donc nécessaire et applicable. Le
+  verrouillage par le bouton du téléphone n'a pas été essayé (je ne peux pas le déverrouiller) : à faire avec Rusmir.
+- `CAST_SCAN_MIN_INTERVAL_MS` : la cadence naturelle est d'un saut toutes les 110 ms environ. Proposition : **100 ms**
+  de plancher (jamais plus de dix sauts par seconde), ce qui ne ralentit rien de ce qui a été mesuré.
+- **Non vu par moi** : l'image. Savoir si la télé rafraîchit l'image à chaque saut, et ce que cela donne à l'œil,
+  est exactement ce que Rusmir doit regarder avant que la télécommande soit construite (§ 11.9).
+
 ## 11. Arbitrages pris sans Rusmir (à corriger s'il n'est pas d'accord)
 
 Chaque point dit la situation, ce que j'ai choisi, et l'autre possibilité.

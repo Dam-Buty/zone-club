@@ -789,11 +789,39 @@ Règles que suit le lecteur (`VHSPlayer.tsx` lit la vue et envoie des intentions
   durée et position à 0 dans le même lot : le service lit l'objet média, jamais `RemotePlayer` (sauf le volume du
   récepteur). Repli si le signal manque (séance média disparue, ou `IDLE` sans raison) : dernière position connue
   ≥ 95 % de la dernière durée connue, mémorisées **avant** la remise à zéro.
-- Aussi mesuré : Chrome gèle la page 60 s après son passage en arrière-plan et la reprend au retour, séance intacte
-  (la position part au passage en arrière-plan, un statut est redemandé au retour : `PAGE_HIDDEN`, `PAGE_VISIBLE`,
-  événement `resume`) ; `endCurrentSession(true)` libère bien la TV ; `requestSession` appelé sur une séance existante
+- Aussi mesuré : Chrome gèle la page 60 s après son passage en arrière-plan et la reprend au retour (la position part
+  au passage en arrière-plan, un statut est redemandé au retour : `PAGE_HIDDEN`, `PAGE_VISIBLE`, événement `resume`) —
+  mais la séance n'en sort PAS intacte, voir F6 ; `endCurrentSession(true)` libère bien la TV ; `requestSession` appelé sur une séance existante
   ouvre une fenêtre native « Arrêter la diffusion » (le service rejoint la séance au lieu de rouvrir le sélecteur) ;
   le sélecteur rejette `'cancel'` quand le visiteur le referme.
+
+**Trois autres faits, mesurés à la recette du 21/11/2026 (mêmes appareils) — chacun a d'abord été un défaut :**
+
+- **F4 — une entrée d'historique referme le sélecteur d'appareils.** Un `history.pushState` (ou un retrait d'entrée)
+  pendant que la fenêtre native « Caster sur » s'ouvre la referme : `requestSession` rejette `'cancel'` en moins d'une
+  seconde (expérience contrôlée : avec l'entrée, fermeture ; sans, la fenêtre reste). « Sur ma télé » de la borne
+  ouvrait le lecteur — et sa garde du geste retour — dans le même appui : le sélecteur ne s'affichait jamais. La pile
+  des gardes sait donc **retenir** l'historique (`hold` dans `src/hooks/back-guard-stack.ts`, `holdBackGuards` dans
+  `useBackGuard.ts`) : la tranche du Cast la tient tant que la phase est `choosing` ; les gardes ouvertes entre-temps
+  reçoivent leur entrée à la libération. Toute nouvelle écriture dans l'historique doit passer par cette pile.
+- **F5 — sur une séance neuve, le chargement se dit réglé avant d'avoir eu lieu.** Quand la TV doit lancer
+  l'application, le SDK annonce un objet média provisoire (`IDLE`) 86 ms après `loadMedia`, l'abandonne, et règle la
+  promesse sans objet média ; la TV charge le film 2 s plus tard et le SDK crée alors un autre objet, **sans**
+  `MEDIA_SESSION`. Le service relit donc la séance (`lookForMedia`) sur un signal de `RemotePlayer`
+  (`IS_MEDIA_LOADED_CHANGED`, `PLAYER_STATE_CHANGED` : signal seulement, jamais source) et chaque seconde pendant
+  `loading` ; un objet au repos n'est jamais repris. Sans cela : « Le film n'a pas pu démarrer » après 20 s, la TV en
+  lecture.
+- **F6 — au retour d'un gel, la liaison de la page est coupée et le SDK ne le sait pas.** Il se dit `CONNECTED`,
+  séance et objet média à l'appui, mais tout envoi lève `InvalidStateError` (« Presentation connection is
+  disconnected ») et rien ne revient seul (30 s d'essais refusés). `chrome.cast.requestSessionById(id)` rejoint la
+  séance sans fenêtre native : un NOUVEL objet de séance, où un envoi repasse 370 ms après — et `SESSION_RESUMED`
+  n'est pas toujours annoncé. Quand une demande de statut ne peut pas partir, le service redemande donc la séance (une
+  fois par demande) puis renvoie la demande toutes les 500 ms sur la séance courante (`statusSendFailed`,
+  `retryStatus`) ; l'échéance de 5 s conclut sinon à la liaison perdue, et chaque `TICK` retente. Mesuré après 80 s
+  d'arrière-plan : séance rejointe en 0,6 s, la télécommande ne quitte pas l'écran.
+- Levé aussi le 21/11 : le récepteur standard renvoie bien `customData` au chargement **et** dans sa réponse à
+  `GET_STATUS` ; il accepte une piste de sous-titres servie avec `Access-Control-Allow-Origin: *` (il vient la chercher
+  avec `Origin: https://www.gstatic.com`), et la bascule de piste se fait sans recharger le film.
 
 **Position, en lecture locale** : `updateRentalProgress` toutes les 10 s quand la vidéo joue, sur `pause` et à la
 fermeture du lecteur (flush final). Pendant un Cast, ou sur un film que la TV vient de finir, le lecteur n'écrit plus
@@ -847,27 +875,35 @@ avec `datetime('now')` passe par `datetime()`, sinon une séance finie le jour m
 - **Safari sur Mac** : « Sur ma télé » à la borne ouvre le lecteur (`openPlayer(filmId, { from: 'kiosk', ask: true })`),
   dont l'invite « Regarder sur TV ? » n'existe que sur mobile : le film part sur l'ordinateur, et le bouton AIRPLAY de
   l'en-tête reste le chemin. Comportement d'avant la refonte, à traiter avec l'iPad.
-- **Sous-titres en Cast** : non vérifiables en local (URLs absolues du stockage, en production seulement).
+- **Sous-titres en Cast** : le seed pose des adresses relatives (`/seed-media/…`), que la TV ne peut pas joindre. Pour
+  les essayer en local : servir `public/seed-media` sur le réseau avec l'en-tête CORS « * » (`serveur-vtt.py`, voir la
+  recette) et donner à un film des adresses absolues dans `zone.db` (`subtitle_fr_vtt`, `subtitle_en_vtt`), puis les
+  remettre. Fait le 21/11/2026 : pistes chargées et basculées. En production, jamais vu.
 
 #### Recette du Cast sur appareil
 
-⚠️ **État de la vérification au 19/11/2026** : la refonte est vérifiée par les tests (voir « Tests »), par un build de
-production et **à l'écran avec un faux SDK** injecté dans la page (panneaux, puce, borne). Elle n'a **PAS encore été
-vérifiée sur une vraie TV** : la recette sur le Pixel 9a et le vidéoprojecteur (spec, § 6, points 1 à 12) est ce qui
-reste du chantier, et ses résultats iront dans la section « Résultats de la recette » de la spec. Plusieurs hypothèses
-sur le vrai SDK et le vrai récepteur n'ont jamais été vues sur un appareil — entre autres que le récepteur renvoie
-`customData` dans sa réponse à `GET_STATUS` (ce que vérifie `customdata.py`), et si `FINISHED` arrive ou non après le
-dégel d'une page. La liste qui fait foi n'est pas ici : ce sont les lignes « À vérifier sur l'appareil » du registre du
-chantier (`.superpowers/sdd/2026-11-18-cast-refonte/progress.md`, extraites dans `points-differes.md`, ignorés par git)
-et la recette de la spec (§ 5.2 bis, § 6), complétées par les réserves du rapport de la vague de corrections du 19/11
-(`final-fix-report.md`, même dossier). Tant que la recette n'a pas eu lieu, ne pas écrire que le Cast « marche sur la
-TV » : écrire ce qui a été vu.
+⚠️ **État de la vérification au 21/11/2026** : la recette a eu lieu sur le Pixel 9a et le vidéoprojecteur, build de
+production, état relu sur la TV à chaque pas. Les points 1 à 10 de la spec (§ 6) sont **vus bons**, après trois
+corrections trouvées sur place (F4, F5, F6 ci-dessus) : résultats dans la spec, § « Résultats de la recette ».
+**Restent, jamais vus** : le point 11 (arrêt et extinction depuis la TV, Wi-Fi coupé, téléphone verrouillé jusqu'après
+la fin, déconnexion du compte pendant un Cast — à faire avec Rusmir), le point 12 (Chrome sur le Mac), l'image des
+sous-titres à l'écran (pistes actives constatées, affichage non regardé), et tout ce qui touche la production. Une
+suite de tests verte n'avait vu aucun des trois défauts : le faux SDK ne rejoue que ce qu'on a mesuré. Après toute
+retouche du service, rejouer au moins : premier lancement sur une TV sans application, « Sur ma télé » depuis la
+borne, 80 s d'arrière-plan.
 
 Les outils et les journaux sont dans `.superpowers/sdd/2026-11-18-audit-cast/` (ignoré par git) : `drv.cjs` pilote
 l'onglet du téléphone par CDP ; `probe.js` et `sampler.js` journalisent le SDK, le serveur et l'écran (`sampler.js` lit
 l'écran par des classes CSS : à adapter à celles de `CastPanels.module.css`) ; `picker.cjs` lit et touche les fenêtres
 natives de Chrome ; `tv.py` lit l'**état réel de la TV** par pychromecast (dans un venv à part) ; `customdata.py`
-vérifie que le récepteur renvoie `customData`. Ce qui ne se devine pas :
+vérifie que le récepteur renvoie `customData` ; `trace.cjs` affiche la **trace du service** ; `serveur-vtt.py` et
+`soustitres_cors.py` servent les sous-titres du seed à la TV ; `sonde-liaison.js` mesure la reconnexion après un
+arrière-plan. Ce qui ne se devine pas :
+
+- **La trace du service** : poser `window.__castTrace = []` dans la page (c'est ce que fait `trace.cjs`) ; le service
+  y écrit chaque pas de la machine (événement, phase avant et après, effets) et l'état du média au règlement d'un
+  chargement. Inerte sans cette variable, ni adresse ni contenu. C'est elle qui a montré F5 et F6 : la lire AVANT de
+  supposer.
 
 - **Les appuis injectés par CDP restent sans réponse sur Chrome Android** : utiliser `adb shell input tap`. Sur le
   Pixel 9a, écran = x × 2,625 ; 2424 − hauteur × 2,625 + y × 2,625 (x et y : position de l'élément dans la page ;
@@ -876,7 +912,9 @@ vérifie que le récepteur renvoie `customData`. Ce qui ne se devine pas :
   `adb shell am start -a android.intent.action.VIEW -d http://localhost:3002/ com.android.chrome`.
 - **Jamais `adb screencap`** : il montre les notifications du propriétaire du téléphone. Capturer l'onglet par CDP.
 - **Le sélecteur du Cast exige un contexte sécurisé** : `adb reverse tcp:3002 tcp:3002` donne `localhost`. Pour CDP :
-  `adb forward tcp:9334 localabstract:chrome_devtools_remote` (vérifier `Android-Package` = `com.android.chrome`).
+  `adb forward tcp:9334 localabstract:chrome_devtools_remote` (vérifier `Android-Package` = `com.android.chrome`). Si
+  `curl http://127.0.0.1:9334/json/version` reste sans réponse, une autre application tient ce nom : viser la socket
+  de Chrome, `chrome_devtools_remote_<pid>` (`adb shell pidof com.android.chrome`, liste dans `/proc/net/unix`).
 - **La cible est « Téléviseur Pièce à vivre »** ; « Salle TV » est un Chromecast Audio, pas une cible. Garder l'écran
   allumé pendant la recette (`adb shell svc power stayon usb`, puis `stayon false`).
 - **Voir les panneaux sans TV** : injecter un faux SDK dans la page. `tests/helpers/fake-cast-sdk.mjs` sert aux tests ;
