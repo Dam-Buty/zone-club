@@ -13,6 +13,9 @@
 > 22/11.** Elles sont réunies au § 12, qui prime sur les § 3 à 6 partout où ils se contredisent : l'appareil bouge
 > dans la vidéo (cadrage « mixte »), la K7 est l'étui carton usé du vidéoclub, la tranche du film loué est posée par
 > la page, le plafond de poids passe à 2,6 Mo. Le texte d'origine est laissé tel quel en dessous.
+>
+> **Bandeau du 23/11/2026 — le § 13 prime à son tour sur le § 12** pour le titre du film : la tranche du film loué
+> suit la K7 pendant tout le trajet, et l'écran de la borne dans la vidéo est le vrai écran, placé par la page.
 
 Chaque décision porte sa provenance : **[R]** = dite par Rusmir, **[C]** = choix de Claude, à vérifier
 à la relecture.
@@ -295,3 +298,49 @@ Ce paragraphe prime sur les § 3 à 6. Pièces : essais et planches dans
 - La tôle autour de la fente, sombre dans le rapproché ; le bandeau du haut à ramener au violet ; un cinquième
   autocollant à proposer.
 - Le cadrage sur PC (§ 10) n'a pas été repris depuis le passage au cadrage mixte.
+
+## 13. Révision du 23/11/2026 — la tranche suit la K7, l'écran est le vrai
+
+Le film rendu le 22/11 selon le § 12 a été **rejeté par Rusmir** : « la K7 est noire une fois récupérée, et le nom du
+film s'affiche trop tard une fois la K7 sortie ». Ce paragraphe prime sur le § 12 pour « Le titre du film loué » et
+« D'où vient la tranche posée ». Écartés par lui : une K7 de trajet à étui générique ; une vidéo par film.
+
+### Ce que l'on voit **[R, 22-23/11]**
+
+- **Une seule vidéo pour tous les films**, et **la K7 du film loué visible tout du long** : la page pose la tranche du
+  film sur la K7 de la vidéo à CHAQUE image, de sa case dans la vitrine jusqu'à la fente. Le titre est sur la K7 dès
+  qu'elle apparaît dans la fente — plus de titre qui arrive après coup, plus d'arrêt à attendre.
+- **« L'illusion doit être parfaite »** : ce qui passe devant la K7 passe devant la tranche (pince, autocollant, retour
+  de tablette, tôle, volet), et la tranche reçoit la lumière de la scène. Aperçu validé : `apercu-2-tranche-suivie-
+  la-mouche.mp4` (collage `colle2.py`, hors dépôt) — « le rendu est bon ».
+- **L'écran de la borne affiche le bon film** : il n'est plus filmé. La page place le VRAI écran de la borne — celui
+  que le visiteur vient d'utiliser — dans le cadre de l'écran filmé, et lui fait suivre le mouvement. Le raccord du
+  début et de la fin est alors exact par construction. Le film est re-rendu avec un écran éteint.
+- **Des tests de bout en bout dans le navigateur** sont exigés.
+
+### Comment **[C]**
+
+- La fabrique rend, pour chaque image, deux passes recadrées sur la K7 (`distribution_film.py`, `PASSES=tout`,
+  environ une seconde par image) : le **cache** (ce qu'on voit réellement de la K7) et la **lumière** (K7 blanche).
+  Elle exporte aussi, sans rendu (`SUIVI=1`), la boîte de la tranche et celle de l'écran à chaque image.
+- Le site reçoit : le **suivi** (boîtes par image), une **planche de caches** et une **planche d'ombres** (voile noir
+  dont l'opacité reproduit la lumière), communes à tous les films ; et **une tranche par film**, non éclairée, usée au
+  niveau de son année. La page empile, en composition normale : la tranche, découpée par le cache de l'image
+  (`mask-image`), puis l'ombre de l'image. Ni canvas, ni filtre, ni mode de fusion.
+- Les positions se règlent hors de React (styles posés directement à chaque image présentée par la vidéo) : 24 rendus
+  de l'arbre par seconde seraient une faute.
+- Le cadre de la vidéo est placé pour que l'écran filmé de la première image tombe exactement sur l'écran de la borne.
+- L'afficheur au-dessus de la fente garde son texte de repos filmé ; l'écrire par la page n'est plus nécessaire au
+  titre (il est sur la K7). **[C]**, à confirmer par Rusmir.
+
+### Ce qui reste du § 12
+
+Le cadrage mixte, la K7 de référence et ses trois niveaux d'usure, le plafond de 2 600 000 octets, la bande-son, le
+repli muet avec son signe, la vidéo qui ne fait jamais attendre, le repli d'un film sans tranche préparée. L'arrêt
+allongé sur la fente n'est plus une nécessité (le titre se lit pendant toute la sortie) ; il reste tel quel.
+
+### Catalogue de production
+
+Les tranches sont préparées à partir de la base locale (315 films louables). **Le catalogue de production en compte
+davantage** (Rusmir, 23/11) : l'outil de capture doit tourner contre une copie de la base de production avant la mise
+en ligne ; d'ici là un film sans tranche a le repli.

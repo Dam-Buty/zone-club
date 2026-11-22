@@ -224,6 +224,120 @@ if os.environ.get('DOSSIER'):          # autre dossier de sortie (images de cont
     _SORTIE.mkdir(exist_ok=True)
 print('VUE FINALE', scene.view_settings.view_transform, scene.view_settings.look, scene.view_settings.exposure)
 print('ESSAI', _CADRAGE, N, 'images | écran', round(_EX, 3), round(_EZ, 3), round(_HE, 3), '| rangée', round(_ZR, 3), flush=True)
+if os.environ.get('LISTE'):          # LISTE=1 : les objets de la scène et leurs matières, sans rien rendre
+    for _o in sorted(scene.objects, key=lambda o: o.name):
+        print('OBJET', _o.type, _o.name, '|', ', '.join(m.name for m in getattr(_o.data, 'materials', []) if m), flush=True)
+    _CHOIX = []
+# ----- SUIVI=1 : aucun rendu — où est la K7 à chaque image (pour poser la tranche du film loué pendant tout le trajet) -----
+if os.environ.get('SUIVI'):
+    import json  # noqa: E402
+    from bpy_extras.object_utils import world_to_camera_view as _proj  # noqa: E402
+    from mathutils import Vector as _Vec  # noqa: E402
+
+    def _bb(points):
+        pr = [_proj(scene, cam, _Vec(p)) for p in points]
+        xs, ys = [q.x for q in pr], [q.y for q in pr]
+        return [round(min(xs), 5), round(1 - max(ys), 5), round(max(xs), 5), round(1 - min(ys), 5)]
+
+    def _rect(cle):
+        x0, x1, z0, z1 = F[cle]
+        return _bb([(L(x), YB, z) for x in (x0, x1) for z in (z0, z1)])
+
+    _rosie = bpy.data.objects['autocollant_rosie']
+    _suivi = []
+
+    def _face_a(t):
+        """Les sommets de la K7 qui forment la tranche tournée vers nous à l'instant t (elle penche pendant la saisie :
+        on les relève une fois debout au repos, une fois couchée à l'arrêt, et on les suit ensuite par leur numéro)."""
+        applique_etat(t)
+        bpy.context.view_layer.update()
+        vs = [K7.matrix_world @ v.co for v in K7.data.vertices]
+        ymin = min(v.y for v in vs)
+        return [k for k, v in enumerate(vs) if v.y < ymin + 0.002]
+
+    _DEBOUT, _COUCHEE = _face_a(0.0), _face_a(6.4)
+    for _i in range(N):
+        _t = _i / IPS
+        applique_etat(_t)
+        _hh = piste(HH_T, _t)
+        cam.location = (L(piste(CX_T, _t)), -_D_REF * _hh / _HB, piste(CZ_T, _t))
+        bpy.context.view_layer.update()
+        _vs = [K7.matrix_world @ v.co for v in K7.data.vertices]
+        _pr = [_proj(scene, cam, _rosie.matrix_world @ v.co) for v in _rosie.data.vertices]
+        _suivi.append({
+            'i': _i, 't': round(_t, 4), 'couchee': _t >= resserre(5.1),
+            'tranche': _bb([_vs[k] for k in (_COUCHEE if _t >= resserre(5.1) else _DEBOUT)]),
+            'vitrine': _rect('vitrine_g'), 'fente': _rect('fente'), 'ecran': _rect('ecran'), 'k7': _bb(_vs),
+            'rosie': [[round(q.x, 5), round(1 - q.y, 5)] for q in _pr],
+        })
+    (_OUT / 'suivi.json').write_text(json.dumps(_suivi) + '\n')
+    print('SUIVI', len(_suivi), 'images', flush=True)
+    _CHOIX = []
+# ----- PASSES=<images> : pour chaque image, deux petits rendus recadrés sur la K7 (aucune image du film) -----
+#   cache_NNNN.png : ce qu'on voit réellement de la K7 (alpha) — tout ce qui passe devant elle la troue : pince,
+#                    autocollant, retour de tablette, tôle, fente, volet ;
+#   blanc_NNNN.png : la même image avec une K7 blanche (albédo 0,8) — la lumière qu'elle reçoit à cet instant.
+# La page (ou un collage d'essai) pose la tranche du film loué avec cette lumière, découpée par ce cache.
+if os.environ.get('PASSES'):
+    import json  # noqa: E402
+    from bpy_extras.object_utils import world_to_camera_view as _proj2  # noqa: E402
+    from mathutils import Vector as _Vec2  # noqa: E402
+    _v = os.environ['PASSES']
+    _liste = list(range(N)) if _v == 'tout' else [int(x) for x in _v.split(',')]
+    _P = _OUT / 'passes'
+    _P.mkdir(exist_ok=True)
+    _pbj = jaquette.node_tree.nodes['Principled BSDF']
+    for _lien in list(_pbj.inputs['Base Color'].links):
+        jaquette.node_tree.links.remove(_lien)
+    _pbj.inputs['Base Color'].default_value = (0.8, 0.8, 0.8, 1)
+    _blanc_mat = jaquette
+    _em = bpy.data.materials.new('k7_cache')
+    _em.use_nodes = True
+    _e = _em.node_tree.nodes.new('ShaderNodeEmission')
+    _em.node_tree.links.new(_e.outputs['Emission'], _em.node_tree.nodes['Material Output'].inputs['Surface'])
+    _autres = [o for o in scene.objects if o.type in ('MESH', 'CURVE') and o is not K7]
+    _verres = [o for o in _autres if o.name.startswith('vitre')]
+    _boites = {}
+    scene.render.use_border = scene.render.use_crop_to_border = True
+    for _i in _liste:
+        _t = _i / IPS
+        applique_etat(_t)
+        _hh = piste(HH_T, _t)
+        cam.location = (L(piste(CX_T, _t)), -_D_REF * _hh / _HB, piste(CZ_T, _t))
+        if _PHOTO:
+            cam_data.dof.focus_distance = _D_REF * _hh / _HB + (Y_RACK_G if _t < 4.6 else YB)
+        bpy.context.view_layer.update()
+        _pr = [_proj2(scene, cam, K7.matrix_world @ v.co) for v in K7.data.vertices]
+        _x0, _x1 = max(0.0, min(q.x for q in _pr) - 0.006), min(1.0, max(q.x for q in _pr) + 0.006)
+        _y0, _y1 = max(0.0, min(q.y for q in _pr) - 0.004), min(1.0, max(q.y for q in _pr) + 0.004)
+        if _x1 - _x0 < 0.004 or _y1 - _y0 < 0.004:
+            continue
+        scene.render.border_min_x, scene.render.border_max_x, scene.render.border_min_y, scene.render.border_max_y = _x0, _x1, _y0, _y1
+        _boites[_i] = [round(_x0, 5), round(1 - _y1, 5), round(_x1, 5), round(1 - _y0, 5)]
+        # la lumière
+        K7.data.materials[0] = _blanc_mat
+        scene.render.film_transparent = False
+        scene.render.filepath = str(_P / f'blanc_{_i:04d}.png')
+        bpy.ops.render.render(write_still=True)
+        # le cache
+        K7.data.materials[0] = _em
+        for _o in _autres:
+            _o.is_holdout = True
+        for _o in _verres:
+            _o.hide_render = True
+        scene.render.film_transparent = True
+        scene.render.image_settings.color_mode = 'RGBA'
+        scene.render.filepath = str(_P / f'cache_{_i:04d}.png')
+        bpy.ops.render.render(write_still=True)
+        for _o in _autres:
+            _o.is_holdout = False
+        for _o in _verres:
+            _o.hide_render = False
+        print('PASSES', _i, flush=True)
+    _anciennes = json.loads((_P / 'boites.json').read_text()) if (_P / 'boites.json').exists() else {}
+    _anciennes.update({str(k): v for k, v in _boites.items()})
+    (_P / 'boites.json').write_text(json.dumps(_anciennes) + '\n')
+    _CHOIX = []
 for _i in _CHOIX:
     _t = _i / IPS
     applique_etat(_t)
@@ -236,7 +350,7 @@ for _i in _CHOIX:
     print('IMAGE', _i, round(_t, 3), flush=True)
 
 # ----- l'arrêt sur la fente : où la page pose la tranche du film loué et le texte de l'afficheur -----
-if _CADRAGE == 'mixte':
+if _CADRAGE == 'mixte' and not os.environ.get('PASSES') and not os.environ.get('SUIVI') and not os.environ.get('LISTE'):
     import json  # noqa: E402
     from bpy_extras.object_utils import world_to_camera_view  # noqa: E402
     from mathutils import Vector  # noqa: E402
