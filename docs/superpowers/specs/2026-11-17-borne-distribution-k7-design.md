@@ -9,6 +9,11 @@
 - **Document parent** : `2026-11-16-borne-location-design.md` — ses décisions restent valables ; celui-ci
   ajoute un moment au parcours de location.
 
+> **Bandeau du 22/11/2026 — ce document a été dépassé sur plusieurs points par des décisions de Rusmir des 21 et
+> 22/11.** Elles sont réunies au § 12, qui prime sur les § 3 à 6 partout où ils se contredisent : l'appareil bouge
+> dans la vidéo (cadrage « mixte »), la K7 est l'étui carton usé du vidéoclub, la tranche du film loué est posée par
+> la page, le plafond de poids passe à 2,6 Mo. Le texte d'origine est laissé tel quel en dessous.
+
 Chaque décision porte sa provenance : **[R]** = dite par Rusmir, **[C]** = choix de Claude, à vérifier
 à la relecture.
 
@@ -222,3 +227,71 @@ prête »** :
 | La vidéo pèse trop pour un téléphone modeste | Plafond de 2 Mo visé ; animation sautée si elle n'est pas prête à temps |
 | Le robot « fait jouet » et casse le photoréalisme | Verdict visuel de Rusmir sur un rendu de quelques images clés avant d'animer |
 | Le lot 3 n'est pas figé (cadrage, fente, vitrines) | La vidéo se rend en dernier, une fois la borne validée |
+
+## 12. Révision du 22/11/2026 — décisions des 21 et 22/11
+
+Ce paragraphe prime sur les § 3 à 6. Pièces : essais et planches dans
+`tools/devanture-borne/travail/images-session-2026-11-22/` (hors dépôt).
+
+### Le cadrage : l'appareil bouge dans la vidéo
+
+- **Cadrage « mixte »** **[R, 21/11]** : l'appareil recule de l'écran jusqu'à la borne entière, reste fixe pendant
+  que le robot saisit la K7, se rapproche de la fente pour la sortie, puis revient à l'écran. Il avance et recule
+  pour de bon, à focale fixe, face au mur (`distribution_essai_film.py`, cadrage `mixte`).
+- Le recul et le retour sont donc **dans la vidéo**, et non plus des zooms de la page (§ 3 et tableau du § 5
+  dépassés). La vidéo dure les 8 secondes entières.
+- L'autocollant « We Can Do It! » reste collé sur la vitre, translucide dans ses zones claires. **[R]**
+
+### La K7
+
+- La K7 est **l'étui carton du vidéoclub** (`public/models/vhs_cassette_tape.glb` et la jaquette du générateur),
+  pas un boîtier plastique. **[R]** Les K7 restent parfaitement alignées dans le casier : le robot en a besoin. **[R]**
+- **Matière validée le 22/11** **[R]** : le pelliculage brillant est parti — surface mate, presque plus de reflet.
+  L'usure ne porte que sur la tranche : cassures fines de l'encre, bords et coins peu usés. Référence :
+  `k7_reference.py`, rendu `k7-vitrine-15.png`.
+- **Trois niveaux d'usure selon l'année du film** **[R]** : avant 1985 = ancien, de 1985 à 2004 = moyen, 2005 et
+  après = récent (`k7_usure_tranche.py`). Plus le film est ancien, plus ses couleurs sont passées. Les 96 tranches de
+  la vitrine sont cuites à leur niveau par `distribution_tranches.py`.
+- Pince ajourée et volet articulé sur la fente, avec son bruit : validés. **[R]**
+
+### Le titre du film loué
+
+- **La tranche du film loué est posée par la page** **[R, 22/11]**, sur une K7 servie à tranche vierge : une seule
+  vidéo pour tous les films. Une vidéo par film a été écartée.
+- **La K7 que le robot saisit dans la vitrine a elle aussi une tranche neutre** (sombre, sans titre) **[R]** :
+  sinon on verrait un film partir et un autre sortir. Les autres K7 de la vitrine gardent leurs titres.
+- **L'arrêt sur la fente est allongé à un peu plus d'une seconde** **[R]**, le temps de lire le titre ; le temps est
+  repris sur le trajet du robot. Dans l'essai 7 l'appareil n'est fixe sur la fente que de 5,5 à 6,9 s et la K7 n'est
+  à l'arrêt qu'à 6,3 s. La tranche posée disparaît juste avant que l'appareil ne reparte.
+- **La page applique à la tranche posée l'usure validée**, au niveau de l'année du film **[R]** : quelques masques
+  d'usure par niveau sont livrés avec le site. **[C]** pour la forme (nombre de masques, poids).
+- Blender exporte les quatre coins de la tranche vierge, en points de l'image, pour l'arrêt (§ 6, inchangé).
+- L'afficheur au-dessus de la fente reste écrit par la page (§ 8, inchangé) ; comme l'appareil bouge, il ne s'écrit
+  lui aussi que pendant que le cadre est fixe.
+
+### D'où vient la tranche posée (22/11, soir)
+
+- **Des tranches préparées à l'avance** **[R]** : la borne ne dessine pas de jaquette (ni canvas ni 3D sous `kiosk/`).
+  La fabrique capture la tranche de chaque film du catalogue avec le vrai générateur, y cuit l'usure de son année et
+  l'éclairage de l'arrêt sur la fente, et le site la sert comme une petite image. L'outil est à relancer quand des
+  films entrent au catalogue.
+- **Repli** **[R]** : un film sans image reçoit une tranche sobre — son titre écrit par la page, une usure posée
+  par-dessus.
+- Écartée : une tranche composée par la page pour tous les films (elle ne ressemblerait plus à celle du vidéoclub).
+
+### Poids, son
+
+- **Plafond de poids : 2,6 Mo** pour la vidéo sur téléphone **[R, 22/11]** (2 Mo auparavant). Le rendu Blender se
+  fait à l'échelle 2 (1440 × 2580) puis la vidéo est encodée en 720 × 1290 : l'échelle du rendu ne pèse pas sur
+  le fichier. Une variante plus fine pour les grands écrans n'est pas décidée.
+- **Son** : fabriqué avec Woosh, bande-son n° 3 validée « globalement » **[R]** (`travail/sons/`, hors dépôt).
+- **Si le navigateur refuse le son** (la vidéo part après la réponse du serveur, donc après l'appui) : elle est
+  relancée muette, et un petit signe « son coupé » s'affiche dans un coin pour le dire. **[R, 22/11]**
+- **Raccord** : la première image de la vidéo cadre l'écran comme la fin du film d'approche ; le raccord avec
+  l'écran vivant se vérifie à l'écran, dans le vrai Chrome. **[R : d'accord]**
+
+### Encore ouvert
+
+- La tôle autour de la fente, sombre dans le rapproché ; le bandeau du haut à ramener au violet ; un cinquième
+  autocollant à proposer.
+- Le cadrage sur PC (§ 10) n'a pas été repris depuis le passage au cadrage mixte.
