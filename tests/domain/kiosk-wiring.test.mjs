@@ -918,3 +918,19 @@ test('PANNEAU VERSION: le geste retour ferme la question ou la liste avant le pa
   // Chaque ouverture du panneau repart de son contenu (ni liste ni question d'une ouverture précédente).
   assert.ok(view.includes("setDistribution({ phase: 'ready', filmId, fresh: false })") && /onRented = useCallback\(\(filmId: number\) => setDistribution\(\{ phase: 'ready', filmId, fresh: true \}\)/.test(view), 'les ouvertures ne portent pas de sous-vue');
 });
+
+// ===== Distribution de la K7, livraison 2 : la vidéo (spec 2026-11-17, § 12 ; plan 2026-11-22) =====
+test('DISTRIBUTION FILMÉE: le crochet ne fait jamais attendre et retombe sur le muet si le son est refusé', () => {
+  const src = readText(path.join(ROOT, 'src/components/kiosk/useDistributionFilm.ts'));
+  assert.ok(src.includes("'(prefers-reduced-motion: reduce)'"), 'rien ne bouge pour qui demande moins de mouvement');
+  const start = src.slice(src.indexOf('const start'), src.indexOf('const skip'));
+  assert.ok(start.includes('if (!video || !src'), 'vidéo pas téléchargée : start rend false');
+  const refus = start.slice(start.indexOf('.catch('));
+  assert.ok(refus.includes('video.muted = true') && refus.includes('setMuted(true)'), 'son refusé : la vidéo repart muette et le dit');
+  assert.ok(refus.lastIndexOf('done') > refus.indexOf('video.muted = true'), 'muet refusé aussi : on passe au panneau');
+  const skip = src.slice(src.indexOf('const skip'));
+  assert.ok(skip.includes('.pause()'), 'un appui coupe le son avec l\'image');
+  assert.ok(!skip.includes('SKIP_AFTER'), 'pas de délai avant de pouvoir passer : l\'appui ne vient pas d\'ouvrir ce film');
+  assert.ok(src.includes('URL.revokeObjectURL'), 'l\'adresse locale est libérée');
+  assert.ok(src.includes('doneRef.current') && src.includes("phaseRef.current = 'idle'"), 'une seule fin par lancement, et la location suivante peut rejouer');
+});
