@@ -1,16 +1,14 @@
-/* La distribution filmée de la K7 : la vidéo couvre la borne entière, au-dessus d'elle. Invisible et sans prise
-   tant qu'elle ne joue pas. Ni filtre ni mode de fusion (règle de la borne) : un fond noir, une vidéo, deux calques. */
+/* La distribution filmée de la K7 : la vidéo couvre la borne, SOUS son écran (qui est le vrai, déplacé par KioskView)
+   et au-dessus de tout le reste. Invisible et sans prise tant qu'elle ne joue pas. Ni filtre ni mode de fusion. */
 .film {
   position: fixed;
   inset: 0;
-  z-index: 40;
-  display: grid;
-  place-items: center;
+  z-index: 5;
   background: #000;
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
-  /* Raccord avec l'écran vivant : le même fondu que l'ouverture de la borne après le film d'approche. */
+  /* Raccord avec la borne vivante : le même fondu que son apparition après le film d'approche. */
   transition: opacity 280ms linear, visibility 0s linear 280ms;
 }
 
@@ -22,13 +20,10 @@
   transition: opacity 280ms linear;
 }
 
-/* Le cadre de la vidéo, à son format, le plus grand qui tienne dans la fenêtre : les calques s'y placent en
-   pourcentages (boîtes exportées par la fabrique) et s'y mesurent en cqw. */
+/* Le cadre de la vidéo : placé par la borne (en points) pour que l'écran filmé de la première image tombe exactement
+   sur son vrai écran. Les calques s'y placent en pourcentages (boîtes du suivi). */
 .stage {
-  position: relative;
-  aspect-ratio: var(--film-ratio);
-  width: min(100vw, calc(100dvh * var(--film-ratio)));
-  container-type: inline-size;
+  position: absolute;
   overflow: hidden;
 }
 
@@ -38,73 +33,84 @@
   height: 100%;
 }
 
-/* L'afficheur au-dessus de la fente : la page recouvre le texte au repos et écrit les deux lignes de la sortie. */
-.display {
-  position: absolute;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.2cqw;
-  background: #020a07;
-  color: #7df0c8;
-  font-family: 'VT323', ui-monospace, 'Courier New', monospace;
-  font-size: 3.1cqw;
-  line-height: 1;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  white-space: nowrap;
-  text-shadow: 0 0 0.6cqw rgb(125 240 200 / 55%);
-}
-
-/* La tranche du film loué, posée sur la K7 neutre de la vidéo, exactement dans sa boîte. */
+/* La tranche du film loué, dans la boîte de la tranche de la K7 à cette image. Le cache de l'image la découpe : c'est
+   une planche d'images dont la borne règle la taille et la position (mask-size, mask-position). */
 .spine {
   position: absolute;
   overflow: hidden;
+  container-type: size;
+  mask-repeat: no-repeat;
+  -webkit-mask-repeat: no-repeat;
+  /* (mask-image est posé en ligne : l'adresse de la planche vient des données de la fabrique.) */
 }
 
-.spine img {
+/* L'image de la tranche est DEBOUT (haut de l'étui en haut). Couchée à la fente, elle tourne d'un quart de tour dans
+   sa boîte : sa largeur devient la hauteur de la boîte, sa hauteur la largeur. */
+.spineArt {
+  position: absolute;
+  inset: 0;
+  /* Les mesures du titre de repli se prennent sur la tranche elle-même, debout ou couchée. */
+  container-type: size;
+}
+
+.spineArt img {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
 }
 
-/* Repli : le titre écrit par la page, entre la tranche neutre et l'usure. */
+/* Une image par régime de lumière : celle de la vitrine debout, celle de la fente couchée. */
+.spineArt[data-couchee='0'] .artCouchee,
+.spineArt[data-couchee='1'] .artDebout {
+  visibility: hidden;
+}
+
+.spineArt[data-couchee='1'] {
+  inset: auto;
+  left: 50%;
+  top: 50%;
+  width: 100cqh;
+  height: 100cqw;
+  translate: -50% -50%;
+  rotate: -90deg;
+}
+
+/* L'ombre de l'image : un voile noir (planche d'images) qui donne à la tranche la lumière de la scène. */
+.spineShade {
+  position: absolute;
+  inset: 0;
+  background-repeat: no-repeat;
+}
+
+/* Repli : le titre écrit par la page sur la tranche neutre, dans le sens de la tranche (de haut en bas). */
 .spineTitle {
   position: absolute;
   inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0 6cqw;
+  writing-mode: vertical-rl;
   color: #c9c6bd;
   font-family: var(--k-font, 'Big Shoulders Display', 'Arial Narrow', sans-serif);
   font-weight: 700;
-  font-size: 4.4cqw;
+  font-size: 62cqw;
   line-height: 1;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
 }
 
-/* Le navigateur a refusé le son : la vidéo joue muette, on le dit dans un coin. */
+/* Le navigateur a refusé le son : la vidéo joue muette, on le dit dans un coin (du cadre visible, pas de la vidéo). */
 .mutedSign {
-  position: absolute;
-  top: 2.5cqw;
-  right: 2.5cqw;
+  position: fixed;
+  top: 12px;
+  right: 12px;
   display: grid;
   place-items: center;
-  padding: 1cqw;
+  padding: 6px;
   border-radius: 50%;
   background: rgb(0 0 0 / 55%);
   color: #e8e6e0;
-}
-
-.mutedSign svg {
-  display: block;
-  width: max(24px, 5cqw);
-  height: max(24px, 5cqw);
 }

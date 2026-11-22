@@ -16,34 +16,73 @@ test('distribution : un film sans année connue prend le niveau moyen', () => {
 });
 
 test('distribution : adresses des tranches préparées et de leur repli', () => {
-  assert.equal(D.spineSrc(9426), '/kiosk-tranches/9426.webp');
-  assert.equal(D.fallbackSpineSrc(3), '/kiosk-tranches/repli-3.webp');
-  assert.equal(D.fallbackWearSrc(1), '/kiosk-tranches/usure-1.webp');
+  // deux images par film : la lumière de la vitrine, celle de la fente (K7 couchée)
+  assert.equal(D.spineSrc(9426, false), '/kiosk-tranches/9426.webp');
+  assert.equal(D.spineSrc(9426, true), '/kiosk-tranches/9426-c.webp');
+  assert.equal(D.fallbackSpineSrc(3, false), '/kiosk-tranches/repli-3.webp');
+  assert.equal(D.fallbackSpineSrc(3, true), '/kiosk-tranches/repli-3-c.webp');
 });
 
-test('distribution : les calques ne sont visibles que pendant l\'arrêt sur la fente', () => {
-  const arret = { debutS: 5.9, finS: 6.95 };
-  assert.equal(D.overlayVisible(5899, arret), false);
-  assert.equal(D.overlayVisible(5900, arret), true);
-  assert.equal(D.overlayVisible(6949, arret), true);
-  assert.equal(D.overlayVisible(6950, arret), false);
+// ----- La tranche suit la K7 (spec § 13) -----
+const SUIVI = {
+  images: 193, ips: 24, planche: [1792, 3968],
+  debout: { cellule: [48, 336], colonnes: 16, de: 0, a: 113 },
+  couchee: { cellule: [448, 64], colonnes: 4, de: 114, a: 192 },
+  pas: [],
+};
+
+test('distribution : l\'image suivie est celle que la vidéo présente, bornée au film', () => {
+  assert.equal(D.frameAt(0, SUIVI), 0);
+  assert.equal(D.frameAt(6.4, SUIVI), 154);
+  assert.equal(D.frameAt(2.3541, SUIVI), 56);
+  assert.equal(D.frameAt(99, SUIVI), 192);
+  assert.equal(D.frameAt(-1, SUIVI), 0);
 });
 
-test('distribution : l\'afficheur tient en deux lignes de 20 caractères', () => {
-  assert.deepEqual(D.displayLines('Get Out'), ['RETIREZ VOTRE K7', 'GET OUT']);
-  const long = D.displayLines("Il était une fois dans l'Ouest")[1];
-  assert.equal(long.length, 20);
-  assert.ok(long.endsWith('…'));
-  assert.equal(D.displayLines('12345678901234567890')[1], '12345678901234567890');
+test('distribution : la cellule d\'une image dans la planche (bloc debout, puis bloc couché dessous)', () => {
+  const pct = (v) => v.split(' ').map(parseFloat);
+  const c0 = D.sheetPosition(0, 0, SUIVI);
+  assert.deepEqual(pct(c0.size).map(Math.round), [Math.round(1792 / 48 * 100), Math.round(3968 / 336 * 100)]);
+  assert.deepEqual(pct(c0.position), [0, 0]);
+  // image 17 : deuxième ligne, deuxième colonne du bloc debout → décalage de 48 et 336 points
+  const c17 = pct(D.sheetPosition(17, 0, SUIVI).position);
+  assert.ok(Math.abs(c17[0] - 48 / (1792 - 48) * 100) < 1e-6 && Math.abs(c17[1] - 336 / (3968 - 336) * 100) < 1e-6);
+  // image 119 : couchée, sixième cellule du bloc couché (ligne 1, colonne 1), sous les 8 lignes du bloc debout
+  const c119 = pct(D.sheetPosition(119, 1, SUIVI).position);
+  assert.ok(Math.abs(c119[0] - 448 / (1792 - 448) * 100) < 1e-6 && Math.abs(c119[1] - (8 * 336 + 64) / (3968 - 64) * 100) < 1e-6);
 });
 
-test('distribution : une boîte en fractions devient une position en pourcentages', () => {
-  const s = D.boxStyle({ x0: 0.25, y0: 0.5, x1: 0.75, y1: 0.6 });
+test('distribution : le cadre de la vidéo se cale sur le vrai écran, qui ne bouge donc pas à la première image', () => {
+  const ecran0 = [0.0921, 0.0902, 0.9079, 0.9098];
+  const borne = { left: 6, top: 62, width: 400, height: 720 };
+  const cadre = D.stageRect(ecran0, borne, 720 / 1290);
+  assert.ok(Math.abs(cadre.width - 400 / (0.9079 - 0.0921)) < 1e-6);
+  assert.ok(Math.abs(cadre.left + 0.0921 * cadre.width - 6) < 1e-6 && Math.abs(cadre.top + 0.0902 * cadre.height - 62) < 1e-6);
+  const t0 = D.screenTransform(ecran0, cadre, borne);
+  assert.ok(Math.abs(t0.tx) < 0.01 && Math.abs(t0.ty) < 0.01 && Math.abs(t0.sx - 1) < 0.001 && Math.abs(t0.sy - 1) < 0.01, JSON.stringify(t0));
+  // plan large : l'écran filmé est petit, à droite — le vrai écran rétrécit et s'y place
+  const t = D.screenTransform([0.5162, 0.2194, 0.7595, 0.4638], cadre, borne);
+  assert.ok(Math.abs(t.sx - (0.7595 - 0.5162) * cadre.width / 400) < 1e-6);
+  assert.ok(Math.abs(t.tx - (cadre.left + 0.5162 * cadre.width - 6)) < 1e-6);
+  assert.equal(D.transformCss(t), `translate(${t.tx}px, ${t.ty}px) scale(${t.sx}, ${t.sy})`);
+});
+
+test('distribution : le vrai écran est rogné au cadre de la vidéo (rapproché sur la fente : il sort par le haut)', () => {
+  const borne = { left: 6, top: 62, width: 400, height: 720 };
+  const cadre = { left: -39, top: -17, width: 490, height: 878 };
+  // image 0 : l'écran est entier dans le cadre → rien n'est rogné
+  assert.equal(D.screenClip(D.screenTransform([0.0921, 0.0902, 0.9079, 0.9098], cadre, borne), cadre, borne), 'inset(0px 0px 0px 0px)');
+  // rapproché : l'écran filmé déborde au-dessus du cadre → son haut est rogné, en points de l'écran NON transformé
+  const t = D.screenTransform([0.09, -0.66, 0.95, 0.2], cadre, borne);
+  const haut = parseFloat(D.screenClip(t, cadre, borne).slice(6));
+  assert.ok(Math.abs(haut - (0.66 * cadre.height) / t.sy) < 0.01, String(haut));
+});
+
+test('distribution : la boîte de la tranche en pourcentages du cadre', () => {
+  const s = D.boxStyle([0.25, 0.5, 0.75, 0.6]);
   assert.equal(parseFloat(s.left), 25);
   assert.equal(parseFloat(s.top), 50);
-  assert.ok(Math.abs(parseFloat(s.width) - 50) < 1e-6);
-  assert.ok(Math.abs(parseFloat(s.height) - 10) < 1e-6);
-  for (const v of Object.values(s)) assert.ok(v.endsWith('%'));
+  assert.ok(Math.abs(parseFloat(s.width) - 50) < 1e-6 && Math.abs(parseFloat(s.height) - 10) < 1e-6);
 });
 
 test('distribution : l\'année se lit dans la date de sortie, et son absence ne casse rien', () => {

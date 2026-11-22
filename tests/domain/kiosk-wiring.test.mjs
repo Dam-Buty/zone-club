@@ -565,7 +565,7 @@ test('CAST BORNE: le panneau d\'un film déjà loué demande « Où voulez-vous 
   assert.ok(!/\bdisabled\b/.test(dist), 'aucun bouton grisé');
   const view = KIOSK('KioskView.tsx');
   assert.ok(view.includes('fresh={fresh}'), 'KioskView transmet `fresh`');
-  assert.ok(view.includes("setDistribution({ phase: distributionFilm.start() ? 'film' : 'ready', filmId, fresh: true })") && view.includes("{ phase: 'ready', filmId: d.filmId, fresh: true }"), 'après une location : « Votre K7 est prête »');
+  assert.ok(view.includes("setDistribution({ phase: playing ? 'film' : 'ready', filmId, fresh: true })") && view.includes("{ phase: 'ready', filmId: d.filmId, fresh: true }"), 'après une location : « Votre K7 est prête »');
 });
 
 test('CAST BORNE: la barre du Cast est dessinée par la borne, dans son écran, au-dessus de la bande', () => {
@@ -916,7 +916,7 @@ test('PANNEAU VERSION: le geste retour ferme la question ou la liste avant le pa
   assert.match(back, /versionOpen: readyOpen && readySub\.view === 'versions'/, 'la liste est ouverte');
   assert.match(view, /else if \(action === 'close-question' \|\| action === 'close-version'\) setReadySub\(READY_PANEL\);/, 'retour au panneau, rien n\'est lancé');
   // Chaque ouverture du panneau repart de son contenu (ni liste ni question d'une ouverture précédente).
-  assert.ok(view.includes("setDistribution({ phase: 'ready', filmId, fresh: false })") && view.includes("setDistribution({ phase: distributionFilm.start() ? 'film' : 'ready', filmId, fresh: true })") && view.includes("{ phase: 'ready', filmId: d.filmId, fresh: true }"), 'les ouvertures ne portent pas de sous-vue');
+  assert.ok(view.includes("setDistribution({ phase: 'ready', filmId, fresh: false })") && view.includes("setDistribution({ phase: playing ? 'film' : 'ready', filmId, fresh: true })") && view.includes("{ phase: 'ready', filmId: d.filmId, fresh: true }"), 'les ouvertures ne portent pas de sous-vue');
 });
 
 // ===== Distribution de la K7, livraison 2 : la vidéo (spec 2026-11-17, § 12 ; plan 2026-11-22) =====
@@ -942,24 +942,45 @@ test('DISTRIBUTION FILMÉE: la vidéo s\'insère entre l\'attente et le panneau,
   const view = readText(path.join(ROOT, 'src/components/kiosk/KioskView.tsx'));
   assert.match(view, /phase: 'waiting' \| 'film' \| 'ready'/, 'une phase de plus');
   const rented = view.slice(view.indexOf('const onRented'), view.indexOf('const closeReady'));
-  assert.ok(rented.includes('distributionFilm.start()') && rented.includes("'film'") && rented.includes("'ready'"), 'start() décide : la vidéo, ou le panneau tout de suite');
+  const rented2 = view.slice(view.indexOf('const onRented'), view.indexOf('const closeReady'));
+  assert.ok(rented2.includes('distributionFilm.start()') && rented2.includes("'film'") && rented2.includes("'ready'"), 'start() décide : la vidéo, ou le panneau tout de suite');
   assert.ok(view.includes("action === 'skip-film'") && view.includes('distributionFilm.skip()'), 'le geste retour passe la vidéo');
   assert.ok(view.includes("filmPlaying: distribution?.phase === 'film'"), 'le geste retour sait que la vidéo joue');
   const horsEcran = view.slice(view.lastIndexOf('<KioskRotate'));
-  assert.ok(view.indexOf('<KioskDistributionFilm') > view.indexOf('className={styles.below}'), 'montée hors de l\'écran de la borne : elle couvre la borne entière');
   assert.ok(horsEcran.length > 0);
   const action = readText(path.join(ROOT, 'src/components/kiosk/KioskAction.tsx'));
   const press = action.slice(action.indexOf('const press'));
-  assert.ok(press.indexOf('onConfirmOpen?.()') !== -1 && press.indexOf('onConfirmOpen?.()') < press.indexOf("label: 'Louer'"), 'la vidéo se télécharge dès que la confirmation s\'ouvre');
+  assert.ok(press.indexOf('onConfirmOpen?.(film.id)') !== -1 && press.indexOf('onConfirmOpen?.(film.id)') < press.indexOf("label: 'Louer'"), 'la vidéo se télécharge dès que la confirmation s\'ouvre');
   assert.ok(view.includes('onConfirmOpen={'), 'câblé dans la borne');
 });
-test('DISTRIBUTION FILMÉE: la page pose la tranche du film loué et l\'afficheur, avec repli et signe « son coupé »', () => {
+// La tranche suit la K7 pendant tout le trajet, et l'écran filmé est le vrai écran (spec § 13, plan 2026-11-23).
+test('DISTRIBUTION FILMÉE: la tranche du film loué suit la K7, découpée par le cache et assombrie par l\'ombre de chaque image', () => {
   const src = readText(path.join(ROOT, 'src/components/kiosk/KioskDistributionFilm.tsx'));
-  assert.ok(src.includes('overlayVisible(') && src.includes('spineSrc(') && src.includes('displayLines('), 'calques tirés de la logique testée');
-  assert.ok(src.includes('onError') && src.includes('fallbackSpineSrc(') && src.includes('fallbackWearSrc('), 'tranche absente : repli avec le titre et l\'usure');
-  assert.ok(src.includes('aria-label="Son coupé"') && src.includes('muted'), 'le son refusé se signale');
+  assert.ok(src.includes('useImperativeHandle') && src.includes('place('), 'les calques se placent par appel direct, image par image');
+  assert.ok(src.includes('sheetPosition(') && src.includes('boxStyle(') && src.includes('spineSrc('), 'positions tirées de la logique testée');
+  assert.ok(/maskPosition|WebkitMaskPosition/.test(src) && src.includes('backgroundPosition'), 'cache en masque, ombre en fond');
+  assert.ok(!/useState<number>\(0\)|setTimeMs|timeMs/.test(src), 'aucun état React alimenté par image');
+  assert.ok(src.includes('onError') && src.includes('fallbackSpineSrc('), 'tranche absente : repli avec le titre');
+  assert.ok(src.includes('aria-label="Son coupé"'), 'le son refusé se signale');
   assert.ok(src.includes('onClick={') && src.includes('.skip'), 'un appui passe la vidéo');
   assert.ok(src.includes('playsInline') && !/\bautoPlay\b/.test(src), 'vidéo du site, lancée par le crochet');
   const css = readText(path.join(ROOT, 'src/components/kiosk/KioskDistributionFilm.module.css'));
-  assert.ok(!/mix-blend-mode|filter\s*:/.test(css), 'ni mode de fusion ni filtre');
+  assert.ok(css.includes('mask-image') && !/mix-blend-mode|[^-]filter\s*:/.test(css), 'un masque, mais ni mode de fusion ni filtre');
+});
+test('DISTRIBUTION FILMÉE: le crochet attend la vidéo, le suivi et les deux planches, et prévient à chaque image présentée', () => {
+  const src = readText(path.join(ROOT, 'src/components/kiosk/useDistributionFilm.ts'));
+  const start = src.slice(src.indexOf('const start'), src.indexOf('const skip'));
+  assert.ok(start.includes('!suiviRef.current') && start.includes('sheetsRef.current < 2'), 'sans suivi ou sans planches, pas de vidéo : jamais une K7 sans sa tranche');
+  assert.ok(src.includes('frameAt(frame.mediaTime'), 'l\'image suivie est celle que la vidéo présente, pas l\'horloge');
+  assert.ok(src.includes('onFrameRef.current('), 'la borne est prévenue à chaque image');
+  assert.ok(!src.includes('setTimeMs'), 'plus d\'état par image');
+});
+test('DISTRIBUTION FILMÉE: l\'écran filmé est le vrai écran de la borne, remis exactement à sa place à la fin', () => {
+  const view = readText(path.join(ROOT, 'src/components/kiosk/KioskView.tsx'));
+  assert.ok(view.includes('stageRect(') && view.includes('screenTransform(') && view.includes('screenClip('), 'cadre calé sur le vrai écran, écran placé et rogné au cadre');
+  assert.ok(view.includes("style.transform = ''") && view.includes("style.clipPath = ''"), 'aucune transformation ne reste après la vidéo');
+  assert.ok(/addEventListener\('resize', [^)]*\)/.test(view) && view.includes('distributionFilm.skip'), 'fenêtre redimensionnée pendant la vidéo : on passe au panneau');
+  assert.ok(view.indexOf('<KioskDistributionFilm') < view.indexOf('className={styles.sign}'), 'la vidéo est dans la borne, sous son écran et au-dessus du reste');
+  const css = readText(path.join(ROOT, 'src/components/kiosk/KioskView.module.css'));
+  assert.ok(css.includes('.ksLifted'), 'l\'écran passe au-dessus de la vidéo le temps du film');
 });

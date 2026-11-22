@@ -12,8 +12,8 @@ import { KioskBrowse } from './KioskBrowse';
 import { KioskCastBar } from './KioskCastBar';
 import { KioskDetail } from './KioskDetail';
 import { KioskReady, KioskWaiting } from './KioskDistribution';
-import { KioskDistributionFilm } from './KioskDistributionFilm';
-import { yearOf, type Arret, type DistributionFilm } from './kiosk-distribution-logic';
+import { KioskDistributionFilm, type KioskDistributionFilmHandle } from './KioskDistributionFilm';
+import { screenClip, screenTransform, stageRect, transformCss, yearOf, type DistributionFilm, type Rect, type Suivi } from './kiosk-distribution-logic';
 import { useDistributionFilm } from './useDistributionFilm';
 import distributionData from '../../data/kiosk-distribution.json';
 import { KioskAccount } from './KioskAccount';
@@ -49,7 +49,12 @@ import styles from './KioskView.module.css';
 
 // La vidéo de distribution et son arrêt sur la fente, écrits par tools/devanture-borne/distribution_sorties.py.
 const DISTRIBUTION_FILM: DistributionFilm = distributionData.film;
-const DISTRIBUTION_ARRET: Arret = distributionData.arret;
+// Ce qui accompagne la vidéo (distribution_planches.py) : où sont la K7 et l'écran à chaque image, et les deux planches.
+const DISTRIBUTION_ASSETS = {
+  suivi: '/kiosk-distribution-suivi.json',
+  caches: '/kiosk-distribution-caches.webp',
+  ombres: '/kiosk-distribution-ombres.webp',
+};
 
 // Borne de location : seconde façon de louer, sans aucun rendu 3D. Cette coque porte le corps
 // de la borne (métal, enseigne, fente, vitrines), son écran, la barre du haut et les messages ;
@@ -313,13 +318,76 @@ export function KioskView() {
   // du serveur : sinon (pas téléchargée, animations réduites) le panneau s'ouvre aussitôt. Elle finit toujours au
   // panneau — fin, appui, geste retour, lecture refusée ou en panne.
   const [filmWanted, setFilmWanted] = useState(false);
-  const wantFilm = useCallback(() => setFilmWanted(true), []);
-  const onFilmDone = useCallback(() => setDistribution((d) => (d?.phase === 'film' ? { phase: 'ready', filmId: d.filmId, fresh: true } : d)), []);
-  const distributionFilm = useDistributionFilm({ url: DISTRIBUTION_FILM.src, durationMs: DISTRIBUTION_FILM.dureeMs, load: filmWanted, onDone: onFilmDone });
+  // Le film dont la confirmation est ouverte : sa tranche est demandée tout de suite, pour être là avant la vidéo.
+  const [filmCandidateId, setFilmCandidateId] = useState<number | null>(null);
+  const wantFilm = useCallback((filmId: number) => {
+    setFilmWanted(true);
+    setFilmCandidateId(filmId);
+  }, []);
+  // Pendant la vidéo, deux choses suivent chaque image qu'elle présente, hors de React : la tranche du film sur la K7
+  // (KioskDistributionFilm) et l'ÉCRAN — qui n'est pas filmé : c'est le vrai, celui-ci, déplacé et mis à l'échelle
+  // dans la boîte de l'écran filmé. Le cadre de la vidéo est calé pour que cet écran ne bouge pas à la première image.
+  const filmLayerRef = useRef<KioskDistributionFilmHandle | null>(null);
+  const filmGeometryRef = useRef<{ stage: Rect; screen: Rect } | null>(null);
+  const [filmStage, setFilmStage] = useState<Rect | null>(null);
+  const releaseScreen = useCallback(() => {
+    filmGeometryRef.current = null;
+    const screen = screenRef.current;
+    if (!screen) return;
+    screen.style.transform = '';
+    screen.style.clipPath = '';
+  }, []);
+  const onFilmFrame = useCallback((index: number, suivi: Suivi) => {
+    const screen = screenRef.current;
+    const pas = suivi.pas[index];
+    if (!screen || !pas) return;
+    if (filmGeometryRef.current === null) {
+      // Premier appel d'un lancement : l'écran est encore à sa place, on la relève et on cale le cadre dessus.
+      const r = screen.getBoundingClientRect();
+      const rect = { left: r.left, top: r.top, width: r.width, height: r.height };
+      const stage = stageRect(suivi.pas[0].e, rect, DISTRIBUTION_FILM.largeur / DISTRIBUTION_FILM.hauteur);
+      filmGeometryRef.current = { stage, screen: rect };
+      setFilmStage(stage);
+    }
+    const { stage, screen: rect } = filmGeometryRef.current;
+    const t = screenTransform(pas.e, stage, rect);
+    screen.style.transform = transformCss(t);
+    screen.style.clipPath = screenClip(t, stage, rect);
+    filmLayerRef.current?.place(index, suivi);
+  }, []);
+  const onFilmDone = useCallback(() => {
+    // L'écran retrouve exactement sa place dans le même passage que le changement de phase.
+    releaseScreen();
+    setDistribution((d) => (d?.phase === 'film' ? { phase: 'ready', filmId: d.filmId, fresh: true } : d));
+  }, [releaseScreen]);
+  const distributionFilm = useDistributionFilm({
+    url: DISTRIBUTION_FILM.src,
+    assets: DISTRIBUTION_ASSETS,
+    durationMs: DISTRIBUTION_FILM.dureeMs,
+    load: filmWanted,
+    onFrame: onFilmFrame,
+    onDone: onFilmDone,
+  });
   const onRented = useCallback(
-    (filmId: number) => setDistribution({ phase: distributionFilm.start() ? 'film' : 'ready', filmId, fresh: true }),
-    [distributionFilm],
+    (filmId: number) => {
+      const playing = distributionFilm.start();
+      if (!playing) releaseScreen();
+      setDistribution({ phase: playing ? 'film' : 'ready', filmId, fresh: true });
+    },
+    [distributionFilm, releaseScreen],
   );
+  // Fenêtre redimensionnée ou téléphone tourné pendant la vidéo : le cadre ne vaut plus, on passe au panneau.
+  const filmPlaying = distribution?.phase === 'film';
+  useEffect(() => {
+    if (!filmPlaying) return;
+    const skipFilm = distributionFilm.skip;
+    window.addEventListener('resize', skipFilm);
+    return () => window.removeEventListener('resize', skipFilm);
+  }, [filmPlaying, distributionFilm.skip]);
+  // Filet : quelle que soit la façon dont la phase « film » se termine, l'écran ne garde aucune transformation.
+  useEffect(() => {
+    if (!filmPlaying) releaseScreen();
+  }, [filmPlaying, releaseScreen]);
   const closeReady = useCallback(() => setDistribution(null), []);
 
   // ----- La version du film du panneau (spec 2026-11-19-versions-et-erreurs-de-lecture, § 4.1, 4.3 a et 4.4) -----
@@ -683,8 +751,8 @@ export function KioskView() {
   // redresser l'appareil. Sous le lecteur, elle est inerte : ni focus clavier, ni appui.
   const hidden = phoneLandscape;
 
-  // Le film loué dont la vidéo de distribution montre la K7 : son titre sur l'afficheur, sa tranche sur la cassette.
-  const filmPhaseId = distribution?.phase === 'film' ? distribution.filmId : null;
+  // Le film dont la vidéo de distribution montre (ou va montrer) la K7 : celui qu'on loue, sinon celui de la confirmation.
+  const filmPhaseId = distribution?.phase === 'film' || distribution?.phase === 'waiting' ? distribution.filmId : filmCandidateId;
   const distributionRented = useMemo(() => {
     if (filmPhaseId === null) return null;
     const f = catalogue.find((c) => c.id === filmPhaseId);
@@ -694,6 +762,17 @@ export function KioskView() {
   return (
     <>
     <div className={`${styles.root} ${hidden ? states.rootHidden : ''}`} inert={isPlayerOpen || hidden} onContextMenu={blockContextMenu}>
+      {/* La vidéo de distribution : dans la borne, sous son écran (qui est l'écran filmé) et au-dessus de tout le reste.
+          Toujours montée, pour que le crochet trouve sa balise à la réponse du serveur ; visible en phase « film ». */}
+      <KioskDistributionFilm
+        ref={filmLayerRef}
+        film={DISTRIBUTION_FILM}
+        sheets={DISTRIBUTION_ASSETS}
+        player={distributionFilm}
+        active={filmPlaying}
+        stage={filmStage}
+        rented={distributionRented}
+      />
       <div className={styles.sign} aria-hidden="true">
         {/* Décor : l'enseigne est une image rendue (voir .neonImg). Son conteneur est masqué aux lecteurs d'écran. */}
         <img className={styles.neonImg} src="/kiosk/neon-location-247.webp" alt="" width={1345} height={302} decoding="async" draggable={false} />
@@ -704,7 +783,7 @@ export function KioskView() {
 
         <div className={styles.column}>
           <div className={styles.bezel}>
-            <div ref={screenRef} className={styles.ks} style={{ '--k-dpx': lcdDevicePixel(density), '--k-lcd-n': lcdPitchInDevicePixels(density) } as CSSProperties}>
+            <div ref={screenRef} className={`${styles.ks} ${filmPlaying ? styles.ksLifted : ''}`} style={{ '--k-dpx': lcdDevicePixel(density), '--k-lcd-n': lcdPitchInDevicePixels(density) } as CSSProperties}>
               <div className={styles.screen} data-mode={mode} data-cast-bar={castBarFilm !== null || undefined} style={layoutVars}>
                 <div className={styles.kTop} inert={overlay !== null || distribution !== null}>
                   <div className={styles.kLogo}>
@@ -874,15 +953,6 @@ export function KioskView() {
         </div>
       </div>
     </div>
-    {/* La vidéo de distribution couvre la borne entière : montée hors de l'écran, toujours présente pour que le
-        crochet trouve sa balise à la réponse du serveur, visible seulement en phase « film ». */}
-    <KioskDistributionFilm
-      film={DISTRIBUTION_FILM}
-      arret={DISTRIBUTION_ARRET}
-      player={distributionFilm}
-      active={distribution?.phase === 'film'}
-      rented={distributionRented}
-    />
     {hidden && !isPlayerOpen && <KioskRotate onQuit={quit} />}
     </>
   );

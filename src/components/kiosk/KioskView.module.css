@@ -841,6 +841,14 @@
 
 /* Calque du volet : il ne sert qu'à rendre le volet inerte sous un message ou la connexion,
    sans masquer la barre du haut. */
+/* Pendant la vidéo de distribution, l'écran de la borne passe au-dessus d'elle : c'est LUI, l'écran filmé (KioskView le
+   déplace et le met à l'échelle à chaque image). Le reste de la borne reste dessous, couvert par la vidéo. */
+.ksLifted {
+  z-index: 6;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
 .kLayer {
   position: absolute;
   inset: 0;

@@ -9,6 +9,7 @@
 // À la différence du film d'approche, celle-ci a du son. Elle part après l'appel au serveur, donc après l'appui : un
 // navigateur peut refuser la lecture sonore. Elle repart alors muette, et `muted` le dit pour que la borne le signale.
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
+import { frameAt, type Suivi } from './kiosk-distribution-logic';
 
 /** idle : rien ne joue. starting : lecture demandée, première image pas encore à l'écran. playing : à l'écran. */
 export type DistributionPhase = 'idle' | 'starting' | 'playing';
@@ -26,8 +27,6 @@ export interface DistributionFilmPlayer {
   phase: DistributionPhase;
   /** Vrai si le navigateur a refusé le son : la vidéo joue muette. */
   muted: boolean;
-  /** Instant de l'image à l'écran, en millisecondes de vidéo. */
-  timeMs: number;
   /** Lance la vidéo. false = elle ne peut pas partir : à l'appelant d'ouvrir le panneau directement. */
   start: () => boolean;
   /** Appui ou geste retour pendant la vidéo : coupe image et son, passe au panneau. */
@@ -36,19 +35,25 @@ export interface DistributionFilmPlayer {
 
 interface DistributionFilmOptions {
   url: string;
+  /** Ce qui accompagne la vidéo : le suivi de la K7 image par image et les deux planches (caches, ombres). */
+  assets: { suivi: string; caches: string; ombres: string };
   durationMs: number;
   /** Vrai dès que le visiteur confirme sa location : la vidéo se télécharge alors, sans rien retarder. */
   load: boolean;
+  /**
+   * Une image de la vidéo vient d'être présentée (et une fois au lancement, pour l'image 0) : à la borne d'y placer la
+   * tranche du film et son écran. Appelé hors du rendu React — 24 rendus de l'arbre par seconde seraient une faute.
+   */
+  onFrame: (index: number, suivi: Suivi) => void;
   /** Fin de la vidéo (ou vidéo passée, en panne, refusée) : appelé une seule fois par lancement. */
   onDone: () => void;
 }
 
-export function useDistributionFilm({ url, durationMs, load, onDone }: DistributionFilmOptions): DistributionFilmPlayer {
+export function useDistributionFilm({ url, assets, durationMs, load, onFrame, onDone }: DistributionFilmOptions): DistributionFilmPlayer {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [src, setSrc] = useState<string | null>(null);
   const [phase, setPhase] = useState<DistributionPhase>('idle');
   const [muted, setMuted] = useState(false);
-  const [timeMs, setTimeMs] = useState(0);
   // Tenus hors du rendu : les écouteurs de la vidéo et les minuteurs lisent la valeur du moment.
   const phaseRef = useRef<DistributionPhase>('idle');
   // L'adresse aussi : `start` est appelé depuis une confirmation ouverte AVANT la fin du téléchargement (le bouton
@@ -58,6 +63,11 @@ export function useDistributionFilm({ url, durationMs, load, onDone }: Distribut
   const timersRef = useRef<number[]>([]);
   const onDoneRef = useRef(onDone);
   useEffect(() => { onDoneRef.current = onDone; }, [onDone]);
+  const onFrameRef = useRef(onFrame);
+  useEffect(() => { onFrameRef.current = onFrame; }, [onFrame]);
+  // Le suivi et les planches : sans eux la K7 de la vidéo resterait sans tranche — la vidéo ne part donc pas.
+  const suiviRef = useRef<Suivi | null>(null);
+  const sheetsRef = useRef(0);
 
   // Téléchargement complet, en tâche de fond : la vidéo joue ensuite depuis la mémoire. Un échec est silencieux.
   useEffect(() => {
@@ -76,15 +86,30 @@ export function useDistributionFilm({ url, durationMs, load, onDone }: Distribut
         setSrc(objectUrl);
       })
       .catch(() => {});
+    fetch(assets.suivi)
+      .then((response) => {
+        if (!response.ok) throw new Error(`suivi de la distribution : ${response.status}`);
+        return response.json() as Promise<Suivi>;
+      })
+      .then((suivi) => { if (!cancelled) suiviRef.current = suivi; })
+      .catch(() => {});
+    sheetsRef.current = 0;
+    for (const sheet of [assets.caches, assets.ombres]) {
+      const image = new Image();
+      image.onload = () => { if (!cancelled) sheetsRef.current += 1; };
+      image.src = sheet;
+    }
     return () => {
       cancelled = true;
+      suiviRef.current = null;
+      sheetsRef.current = 0;
       if (objectUrl) {
         URL.revokeObjectURL(objectUrl);
         srcRef.current = null;
         setSrc(null);
       }
     };
-  }, [load, url]);
+  }, [load, url, assets.suivi, assets.caches, assets.ombres]);
 
   const clearTimers = useCallback(() => {
     timersRef.current.forEach((timer) => window.clearTimeout(timer));
@@ -104,13 +129,13 @@ export function useDistributionFilm({ url, durationMs, load, onDone }: Distribut
 
   const start = useCallback(() => {
     const video = videoRef.current;
-    if (!video || !srcRef.current || phaseRef.current !== 'idle') return false;
+    const suivi = suiviRef.current;
+    if (!video || !srcRef.current || !suivi || !suiviRef.current || sheetsRef.current < 2 || phaseRef.current !== 'idle') return false;
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return false;
 
     doneRef.current = false;
     phaseRef.current = 'starting';
     setPhase('starting');
-    setTimeMs(0);
     setMuted(false);
     video.muted = false;
 
@@ -123,7 +148,7 @@ export function useDistributionFilm({ url, durationMs, load, onDone }: Distribut
         clearTimers();
         timersRef.current.push(window.setTimeout(done, durationMs + DISTRIBUTION_GUARD_MARGIN_MS));
       }
-      setTimeMs(frame.mediaTime * 1000);
+      onFrameRef.current(frameAt(frame.mediaTime, suivi), suivi);
       video.requestVideoFrameCallback(follow);
     };
     video.addEventListener('ended', done, { once: true });
@@ -139,11 +164,13 @@ export function useDistributionFilm({ url, durationMs, load, onDone }: Distribut
           clearTimers();
           timersRef.current.push(window.setTimeout(done, durationMs + DISTRIBUTION_GUARD_MARGIN_MS));
         }
-        setTimeMs(video.currentTime * 1000);
+        onFrameRef.current(frameAt(video.currentTime, suivi), suivi);
       };
       video.addEventListener('timeupdate', tick);
     }
     timersRef.current.push(window.setTimeout(done, DISTRIBUTION_START_TIMEOUT_MS));
+    // Tout est en place AVANT la première image : la tranche sur la K7, l'écran dans son cadre.
+    onFrameRef.current(0, suivi);
 
     try {
       video.currentTime = 0;
@@ -166,5 +193,5 @@ export function useDistributionFilm({ url, durationMs, load, onDone }: Distribut
     done();
   }, [done]);
 
-  return { videoRef, src, phase, muted, timeMs, start, skip };
+  return { videoRef, src, phase, muted, start, skip };
 }
