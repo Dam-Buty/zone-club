@@ -1025,9 +1025,59 @@ Règles à ne pas casser — chacune a son test dans `tests/domain/kiosk-*.test.
   serveur (sans bouton, le geste retour n'y fait rien), puis le panneau « Votre K7 est prête » —
   « Sur ce téléphone » (ou « Sur cette tablette », « Sur cet ordinateur » : `watchHereLabel`), « Sur ma télé »,
   « Plus tard », « Mon compte ». Un refus du serveur garde son message d'avant, sans panneau. Les deux choix
-  sont décrits dans la règle qui suit (l'ancien `openPlayerOnTv` et son drapeau `castOnOpen` n'existent plus). La
-  livraison 2 — robot, carter, afficheur et vidéo de 8 s, avec le lot 3 — viendra s'insérer entre l'attente et le
-  panneau.
+  sont décrits dans la règle qui suit (l'ancien `openPlayerOnTv` et son drapeau `castOnOpen` n'existent plus).
+- **Entre l'attente et le panneau, la borne joue la vidéo de distribution** (livraison 2, § 12 de la même spec ;
+  décisions de Rusmir des 21 et 22/11/2026) : 8 s, le robot va chercher la K7 et la sort par la fente
+  (`public/kiosk-distribution.mp4`, 720 × 1290, **avec son**, au plus 2 600 000 octets ;
+  `src/data/kiosk-distribution.json` dit où et quand la page pose ses calques).
+  - **Une seule vidéo pour tous les films, et la K7 du film loué tout du long** (spec § 13, 23/11/2026 — la tranche
+    posée seulement à l'arrêt a été rejetée par Rusmir : K7 noire pendant le trajet, titre qui arrivait après coup).
+    La K7 de la vidéo a une tranche neutre ; à CHAQUE image que la vidéo présente, `KioskDistributionFilm.place` pose
+    dessus la **tranche du film loué** (`public/kiosk-tranches/<tmdb>.webp` dans la vitrine, `<tmdb>-c.webp` couchée
+    à la fente : deux images par film, une par lumière), **découpée par le cache de l'image** (`mask-image` sur une
+    planche d'images : la pince, l'autocollant, la tôle passent devant) puis **assombrie par l'ombre de l'image**
+    (planche de voiles noirs). Composition normale : ni canvas, ni filtre, ni mode de fusion.
+  - **L'écran filmé est le vrai écran de la borne** : il n'est pas dans la vidéo. `KioskView` cale le cadre de la
+    vidéo pour que l'écran filmé de la première image tombe sur `.ks` (`stageRect`), puis, à chaque image, déplace et
+    met à l'échelle `.ks` dans la boîte de l'écran filmé (`screenTransform`, rogné au cadre par `screenClip`). Il
+    montre donc forcément le film loué, et le raccord du début et de la fin est exact. À la fin (fin, saut, panne) la
+    transformation est retirée dans le même passage que le changement de phase ; une fenêtre redimensionnée pendant
+    la vidéo la fait passer.
+  - **Aucun rendu React par image** : les styles sont posés directement dans le rappel d'image du crochet
+    (`onFrame`, sur le `mediaTime` de l'image réellement présentée — jamais sur l'horloge).
+  - Données communes à tous les films : `public/kiosk-distribution-suivi.json` (boîtes de la tranche et de l'écran
+    aux 193 images, plan des planches), `kiosk-distribution-caches.webp`, `kiosk-distribution-ombres.webp`. **Si l'une
+    manque, la vidéo ne part pas** (panneau directement) : jamais une K7 sans sa tranche.
+  - **Trois niveaux d'usure selon l'année** (`wearLevel`, mêmes seuils que la fabrique) : avant 1985, de 1985 à 2004,
+    2005 et après. Un film sans tranche préparée (image introuvable) reçoit le repli : tranche neutre usée
+    (`repli-N.webp`, `repli-N-c.webp`) et titre écrit par la page.
+  - **Elle ne fait jamais attendre** (`useDistributionFilm`, calqué sur `useApproachFilm`) : téléchargée quand la
+    confirmation de « LOUER » s'ouvre (jamais à l'ouverture de la borne), elle ne joue que si elle est prête à la
+    réponse du serveur ; sinon — pas téléchargée, animations réduites, lecture refusée, première image qui ne vient
+    pas — le panneau s'ouvre aussitôt. Une location refusée ne joue rien.
+  - **Le son peut être refusé** (la vidéo part après l'appel au serveur, plus dans l'appui) : elle repart alors
+    muette, et un signe « son coupé » s'affiche dans un coin.
+  - Un appui n'importe où, ou le geste retour (`kioskBackAction` → `skip-film`), coupe image et son et passe au
+    panneau. La balise `<video>` reste montée tant que la borne l'est, hors de l'écran (`.screen`), invisible hors de
+    la phase `film`.
+  - **Fabrique** (`tools/devanture-borne/`, dans cet ordre) : `distribution_tranches.py` (atlas des tranches de la
+    vitrine, usées par année ; K7 servie et case saisie à tranche neutre) → `distribution_film.py`, cadrage `mixte`
+    (`DOSSIER=film QUALITE=photo LUMIERE=douce ECHELLE=2 blender … -- 128 mixte` : le film, ~1 h 35 ; puis `SUIVI=1`
+    — positions par image, sans rendu — et `PASSES=tout` — par image, le cache de la K7 et la lumière qu'elle reçoit,
+    environ une seconde chacune) → `distribution_planches.py` (suivi, planches de caches et d'ombres) →
+    `sons/mixe.sh` (bande-son, prises hors dépôt) → `distribution_sorties.py` (encode, refuse plus de
+    2 600 000 octets, écrit `public/` et `src/data/`) ; puis, site en développement, `capture_jaquettes.cjs`
+    (tranches du catalogue, tirées du générateur de jaquettes) → `distribution_tranches_site.py`
+    (`public/kiosk-tranches/`, à relancer après `distribution_planches.py` : la lumière y est cuite).
+    `distribution_reference.py` fabrique les images de référence des tests de bout en bout. ⚠️ **Un film entré au
+    catalogue n'a pas de tranche tant que la capture et `distribution_tranches_site.py` n'ont pas tourné** : il a le
+    repli — et le catalogue de PRODUCTION compte plus de films que la base locale. ⚠️ **Avant tout rendu long,
+    montrer à Rusmir les images clés du changement.** La K7 de référence validée le 22/11 : `k7_reference.py` +
+    `k7_usure_tranche.py`.
+  - **Tests de bout en bout** (`npm run test:e2e:borne`, `tests/e2e/`) : build de production servi sur 3002, vrai
+    Chrome, base locale. Ils louent pour de bon, comparent la page aux images de référence à sept instants (tranche à
+    sa place au point près, écart d'image borné), vérifient que le vrai écran suit l'écran filmé et revient à sa
+    place, et tous les cas où la vidéo ne doit pas jouer. `tests/e2e/enregistre.cjs` enregistre la page.
 - **Chaque reprise d'un film déjà loué repasse par le même panneau** (refonte du Cast,
   `docs/superpowers/specs/2026-11-18-cast-refonte-design.md`, § 5.4 ; validé par Rusmir le 18/11/2026). « REGARDER » de
   la fiche (`KioskAction`) et « Regarder » de « Mon compte » n'ouvrent jamais le lecteur eux-mêmes : elles appellent

@@ -60,3 +60,6 @@ tsconfig.tsbuildinfo
 
 # sauvegardes ponctuelles de la base (le motif *.db ne les couvre pas)
 *.db.bak-*
+
+# Captures des tests de bout en bout
+tests/e2e/captures/
