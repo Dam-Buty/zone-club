@@ -86,3 +86,22 @@ for k, x in enumerate((15, 512)):
 use(jaq, mj, 2).save(D / 'tex' / 'jaquette-servie-usee.png')
 Image.fromarray((mj * 255).astype(np.uint8)).save(D / 'tex' / 'jaquette-servie-usure.png')
 print('JAQUETTE SERVIE USÉE', jaq.size)
+
+# ----- la K7 du film : tranche NEUTRE (Rusmir, 22/11/2026) — une seule vidéo sert à tous les films, la page pose la
+# tranche du film loué pendant l'arrêt sur la fente. La K7 servie et la case que le robot saisit (ligne 25 de l'atlas)
+# sont donc sombres et sans titre ; les autres K7 de la vitrine gardent le leur. -----
+TRANCHE_NEUTRE = (0.035, 0.035, 0.04)          # couleur linéaire
+LIGNE_SERVIE = 25                              # la case saisie : distribution_poses.py vérifie la même valeur
+_srgb = tuple(round(255 * (1.055 * c ** (1 / 2.4) - 0.055)) for c in TRANCHE_NEUTRE)
+neutre = use(Image.new('RGB', jaq.size, _srgb), mj, 2)
+neutre.save(D / 'tex' / 'jaquette-neutre.png')
+Image.fromarray((mj * 255).astype(np.uint8)).save(D / 'tex' / 'jaquette-neutre-usure.png')
+Image.new('L', jaq.size, 0).save(D / 'tex' / 'jaquette-neutre-relief.png')
+ligne = (0, LIGNE_SERVIE * LH, LW, (LIGNE_SERVIE + 1) * LH)
+m25 = np.asarray(usure.crop(ligne), dtype=np.float32) / 255
+usees.paste(use(Image.new('RGB', (LW, LH), _srgb), m25, 2), ligne[:2])
+usees.save(D / 'tex' / 'tranches-etui-film.png')
+relief = Image.open(D / 'tex' / 'tranches-etui-relief.png').convert('L')
+relief.paste(0, ligne)
+relief.save(D / 'tex' / 'tranches-etui-relief-film.png')
+print('K7 NEUTRE : jaquette-neutre.png, tranches-etui-film.png (ligne', LIGNE_SERVIE, 'sans titre)')

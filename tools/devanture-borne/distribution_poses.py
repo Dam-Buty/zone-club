@@ -90,8 +90,9 @@ _bm.to_mesh(_k7s.data)
 _bm.free()
 # La K7 servie est le modèle du vidéoclub lui-même (public/models/vhs_cassette_tape.glb), habillé de la jaquette que
 # l'application fabrique pour ce film (capturée dans le navigateur : affiche, tranche, dos, et son relief).
-_JAQ = _D / 'tex' / 'jaquette-servie.png'
-assert _JAQ.exists() and _ligne == 25, 'jaquette capturée pour « La Mouche » (ligne 25) seulement'
+# Depuis le 22/11/2026 sa tranche est NEUTRE : la vidéo sert à tous les films, la page pose la tranche du film loué.
+_JAQ = _D / 'tex' / 'jaquette-neutre.png'
+assert _JAQ.exists() and _ligne == 25, 'distribution_tranches.py rend neutre la ligne 25 : la case saisie doit être celle-là'
 from mathutils import Matrix as _M, Vector as _V  # noqa: E402
 _avant = set(bpy.data.objects)
 bpy.ops.import_scene.gltf(filepath=str(_ICI.parents[1] / 'public' / 'models' / 'vhs_cassette_tape.glb'))
@@ -107,7 +108,7 @@ for _o in _neufs:
 jaquette = principled('jaquette_servie', **{'Roughness': 0.9})
 _jn = jaquette.node_tree
 _jn.links.new(tex_node(jaquette, bpy.data.images.load(str(_JAQ))).outputs['Color'], _jn.nodes['Principled BSDF'].inputs['Base Color'])
-_rel = bpy.data.images.load(str(_D / 'tex' / 'jaquette-servie-relief.png'))
+_rel = bpy.data.images.load(str(_D / 'tex' / 'jaquette-neutre-relief.png'))
 _rel.colorspace_settings.name = 'Non-Color'
 _bp = _jn.nodes.new('ShaderNodeBump')
 _bp.inputs['Strength'].default_value, _bp.inputs['Distance'].default_value = 0.8, 0.0004
@@ -134,7 +135,7 @@ _pb.inputs['Base Color'].links[0].from_node.image = bpy.data.images.load(str(_et
 # des titres donné par la seconde toile du générateur (bumpMap d'échelle 1,2).
 _pb.inputs['Roughness'].default_value = 0.9
 _pb.inputs['Coat Weight'].default_value = 0.0
-_relief = bpy.data.images.load(str(_D / 'tex' / 'tranches-etui-relief.png'))
+_relief = bpy.data.images.load(str(_D / 'tex' / 'tranches-etui-relief-film.png'))
 _relief.colorspace_settings.name = 'Non-Color'
 _bosse = spine.node_tree.nodes.new('ShaderNodeBump')
 _bosse.inputs['Strength'].default_value, _bosse.inputs['Distance'].default_value = 0.8, 0.0004
@@ -155,10 +156,10 @@ def _papier(mat, image, masque):
     pb.inputs['Coat Weight'].default_value = 0.0
 
 
-for _f in ('tranches-etui-usees.png', 'jaquette-servie-usee.png'):
+for _f in ('tranches-etui-film.png', 'jaquette-neutre.png'):
     assert (_D / 'tex' / _f).exists(), 'lancer d\'abord : python3 distribution_tranches.py'
-_papier(spine, _D / 'tex' / 'tranches-etui-usees.png', _D / 'tex' / 'tranches-etui-usure.png')
-_papier(jaquette, _D / 'tex' / 'jaquette-servie-usee.png', _D / 'tex' / 'jaquette-servie-usure.png')
+_papier(spine, _D / 'tex' / 'tranches-etui-film.png', _D / 'tex' / 'tranches-etui-usure.png')
+_papier(jaquette, _D / 'tex' / 'jaquette-neutre.png', _D / 'tex' / 'jaquette-neutre-usure.png')
 
 # ----- le volet de la fente : un clapet articulé en haut, que la machine relève vers l'intérieur avant de pousser la K7 -----
 _fx0, _fx1, _fz0, _fz1 = F['fente']
