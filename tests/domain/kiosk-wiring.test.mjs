@@ -924,7 +924,11 @@ test('DISTRIBUTION FILMÉE: le crochet ne fait jamais attendre et retombe sur le
   const src = readText(path.join(ROOT, 'src/components/kiosk/useDistributionFilm.ts'));
   assert.ok(src.includes("'(prefers-reduced-motion: reduce)'"), 'rien ne bouge pour qui demande moins de mouvement');
   const start = src.slice(src.indexOf('const start'), src.indexOf('const skip'));
-  assert.ok(start.includes('if (!video || !src'), 'vidéo pas téléchargée : start rend false');
+  assert.ok(start.includes('if (!video || !srcRef.current'), 'vidéo pas téléchargée : start rend false');
+  // Constaté à l'écran le 22/11/2026 : le bouton « Louer » de la confirmation garde le onRented du rendu où la
+  // confirmation s'est ouverte — la vidéo n'était pas encore téléchargée, et un start() qui lisait l'adresse de CE
+  // rendu répondait toujours « pas prête » : la vidéo ne jouait jamais. L'adresse se lit donc au moment de l'appel.
+  assert.match(src, /\}, \[durationMs, done, clearTimers\]\);\n\n  const skip/, 'start ne dépend pas de l\'adresse du rendu qui l\'a créé');
   const refus = start.slice(start.indexOf('.catch('));
   assert.ok(refus.includes('video.muted = true') && refus.includes('setMuted(true)'), 'son refusé : la vidéo repart muette et le dit');
   assert.ok(refus.lastIndexOf('done') > refus.indexOf('video.muted = true'), 'muet refusé aussi : on passe au panneau');

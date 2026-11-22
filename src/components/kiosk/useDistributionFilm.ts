@@ -51,6 +51,9 @@ export function useDistributionFilm({ url, durationMs, load, onDone }: Distribut
   const [timeMs, setTimeMs] = useState(0);
   // Tenus hors du rendu : les écouteurs de la vidéo et les minuteurs lisent la valeur du moment.
   const phaseRef = useRef<DistributionPhase>('idle');
+  // L'adresse aussi : `start` est appelé depuis une confirmation ouverte AVANT la fin du téléchargement (le bouton
+  // « Louer » garde le rappel du rendu où elle s'est ouverte) ; il doit lire l'adresse du moment, pas celle de ce rendu.
+  const srcRef = useRef<string | null>(null);
   const doneRef = useRef(true);
   const timersRef = useRef<number[]>([]);
   const onDoneRef = useRef(onDone);
@@ -69,6 +72,7 @@ export function useDistributionFilm({ url, durationMs, load, onDone }: Distribut
       .then((blob) => {
         if (cancelled) return;
         objectUrl = URL.createObjectURL(blob);
+        srcRef.current = objectUrl;
         setSrc(objectUrl);
       })
       .catch(() => {});
@@ -76,6 +80,7 @@ export function useDistributionFilm({ url, durationMs, load, onDone }: Distribut
       cancelled = true;
       if (objectUrl) {
         URL.revokeObjectURL(objectUrl);
+        srcRef.current = null;
         setSrc(null);
       }
     };
@@ -99,7 +104,7 @@ export function useDistributionFilm({ url, durationMs, load, onDone }: Distribut
 
   const start = useCallback(() => {
     const video = videoRef.current;
-    if (!video || !src || phaseRef.current !== 'idle') return false;
+    if (!video || !srcRef.current || phaseRef.current !== 'idle') return false;
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return false;
 
     doneRef.current = false;
@@ -153,7 +158,7 @@ export function useDistributionFilm({ url, durationMs, load, onDone }: Distribut
       video.play().catch(done);
     });
     return true;
-  }, [src, durationMs, done, clearTimers]);
+  }, [durationMs, done, clearTimers]);
 
   const skip = useCallback(() => {
     if (phaseRef.current === 'idle') return;
