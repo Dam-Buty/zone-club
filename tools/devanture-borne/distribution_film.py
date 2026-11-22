@@ -244,6 +244,7 @@ if os.environ.get('SUIVI'):
         return _bb([(L(x), YB, z) for x in (x0, x1) for z in (z0, z1)])
 
     _rosie = bpy.data.objects['autocollant_rosie']
+    _ecran = bpy.data.objects['ecran']        # la dalle elle-même (elle est en retrait de la façade : pas le rectangle de la géométrie)
     _suivi = []
 
     def _face_a(t):
@@ -267,7 +268,7 @@ if os.environ.get('SUIVI'):
         _suivi.append({
             'i': _i, 't': round(_t, 4), 'couchee': _t >= resserre(5.1),
             'tranche': _bb([_vs[k] for k in (_COUCHEE if _t >= resserre(5.1) else _DEBOUT)]),
-            'vitrine': _rect('vitrine_g'), 'fente': _rect('fente'), 'ecran': _rect('ecran'), 'k7': _bb(_vs),
+            'vitrine': _rect('vitrine_g'), 'fente': _rect('fente'), 'ecran': _bb([_ecran.matrix_world @ v.co for v in _ecran.data.vertices]), 'k7': _bb(_vs),
             'rosie': [[round(q.x, 5), round(1 - q.y, 5)] for q in _pr],
         })
     (_OUT / 'suivi.json').write_text(json.dumps(_suivi) + '\n')

@@ -44,5 +44,8 @@ donnees = {
     'film': {'src': '/kiosk-distribution.mp4', 'largeur': LARGEUR, 'hauteur': HAUTEUR, 'dureeMs': DUREE_MS, 'octets': octets},
     'arret': json.loads((D / 'distribution' / 'arret.json').read_text()),
 }
+# La tranche du film loué suit la K7 (spec § 13) : le suivi par image et les deux planches de distribution_planches.py.
+for source, cible in (('suivi.json', 'kiosk-distribution-suivi.json'), ('caches.webp', 'kiosk-distribution-caches.webp'), ('ombres.webp', 'kiosk-distribution-ombres.webp')):
+    shutil.copyfile(D / 'distribution' / 'site' / source, RACINE / 'public' / cible)
 (RACINE / 'src' / 'data' / 'kiosk-distribution.json').write_text(json.dumps(donnees, indent=2) + '\n')
 print(f'kiosk-distribution.mp4 {octets / 1024:7.0f} Ko | src/data/kiosk-distribution.json', donnees['arret'])

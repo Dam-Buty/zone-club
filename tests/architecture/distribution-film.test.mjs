@@ -53,3 +53,46 @@ test('DISTRIBUTION FILMÉE: les tranches des films sont préparées, légères, 
   for (const f of films) assert.ok(statSync(path.join(dir, f)).size < 60_000, `${f} pèse moins de 60 000 octets`);
   for (const n of [1, 2, 3]) for (const nom of [`repli-${n}.webp`, `usure-${n}.webp`]) assert.ok(existsSync(path.join(dir, nom)), nom);
 });
+
+// ===== La tranche suit la K7 (spec § 13, plan 2026-11-23) : suivi par image, planches de caches et d'ombres =====
+
+// Largeur et hauteur d'un WebP d'après son en-tête (formes étendue, sans perte, avec perte).
+function tailleWebp(buf) {
+  const forme = buf.toString('latin1', 12, 16);
+  if (forme === 'VP8X') return [1 + buf.readUIntLE(24, 3), 1 + buf.readUIntLE(27, 3)];
+  if (forme === 'VP8L') { const b = buf.readUInt32LE(21); return [1 + (b & 0x3fff), 1 + ((b >> 14) & 0x3fff)]; }
+  return [buf.readUInt16LE(26) & 0x3fff, buf.readUInt16LE(28) & 0x3fff];
+}
+
+test('DISTRIBUTION FILMÉE: le suivi dit où sont la tranche et l\'écran à chacune des 193 images', () => {
+  const s = JSON.parse(readFileSync(path.join(ROOT, 'public/kiosk-distribution-suivi.json'), 'utf8'));
+  assert.deepEqual([s.images, s.ips, s.pas.length], [193, 24, 193]);
+  // La tranche n'est suivie que dans l'image ou à son bord ; l'écran, lui, sort largement du cadre pendant le rapproché sur la fente.
+  const boite = (b, marge) => b.every((v) => v > -marge && v < 1 + marge) && b[0] < b[2] && b[1] < b[3];
+  for (const p of s.pas) { assert.ok(p.t === null || boite(p.t, 0.5)); assert.ok(boite(p.e, 3)); assert.ok(p.c === 0 || p.c === 1); }
+  const bascules = s.pas.filter((p, i) => i > 0 && p.c !== s.pas[i - 1].c).length;
+  assert.equal(bascules, 1, 'la K7 se couche une seule fois (au passage vers la fente)');
+  assert.ok(s.pas[0].c === 0 && s.pas[192].c === 1);
+  assert.ok(s.lmax > 0);
+  // L'appareil part de l'écran et y revient : même boîte à la première et à la dernière image, centrée, entière dans le cadre.
+  // (Sa largeur exacte importe peu : la page cale le cadre de la vidéo sur le vrai écran de la borne.)
+  const [e0, e1] = [s.pas[0].e, s.pas[192].e];
+  assert.ok(e0.every((v, k) => Math.abs(v - e1[k]) < 0.002) && e0.every((v) => v > 0 && v < 1) && Math.abs(e0[0] + e0[2] - 1) < 0.01);
+  for (const bloc of [s.debout, s.couchee]) assert.ok(bloc.cellule.length === 2 && bloc.colonnes > 0 && bloc.de <= bloc.a);
+  assert.equal(s.debout.a + 1, s.couchee.de, 'les deux blocs se suivent sans trou');
+});
+
+test('DISTRIBUTION FILMÉE: les planches de caches et d\'ombres ont la taille annoncée et restent légères', () => {
+  const s = JSON.parse(readFileSync(path.join(ROOT, 'public/kiosk-distribution-suivi.json'), 'utf8'));
+  let total = 0;
+  for (const nom of ['kiosk-distribution-caches.webp', 'kiosk-distribution-ombres.webp']) {
+    const buf = readFileSync(path.join(ROOT, 'public', nom));
+    total += buf.length;
+    const [w, h] = tailleWebp(buf);
+    assert.deepEqual([w, h], s.planche, `${nom} : ${w} × ${h}`);
+    assert.ok(w <= 4096 && h <= 4096);
+  }
+  assert.ok(total <= 600_000, `${total} octets pour les deux planches`);
+  const lignes = (b) => Math.ceil((b.a - b.de + 1) / b.colonnes) * b.cellule[1];
+  assert.equal(s.planche[1], lignes(s.debout) + lignes(s.couchee), 'le bloc « couchée » est sous le bloc « debout »');
+});
