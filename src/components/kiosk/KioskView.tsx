@@ -12,6 +12,10 @@ import { KioskBrowse } from './KioskBrowse';
 import { KioskCastBar } from './KioskCastBar';
 import { KioskDetail } from './KioskDetail';
 import { KioskReady, KioskWaiting } from './KioskDistribution';
+import { KioskDistributionFilm } from './KioskDistributionFilm';
+import { yearOf, type Arret, type DistributionFilm } from './kiosk-distribution-logic';
+import { useDistributionFilm } from './useDistributionFilm';
+import distributionData from '../../data/kiosk-distribution.json';
 import { KioskAccount } from './KioskAccount';
 import { KioskReview } from './KioskReview';
 import { KioskNotice, type KioskNoticeSpec } from './KioskNotice';
@@ -42,6 +46,10 @@ import {
 } from './kiosk-logic';
 import states from './KioskStates.module.css';
 import styles from './KioskView.module.css';
+
+// La vidéo de distribution et son arrêt sur la fente, écrits par tools/devanture-borne/distribution_sorties.py.
+const DISTRIBUTION_FILM: DistributionFilm = distributionData.film;
+const DISTRIBUTION_ARRET: Arret = distributionData.arret;
 
 // Borne de location : seconde façon de louer, sans aucun rendu 3D. Cette coque porte le corps
 // de la borne (métal, enseigne, fente, vitrines), son écran, la barre du haut et les messages ;
@@ -286,7 +294,8 @@ export function KioskView() {
   // « Veuillez patienter » pendant l'appel au serveur, puis le panneau « Votre K7 est prête ». Le même panneau, titré
   // « Où voulez-vous regarder ? » (`fresh` faux), pose la question à chaque reprise d'un film déjà loué.
   // `sub` : ce que montre le panneau ouvert (absent = son contenu) ; chaque ouverture repart sans.
-  const [distribution, setDistribution] = useState<{ phase: 'waiting' | 'ready'; filmId: number; fresh: boolean; sub?: ReadySub } | null>(null);
+  // Entre les deux, quand elle peut partir : la vidéo du robot (livraison 2, § 12 de la spec), phase « film ».
+  const [distribution, setDistribution] = useState<{ phase: 'waiting' | 'film' | 'ready'; filmId: number; fresh: boolean; sub?: ReadySub } | null>(null);
   const readyOpen = distribution?.phase === 'ready';
   const readySub: ReadySub = distribution?.phase === 'ready' ? distribution.sub ?? READY_PANEL : READY_PANEL;
   /** Change ce que montre le panneau ; sans effet s'il s'est fermé entre-temps. */
@@ -300,7 +309,17 @@ export function KioskView() {
   const onRenting = useCallback((filmId: number | null) => {
     setDistribution(filmId === null ? null : { phase: 'waiting', filmId, fresh: true });
   }, []);
-  const onRented = useCallback((filmId: number) => setDistribution({ phase: 'ready', filmId, fresh: true }), []);
+  // La vidéo se télécharge dès que la confirmation de « LOUER » s'ouvre, et ne joue que si elle est prête à la réponse
+  // du serveur : sinon (pas téléchargée, animations réduites) le panneau s'ouvre aussitôt. Elle finit toujours au
+  // panneau — fin, appui, geste retour, lecture refusée ou en panne.
+  const [filmWanted, setFilmWanted] = useState(false);
+  const wantFilm = useCallback(() => setFilmWanted(true), []);
+  const onFilmDone = useCallback(() => setDistribution((d) => (d?.phase === 'film' ? { phase: 'ready', filmId: d.filmId, fresh: true } : d)), []);
+  const distributionFilm = useDistributionFilm({ url: DISTRIBUTION_FILM.src, durationMs: DISTRIBUTION_FILM.dureeMs, load: filmWanted, onDone: onFilmDone });
+  const onRented = useCallback(
+    (filmId: number) => setDistribution({ phase: distributionFilm.start() ? 'film' : 'ready', filmId, fresh: true }),
+    [distributionFilm],
+  );
   const closeReady = useCallback(() => setDistribution(null), []);
 
   // ----- La version du film du panneau (spec 2026-11-19-versions-et-erreurs-de-lecture, § 4.1, 4.3 a et 4.4) -----
@@ -596,6 +615,7 @@ export function KioskView() {
       playerOpen: isPlayerOpen,
       noticeOpen: overlay !== null,
       waiting: distribution?.phase === 'waiting',
+      filmPlaying: distribution?.phase === 'film',
       readyOpen,
       questionOpen: readyOpen && readySub.view === 'question',
       versionOpen: readyOpen && readySub.view === 'versions',
@@ -610,6 +630,7 @@ export function KioskView() {
       trailerOpen: detailOpen && detailTab === 'bande-annonce',
     });
     if (action === 'close-player') closePlayer();
+    else if (action === 'skip-film') distributionFilm.skip();
     // Le message de la borne d'abord ; sinon c'est « Location terminée », qui vient du Cast.
     else if (action === 'close-notice') {
       if (notice) closeNotice();
@@ -661,6 +682,14 @@ export function KioskView() {
   // Téléphone en paysage : la borne s'efface (elle garde son état) devant l'invitation à
   // redresser l'appareil. Sous le lecteur, elle est inerte : ni focus clavier, ni appui.
   const hidden = phoneLandscape;
+
+  // Le film loué dont la vidéo de distribution montre la K7 : son titre sur l'afficheur, sa tranche sur la cassette.
+  const filmPhaseId = distribution?.phase === 'film' ? distribution.filmId : null;
+  const distributionRented = useMemo(() => {
+    if (filmPhaseId === null) return null;
+    const f = catalogue.find((c) => c.id === filmPhaseId);
+    return { title: f?.title ?? 'Titre indisponible', tmdbId: f?.tmdb_id ?? null, year: yearOf(f?.release_date) };
+  }, [filmPhaseId, catalogue]);
 
   return (
     <>
@@ -726,7 +755,7 @@ export function KioskView() {
                       onSearch={() => setMode('search')}
                       onOpenDetail={openDetail}
                       actionSlot={(film) => (
-                        <KioskAction film={film} detail={currentDetail} onNotice={setNotice} onRequestAuth={requestAuth} onRenting={onRenting} onRented={onRented} onWatch={watch} />
+                        <KioskAction film={film} detail={currentDetail} onNotice={setNotice} onRequestAuth={requestAuth} onRenting={onRenting} onRented={onRented} onConfirmOpen={wantFilm} onWatch={watch} />
                       )}
                     />
                   )}
@@ -747,7 +776,7 @@ export function KioskView() {
                         setSelectedId(film.id);
                         setDetailTab('resume');
                       }}
-                      action={<KioskAction film={displayed} detail={currentDetail} onNotice={setNotice} onRequestAuth={requestAuth} onRenting={onRenting} onRented={onRented} onWatch={watch} />}
+                      action={<KioskAction film={displayed} detail={currentDetail} onNotice={setNotice} onRequestAuth={requestAuth} onRenting={onRenting} onRented={onRented} onConfirmOpen={wantFilm} onWatch={watch} />}
                     />
                   </div>
                 )}
@@ -845,6 +874,15 @@ export function KioskView() {
         </div>
       </div>
     </div>
+    {/* La vidéo de distribution couvre la borne entière : montée hors de l'écran, toujours présente pour que le
+        crochet trouve sa balise à la réponse du serveur, visible seulement en phase « film ». */}
+    <KioskDistributionFilm
+      film={DISTRIBUTION_FILM}
+      arret={DISTRIBUTION_ARRET}
+      player={distributionFilm}
+      active={distribution?.phase === 'film'}
+      rented={distributionRented}
+    />
     {hidden && !isPlayerOpen && <KioskRotate onQuit={quit} />}
     </>
   );

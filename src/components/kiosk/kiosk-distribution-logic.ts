@@ -25,6 +25,12 @@ export function wearLevel(year: number | null | undefined): WearLevel {
   return year < 1985 ? 3 : year < 2005 ? 2 : 1;
 }
 
+/** L'année d'un film d'après sa date de sortie (« 1986-08-15 ») ; `null` si elle manque. */
+export function yearOf(releaseDate: string | null | undefined): number | null {
+  const year = Number.parseInt((releaseDate ?? '').slice(0, 4), 10);
+  return Number.isFinite(year) && year > 1800 ? year : null;
+}
+
 /** La tranche préparée d'un film (usure de son année et éclairage de la fente déjà cuits). */
 export function spineSrc(tmdbId: number): string {
   return `/kiosk-tranches/${tmdbId}.webp`;

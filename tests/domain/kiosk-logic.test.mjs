@@ -756,3 +756,11 @@ test('PANNEAU VERSION: geste retour — le lecteur, un message et l\'attente res
   assert.equal(K.kioskBackAction({ ...BACK_BASE, readyOpen: true, versionOpen: true, noticeOpen: true }), 'close-notice');
   assert.equal(K.kioskBackAction({ ...BACK_BASE, waiting: true, questionOpen: true }), 'none');
 });
+
+// Livraison 2 de la distribution : pendant la vidéo, le geste retour la passe (spec 2026-11-17, § 5 et § 12).
+test('BORNE: le geste retour pendant la vidéo de distribution saute au panneau, sans quitter la borne', () => {
+  const base = { playerOpen: false, noticeOpen: false, noticeClosable: true, authOpen: false, phrasePending: false, searchOpen: false };
+  assert.equal(K.kioskBackAction({ ...base, filmPlaying: true }), 'skip-film');
+  assert.equal(K.kioskBackAction({ ...base, filmPlaying: true, detailOpen: true, searchOpen: true }), 'skip-film');
+  assert.equal(K.kioskBackAction({ ...base, waiting: true }), 'none');
+});

@@ -45,3 +45,10 @@ test('distribution : une boîte en fractions devient une position en pourcentage
   assert.ok(Math.abs(parseFloat(s.height) - 10) < 1e-6);
   for (const v of Object.values(s)) assert.ok(v.endsWith('%'));
 });
+
+test('distribution : l\'année se lit dans la date de sortie, et son absence ne casse rien', () => {
+  assert.equal(D.yearOf('1986-08-15'), 1986);
+  assert.equal(D.yearOf(''), null);
+  assert.equal(D.yearOf(undefined), null);
+  assert.equal(D.wearLevel(D.yearOf('1968-12-21')), 3);
+});

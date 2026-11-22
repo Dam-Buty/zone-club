@@ -476,6 +476,7 @@ export type { AccountFormMode as KioskAuthMode } from '../../utils/account-rules
 export type KioskBackAction =
   | 'none'
   | 'close-player'
+  | 'skip-film'
   | 'close-notice'
   | 'close-question'
   | 'close-version'
@@ -507,6 +508,8 @@ export function kioskBackAction(s: {
   detailOpen?: boolean;
   /** Sa bande-annonce est affichée : le geste l'arrête et ramène au résumé, la fiche reste ouverte. */
   trailerOpen?: boolean;
+  /** La vidéo de distribution joue : le geste la passe, le panneau « Votre K7 est prête » s'ouvre. */
+  filmPlaying?: boolean;
   /** « Veuillez patienter » : la location est en route vers le serveur. */
   waiting?: boolean;
   /** Le panneau « Votre K7 est prête » est affiché. */
@@ -523,6 +526,7 @@ export function kioskBackAction(s: {
   prefOpen?: boolean;
 }): KioskBackAction {
   if (s.playerOpen) return 'close-player';
+  if (s.filmPlaying) return 'skip-film';
   if (s.noticeOpen) return s.noticeClosable ? 'close-notice' : 'none';
   if (s.waiting) return 'none';
   if (s.questionOpen) return 'close-question';
