@@ -128,6 +128,18 @@ async function ecran(b, e) {
     const louer = await boite(page, 'button[class*="kLouer"]');
     dit(dedans(louer, ks), `${n} 3  un appui ouvre le catalogue, « Louer » est dans l'écran`);
 
+    // Changer de rayon affiche le premier film de ce rayon.
+    await appuie(page.locator('button[class*="kTab"]', { hasText: /^Action$/ }).first());
+    await page.waitForTimeout(500);
+    const rayon = await page.evaluate(async () => {
+      const r = await fetch('/api/films/aisle/action'); const j = await r.json();
+      const bande = [...document.querySelectorAll('button[class*="kRailItem"]')];
+      return { titres: (j.films || j).map((f) => f.title), premier: bande[0] ? bande[0].getAttribute('aria-label') : null, choisi: (bande.find((x) => x.getAttribute('aria-pressed') === 'true') || { getAttribute: () => null }).getAttribute('aria-label') };
+    });
+    dit(rayon.choisi !== null && rayon.choisi === rayon.premier && rayon.titres.includes(rayon.choisi), `${n} 3  le rayon « Action » affiche son premier film (« ${rayon.choisi} »)`);
+    await appuie(page.locator('button[class*="kTab"]', { hasText: /^Nouveautés$/ }).first());
+    await page.waitForTimeout(400);
+
     // ----- 4. Une location : la distribution -----
     await page.locator('button[class*="kRailItem"][aria-label="Get Out"]').first().evaluate((x) => x.click());
     await page.waitForTimeout(700);

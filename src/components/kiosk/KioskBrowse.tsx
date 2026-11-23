@@ -138,6 +138,13 @@ export function KioskBrowse({ selectedId, versions, credits, onSelect, onSearch,
   const film = useMemo(() => allFilms(films).find((f) => f.id === selectedId) ?? null, [films, selectedId]);
   const list = useMemo(() => filmsForTab(films, tab, 'rayon'), [films, tab]);
 
+  // Choisir un rayon affiche son premier film (Rusmir, 23/11/2026) ; un rayon vide laisse la fiche comme elle est.
+  const pickTab = (id: KioskTab) => {
+    setTab(id);
+    const first = filmsForTab(films, id, 'rayon')[0];
+    if (first && id !== tab) onSelect(first);
+  };
+
   // Une flèche s'éteint à l'extrémité où elle ne mènerait plus nulle part. Écrit directement sur
   // les boutons, sans état React : ce suivi tourne à chaque image du défilement.
   const syncArrows = useCallback(() => {
@@ -208,7 +215,7 @@ export function KioskBrowse({ selectedId, versions, credits, onSelect, onSearch,
             type="button"
             className={`${styles.kTab} ${id === tab ? styles.kTabOn : ''}`}
             aria-pressed={id === tab}
-            onClick={() => setTab(id)}
+            onClick={() => pickTab(id)}
           >
             {tabLabel(id)}
           </button>

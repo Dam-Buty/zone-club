@@ -1002,3 +1002,9 @@ test('ACCUEIL: la borne s\'ouvre sur son écran d\'accueil, et un appui ouvre le
   assert.ok(css.includes('var(--k-skin-orange)') && css.includes('border-radius: var(--k-radius)') && !css.includes('welcome-pulse'), 'l\'invitation est un bouton de la borne, sans halo qui pulse');
   assert.ok(css.includes('"VT323"') && !/mix-blend-mode|backdrop-filter|[^-]filter\s*:/.test(css), 'police d\'ordinateur des années 90 ; ni filtre ni mode de fusion');
 });
+test('BORNE: changer de rayon affiche le premier film de ce rayon', () => {
+  // Rusmir, 23/11/2026 : « un changement de catégorie via le bouton sur le côté gauche devrait afficher un film de la catégorie ».
+  const src = readText(path.join(ROOT, 'src/components/kiosk/KioskBrowse.tsx'));
+  assert.ok(/const pickTab = \(id: KioskTab\) => \{[\s\S]{0,260}filmsForTab\(films, id, 'rayon'\)\[0\][\s\S]{0,120}onSelect\(/.test(src), 'le rayon choisi donne son premier film à la fiche');
+  assert.ok(src.includes('onClick={() => pickTab(id)}') && !src.includes('onClick={() => setTab(id)}'), 'les boutons de rayon passent par pickTab');
+});
