@@ -1,0 +1,269 @@
+/* Borne 24/7 — l'écran d'accueil (KioskWelcome). Du DOM et du CSS seulement, comme tout ce qui est sous kiosk/ :
+   ni filtre, ni flou d'arrière-plan, ni mode de fusion, ni surface de dessin. Tout se mesure en cqw (centièmes de la
+   largeur de l'écran de la borne) ; la hauteur se répartit toute seule, l'écran faisant 180cqw de haut sur téléphone
+   et 150cqw sur PC. */
+
+.welcome {
+  --w-green: #5dff8a;
+  --w-green-dim: #2fbf5d;
+  --w-vt: "VT323", "Courier New", monospace;
+
+  position: absolute;
+  inset: 0;
+  /* Au-dessus de la barre du haut et des volets, sous l'allumage (6), la trame (8) et le bord (9) de la dalle. */
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 3cqw;
+  padding: 2.4cqw 4cqw 4cqw;
+  background: radial-gradient(90% 50% at 50% 52%, var(--k-bg-stops));
+}
+
+.enter {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  padding: 0;
+  background: none;
+}
+
+/* Sur l'écran d'accueil, rien ne s'enfonce quand on touche (le bouton couvre tout). */
+.welcome .enter:active {
+  opacity: 1;
+}
+
+.top {
+  flex: none;
+  display: flex;
+  justify-content: flex-end;
+  height: 8.4cqw;
+}
+
+.quit {
+  position: relative;
+  height: 100%;
+  padding: 0 2.6cqw;
+  font-size: 3.8cqw;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--k-ink);
+  text-shadow: var(--k-text-shadow);
+  border: 0.3cqw solid var(--k-edge-teal);
+  border-radius: var(--k-radius);
+  background: var(--k-skin-teal);
+  box-shadow: inset 0 0.25cqw 0 rgba(255, 255, 255, 0.16), 0 0 0 0.25cqw rgba(0, 10, 30, 0.6);
+}
+
+.quitHint {
+  color: #fff3dc;
+  border-color: #ffb347;
+  box-shadow: inset 0 0.25cqw 0 rgba(255, 255, 255, 0.16), 0 0 0 0.25cqw rgba(0, 10, 30, 0.6), 0 0 2cqw #ff8a1f;
+}
+
+.quit::after {
+  content: "";
+  position: absolute;
+  inset: -2.4cqw -1.5cqw;
+}
+
+/* ----- le nom du vidéoclub : un écran d'ordinateur des années 90, vert sur noir ----- */
+
+.term {
+  flex: none;
+  position: relative;
+  padding: 2.2cqw 3cqw 2.6cqw;
+  pointer-events: none;
+  font-family: var(--w-vt);
+  color: var(--w-green);
+  text-align: center;
+  border: 0.4cqw solid #1f7a3f;
+  border-radius: 0.8cqw;
+  /* Fond presque noir, à peine vert, avec les lignes de l'affichage d'un vieux moniteur. */
+  background:
+    repeating-linear-gradient(0deg, rgb(0 0 0 / 0.22) 0 0.25cqw, rgb(0 0 0 / 0) 0.25cqw 0.75cqw),
+    linear-gradient(180deg, #03140a 0%, #020c06 100%);
+  box-shadow: 0 0 0 0.3cqw rgba(0, 10, 30, 0.7), inset 0 0 5cqw rgba(60, 255, 130, 0.1), 0 0.8cqw 2cqw rgba(0, 0, 20, 0.5);
+}
+
+.name {
+  font-size: 17cqw;
+  line-height: 0.9;
+  white-space: nowrap;
+  /* La rémanence du phosphore : un halo court, de la couleur du texte. */
+  text-shadow: 0 0 1.2cqw rgba(93, 255, 138, 0.75), 0 0 4cqw rgba(93, 255, 138, 0.35);
+}
+
+.cursor {
+  display: inline-block;
+  width: 0.5em;
+  height: 0.62em;
+  margin-left: 0.06em;
+  background: var(--w-green);
+  box-shadow: 0 0 1.6cqw rgba(93, 255, 138, 0.7);
+  animation: welcome-blink 1.1s steps(1, end) infinite;
+}
+
+.termSub {
+  margin-top: 1.4cqw;
+  font-size: 5cqw;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  color: var(--w-green-dim);
+}
+
+/* ----- les nouveautés qui défilent ----- */
+
+.news {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  pointer-events: none;
+  padding: 1.6cqw 0 2cqw;
+  border: 0.4cqw solid var(--k-frame);
+  border-radius: 1.2cqw;
+  background: linear-gradient(180deg, rgba(0, 14, 44, 0.55), rgba(0, 8, 28, 0.75));
+  box-shadow: inset 0 0.3cqw 0 var(--k-frame-hi), 0 0 0 0.3cqw rgba(0, 10, 30, 0.6);
+}
+
+.newsTitle {
+  flex: none;
+  font-size: 5.6cqw;
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: 0.08em;
+  text-align: center;
+  text-transform: uppercase;
+  color: #ffe08a;
+  text-shadow: var(--k-text-shadow);
+}
+
+.stage {
+  flex: 1 1 0;
+  min-height: 0;
+  position: relative;
+  margin: 1.6cqw 0;
+  overflow: hidden;
+}
+
+.poster {
+  /* --k : la place autour du centre, en largeurs de jaquette (les voisines passent en partie derrière celle du centre). */
+  --k: 0;
+  --s: 1;
+
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  height: 100%;
+  /* La largeur commande : trois jaquettes doivent tenir dans le cadre. */
+  max-height: 63cqw;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  border: 0.35cqw solid #dff3ff;
+  border-radius: 0.6cqw;
+  box-shadow: 0 1cqw 2.4cqw rgba(0, 0, 16, 0.7);
+  transform: translate(calc(-50% + var(--k) * 70%), -50%) scale(var(--s));
+  transition: transform 0.9s cubic-bezier(0.3, 0.1, 0.2, 1), opacity 0.9s linear;
+}
+
+.poster[data-slot="0"] {
+  z-index: 2;
+}
+
+.poster[data-slot="-1"] {
+  --k: -1;
+  --s: 0.72;
+  opacity: 0.72;
+}
+
+.poster[data-slot="1"] {
+  --k: 1;
+  --s: 0.72;
+  opacity: 0.72;
+}
+
+.poster[data-slot="-2"] {
+  --k: -1.5;
+  --s: 0.5;
+  opacity: 0;
+}
+
+.poster[data-slot="2"] {
+  --k: 1.5;
+  --s: 0.5;
+  opacity: 0;
+}
+
+.caption {
+  flex: none;
+  padding: 0 3cqw;
+  overflow: hidden;
+  font-size: 6cqw;
+  font-weight: 800;
+  line-height: 1.15;
+  text-align: center;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--k-ink);
+  text-shadow: var(--k-text-shadow);
+}
+
+.caption small {
+  margin-left: 2cqw;
+  font-size: 4.6cqw;
+  font-weight: 600;
+  color: var(--k-ink-soft);
+}
+
+/* ----- l'invitation : l'élément le plus contrasté de l'écran ----- */
+
+.cta {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3cqw;
+  height: 21cqw;
+  pointer-events: none;
+  font-size: 9.6cqw;
+  font-weight: 900;
+  line-height: 0.95;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #fff8ea;
+  text-shadow: 0 0.3cqw 0.1cqw rgba(90, 30, 0, 0.7);
+  border: 0.45cqw solid var(--k-edge-orange);
+  border-radius: 1.2cqw;
+  background: var(--k-skin-orange);
+  box-shadow: var(--k-bevel), 0 0 0 0.3cqw rgba(0, 10, 30, 0.6), 0 0 0 0 rgba(255, 170, 60, 0.7);
+  animation: welcome-pulse 1.8s ease-in-out infinite;
+}
+
+.cta small {
+  display: block;
+  margin-top: 0.8cqw;
+  font-size: 5.6cqw;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #fff0c9;
+}
+
+.ctaHand {
+  flex: none;
+  width: 13cqw;
+  height: 13cqw;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+}
+
+@keyframes welcome-blink {
+  0% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+@keyframes welcome-pulse {
+  0%, 100% { box-shadow: var(--k-bevel), 0 0 0 0.3cqw rgba(0, 10, 30, 0.6), 0 0 0 0 rgba(255, 170, 60, 0.75); }
+  50% { box-shadow: var(--k-bevel), 0 0 0 0.3cqw rgba(0, 10, 30, 0.6), 0 0 0 2.2cqw rgba(255, 170, 60, 0); }
+}
+

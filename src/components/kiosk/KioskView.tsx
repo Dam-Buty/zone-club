@@ -20,6 +20,7 @@ import { KioskAccount } from './KioskAccount';
 import { KioskReview } from './KioskReview';
 import { KioskNotice, type KioskNoticeSpec } from './KioskNotice';
 import { KioskSearch } from './KioskSearch';
+import { KioskWelcome } from './KioskWelcome';
 import {
   allFilms,
   catalogState,
@@ -281,6 +282,10 @@ export function KioskView() {
   // Allumage du rétroéclairage à l'ouverture de la borne (.kWarm), une seule fois ; pas pour qui a
   // demandé moins de mouvement.
   const [warming, setWarming] = useState(() => typeof window !== 'undefined' && !window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+
+  // L'écran d'accueil (validé par Rusmir le 23/11/2026) : la borne s'ouvre dessus, comme une borne que personne n'a
+  // encore touchée ; un appui ouvre le catalogue. Il ne revient pas tant que la borne reste montée.
+  const [welcome, setWelcome] = useState(true);
 
   const [mode, setMode] = useState<'browse' | 'search'>('browse');
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -785,7 +790,7 @@ export function KioskView() {
           <div className={styles.bezel}>
             <div ref={screenRef} className={`${styles.ks} ${filmPlaying ? styles.ksLifted : ''}`} style={{ '--k-dpx': lcdDevicePixel(density), '--k-lcd-n': lcdPitchInDevicePixels(density) } as CSSProperties}>
               <div className={styles.screen} data-mode={mode} data-cast-bar={castBarFilm !== null || undefined} style={layoutVars}>
-                <div className={styles.kTop} inert={overlay !== null || distribution !== null}>
+                <div className={styles.kTop} inert={welcome || overlay !== null || distribution !== null}>
                   <div className={styles.kLogo}>
                     VIDÉOCLUB<small>borne 24/7</small>
                   </div>
@@ -815,7 +820,7 @@ export function KioskView() {
                 {/* Sous la fiche détaillée, le parcours reste monté (rayon, page, position de la bande) mais caché. */}
                 <div
                   className={styles.kPane}
-                  inert={overlay !== null || distribution !== null || authVisible || mode === 'search' || detailOpen || accountOpen}
+                  inert={welcome || overlay !== null || distribution !== null || authVisible || mode === 'search' || detailOpen || accountOpen}
                   style={detailOpen ? { visibility: 'hidden' } : undefined}
                 >
                   {catalog === 'loading' && (
@@ -933,6 +938,8 @@ export function KioskView() {
                 })()}
 
                 {overlay && <KioskNotice {...overlay} />}
+
+                {welcome && <KioskWelcome films={filmsForTab(films, firstNonEmptyTab(films), 'rayon')} hint={quitHint} onEnter={() => setWelcome(false)} onQuit={quit} />}
 
                 {/* Allumage des tubes du rétroéclairage : l'écran part du noir et monte, un peu chaud et terne. */}
                 {warming && <div className={styles.kWarm} aria-hidden="true" onAnimationEnd={() => setWarming(false)} />}

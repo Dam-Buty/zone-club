@@ -60,6 +60,9 @@ async function entre(page) {
   if (!(await page.locator('[class*="KioskView_ks__"]').count())) await page.locator('button[aria-label="Ouvrir la borne de location"]').first().tap();
   await page.waitForSelector('[class*="KioskView_ks__"]');
   await page.waitForTimeout(1500);
+  // La borne s'ouvre sur son écran d'accueil : un appui ouvre le catalogue.
+  await page.locator('[data-testid="borne-accueil"] button').first().tap();
+  await page.waitForSelector('[data-testid="borne-accueil"]', { state: 'detached' });
 }
 
 // Rend [écart moyen absolu, biais signé] (niveaux sur 255) — voir ecart.py.

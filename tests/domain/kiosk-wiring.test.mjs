@@ -984,3 +984,17 @@ test('DISTRIBUTION FILMÉE: l\'écran filmé est le vrai écran de la borne, rem
   const css = readText(path.join(ROOT, 'src/components/kiosk/KioskView.module.css'));
   assert.ok(css.includes('.ksLifted'), 'l\'écran passe au-dessus de la vidéo le temps du film');
 });
+test('ACCUEIL: la borne s\'ouvre sur son écran d\'accueil, et un appui ouvre le catalogue', () => {
+  const view = readText(path.join(ROOT, 'src/components/kiosk/KioskView.tsx'));
+  assert.ok(/const \[welcome, setWelcome\] = useState\(true\)/.test(view), 'à l\'ouverture, personne n\'a encore touché la borne');
+  assert.ok(!view.includes("has('accueil')"), 'plus de paramètre d\'adresse de maquette');
+  assert.ok(view.includes('<KioskWelcome') && view.includes('onEnter={() => setWelcome(false)}'), 'un appui ouvre le catalogue');
+  assert.ok(/className=\{styles\.kTop\} inert=\{welcome \|\|/.test(view) && /inert=\{welcome \|\| overlay !== null \|\| distribution !== null \|\| authVisible \|\| mode === 'search'/.test(view), 'sous l\'accueil, la barre et le parcours ne reçoivent ni appui ni clavier');
+  assert.ok(view.includes('hint={quitHint}'), 'le geste retour éclaire « Quitter » sur l\'accueil aussi');
+  const src = readText(path.join(ROOT, 'src/components/kiosk/KioskWelcome.tsx'));
+  assert.ok(src.includes('Club LaZone') && src.includes('Touchez l\'écran') && src.includes('pour louer une K7'), 'le nom du vidéoclub et l\'invitation');
+  assert.ok(src.includes("matchMedia('(prefers-reduced-motion: reduce)')"), 'animations réduites : les jaquettes ne défilent pas');
+  assert.ok(!src.includes('LAZONE.EXE') && !src.includes('ticker'), 'ni ligne de commande ni bandeau défilant (retirés par Rusmir le 23/11/2026)');
+  const css = readText(path.join(ROOT, 'src/components/kiosk/KioskWelcome.module.css'));
+  assert.ok(css.includes('"VT323"') && !/mix-blend-mode|backdrop-filter|[^-]filter\s*:/.test(css), 'police d\'ordinateur des années 90 ; ni filtre ni mode de fusion');
+});
