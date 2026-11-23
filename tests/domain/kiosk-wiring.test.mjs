@@ -977,7 +977,7 @@ test('DISTRIBUTION FILMÉE: le crochet attend la vidéo, le suivi et les deux pl
 });
 test('DISTRIBUTION FILMÉE: l\'écran filmé est le vrai écran de la borne, remis exactement à sa place à la fin', () => {
   const view = readText(path.join(ROOT, 'src/components/kiosk/KioskView.tsx'));
-  assert.ok(view.includes('stageRect(') && view.includes('screenTransform(') && view.includes('screenClip('), 'cadre calé sur le vrai écran, écran placé et rogné au cadre');
+  assert.ok(view.includes('stageFor(') && view.includes('screenTransform(') && view.includes('screenClip('), 'cadre calé sur le vrai écran, écran placé et rogné au cadre');
   assert.ok(view.includes("style.transform = ''") && view.includes("style.clipPath = ''"), 'aucune transformation ne reste après la vidéo');
   assert.ok(/addEventListener\('resize', [^)]*\)/.test(view) && view.includes('distributionFilm.skip'), 'fenêtre redimensionnée pendant la vidéo : on passe au panneau');
   assert.ok(view.indexOf('<KioskDistributionFilm') < view.indexOf('className={styles.sign}'), 'la vidéo est dans la borne, sous son écran et au-dessus du reste');

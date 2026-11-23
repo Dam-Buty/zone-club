@@ -13,7 +13,7 @@ import { KioskCastBar } from './KioskCastBar';
 import { KioskDetail } from './KioskDetail';
 import { KioskReady, KioskWaiting } from './KioskDistribution';
 import { KioskDistributionFilm, type KioskDistributionFilmHandle } from './KioskDistributionFilm';
-import { screenClip, screenTransform, stageRect, transformCss, yearOf, type DistributionFilm, type Rect, type Suivi } from './kiosk-distribution-logic';
+import { screenClip, screenTransform, stageFor, transformCss, yearOf, type DistributionFilm, type Rect, type Suivi } from './kiosk-distribution-logic';
 import { useDistributionFilm } from './useDistributionFilm';
 import distributionData from '../../data/kiosk-distribution.json';
 import { KioskAccount } from './KioskAccount';
@@ -333,8 +333,10 @@ export function KioskView() {
   // (KioskDistributionFilm) et l'ÉCRAN — qui n'est pas filmé : c'est le vrai, celui-ci, déplacé et mis à l'échelle
   // dans la boîte de l'écran filmé. Le cadre de la vidéo est calé pour que cet écran ne bouge pas à la première image.
   const filmLayerRef = useRef<KioskDistributionFilmHandle | null>(null);
-  const filmGeometryRef = useRef<{ stage: Rect; screen: Rect } | null>(null);
+  const filmGeometryRef = useRef<{ stage: Rect; screen: Rect; exact: boolean } | null>(null);
   const [filmStage, setFilmStage] = useState<Rect | null>(null);
+  // Écran d'autres proportions que l'écran filmé (PC) : il est posé sans déformation sur un fond qui couvre l'écran filmé.
+  const [filmLetterbox, setFilmLetterbox] = useState(false);
   const releaseScreen = useCallback(() => {
     filmGeometryRef.current = null;
     const screen = screenRef.current;
@@ -350,12 +352,13 @@ export function KioskView() {
       // Premier appel d'un lancement : l'écran est encore à sa place, on la relève et on cale le cadre dessus.
       const r = screen.getBoundingClientRect();
       const rect = { left: r.left, top: r.top, width: r.width, height: r.height };
-      const stage = stageRect(suivi.pas[0].e, rect, DISTRIBUTION_FILM.largeur / DISTRIBUTION_FILM.hauteur);
-      filmGeometryRef.current = { stage, screen: rect };
+      const { cadre: stage, exact } = stageFor(suivi.pas[0].e, rect, DISTRIBUTION_FILM.largeur / DISTRIBUTION_FILM.hauteur, { width: window.innerWidth, height: window.innerHeight });
+      filmGeometryRef.current = { stage, screen: rect, exact };
       setFilmStage(stage);
+      setFilmLetterbox(!exact);
     }
-    const { stage, screen: rect } = filmGeometryRef.current;
-    const t = screenTransform(pas.e, stage, rect);
+    const { stage, screen: rect, exact } = filmGeometryRef.current;
+    const t = screenTransform(pas.e, stage, rect, exact);
     screen.style.transform = transformCss(t);
     screen.style.clipPath = screenClip(t, stage, rect);
     filmLayerRef.current?.place(index, suivi);
@@ -776,6 +779,7 @@ export function KioskView() {
         player={distributionFilm}
         active={filmPlaying}
         stage={filmStage}
+        letterbox={filmLetterbox}
         rented={distributionRented}
       />
       <div className={styles.sign} aria-hidden="true">

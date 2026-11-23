@@ -33,6 +33,13 @@
   height: 100%;
 }
 
+/* PC : l'écran de la borne (2:3) n'a pas les proportions de l'écran filmé (5:9). Il y est posé sans déformation ; ce
+   fond couvre l'écran filmé autour de lui, de la couleur des bords de la dalle. */
+.screenBack {
+  position: absolute;
+  background: #01040d;
+}
+
 /* La tranche du film loué, dans la boîte de la tranche de la K7 à cette image. Le cache de l'image la découpe : c'est
    une planche d'images dont la borne règle la taille et la position (mask-size, mask-position). */
 .spine {

@@ -107,10 +107,38 @@ export function stageRect(ecran0: Box, ecranBorne: Rect, ratio: number): Rect {
 }
 
 /**
- * Ce qu'il faut faire subir au vrai écran de la borne (origine en haut à gauche) pour qu'il occupe la boîte de l'écran
- * filmé. `ecranBorne` est sa place AVANT toute transformation.
+ * Le cadre de la vidéo pour cette borne. Quand son écran a les proportions de l'écran filmé (téléphone, 5:9), c'est
+ * `stageRect` : raccord exact. Sinon (PC : écran 2:3) aucun cadre ne peut à la fois tenir dans la fenêtre et faire
+ * coïncider les deux écrans : le cadre tient alors EN ENTIER dans la fenêtre, centré sur l'écran de la borne, et le
+ * vrai écran y est placé sans déformation (`screenTransform(…, false)`).
  */
-export function screenTransform(ecranFilme: Box, cadre: Rect, ecranBorne: Rect): { tx: number; ty: number; sx: number; sy: number } {
+export function stageFor(ecran0: Box, ecranBorne: Rect, ratio: number, fenetre: { width: number; height: number }): { cadre: Rect; exact: boolean } {
+  const filme = ((ecran0[2] - ecran0[0]) * ratio) / (ecran0[3] - ecran0[1]);
+  const reel = ecranBorne.width / ecranBorne.height;
+  if (Math.abs(reel - filme) / filme < 0.02) return { cadre: stageRect(ecran0, ecranBorne, ratio), exact: true };
+  const height = Math.min(fenetre.height, fenetre.width / ratio);
+  const width = height * ratio;
+  const left = Math.min(Math.max(0, ecranBorne.left + ecranBorne.width / 2 - width / 2), fenetre.width - width);
+  return { cadre: { left, top: (fenetre.height - height) / 2, width, height }, exact: false };
+}
+
+/**
+ * Ce qu'il faut faire subir au vrai écran de la borne (origine en haut à gauche) pour qu'il occupe la boîte de l'écran
+ * filmé. `ecranBorne` est sa place AVANT toute transformation. `exact` faux (écran d'autres proportions que l'écran
+ * filmé) : il garde ses proportions, au plus grand qui tient dans la boîte, centré.
+ */
+export function screenTransform(ecranFilme: Box, cadre: Rect, ecranBorne: Rect, exact = true): { tx: number; ty: number; sx: number; sy: number } {
+  if (!exact) {
+    const w = (ecranFilme[2] - ecranFilme[0]) * cadre.width;
+    const h = (ecranFilme[3] - ecranFilme[1]) * cadre.height;
+    const s = Math.min(w / ecranBorne.width, h / ecranBorne.height);
+    return {
+      tx: cadre.left + ecranFilme[0] * cadre.width + (w - ecranBorne.width * s) / 2 - ecranBorne.left,
+      ty: cadre.top + ecranFilme[1] * cadre.height + (h - ecranBorne.height * s) / 2 - ecranBorne.top,
+      sx: s,
+      sy: s,
+    };
+  }
   return {
     tx: cadre.left + ecranFilme[0] * cadre.width - ecranBorne.left,
     ty: cadre.top + ecranFilme[1] * cadre.height - ecranBorne.top,

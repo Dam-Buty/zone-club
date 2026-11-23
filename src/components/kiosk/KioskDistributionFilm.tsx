@@ -35,17 +35,20 @@ interface KioskDistributionFilmProps {
   active: boolean;
   /** Le cadre de la vidéo, calé sur le vrai écran de la borne ; `null` hors de la phase « film ». */
   stage: Rect | null;
+  /** L'écran de la borne n'a pas les proportions de l'écran filmé (PC) : un fond couvre l'écran filmé, sous le vrai. */
+  letterbox: boolean;
   /** Le film dont la confirmation est ouverte ou qui vient d'être loué : sa tranche est demandée d'avance. */
   rented: { title: string; tmdbId: number | null; year: number | null } | null;
 }
 
 export const KioskDistributionFilm = forwardRef<KioskDistributionFilmHandle, KioskDistributionFilmProps>(function KioskDistributionFilm(
-  { film, sheets, player, active, stage, rented },
+  { film, sheets, player, active, stage, letterbox, rented },
   ref,
 ) {
   const spineRef = useRef<HTMLDivElement | null>(null);
   const artRef = useRef<HTMLDivElement | null>(null);
   const shadeRef = useRef<HTMLDivElement | null>(null);
+  const backRef = useRef<HTMLDivElement | null>(null);
   // Tranche préparée introuvable pour ce film : repli (tranche neutre usée + titre écrit ici).
   const [missing, setMissing] = useState<number | null>(null);
 
@@ -58,6 +61,14 @@ export const KioskDistributionFilm = forwardRef<KioskDistributionFilmHandle, Kio
         const shade = shadeRef.current;
         const pas = suivi.pas[index];
         if (!spine || !art || !shade || !pas) return;
+        const back = backRef.current;
+        if (back) {
+          const screenBox = boxStyle(pas.e);
+          back.style.left = screenBox.left;
+          back.style.top = screenBox.top;
+          back.style.width = screenBox.width;
+          back.style.height = screenBox.height;
+        }
         if (pas.t === null) {
           spine.style.visibility = 'hidden';
           return;
@@ -93,6 +104,8 @@ export const KioskDistributionFilm = forwardRef<KioskDistributionFilmHandle, Kio
     <div className={`${styles.film} ${shown ? styles.filmShown : ''}`} aria-hidden={!shown} onClick={shown ? player.skip : undefined}>
       <div className={styles.stage} style={stageStyle}>
         <video ref={player.videoRef} className={styles.video} src={player.src ?? undefined} playsInline preload="auto" width={film.largeur} height={film.hauteur} />
+
+        {letterbox && <div ref={backRef} className={styles.screenBack} data-testid="distribution-fond-ecran" />}
 
         <div
           ref={spineRef}

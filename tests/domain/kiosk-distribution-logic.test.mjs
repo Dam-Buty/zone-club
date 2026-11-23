@@ -91,3 +91,43 @@ test('distribution : l\'année se lit dans la date de sortie, et son absence ne 
   assert.equal(D.yearOf(undefined), null);
   assert.equal(D.wearLevel(D.yearOf('1968-12-21')), 3);
 });
+
+// ----- Écran qui n'a pas les proportions de l'écran filmé (PC : 2:3 contre 5:9) -----
+const E0 = [0.0921, 0.0902, 0.9079, 0.9098];
+const RATIO = 720 / 1290;
+
+test('distribution : sur téléphone (écran 5:9), le cadre reste calé exactement sur le vrai écran', () => {
+  const borne = { left: 6, top: 72, width: 400, height: 720 };
+  const s = D.stageFor(E0, borne, RATIO, { width: 412, height: 915 });
+  assert.equal(s.exact, true);
+  assert.deepEqual(s.cadre, D.stageRect(E0, borne, RATIO));
+});
+
+test('distribution : sur PC (écran 2:3), le cadre tient en entier dans la fenêtre, centré sur l\'écran de la borne', () => {
+  const borne = { left: 412, top: 27, width: 564, height: 846 };
+  const s = D.stageFor(E0, borne, RATIO, { width: 1440, height: 900 });
+  assert.equal(s.exact, false);
+  assert.equal(s.cadre.top, 0);
+  assert.equal(s.cadre.height, 900);
+  assert.ok(Math.abs(s.cadre.width - 900 * RATIO) < 1e-6);
+  assert.ok(Math.abs(s.cadre.left + s.cadre.width / 2 - (412 + 282)) < 1e-6, 'centré sur l\'écran');
+});
+
+test('distribution : fenêtre de PC étroite ou basse — le cadre ne sort jamais de la fenêtre', () => {
+  const s = D.stageFor(E0, { left: 0, top: 20, width: 300, height: 450 }, RATIO, { width: 800, height: 500 });
+  assert.ok(s.cadre.left >= 0 && s.cadre.top >= 0 && s.cadre.left + s.cadre.width <= 800 + 1e-6 && s.cadre.top + s.cadre.height <= 500 + 1e-6);
+  const etroit = D.stageFor(E0, { left: 10, top: 10, width: 180, height: 270 }, RATIO, { width: 200, height: 900 });
+  assert.ok(Math.abs(etroit.cadre.width - 200) < 1e-6 && Math.abs(etroit.cadre.height - 200 / RATIO) < 1e-6);
+});
+
+test('distribution : dans un cadre non exact, le vrai écran garde ses proportions, centré dans l\'écran filmé', () => {
+  const borne = { left: 412, top: 27, width: 564, height: 846 };
+  const { cadre } = D.stageFor(E0, borne, RATIO, { width: 1440, height: 900 });
+  const t = D.screenTransform(E0, cadre, borne, false);
+  assert.equal(t.sx, t.sy, 'pas de déformation');
+  const boiteL = (E0[2] - E0[0]) * cadre.width, boiteH = (E0[3] - E0[1]) * cadre.height;
+  assert.ok(564 * t.sx <= boiteL + 1e-6 && 846 * t.sy <= boiteH + 1e-6, 'il tient dans l\'écran filmé');
+  const centreX = 412 + t.tx + (564 * t.sx) / 2, centreY = 27 + t.ty + (846 * t.sy) / 2;
+  assert.ok(Math.abs(centreX - (cadre.left + ((E0[0] + E0[2]) / 2) * cadre.width)) < 1e-6);
+  assert.ok(Math.abs(centreY - (cadre.top + ((E0[1] + E0[3]) / 2) * cadre.height)) < 1e-6);
+});
