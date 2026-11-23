@@ -36,6 +36,19 @@ export type Suivi = {
 /** La forme de `film` dans `src/data/kiosk-distribution.json` (`distribution_sorties.py`). */
 export type DistributionFilm = { src: string; largeur: number; hauteur: number; dureeMs: number; octets: number };
 
+/**
+ * Une distribution filmée et ce qui l'accompagne. Deux variantes (`distribution_sorties.py`) : celle du téléphone
+ * (écran 5:9, borne seule) et celle du PC (écran 2:3, la borne dans la rue), qui a en plus son DÉCOR — la première
+ * image du film, en haute définition, que la page garde derrière l'écran de la borne.
+ */
+export type DistributionVariant = {
+  film: DistributionFilm;
+  suivi: string;
+  caches: string;
+  ombres: string;
+  decor?: { src: string; largeur: number; hauteur: number; ecran: Box };
+};
+
 export type WearLevel = 1 | 2 | 3;
 
 /** Un rectangle à l'écran, en points CSS (ce que rend `getBoundingClientRect`). */
@@ -78,6 +91,17 @@ export function frameAt(mediaTimeS: number, suivi: Pick<Suivi, 'images' | 'ips'>
 export function boxStyle(box: Box): { left: string; top: string; width: string; height: string } {
   const pct = (v: number) => `${v * 100}%`;
   return { left: pct(box[0]), top: pct(box[1]), width: pct(box[2] - box[0]), height: pct(box[3] - box[1]) };
+}
+
+/**
+ * Place du décor (PC), en pourcentages de la boîte du VRAI écran de la borne : l'écran filmé du décor (`ecran`, en
+ * fractions du décor) tombe alors exactement sur lui, quelle que soit la taille de la fenêtre.
+ */
+export function decorStyle(ecran: Box): { left: string; top: string; width: string; height: string } {
+  const w = ecran[2] - ecran[0];
+  const h = ecran[3] - ecran[1];
+  const pct = (v: number) => `${v * 100}%`;
+  return { left: pct(-ecran[0] / w), top: pct(-ecran[1] / h), width: pct(1 / w), height: pct(1 / h) };
 }
 
 /**

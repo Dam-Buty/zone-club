@@ -13,7 +13,7 @@ import { KioskCastBar } from './KioskCastBar';
 import { KioskDetail } from './KioskDetail';
 import { KioskReady, KioskWaiting } from './KioskDistribution';
 import { KioskDistributionFilm, type KioskDistributionFilmHandle } from './KioskDistributionFilm';
-import { screenClip, screenTransform, stageFor, transformCss, yearOf, type DistributionFilm, type Rect, type Suivi } from './kiosk-distribution-logic';
+import { decorStyle, screenClip, screenTransform, stageFor, transformCss, yearOf, type DistributionVariant, type Rect, type Suivi } from './kiosk-distribution-logic';
 import { useDistributionFilm } from './useDistributionFilm';
 import distributionData from '../../data/kiosk-distribution.json';
 import { KioskAccount } from './KioskAccount';
@@ -48,14 +48,18 @@ import {
 import states from './KioskStates.module.css';
 import styles from './KioskView.module.css';
 
-// La vidéo de distribution et son arrêt sur la fente, écrits par tools/devanture-borne/distribution_sorties.py.
-const DISTRIBUTION_FILM: DistributionFilm = distributionData.film;
-// Ce qui accompagne la vidéo (distribution_planches.py) : où sont la K7 et l'écran à chaque image, et les deux planches.
-const DISTRIBUTION_ASSETS = {
+// La vidéo de distribution, écrite par tools/devanture-borne/distribution_sorties.py, et ce qui l'accompagne
+// (distribution_planches.py) : où sont la K7 et l'écran à chaque image, et les deux planches.
+const MOBILE_DISTRIBUTION: DistributionVariant = {
+  film: distributionData.film,
   suivi: '/kiosk-distribution-suivi.json',
   caches: '/kiosk-distribution-caches.webp',
   ombres: '/kiosk-distribution-ombres.webp',
 };
+// Le PC a son film (Rusmir, 23/11/2026) : la borne modélisée dans la rue, vue comme à la fin du film d'approche, écran
+// en 2:3 — et son décor, la première image de ce film, gardé derrière l'écran. Absent des données : le PC prend le film
+// du téléphone, sans décor.
+const PC_DISTRIBUTION: DistributionVariant | null = (distributionData as unknown as { pc?: DistributionVariant }).pc ?? null;     // (le JSON type l'écran en number[], pas en boîte de quatre)
 
 // Borne de location : seconde façon de louer, sans aucun rendu 3D. Cette coque porte le corps
 // de la borne (métal, enseigne, fente, vitrines), son écran, la barre du haut et les messages ;
@@ -132,6 +136,17 @@ function useScreenDensity(): number | undefined {
 
 /** Même requête que la feuille de style : l'écran 2:3 du PC garde sa mise en page fixe. */
 const PC_QUERY = '(min-width: 769px) and (pointer: fine)';
+
+function useIsPc(): boolean {
+  const [isPc, setIsPc] = useState(() => typeof window !== 'undefined' && window.matchMedia(PC_QUERY).matches);
+  useEffect(() => {
+    const query = window.matchMedia(PC_QUERY);
+    const update = () => setIsPc(query.matches);
+    query.addEventListener('change', update);
+    return () => query.removeEventListener('change', update);
+  }, []);
+  return isPc;
+}
 
 /**
  * Sur un téléphone, la mise en page de l'écran de la borne dépend de sa taille réelle : chaque
@@ -332,6 +347,14 @@ export function KioskView() {
   // Pendant la vidéo, deux choses suivent chaque image qu'elle présente, hors de React : la tranche du film sur la K7
   // (KioskDistributionFilm) et l'ÉCRAN — qui n'est pas filmé : c'est le vrai, celui-ci, déplacé et mis à l'échelle
   // dans la boîte de l'écran filmé. Le cadre de la vidéo est calé pour que cet écran ne bouge pas à la première image.
+  const isPc = useIsPc();
+  const variant = isPc && PC_DISTRIBUTION ? PC_DISTRIBUTION : MOBILE_DISTRIBUTION;
+  const variantAssets = useMemo(() => ({ suivi: variant.suivi, caches: variant.caches, ombres: variant.ombres }), [variant]);
+  const filmRatioRef = useRef(variant.film.largeur / variant.film.hauteur);
+  useEffect(() => { filmRatioRef.current = variant.film.largeur / variant.film.hauteur; }, [variant]);
+  // Le décor (PC) : s'il ne se charge pas, la borne dessinée reprend sa place.
+  const [decorFailed, setDecorFailed] = useState(false);
+  const decor = variant.decor && !decorFailed ? variant.decor : null;
   const filmLayerRef = useRef<KioskDistributionFilmHandle | null>(null);
   const filmGeometryRef = useRef<{ stage: Rect; screen: Rect; exact: boolean } | null>(null);
   const [filmStage, setFilmStage] = useState<Rect | null>(null);
@@ -352,7 +375,7 @@ export function KioskView() {
       // Premier appel d'un lancement : l'écran est encore à sa place, on la relève et on cale le cadre dessus.
       const r = screen.getBoundingClientRect();
       const rect = { left: r.left, top: r.top, width: r.width, height: r.height };
-      const { cadre: stage, exact } = stageFor(suivi.pas[0].e, rect, DISTRIBUTION_FILM.largeur / DISTRIBUTION_FILM.hauteur, { width: window.innerWidth, height: window.innerHeight });
+      const { cadre: stage, exact } = stageFor(suivi.pas[0].e, rect, filmRatioRef.current, { width: window.innerWidth, height: window.innerHeight });
       filmGeometryRef.current = { stage, screen: rect, exact };
       setFilmStage(stage);
       setFilmLetterbox(!exact);
@@ -369,9 +392,9 @@ export function KioskView() {
     setDistribution((d) => (d?.phase === 'film' ? { phase: 'ready', filmId: d.filmId, fresh: true } : d));
   }, [releaseScreen]);
   const distributionFilm = useDistributionFilm({
-    url: DISTRIBUTION_FILM.src,
-    assets: DISTRIBUTION_ASSETS,
-    durationMs: DISTRIBUTION_FILM.dureeMs,
+    url: variant.film.src,
+    assets: variantAssets,
+    durationMs: variant.film.dureeMs,
     load: filmWanted,
     onFrame: onFilmFrame,
     onDone: onFilmDone,
@@ -769,13 +792,13 @@ export function KioskView() {
 
   return (
     <>
-    <div className={`${styles.root} ${hidden ? states.rootHidden : ''}`} inert={isPlayerOpen || hidden} onContextMenu={blockContextMenu}>
+    <div className={`${styles.root} ${hidden ? states.rootHidden : ''}`} data-decor={decor ? '' : undefined} inert={isPlayerOpen || hidden} onContextMenu={blockContextMenu}>
       {/* La vidéo de distribution : dans la borne, sous son écran (qui est l'écran filmé) et au-dessus de tout le reste.
           Toujours montée, pour que le crochet trouve sa balise à la réponse du serveur ; visible en phase « film ». */}
       <KioskDistributionFilm
         ref={filmLayerRef}
-        film={DISTRIBUTION_FILM}
-        sheets={DISTRIBUTION_ASSETS}
+        film={variant.film}
+        sheets={variantAssets}
         player={distributionFilm}
         active={filmPlaying}
         stage={filmStage}
@@ -792,6 +815,9 @@ export function KioskView() {
 
         <div className={styles.column}>
           <div className={styles.bezel}>
+            <div className={styles.ksPlace}>
+            {/* PC : la borne modélisée, derrière son écran — la première image du film de distribution. */}
+            {decor && <img className={styles.decor} src={decor.src} alt="" width={decor.largeur} height={decor.hauteur} style={decorStyle(decor.ecran)} decoding="async" draggable={false} onError={() => setDecorFailed(true)} />}
             <div ref={screenRef} className={`${styles.ks} ${filmPlaying ? styles.ksLifted : ''}`} style={{ '--k-dpx': lcdDevicePixel(density), '--k-lcd-n': lcdPitchInDevicePixels(density) } as CSSProperties}>
               <div className={styles.screen} data-mode={mode} data-cast-bar={castBarFilm !== null || undefined} style={layoutVars}>
                 <div className={styles.kTop} inert={welcome || overlay !== null || distribution !== null}>
@@ -951,6 +977,7 @@ export function KioskView() {
                 {/* Fourmillement de la dalle (FRC) : décor, au-dessus de tout ce que l'écran affiche. */}
                 <div className={styles.kFrc} aria-hidden="true" />
               </div>
+            </div>
             </div>
           </div>
 

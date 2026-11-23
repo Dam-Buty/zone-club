@@ -131,3 +131,24 @@ test('distribution : dans un cadre non exact, le vrai écran garde ses proportio
   assert.ok(Math.abs(centreX - (cadre.left + ((E0[0] + E0[2]) / 2) * cadre.width)) < 1e-6);
   assert.ok(Math.abs(centreY - (cadre.top + ((E0[1] + E0[3]) / 2) * cadre.height)) < 1e-6);
 });
+
+// ----- PC : le décor de la borne modélisée derrière l'écran, et le film rendu pour l'écran 2:3 -----
+test('distribution PC : le décor se place pour que son écran filmé tombe exactement sur le vrai écran', () => {
+  const ecran = [0.263549, 0.03, 0.596466, 0.97];
+  const s = D.decorStyle(ecran);
+  const pct = (v) => parseFloat(v) / 100;
+  // en fractions de la boîte de l'écran : le décor commence avant lui et le dépasse
+  assert.ok(Math.abs(pct(s.width) - 1 / (ecran[2] - ecran[0])) < 1e-6 && Math.abs(pct(s.height) - 1 / (ecran[3] - ecran[1])) < 1e-6);
+  assert.ok(Math.abs(pct(s.left) + ecran[0] / (ecran[2] - ecran[0])) < 1e-6 && Math.abs(pct(s.top) + ecran[1] / (ecran[3] - ecran[1])) < 1e-6);
+  // l'écran filmé, replacé dans le décor ainsi posé, est la boîte de l'écran elle-même (0 → 1)
+  assert.ok(Math.abs(pct(s.left) + ecran[0] * pct(s.width)) < 1e-9 && Math.abs(pct(s.left) + ecran[2] * pct(s.width) - 1) < 1e-9);
+});
+
+test('distribution PC : le film du PC part d\'un écran 2:3 — le cadre est exact, sans bande ni saut', () => {
+  const ecran0 = [0.263549, 0.03, 0.596466, 0.97];
+  const borne = { left: 412, top: 27, width: 564, height: 846 };
+  const s = D.stageFor(ecran0, borne, 1920 / 1020, { width: 1440, height: 900 });
+  assert.equal(s.exact, true);
+  const t = D.screenTransform(ecran0, s.cadre, borne, s.exact);
+  assert.ok(Math.abs(t.tx) < 0.5 && Math.abs(t.ty) < 0.5 && Math.abs(t.sx - 1) < 0.002 && Math.abs(t.sy - 1) < 0.002, JSON.stringify(t));
+});

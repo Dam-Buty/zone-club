@@ -284,6 +284,49 @@
   }
 }
 
+/* ===== PC, avec le décor : la borne modélisée derrière l'écran =====
+   Le décor est la première image du film de distribution du PC (la borne dans la rue, comme à la fin du film
+   d'approche). Il remplace la borne dessinée — bandes de couleur, cadre, corps — SANS changer aucune cote : l'écran
+   doit rester exactement où le film d'approche l'attend. On efface donc les fonds, les bordures et les ombres, rien
+   d'autre. */
+
+/* La place de l'écran : une boîte à ses mesures, pour y accrocher le décor en pourcentages (decorStyle). */
+.ksPlace {
+  position: relative;
+}
+
+.decor {
+  position: absolute;
+  max-width: none;
+  pointer-events: none;
+  user-select: none;
+}
+
+.root[data-decor] {
+  background: #05050a;
+}
+
+.root[data-decor] .body {
+  background: none;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.root[data-decor] .bezel {
+  background: none;
+  box-shadow: none;
+}
+
+.root[data-decor] .sideVitrine {
+  visibility: hidden;
+}
+
+/* La vitre de la borne modélisée est en retrait dans son cadre : l'écran y est posé sans liseré. */
+.root[data-decor] .ks {
+  box-shadow: none;
+  border-radius: 0;
+}
+
 /* ===== Écran de la borne ===== */
 
 .ks {

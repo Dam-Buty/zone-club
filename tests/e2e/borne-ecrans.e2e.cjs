@@ -16,6 +16,10 @@ const MISE = { mobile: JSON.parse(fs.readFileSync(path.join(RACINE, 'src/data/st
 // Écart toléré entre la dernière image du film d'approche et la page, dans l'écran de la borne (niveaux sur 255, grille
 // grossière d'ecart.py). Le film est une vidéo compressée d'un rendu (vitre, lumière de la rue) ; la page est le vrai
 // écran, curseur et voyant en marche. Voir les mesures en tête de la sortie.
+// Les nouveautés figées sur la devanture (tools/devanture-borne/sources/accueil-nouveautes.json : celles de la production
+// le jour de la capture, « L'Odyssée » en tête). Le test les sert à la page le temps de l'approche et de l'accueil, pour
+// comparer la fin du film à la page à contenu égal ; la base locale a d'autres nouveautés.
+const NOUVEAUTES = fs.readFileSync(path.join(RACINE, 'tools/devanture-borne/sources/accueil-nouveautes.json'), 'utf8');
 const RACCORD_MAX = Number(process.env.E2E_RACCORD_MAX || 22);
 const ECRANS = [
   { nom: 'tel-360x640', w: 360, h: 640, mobile: true },
@@ -46,6 +50,7 @@ async function ecran(b, e) {
   const appuie = (loc) => (e.mobile ? loc.tap() : loc.click());
   const n = e.nom;
   try {
+    await page.route('**/api/films/aisle/nouveautes', (r) => r.fulfill({ contentType: 'application/json', body: NOUVEAUTES }));
     // Toujours partir de la rue : le site se souvient de la scène.
     await page.goto(URL0, { waitUntil: 'load' });
     await page.evaluate(() => { try { localStorage.removeItem('videoclub-storage'); } catch { /* sans stockage */ } });
@@ -96,6 +101,8 @@ async function ecran(b, e) {
       const [ec, biais] = ecart(fp, fa, bx);
       dit(ec <= RACCORD_MAX, `${n} 2  la page ressemble à la fin du film dans l'écran (écart ${ec}, biais ${biais}, seuil ${RACCORD_MAX})`);
     }
+    // Les affiches viennent de TMDB par le relais du site : la première fois, elles mettent un moment.
+    await page.waitForFunction((acc) => [...document.querySelectorAll(`${acc} img`)].every((i) => i.complete && i.naturalWidth > 0), ACCUEIL, { timeout: 10000 }).catch(() => {});
     const a = await page.evaluate(({ acc }) => {
       const racine = document.querySelector(acc);
       const r = (el) => { if (!el) return null; const q = el.getBoundingClientRect(); return [q.left, q.top, q.width, q.height]; };
@@ -137,7 +144,10 @@ async function ecran(b, e) {
       return { titres: (j.films || j).map((f) => f.title), premier: bande[0] ? bande[0].getAttribute('aria-label') : null, choisi: (bande.find((x) => x.getAttribute('aria-pressed') === 'true') || { getAttribute: () => null }).getAttribute('aria-label') };
     });
     dit(rayon.choisi !== null && rayon.choisi === rayon.premier && rayon.titres.includes(rayon.choisi), `${n} 3  le rayon « Action » affiche son premier film (« ${rayon.choisi} »)`);
-    await appuie(page.locator('button[class*="kTab"]', { hasText: /^Nouveautés$/ }).first());
+    // La location se fait dans un rayon de la base locale (les nouveautés servies au test sont celles de la production).
+    await appuie(page.locator('button[class*="kTab"]', { hasText: /^Suite/ }).first());
+    await page.waitForTimeout(300);
+    await appuie(page.locator('button[class*="kTab"]', { hasText: /^Thriller$/ }).first());
     await page.waitForTimeout(400);
 
     // ----- 4. Une location : la distribution -----

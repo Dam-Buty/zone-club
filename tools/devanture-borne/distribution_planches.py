@@ -14,6 +14,8 @@ Les images où la K7 est debout (vitrine) et celles où elle est couchée (fente
 formats différents, l'un sous l'autre. Conception : spec 2026-11-17, § 13.
 """
 import json
+import os
+from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageFilter
@@ -89,6 +91,14 @@ for c in (0, 1):
     teinte = ref.mean(axis=0)
     teinte = teinte / float(teinte @ LUM)
     LUMIERE[c] = {'teinte': teinte, 'lmax': float(np.quantile((vis / teinte) @ LUM, 0.98))}     # hors éclats : l'ombre garde sa finesse
+# LUMIERE_DE=<suivi.json d'une autre variante> : les tranches du site (distribution_tranches_site.py) sont cuites une
+# seule fois, à la lumière du film du téléphone. Le film du PC — même borne, mêmes lampes — reprend donc ses valeurs,
+# pour que la même image de tranche soit juste dans les deux films.
+if os.environ.get('LUMIERE_DE'):
+    _ref = json.loads(Path(os.environ['LUMIERE_DE']).read_text())['lumiere']
+    _propre = {nom: round(LUMIERE[c]['lmax'], 4) for c, nom in ((0, 'debout'), (1, 'couchee'))}
+    LUMIERE = {c: {'teinte': np.array(_ref[nom]['teinte'], np.float32), 'lmax': float(_ref[nom]['lmax'])} for c, nom in ((0, 'debout'), (1, 'couchee'))}
+    print('LUMIÈRE reprise de', os.environ['LUMIERE_DE'], '| lmax propre à ce film :', _propre, '| repris :', {nom: _ref[nom]['lmax'] for nom in _ref})
 hauteurs = {c: -(-(blocs[c][1] - blocs[c][0] + 1) // COLONNES[c]) * CELLULE[c][1] for c in (0, 1)}
 W, H = max(COLONNES[c] * CELLULE[c][0] for c in (0, 1)), hauteurs[0] + hauteurs[1]
 assert W <= 4096 and H <= 4096, (W, H)

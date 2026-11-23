@@ -1008,3 +1008,13 @@ test('BORNE: changer de rayon affiche le premier film de ce rayon', () => {
   assert.ok(/const pickTab = \(id: KioskTab\) => \{[\s\S]{0,260}filmsForTab\(films, id, 'rayon'\)\[0\][\s\S]{0,120}onSelect\(/.test(src), 'le rayon choisi donne son premier film à la fiche');
   assert.ok(src.includes('onClick={() => pickTab(id)}') && !src.includes('onClick={() => setTab(id)}'), 'les boutons de rayon passent par pickTab');
 });
+test('DISTRIBUTION PC: la borne du PC a son film, ses relevés et son décor modélisé derrière l\'écran', () => {
+  const view = readText(path.join(ROOT, 'src/components/kiosk/KioskView.tsx'));
+  assert.ok(view.includes('useIsPc()') && /const variant = isPc && PC_DISTRIBUTION \? PC_DISTRIBUTION : MOBILE_DISTRIBUTION/.test(view), 'le PC prend son film quand il existe, le téléphone garde le sien');
+  assert.ok(view.includes('url: variant.film.src') && view.includes('film={variant.film}'), 'le crochet et le calque reçoivent le film de la variante');
+  assert.ok(view.includes('className={styles.decor}') && view.includes('decorStyle('), 'le décor est posé d\'après la boîte de l\'écran filmé');
+  assert.ok(view.indexOf('className={styles.decor}') < view.indexOf('ref={screenRef}'), 'le décor est sous l\'écran');
+  const css = readText(path.join(ROOT, 'src/components/kiosk/KioskView.module.css'));
+  assert.ok(css.includes('.root[data-decor]') && css.includes('.decor'), 'avec le décor, les bandes de couleur et le cadre dessiné s\'effacent');
+  assert.ok(!/\.root\[data-decor\][^}]*\{[^}]*(padding|gap|width)\s*:/.test(css), 'le décor ne change aucune cote : l\'écran reste où le film d\'approche l\'attend');
+});
