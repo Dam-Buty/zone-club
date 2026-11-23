@@ -995,6 +995,10 @@ test('ACCUEIL: la borne s\'ouvre sur son écran d\'accueil, et un appui ouvre le
   assert.ok(src.includes('Club LaZone') && src.includes('Touchez l\'écran') && src.includes('pour louer une K7'), 'le nom du vidéoclub et l\'invitation');
   assert.ok(src.includes("matchMedia('(prefers-reduced-motion: reduce)')"), 'animations réduites : les jaquettes ne défilent pas');
   assert.ok(!src.includes('LAZONE.EXE') && !src.includes('ticker'), 'ni ligne de commande ni bandeau défilant (retirés par Rusmir le 23/11/2026)');
+  assert.ok(!src.includes('yearOf') && !src.includes('release_date'), 'pas de date sous la jaquette (Rusmir, 23/11/2026)');
+  assert.ok(readText(path.join(ROOT, 'lib/films.ts')).includes('is_nouveaute = 1 AND is_available = 1 ORDER BY created_at DESC, id DESC'), 'les nouveautés vont de la plus récemment arrivée à la plus ancienne');
   const css = readText(path.join(ROOT, 'src/components/kiosk/KioskWelcome.module.css'));
+  assert.ok(css.includes('radial-gradient(86% 47% at 58% 30%, var(--k-bg-stops))'), 'le même fond que l\'écran de la borne');
+  assert.ok(css.includes('var(--k-skin-orange)') && css.includes('border-radius: var(--k-radius)') && !css.includes('welcome-pulse'), 'l\'invitation est un bouton de la borne, sans halo qui pulse');
   assert.ok(css.includes('"VT323"') && !/mix-blend-mode|backdrop-filter|[^-]filter\s*:/.test(css), 'police d\'ordinateur des années 90 ; ni filtre ni mode de fusion');
 });

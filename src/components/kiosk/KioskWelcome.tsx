@@ -6,7 +6,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Film } from '../../types';
 import { posterSrc } from './kiosk-logic';
-import { yearOf } from './kiosk-distribution-logic';
 import styles from './KioskWelcome.module.css';
 
 /** Durée d'affichage d'une nouveauté au centre. */
@@ -18,7 +17,7 @@ export const WELCOME_FILMS = 10;
 const SLOTS = [-2, -1, 0, 1, 2] as const;
 
 interface KioskWelcomeProps {
-  /** Les nouveautés (ou le premier rayon garni), dans l'ordre du catalogue. */
+  /** Les nouveautés, de la plus récemment arrivée au vidéoclub à la plus ancienne (l'ordre de l'API). */
   films: Film[];
   /** Le geste retour ne quitte pas la borne : « Quitter » s'éclaire pour le rappeler. */
   hint: boolean;
@@ -38,7 +37,6 @@ export function KioskWelcome({ films, hint, onEnter, onQuit }: KioskWelcomeProps
 
   const at = (offset: number) => list[(((index + offset) % list.length) + list.length) % list.length];
   const centre = list.length > 0 ? at(0) : null;
-  const year = centre ? yearOf(centre.release_date) : null;
 
   return (
     <div className={styles.welcome} data-testid="borne-accueil">
@@ -70,21 +68,12 @@ export function KioskWelcome({ films, hint, onEnter, onQuit }: KioskWelcomeProps
         </div>
         <div className={styles.caption}>
           {centre ? centre.title : ''}
-          {year !== null && <small>{year}</small>}
         </div>
       </div>
 
       <div className={styles.cta} aria-hidden="true">
-        {/* Le doigt qui touche : un point et ses deux ondes. */}
-        <svg className={styles.ctaHand} viewBox="0 0 26 26">
-          <circle cx="13" cy="13" r="3.4" fill="currentColor" stroke="none" />
-          <circle cx="13" cy="13" r="7.4" />
-          <circle cx="13" cy="13" r="11.4" opacity="0.55" />
-        </svg>
-        <span>
-          Touchez l'écran
-          <small>pour louer une K7</small>
-        </span>
+        <span className={styles.ctaLabel}>Touchez l'écran</span>
+        <span className={styles.ctaSub}>pour louer une K7</span>
       </div>
 
     </div>

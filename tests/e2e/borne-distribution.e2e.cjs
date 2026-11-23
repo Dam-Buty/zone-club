@@ -11,7 +11,7 @@ const CAP = path.join(__dirname, 'captures');
 fs.mkdirSync(CAP, { recursive: true });
 const SUIVI = JSON.parse(fs.readFileSync(path.join(RACINE, 'public/kiosk-distribution-suivi.json'), 'utf8'));
 const FILM = JSON.parse(fs.readFileSync(path.join(RACINE, 'src/data/kiosk-distribution.json'), 'utf8')).film;
-const REFERENCE = { tmdb: 419430, titre: 'Get Out', images: [30, 56, 72, 90, 118, 124, 154] };   // premier film de la bande
+const REFERENCE = { tmdb: 419430, titre: 'Get Out', images: [30, 56, 72, 90, 118, 124, 154] };   // le film des images de référence, choisi par son titre
 // Écart toléré avec la référence, en niveaux sur 255, en moyenne dans la boîte de la K7 (grille grossière, voir
 // ecart.py). La référence est un collage en lumière linéaire sur les images d'origine ; la page n'a qu'une image, un
 // masque et un voile noir, par-dessus une vidéo compressée : mesuré de 3 à 9 le 23/11/2026, biais de luminosité de
@@ -75,6 +75,7 @@ const distance = (a, c) => Math.max(...a.map((v, k) => Math.abs(v - c[k])));
 async function illusion(page, nom) {
   // Avant la location : où est le vrai écran.
   const avant = (await etat(page)).ecran;
+  await choisis(page, REFERENCE.titre);
   const bouton = await loue(page);
   dit(await pretes(page), `${nom} 1  la vidéo se télécharge dès que la confirmation s'ouvre`);
   await bouton.tap();

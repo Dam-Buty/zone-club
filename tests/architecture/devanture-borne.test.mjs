@@ -9,7 +9,7 @@ const T = path.join(ROOT, 'tools/devanture-borne');
 
 test('FABRIQUE: les scripts et les sources de la devanture sont dans le dépôt', () => {
   for (const f of ['fabrique.sh', 'README.md', 'geometrie.json', 'fond.py', 'textures.py', 'neon_graphe.py', 'neon.py', 'borne.py', 'compo.py',
-    'sources/storefront-mobile.jpeg', 'sources/gyro-face.png', 'sources/tranches.json']) {
+    'sources/storefront-mobile.jpeg', 'sources/accueil-face.png', 'sources/accueil-bureau.png', 'sources/tranches.json']) {
     assert.ok(existsSync(path.join(T, f)), f);
   }
 });
@@ -92,7 +92,8 @@ test('VARIANTES: chaque script lit sa géométrie et son dossier par variante.py
 test('VARIANTES: la géométrie du mobile porte ses réglages de pluie, de fond et d\'écran', () => {
   const g = JSON.parse(readFileSync(path.join(T, 'geometrie.json'), 'utf8'));
   assert.equal(g.fond, 'fond.py');
-  assert.equal(g.facade.ecran_image, 'gyro-face.png');
+  // L'écran de la borne vue de la rue est son écran d'accueil, pas la fiche d'un film (Rusmir, 23/11/2026).
+  assert.equal(g.facade.ecran_image, 'accueil-face.png');
   assert.deepEqual(g.pluie, { densite: 0.00016, longueur: [10, 34], pente: 0.06, force: [0.05, 0.22], epaisseur: 1, flou: 0.6 });
 });
 

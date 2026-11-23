@@ -16,7 +16,11 @@
   flex-direction: column;
   gap: 3cqw;
   padding: 2.4cqw 4cqw 4cqw;
-  background: radial-gradient(90% 50% at 50% 52%, var(--k-bg-stops));
+  /* Le fond de l'écran de la borne, à l'identique (.screen de KioskView.module.css) : un bleu vif en haut à droite du
+     centre, qui tombe au noir vers les bords et le bas. */
+  background:
+    linear-gradient(90deg, transparent 0 22%, rgba(150, 212, 255, 0.16) 50%, transparent 78%) 0 11.4cqw / 100% 0.4cqw no-repeat,
+    radial-gradient(86% 47% at 58% 30%, var(--k-bg-stops));
 }
 
 .enter {
@@ -208,53 +212,53 @@
   text-shadow: var(--k-text-shadow);
 }
 
-.caption small {
-  margin-left: 2cqw;
-  font-size: 4.6cqw;
-  font-weight: 600;
-  color: var(--k-ink-soft);
-}
-
-/* ----- l'invitation : l'élément le plus contrasté de l'écran ----- */
+/* ----- l'invitation -----
+   Un bouton de la borne, pas un bouton de page web (retour de Rusmir du 23/11/2026) : le même que « LOUER » — aplat
+   orange à trame fine dans un filet clair cerné d'un trait sombre, angles à peine arrondis, libellé en capitales et
+   sa précision derrière un filet. Pour attirer l'œil, il clignote comme un voyant : par à-coups, sans fondu ni halo. */
 
 .cta {
   flex: none;
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 3cqw;
-  height: 21cqw;
+  gap: 2.6cqw;
+  height: 15cqw;
+  overflow: hidden;
   pointer-events: none;
-  font-size: 9.6cqw;
-  font-weight: 900;
-  line-height: 0.95;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-  color: #fff8ea;
-  text-shadow: 0 0.3cqw 0.1cqw rgba(90, 30, 0, 0.7);
-  border: 0.45cqw solid var(--k-edge-orange);
-  border-radius: 1.2cqw;
+  white-space: nowrap;
+  font-weight: 800;
+  line-height: 1;
+  color: #fbfcf8;
+  text-shadow: 0 0.25cqw 0.12cqw rgba(92, 34, 0, 0.55);
+  border: 0.4cqw solid var(--k-edge-orange);
+  border-radius: var(--k-radius);
   background: var(--k-skin-orange);
-  box-shadow: var(--k-bevel), 0 0 0 0.3cqw rgba(0, 10, 30, 0.6), 0 0 0 0 rgba(255, 170, 60, 0.7);
-  animation: welcome-pulse 1.8s ease-in-out infinite;
+  box-shadow: inset 0 0.25cqw 0 rgba(255, 255, 255, 0.16), 0 0 0 0.25cqw rgba(0, 10, 30, 0.6), 0 0.9cqw 2cqw rgba(0, 0, 20, 0.5);
 }
 
-.cta small {
-  display: block;
-  margin-top: 0.8cqw;
-  font-size: 5.6cqw;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  color: #fff0c9;
+/* Le voyant : un voile clair, allumé une demi-période sur deux. */
+.cta::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgb(255 244 214 / 0.2);
+  animation: welcome-lamp 1.4s steps(1, end) infinite;
 }
 
-.ctaHand {
-  flex: none;
-  width: 13cqw;
-  height: 13cqw;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.6;
+.ctaLabel {
+  font-size: 8.4cqw;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.ctaSub {
+  padding: 0.9cqw 0 0.9cqw 2.6cqw;
+  border-left: 0.3cqw solid rgba(255, 255, 255, 0.55);
+  font-size: 4.9cqw;
+  font-weight: 600;
+  color: #fff1dc;
 }
 
 @keyframes welcome-blink {
@@ -262,8 +266,15 @@
   50% { opacity: 0; }
 }
 
-@keyframes welcome-pulse {
-  0%, 100% { box-shadow: var(--k-bevel), 0 0 0 0.3cqw rgba(0, 10, 30, 0.6), 0 0 0 0 rgba(255, 170, 60, 0.75); }
-  50% { box-shadow: var(--k-bevel), 0 0 0 0.3cqw rgba(0, 10, 30, 0.6), 0 0 0 2.2cqw rgba(255, 170, 60, 0); }
+@keyframes welcome-lamp {
+  0% { opacity: 1; }
+  50% { opacity: 0; }
 }
 
+
+/* Animations réduites : le voyant reste éteint (figé allumé, il délaverait le bouton). */
+@media (prefers-reduced-motion: reduce) {
+  .cta::after {
+    display: none;
+  }
+}

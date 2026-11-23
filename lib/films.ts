@@ -321,7 +321,7 @@ export function getAllAvailableFilmsGroupedByAisle(): Map<string, Film[]> {
 
 export function getNouveautes(): FilmListItem[] {
     return db.prepare(
-        `SELECT ${filmListColumns()} FROM films WHERE is_nouveaute = 1 AND is_available = 1 ORDER BY created_at DESC`
+        `SELECT ${filmListColumns()} FROM films WHERE is_nouveaute = 1 AND is_available = 1 ORDER BY created_at DESC, id DESC`
     ).all().map(parseFilmListRow);
 }
 

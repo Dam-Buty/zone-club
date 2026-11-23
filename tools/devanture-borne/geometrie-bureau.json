@@ -50,7 +50,7 @@
   "agrandissement": 1.3
  },
  "facade": {
-  "ecran_image": "ecran-bureau.png",
+  "ecran_image": "accueil-bureau.png",
   "_": "Façade en coordonnées locales (m) : x de -0,525 (gauche) à +0,525, z depuis le sol. Rectangles [x0, x1, z0, z1]. Ajouté le 17/11 au soir (paiement CB). Le 17/11 au soir : lecteur 85 × 45 mm (fente 60 mm, la carte entre par son petit côté de 54 mm), pavé inox 95 × 90 mm à touches de 17 mm (fiches de pavés 16 touches : 81 à 100 mm), étiquette CB +30 %. Le 18/11 : bloc de l'écran descendu de 10 cm (Rusmir : écran trop haut), son haut aligné sur le vitrage visible de la vitrine de gauche.",
   "vitrine_g": [
    -0.47,
