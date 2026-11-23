@@ -37,7 +37,8 @@
     "loopback:stop": "pactl list short modules | awk '$2 == \"module-loopback\" && /zone-cinema/ {print $1}' | xargs -rn1 pactl unload-module && echo 'Loopback : OFF'",
     "loopback:status": "pactl list short modules | awk '$2 == \"module-loopback\" && /zone-cinema/' | grep -q . && echo 'Loopback : ON' || echo 'Loopback : OFF'",
     "configure:radarr": "npx tsx --env-file=.env scripts/configure-radarr.ts",
-    "test:e2e:borne": "node tests/e2e/borne-distribution.e2e.cjs"
+    "test:e2e:borne": "node tests/e2e/borne-distribution.e2e.cjs",
+    "test:e2e:ecrans": "node tests/e2e/borne-ecrans.e2e.cjs"
   },
   "dependencies": {
     "@ai-sdk/openai": "^4.0.71",
