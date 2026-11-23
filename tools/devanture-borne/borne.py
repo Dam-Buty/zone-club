@@ -237,7 +237,12 @@ pnt = plastic.node_tree
 pp = pnt.nodes['Principled BSDF']
 p_deep, p_scuff, p_grease, _pf = facade_maps(pnt)
 p_marks = math_node(pnt, 'MAXIMUM', math_node(pnt, 'MULTIPLY', p_deep, 0.9), math_node(pnt, 'MULTIPLY', p_scuff, 0.7))
-pnt.links.new(mix_rgb(pnt, p_marks, (0.010, 0.010, 0.011, 1), (0.13, 0.13, 0.135, 1)), pp.inputs['Base Color'])
+# Le panneau qui entoure l'écran : sa clarté se règle ici (Rusmir, 23/11/2026 : « 10 % plus lumineuse »). ECLAT_PANNEAU
+# multiplie ses deux teintes (le fond et les marques) ; la valeur est mesurée sur le rendu, pas devinée.
+# Mesuré le 23/11/2026 sur le panneau à gauche de l'écran (niveau moyen de l'image) : 7,73 à 1,0 ; 9,75 à 1,6 ; 12,54 à
+# 2,4 — soit 1,23 pour gagner 10 %.
+ECLAT_PANNEAU = float(__import__('os').environ.get('ECLAT_PANNEAU', 1.23))
+pnt.links.new(mix_rgb(pnt, p_marks, tuple(v * ECLAT_PANNEAU for v in (0.010, 0.010, 0.011)) + (1,), tuple(v * ECLAT_PANNEAU for v in (0.13, 0.13, 0.135)) + (1,)), pp.inputs['Base Color'])
 p_rough = math_node(pnt, 'ADD', 0.32, math_node(pnt, 'MULTIPLY', p_marks, 0.35))
 pnt.links.new(math_node(pnt, 'SUBTRACT', p_rough, math_node(pnt, 'MULTIPLY', p_grease, 0.15)), pp.inputs['Roughness'])
 p_bump = pnt.nodes.new('ShaderNodeBump')

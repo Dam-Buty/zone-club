@@ -8,6 +8,8 @@ revient à l'écran. « fixe » : il recule, reste sur la borne entière, revien
 L'appareil avance et recule pour de bon (focale fixe, jamais de zoom) et reste face au mur.
 La scène, le robot et la K7 servie sont ceux de distribution_poses.py, exécuté jusqu'à ses vues.
 """
+import json
+import os
 import sys
 from pathlib import Path
 
@@ -168,15 +170,41 @@ else:
 # L'autocollant collé sur la vitre cache la descente de la K7 : retiré pour l'essai (à trancher avec Rusmir).
 bpy.data.objects['autocollant_rosie'].hide_render = _CADRAGE in ('suit', 'fixe')   # Rusmir, 21/11 : il reste sur la vitre
 _D_REF = 6.0                                          # distance au mur pour la borne entière
-scene.render.use_border = False
-scene.render.resolution_x, scene.render.resolution_y = LARGEUR, HAUTEUR
-scene.render.resolution_percentage = 100
-cam_data.shift_x = cam_data.shift_y = 0.0
-cam_data.lens = 36 * _D_REF / _HB                      # focale fixe : le cadre ne change que parce que l'appareil bouge
+# SCENE_SEULE=1 : ce script ne rend rien et ne touche ni à l'appareil ni à la taille de l'image — il habille seulement
+# la scène (étuis en carton usés, lumière douce de la vitrine, qualité photo), robot au repos, pour qui l'exécute :
+# l'image fixe de la devanture (borne_etuis.py) et le film d'approche (approche_rendu.py, SCENE=distribution). La borne
+# que l'on voit de la rue est ainsi exactement celle du film de distribution (Rusmir, 23/11/2026).
+_SEULE = bool(os.environ.get('SCENE_SEULE'))
+if not _SEULE:
+    scene.render.use_border = False
+    scene.render.resolution_x, scene.render.resolution_y = LARGEUR, HAUTEUR
+    scene.render.resolution_percentage = 100
+# TRAJET=<trajet.json> (PC, distribution_pc_trajet.py) : l'appareil suit ce trajet, au format du film d'approche — sa
+# focale et sa taille d'image restent celles de borne.py, seuls sa place et son décentrement changent à chaque image.
+_PC = json.loads(Path(os.environ['TRAJET']).read_text()) if os.environ.get('TRAJET') and not _SEULE else None
+if _PC:
+    assert _PC['ips'] == IPS and len(_PC['images']) == N, 'le trajet doit avoir la cadence et la durée du film'
+    LARGEUR, HAUTEUR = _PC['w'], _PC['h']
+    scene.render.resolution_x, scene.render.resolution_y = LARGEUR, HAUTEUR
+elif not _SEULE:
+    cam_data.shift_x = cam_data.shift_y = 0.0
+    cam_data.lens = 36 * _D_REF / _HB                  # focale fixe : le cadre ne change que parce que l'appareil bouge
+
+
+def appareil(t):
+    """Place l'appareil pour l'instant t ; rend sa distance au mur."""
+    if _PC:
+        f = _PC['images'][min(N - 1, int(round(t * IPS)))]
+        cam.location = (f['cam_x'], -f['d'], f['cam_z'])
+        cam_data.shift_x, cam_data.shift_y = f['shift_x'], f['shift_y']
+        return f['d']
+    hh = piste(HH_T, t)
+    cam.location = (L(piste(CX_T, t)), -_D_REF * hh / _HB, piste(CZ_T, t))
+    return _D_REF * hh / _HB
+
 
 # Essai d'éclairage (LUMIERE=douce) : le tube du haut brûlait la rangée du haut ; moins fort et plus large, les
 # réglettes latérales prennent le relais pour éclairer les tranches de façon égale.
-import os  # noqa: E402
 print('VUE', scene.view_settings.view_transform, scene.view_settings.look, scene.view_settings.exposure)
 if os.environ.get('LUMIERE') == 'douce':
     _SORTIE = _OUT / ('film-' + _CADRAGE + '-douce')
@@ -213,7 +241,8 @@ if _PHOTO:
     cam_data.dof.use_dof = True
     cam_data.dof.aperture_fstop = float(os.environ.get('DIAPH', 8.0))
 # ECHELLE=2 : image deux fois plus fine (1440 × 2580), pour juger les détails sans agrandir une image de 720 points.
-scene.render.resolution_percentage = int(100 * float(os.environ.get('ECHELLE', 1)))
+if not _SEULE:
+    scene.render.resolution_percentage = int(100 * float(os.environ.get('ECHELLE', 1)))
 if _PHOTO:      # textures lues en bicubique : plus nettes que le bilinéaire quand l'appareil s'approche
     for _m in (spine, jaquette):
         for _n in _m.node_tree.nodes:
@@ -227,6 +256,9 @@ print('ESSAI', _CADRAGE, N, 'images | écran', round(_EX, 3), round(_EZ, 3), rou
 if os.environ.get('LISTE'):          # LISTE=1 : les objets de la scène et leurs matières, sans rien rendre
     for _o in sorted(scene.objects, key=lambda o: o.name):
         print('OBJET', _o.type, _o.name, '|', ', '.join(m.name for m in getattr(_o.data, 'materials', []) if m), flush=True)
+    _CHOIX = []
+if _SEULE:
+    applique_etat(0.0)
     _CHOIX = []
 # ----- SUIVI=1 : aucun rendu — où est la K7 à chaque image (pour poser la tranche du film loué pendant tout le trajet) -----
 if os.environ.get('SUIVI'):
@@ -260,8 +292,7 @@ if os.environ.get('SUIVI'):
     for _i in range(N):
         _t = _i / IPS
         applique_etat(_t)
-        _hh = piste(HH_T, _t)
-        cam.location = (L(piste(CX_T, _t)), -_D_REF * _hh / _HB, piste(CZ_T, _t))
+        _dist = appareil(_t)
         bpy.context.view_layer.update()
         _vs = [K7.matrix_world @ v.co for v in K7.data.vertices]
         _pr = [_proj(scene, cam, _rosie.matrix_world @ v.co) for v in _rosie.data.vertices]
@@ -303,10 +334,9 @@ if os.environ.get('PASSES'):
     for _i in _liste:
         _t = _i / IPS
         applique_etat(_t)
-        _hh = piste(HH_T, _t)
-        cam.location = (L(piste(CX_T, _t)), -_D_REF * _hh / _HB, piste(CZ_T, _t))
+        _dist = appareil(_t)
         if _PHOTO:
-            cam_data.dof.focus_distance = _D_REF * _hh / _HB + (Y_RACK_G if _t < 4.6 else YB)
+            cam_data.dof.focus_distance = _dist + (Y_RACK_G if _t < 4.6 else YB)
         bpy.context.view_layer.update()
         _pr = [_proj2(scene, cam, K7.matrix_world @ v.co) for v in K7.data.vertices]
         _x0, _x1 = max(0.0, min(q.x for q in _pr) - 0.006), min(1.0, max(q.x for q in _pr) + 0.006)
@@ -342,24 +372,22 @@ if os.environ.get('PASSES'):
 for _i in _CHOIX:
     _t = _i / IPS
     applique_etat(_t)
-    _hh = piste(HH_T, _t)
-    cam.location = (L(piste(CX_T, _t)), -_D_REF * _hh / _HB, piste(CZ_T, _t))
+    _dist = appareil(_t)
     if _PHOTO:      # la mise au point suit le sujet : les tranches tant que le robot travaille, puis la fente
-        cam_data.dof.focus_distance = _D_REF * _hh / _HB + (Y_RACK_G if _t < 4.6 else YB)
+        cam_data.dof.focus_distance = _dist + (Y_RACK_G if _t < 4.6 else YB)
     scene.render.filepath = str(_SORTIE / f'img_{_i:04d}.png')
     bpy.ops.render.render(write_still=True)
     print('IMAGE', _i, round(_t, 3), flush=True)
 
 # ----- l'arrêt sur la fente : où la page pose la tranche du film loué et le texte de l'afficheur -----
-if _CADRAGE == 'mixte' and not os.environ.get('PASSES') and not os.environ.get('SUIVI') and not os.environ.get('LISTE'):
+if _CADRAGE == 'mixte' and not _SEULE and not os.environ.get('PASSES') and not os.environ.get('SUIVI') and not os.environ.get('LISTE'):
     import json  # noqa: E402
     from bpy_extras.object_utils import world_to_camera_view  # noqa: E402
     from mathutils import Vector  # noqa: E402
     _t = 6.4
     assert CALQUES[0] >= ARRET_K7 and CALQUES[1] <= FIXE[1] and CALQUES[0] >= FIXE[0] and CALQUES[1] - CALQUES[0] >= 1.0
     applique_etat(_t)
-    _hh = piste(HH_T, _t)
-    cam.location = (L(piste(CX_T, _t)), -_D_REF * _hh / _HB, piste(CZ_T, _t))
+    _dist = appareil(_t)
     bpy.context.view_layer.update()
 
     def _boite(points):

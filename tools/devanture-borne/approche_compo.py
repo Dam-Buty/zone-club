@@ -8,21 +8,34 @@ La première image doit être l'image fixe de la devanture : c'est ce qui rend l
 est comparée ici, et un écart arrête la fabrique.
 """
 import json
+import os
 import sys
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 from scipy import ndimage as ndi
 
-from variante import D, G
+from ecran_pose import pose_ecran
+from variante import D, G, SOURCES
 
-A = D / 'approche'
+# ANIM=<sous-dossier> : un autre trajet que celui de l'approche (la distribution sur PC : distribution/pc). Ses images
+# de la borne s'appellent alors img_NNNN.png (distribution_film.py) et rien ne les compare à l'image fixe.
+ANIM = os.environ.get('ANIM', 'approche')
+A = D / ANIM
+BORNE = 'borne_{:04d}.png' if ANIM == 'approche' else 'img_{:04d}.png'
+BORNE_DE = D / os.environ['BORNE_DOSSIER'] if os.environ.get('BORNE_DOSSIER') else A
 AP = G['approche']
 R = json.loads((D / 'repere.json').read_text())
 CAM = json.loads((A / 'trajet.json').read_text())['images']
 W, H, PPM = G['sortie']['w'], G['sortie']['h'], G['sortie']['px_par_m']
 RENDU = AP.get('film_hd', AP['film'])                  # les images sont faites à la taille du plus grand film
 WV, HV = RENDU['w'], RENDU['h']
+# Le décor de la borne du PC (la première image du film de distribution, que la page garde derrière l'écran) se fait
+# ici aussi : ECHELLE_COMPO=2 double la taille de l'image, BORNE_DOSSIER=<sous-dossier> dit où est la borne rendue à
+# cette taille, SANS_PLUIE=1 retire les traînées (figées, elles se verraient). L'image s'appelle alors decor_NNNN.png.
+ECHELLE_COMPO = int(os.environ.get('ECHELLE_COMPO', 1))
+WV, HV = WV * ECHELLE_COMPO, HV * ECHELLE_COMPO
+SORTIE = 'decor_{:04d}.png' if ECHELLE_COMPO > 1 else 'film_{:04d}.png'
 ECART_MAX = 2.5                                        # départ du film contre l'image fixe, en niveaux sur 255 (essai : 0,88)
 if len(sys.argv) > 1:
     CHOIX = list(range(*[int(v) + k for k, v in enumerate(sys.argv[1].split('-'))])) if '-' in sys.argv[1] else [int(v) for v in sys.argv[1].split(',')]
@@ -37,6 +50,12 @@ ZX0, ZX1, ZY0, ZY1 = M.get('zone_px', (0, 900, 1100, 2300))
 D0, OEIL, DCX, SOL = G['camera']['distance_mur_m'], G['camera']['hauteur_oeil_m'], R['door_center_x'], R['ground_y']
 CAM0_X = (G['camera'].get('axe_px', DCX) - DCX) / PPM
 Y_NEON = 0.046                                         # l'axe des tubes est à 4,6 cm du mur (journal de borne.py)
+# L'écran de la borne : un rectangle en avant du mur (comme approche_trajet.py), où l'on pose la capture de la page.
+Y_ECRAN = G['borne']['saillie_m'] - 0.019
+_KX = ((R['kiosk_left_x'] + R['kiosk_right_x']) / 2 - R['door_center_x']) / PPM
+_ex0, _ex1, _ez0, _ez1 = G['facade']['ecran']
+ECRAN = (_KX + _ex0, _KX + _ex1, _ez0, _ez1)
+CAPTURE = Image.open(SOURCES / G['facade']['ecran_image'])
 
 fond = Image.open(D / 'fond.png').convert('RGB')
 # Le ciel (variante dont le bâtiment est coupé par un toit) : il est à l'infini, il ne grossit donc pas quand on avance,
@@ -96,9 +115,19 @@ def assemble(i):
     masque = np.maximum(step(xx, pg - 26, pg - 6), step(yy, ph - 22, ph - 4)) * (1 - step(yy, R['roof_y'] + 2, R['roof_y'] + 12))
     masque *= (xx >= ZX0) & (xx < ZX1) & (yy >= ZY0) & (yy < ZY1)
     base = np.clip((base / 255) ** 2.2 + lum * masque[..., None] * M.get('gain', 1.0), 0, 1) ** (1 / 2.2) * 255
-    ra = np.asarray(Image.open(A / f'borne_{i:04d}.png').convert('RGBA')).astype(np.float32)
+    ra = np.asarray(Image.open(BORNE_DE / BORNE.format(i)).convert('RGBA').resize((WV, HV), Image.LANCZOS)).astype(np.float32)
     al = ra[..., 3:4] / 255
     img = base * (1 - al) + ra[..., :3] * al
+    # L'écran : la capture de la page, dans le rectangle où l'appareil de cette image le voit (ecran_pose.py).
+    ke = f['d'] / (f['d'] - Y_ECRAN)
+    def vers_ecran(x, z):
+        col = DCX + (f['cam_x'] + (x - f['cam_x']) * ke) * PPM
+        lig = SOL - (f['cam_z'] + (z - f['cam_z']) * ke) * PPM
+        return (col - c0) * WV / bw, (lig - r0) * HV / bh
+    (qx0, qy1), (qx1, qy0) = vers_ecran(ECRAN[0], ECRAN[2]), vers_ecran(ECRAN[1], ECRAN[3])
+    img = pose_ecran(img, (qx0, qy0, qx1, qy1), CAPTURE)
+    if i == len(CAM) - 1:
+        print('écran dans la dernière image :', [round(v, 5) for v in (qx0 / WV, qy0 / HV, qx1 / WV, qy1 / HV)], flush=True)
     # Halo du néon : le cœur des tubes dans le rendu, dans le cadre du néon projeté par l'appareil de cette image.
     kd = f['d'] / (f['d'] - Y_NEON)
     px_m = WV / bw * PPM * kd                                                 # pixels par mètre, à la profondeur du néon
@@ -162,13 +191,14 @@ def pluie(i, img):
 
 for i in CHOIX:
     img = assemble(i)
-    if i == 0:                                         # garde-fou : le film part de l'image fixe de la devanture
+    if i == 0 and ANIM == 'approche':                  # garde-fou : le film part de l'image fixe de la devanture
         ref = np.asarray(Image.open(D / 'compo.png').convert('RGB').resize((WV, HV), Image.LANCZOS)).astype(np.float32)
         ecart = float(np.abs(img - ref).mean())
         print("première image contre l'image fixe (compo.png) : écart moyen", round(ecart, 2), '/255')
         if ecart >= ECART_MAX:
             raise SystemExit(f"approche_compo.py : la première image du film s'écarte de l'image fixe de {ecart:.2f} niveaux (maximum {ECART_MAX}) — le départ se verrait")
-    Image.fromarray(np.clip(pluie(i, bouge(i, img)), 0, 255).astype(np.uint8)).save(A / f'film_{i:04d}.png')
+    fini = bouge(i, img) if os.environ.get('SANS_PLUIE') else pluie(i, bouge(i, img))
+    Image.fromarray(np.clip(fini, 0, 255).astype(np.uint8)).save(A / SORTIE.format(i))
     if i % 10 == 0:
         print('image', i, 'halo ×', None if gain_halo[0] is None else round(gain_halo[0], 2), flush=True)
 print('FILM', len(CHOIX), 'images', WV, '×', HV)

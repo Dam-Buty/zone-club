@@ -8,6 +8,7 @@ La scène est celle de borne.py, sans une ligne changée : ce script exécute bo
 l'appareil d'après approche/trajet.json (approche_trajet.py).
 """
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -20,7 +21,9 @@ _PASSE = _a[0]
 _AP = _G['approche']
 _RENDU = _AP.get('film_hd', _AP['film'])          # les images sont rendues à la taille du plus grand film
 _WV, _HV = _RENDU['w'], _RENDU['h']
-_ANIM = _D / 'approche'
+_WV, _HV = _WV * int(os.environ.get('ECHELLE_COMPO', 1)), _HV * int(os.environ.get('ECHELLE_COMPO', 1))    # le décor du PC (approche_compo.py)
+# ANIM=<sous-dossier> : un autre trajet que celui de l'approche (la distribution sur PC : distribution/pc), pour la passe « mur ».
+_ANIM = _D / os.environ.get('ANIM', 'approche')
 _CAM = json.loads((_ANIM / 'trajet.json').read_text())['images']
 if len(_a) > 1:
     if '-' in _a[1]:
@@ -36,7 +39,18 @@ sys.argv = sys.argv[:sys.argv.index('--') + 1] + [str(_AP['echantillons'][1 if _
 _source = (_ICI / 'borne.py').read_text()
 _tete = _source.split('scene.render.filepath = OUT')[0]
 assert _tete != _source, 'borne.py : la ligne du rendu est introuvable'
-exec(compile(_tete, str(_ICI / 'borne.py'), 'exec'), globals())      # la scène, la caméra d'origine, la passe choisie
+# SCENE=distribution : la passe « borne » rend la borne habillée comme dans le film de distribution (étuis en carton
+# usés, lumière douce, qualité photo — voir borne_etuis.py), pour que la fin de l'approche soit le début de ce film.
+_ETUIS = _PASSE == 'borne' and os.environ.get('SCENE') == 'distribution'
+if _ETUIS:
+    _choix_approche = _CHOIX
+    os.environ.update(SCENE_SEULE='1', QUALITE='photo', LUMIERE='douce')
+    os.environ.pop('TRAJET', None)
+    sys.argv = sys.argv[:sys.argv.index('--') + 1] + [str(_AP['echantillons'][0]), 'mixte']
+    exec(compile((_ICI / 'distribution_film.py').read_text(), str(_ICI / 'distribution_film.py'), 'exec'), globals())
+    _CHOIX = _choix_approche
+else:
+    exec(compile(_tete, str(_ICI / 'borne.py'), 'exec'), globals())      # la scène, la caméra d'origine, la passe choisie
 
 import numpy as np  # noqa: E402
 
@@ -58,6 +72,8 @@ for _i in _CHOIX:
     _f = _CAM[_i]
     cam.location = (_f['cam_x'], -_f['d'], _f['cam_z'])
     cam_data.shift_x, cam_data.shift_y = _f['shift_x'], _f['shift_y']
+    if _ETUIS:
+        cam_data.dof.focus_distance = _f['d'] + Y_RACK_G
     _c0, _r0, _bw, _bh = _f['boite']
     _x0, _x1 = _borne01((_zx0 - _c0) / _bw), _borne01((_zx1 - _c0) / _bw)
     _y0, _y1 = _borne01(1 - (_zy1 - _r0) / _bh), _borne01(1 - (_zy0 - _r0) / _bh)

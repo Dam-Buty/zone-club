@@ -21,13 +21,22 @@ if [ -z "$DEVANTURES" ]; then
 fi
 
 rendu() {   # rendu <journal> <arguments de borne.py…> : Blender en tâche de fond, échec si le script lève une erreur
+    [ -z "$SANS_RENDU" ] || return 0     # SANS_RENDU=1 : on ne refait que l'assemblage, les rendus Blender existent
     journal="$1"; shift
     "$BLENDER" -b --factory-startup --python-exit-code 1 -P "$ICI/borne.py" -- "$@" > "$T/$journal" 2>&1 \
         || { echo "échec du rendu, fin de $T/$journal :"; tail -12 "$T/$journal"; exit 1; }
 }
 
-rendu_approche() {   # rendu_approche <borne|mur> : chaque image du film d'approche, pour cette passe
-    "$BLENDER" -b --factory-startup --python-exit-code 1 -P "$ICI/approche_rendu.py" -- "$1" > "$T/approche-rendu-$1.log" 2>&1 \
+rendu_etuis() {   # rendu_etuis <journal> <échantillons> <sortie> : la borne habillée comme dans le film de distribution (borne_etuis.py)
+    [ -z "$SANS_RENDU" ] || return 0     # SANS_RENDU=1 : on ne refait que l'assemblage, les rendus Blender existent
+    journal="$1"; shift
+    "$BLENDER" -b --factory-startup --python-exit-code 1 -P "$ICI/borne_etuis.py" -- "$@" > "$T/$journal" 2>&1 \
+        || { echo "échec du rendu, fin de $T/$journal :"; tail -12 "$T/$journal"; exit 1; }
+}
+
+rendu_approche() {   # rendu_approche <borne|mur> : chaque image du film d'approche, pour cette passe (la borne : habillée de même)
+    [ -z "$SANS_RENDU" ] || return 0     # SANS_RENDU=1 : on ne refait que l'assemblage, les rendus Blender existent
+    SCENE=distribution "$BLENDER" -b --factory-startup --python-exit-code 1 -P "$ICI/approche_rendu.py" -- "$1" > "$T/approche-rendu-$1.log" 2>&1 \
         || { echo "échec du rendu du film, fin de $T/approche-rendu-$1.log :"; tail -12 "$T/approche-rendu-$1.log"; exit 1; }
 }
 
@@ -64,7 +73,10 @@ for V in $DEVANTURES; do
     python3 "$ICI/neon.py" > "$T/neon.log"
     tail -1 "$T/neon.log"
     echo "rendu de la borne ($ECH_BORNE échantillons ; le premier rendu d'une session compile ~3 min)"
-    rendu rendu-borne.log "$ECH_BORNE" "$T/borne.png"
+    for f in tranches-etui-film.png tranches-etui-usure.png tranches-etui-relief-film.png jaquette-neutre.png; do
+        [ -e "$T/tex/$f" ] || { echo "il manque $T/tex/$f : les étuis de la distribution (distribution_tranches.py, ou copier travail/tex)"; exit 1; }
+    done
+    rendu_etuis rendu-borne.log "$ECH_BORNE" "$T/borne.png"
     echo "passe « mur » ($ECH_MUR échantillons)"
     rendu rendu-mur.log "$ECH_MUR" "$T/mur-passe.exr" mur
     echo "composition (lumière du mur, halo du néon, pluie)"

@@ -48,7 +48,8 @@ if sys.argv[1] == '--halo':
     Image.fromarray(halo(r_[..., :3], core_, float(sys.argv[4])).astype(np.uint8)).save(sys.argv[3])
     sys.exit(0)
 
-from variante import D, G as GEO  # noqa: E402 — la variante en cours : sa géométrie, son dossier d'intermédiaire
+from ecran_pose import pose_ecran  # noqa: E402
+from variante import D, G as GEO, SOURCES  # noqa: E402 — la variante en cours : sa géométrie, son dossier d'intermédiaire
 
 HALO[0] = GEO.get('enseigne_borne', {}).get('halo', HALO[0])
 fond = Image.open(D / 'fond.png').convert('RGBA')
@@ -79,6 +80,9 @@ fond.alpha_composite(rendu)
 img = np.asarray(fond.convert('RGB')).astype(float)
 W, H = rendu.size
 ra = np.asarray(rendu).astype(float)
+# L'écran de la borne : la capture de la page, posée telle quelle (ecran_pose.py) — là où la passe « borne » l'a projeté.
+_e = json.loads((D / 'mise-en-page.json').read_text())['ecran']
+img = pose_ecran(img, (_e['x0'] * W, _e['y0'] * H, _e['x1'] * W, _e['y1'] * H), Image.open(SOURCES / GEO['facade']['ecran_image']))
 
 bbox = D / 'neon-bbox.json'
 if bbox.exists():
