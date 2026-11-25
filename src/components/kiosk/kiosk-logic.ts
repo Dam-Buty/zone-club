@@ -683,6 +683,17 @@ export function rentalOverStep(i: { playerOpen: boolean; playerHasRental: boolea
   return i.playerHasRental ? 'wait' : 'close-player';
 }
 
+/**
+ * Les deux messages du Cast que dit la borne, lecteur fermé (voir rentalOverStep) : la location finie (échéance,
+ * retour), avec le titre du film quand il est connu ; ou le compte déconnecté pendant le Cast, dont la location
+ * continue (décision de Rusmir du 25/11/2026). Tout autre message est celui du lecteur : null.
+ */
+export function castEndNotice(code: string | null | undefined, filmTitle: string | undefined): { title: string; body: string | undefined } | null {
+  if (code === 'rental_over') return { title: 'Location terminée', body: filmTitle ? `« ${filmTitle} »` : undefined };
+  if (code === 'logged_out') return { title: 'Vous êtes déconnecté', body: 'Le film sur la télé est arrêté. Votre location continue.' };
+  return null;
+}
+
 // ===== Trame de la dalle =====
 
 /**

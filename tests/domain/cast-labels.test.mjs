@@ -74,6 +74,9 @@ test('CAST MESSAGES: chaque message dit ce qui s\'est passé, et propose de rée
   assert.deepEqual(castNoticeView('stopped_elsewhere', 'Salon'), line("La diffusion sur Salon s'est arrêtée", false));
   assert.deepEqual(castNoticeView('tv_error', 'Salon'), line("La télé n'a pas pu lire le film", true));
   assert.deepEqual(castNoticeView('rental_over', 'Salon'), line('Location terminée', false));
+  // Recette du 25/11 : Wi-Fi coupé, la TV jouait encore ; déconnexion, la location continuait.
+  assert.deepEqual(castNoticeView('link_lost', 'Téléviseur Pièce à vivre'), line('La liaison avec Téléviseur Pièce à vivre est perdue', false));
+  assert.deepEqual(castNoticeView('logged_out', 'Salon'), line('Vous êtes déconnecté : le film sur la télé est arrêté. Votre location continue.', false));
   assert.deepEqual(castNoticeView('connect_failed', 'Salon'), line('Impossible de joindre Salon', true));
   assert.deepEqual(castNoticeView('load_failed', 'Salon'), line("Le film n'a pas pu démarrer sur Salon", true));
   assert.deepEqual(castNoticeView('no_source', null), line("Ce film n'a pas de source vidéo à envoyer sur la télé", false));
@@ -81,6 +84,7 @@ test('CAST MESSAGES: chaque message dit ce qui s\'est passé, et propose de rée
 
 test('CAST MESSAGES: nom de la télé inconnu (page rechargée) → « la télé », jamais un trou dans la phrase', () => {
   assert.equal(castNoticeView('stopped_elsewhere', null).text, "La diffusion sur la télé s'est arrêtée");
+  assert.equal(castNoticeView('link_lost', null).text, 'La liaison avec la télé est perdue');
   assert.equal(castNoticeView('connect_failed', '').text, 'Impossible de joindre la télé');
   assert.equal(castNoticeView('load_failed', null).text, "Le film n'a pas pu démarrer sur la télé");
 });
@@ -89,7 +93,7 @@ test('CAST MESSAGES: Cast absent du navigateur → le panneau « recopie d\'écr
   assert.equal(CAST_UNAVAILABLE_TEXT, "Le Cast n'est pas disponible sur ce navigateur.");
   assert.deepEqual(castNoticeView('unavailable', null), { text: CAST_UNAVAILABLE_TEXT, retry: false, mirroring: true });
   // Le panneau ne sert qu'à ce message : un échec de connexion n'est pas une absence de Cast (D7).
-  for (const code of ['stopped_elsewhere', 'tv_error', 'rental_over', 'connect_failed', 'load_failed', 'no_source']) {
+  for (const code of ['stopped_elsewhere', 'link_lost', 'tv_error', 'rental_over', 'logged_out', 'connect_failed', 'load_failed', 'no_source']) {
     assert.equal(castNoticeView(code, 'Salon').mirroring, false, code);
   }
 });

@@ -181,6 +181,34 @@ test('CAST MACHINE: location disparue → la TV s\'arrête, message, pas de repr
   assert.ok(effects.some(e => e.type === 'STOP_AND_END_SESSION'));
   assert.equal(state.stopping, true); assert.equal(state.connected, false); assert.equal(castOwnsFilm(state), null);
 });
+test('CAST MACHINE: liaison perdue en télécommande (ou TV muette) → « liaison perdue », pause locale à la dernière position', () => {
+  for (const phase of ['remote', 'lost']) {
+    const { state } = runFrom(reach(phase), [{ type: 'SESSION_ENDED' }]);
+    assert.equal(state.phase, 'idle', phase);
+    assert.deepEqual(state.notice, { code: 'link_lost', filmId: 7, deviceName: 'Salon' }, phase);
+    assert.deepEqual(state.resume, { filmId: 7, position: 10, play: false }, phase);
+  }
+});
+test('CAST MACHINE: déconnexion pendant un Cast → la TV s\'arrête, message « déconnecté », pas de reprise', () => {
+  for (const phase of ['remote', 'lost', 'loading']) {
+    const { state, effects } = step(reach(phase), { type: 'LOGGED_OUT', filmId: 7 });
+    assert.equal(state.phase, 'idle', phase);
+    assert.deepEqual(state.notice, { code: 'logged_out', filmId: 7, deviceName: 'Salon' }, phase);
+    assert.equal(state.resume, null, phase);
+    assert.ok(effects.some(e => e.type === 'STOP_AND_END_SESSION'), phase);
+    assert.ok(effects.some(e => e.type === 'SERVER_CLOSE' && e.filmId === 7), `${phase} : séance serveur close`);
+    assert.equal(state.stopping, true, phase); assert.equal(castOwnsFilm(state), null, phase);
+  }
+  // Un autre film que celui de la TV : rien ne bouge. Film déjà fini : oublié, sans message ni arrêt.
+  const remote = reach('remote');
+  assert.equal(step(remote, { type: 'LOGGED_OUT', filmId: 8 }).state, remote);
+  const ended = step(reach('ended'), { type: 'LOGGED_OUT', filmId: 7 });
+  assert.equal(ended.state.phase, 'idle'); assert.equal(ended.state.notice, null);
+  assert.ok(!ended.effects.some(e => e.type === 'STOP_AND_END_SESSION'));
+  // La borne le montre lecteur fermé, comme « Location terminée » : fermer le lecteur ne l'efface pas.
+  const out = step(remote, { type: 'LOGGED_OUT', filmId: 7 }).state;
+  assert.equal(step(out, { type: 'PLAYER_CLOSED', filmId: 7 }).state.notice.code, 'logged_out');
+});
 test('CAST MACHINE: prévisualisation (tracked faux) → aucun effet serveur', () => {
   const sequences = [
     [ready, preview, started, playing(), { type: 'TICK' }, { type: 'PAGE_HIDDEN' }, { type: 'NO_MEDIA' }],
@@ -190,6 +218,7 @@ test('CAST MACHINE: prévisualisation (tracked faux) → aucun effet serveur', (
     [ready, preview, started, playing(), tvIdle('ERROR')],
     [ready, preview, started, playing(), { type: 'SESSION_ENDED' }],
     [ready, preview, started, playing(), { type: 'RENTAL_GONE', filmId: 7 }],
+    [ready, preview, started, playing(), { type: 'LOGGED_OUT', filmId: 7 }],
     [ready, preview, started, playing(), ask8],
   ];
   for (const events of sequences) {
@@ -427,7 +456,9 @@ test('CAST MACHINE TABLE: arrêt sans raison ou séance terminée ailleurs → m
   for (const event of [tvIdle('INTERRUPTED'), tvIdle(null), { type: 'SESSION_ENDED' }]) {
     const { state, effects } = step(remote, event);
     assert.equal(state.phase, 'idle');
-    assert.equal(state.notice.code, 'stopped_elsewhere');
+    // La séance qui finit sans que la TV ait dit d'arrêt, c'est la liaison qui manque (Wi-Fi coupé, recette du 25/11) :
+    // la TV peut jouer encore, « s'est arrêtée » serait faux.
+    assert.equal(state.notice.code, event.type === 'SESSION_ENDED' ? 'link_lost' : 'stopped_elsewhere');
     assert.deepEqual(state.resume, { filmId: 7, position: 300, play: false });
     assert.equal(state.connected, event.type !== 'SESSION_ENDED');
     assert.deepEqual(effects, [
@@ -514,7 +545,7 @@ test('CAST MACHINE TABLE: liaison perdue — on redemande sans rapporter de posi
 test('CAST MACHINE TABLE: liaison perdue puis fin de séance → comme depuis la télécommande', () => {
   const { state, effects } = step(reach('lost'), { type: 'SESSION_ENDED' });
   assert.equal(state.phase, 'idle'); assert.equal(state.connected, false);
-  assert.equal(state.notice.code, 'stopped_elsewhere'); assert.deepEqual(state.resume, { filmId: 7, position: 10, play: false });
+  assert.equal(state.notice.code, 'link_lost'); assert.deepEqual(state.resume, { filmId: 7, position: 10, play: false });
   assert.deepEqual(effects, [
     { type: 'SERVER_CLOSE', filmId: 7, position: 10, finished: false },
     { type: 'REMEMBER_FILM', filmId: null },

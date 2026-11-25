@@ -208,6 +208,10 @@ test('CAST STORE: la déconnexion et la location surveillées', () => {
   const store = read(STORE);
   const logout = between(store, 'logout: async', 'clearAuthError:');
   assert.ok(logout.includes('castLoggedOut()'), 'logout prévient la tranche');
+  // La déconnexion n'est pas une location finie : son propre événement, et son propre message (recette du 25/11).
+  const loggedOut = between(slice, 'castLoggedOut: () => {', 'castPlayerClosed:');
+  assert.ok(loggedOut.includes("type: 'LOGGED_OUT'"), 'castLoggedOut envoie LOGGED_OUT');
+  assert.ok(!loggedOut.includes("'RENTAL_GONE'"), 'et non RENTAL_GONE (« Location terminée » serait faux)');
   assert.ok(slice.includes('lastCastFilmId'), 'la tranche tient lastCastFilmId');
 });
 

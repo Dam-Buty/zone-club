@@ -39,6 +39,7 @@ import {
   phoneLayoutVars,
   readyLaunchStep,
   readyVersionRow,
+  castEndNotice,
   rentalOverStep,
   viewingAngle,
   watchEntry,
@@ -707,19 +708,19 @@ export function KioskView() {
     }
   }, [accountOpen, isAuthenticated, requestAuth]);
 
-  // ----- « Location terminée » (refonte du Cast, spec 2026-11-18, § 5.2 bis) -----
-  // La location du film qui passait sur la TV a disparu (échéance, retour, déconnexion) : le service a arrêté la TV et
-  // laissé ce message. Le lecteur ne peut pas le dire (il ne dessine rien sans location) : la borne le dit, après ses
-  // propres messages, et le fermer l'efface (castDismiss). Un lecteur resté ouvert sans location est fermé d'abord.
-  const rentalOver = castNotice?.code === 'rental_over' ? castNotice : null;
-  const rentalStep = rentalOver ? rentalOverStep({ playerOpen: isPlayerOpen, playerHasRental }) : null;
+  // ----- « Location terminée » / « Vous êtes déconnecté » (refonte du Cast, spec 2026-11-18, § 5.2 bis) -----
+  // La location du film qui passait sur la TV a disparu (échéance, retour), ou le compte s'est déconnecté (la location
+  // continue, castEndNotice) : le service a arrêté la TV et laissé ce message. Le lecteur ne peut pas le dire (il ne
+  // dessine rien sans location) : la borne le dit, après ses propres messages, et le fermer l'efface (castDismiss). Un
+  // lecteur resté ouvert sans location est fermé d'abord.
+  const castEndFilmTitle = castNotice ? catalogue.find((f) => f.id === castNotice.filmId)?.title : undefined;
+  const castEnd = castEndNotice(castNotice?.code, castEndFilmTitle);
+  const rentalStep = castEnd ? rentalOverStep({ playerOpen: isPlayerOpen, playerHasRental }) : null;
   useEffect(() => {
     if (rentalStep === 'close-player') closePlayer();
   }, [rentalStep, closePlayer]);
-  const rentalOverTitle = rentalOver ? catalogue.find((f) => f.id === rentalOver.filmId)?.title : undefined;
-  const rentalOverBody = rentalOverTitle ? `«\u00a0${rentalOverTitle}\u00a0»` : undefined;
   const rentalOverNotice: KioskNoticeSpec | null =
-    rentalStep === 'show' ? { title: 'Location terminée', body: rentalOverBody, primary: { label: 'Fermer', onPress: castDismiss } } : null;
+    castEnd && rentalStep === 'show' ? { title: castEnd.title, body: castEnd.body, primary: { label: 'Fermer', onPress: castDismiss } } : null;
 
   const overlay: KioskNoticeSpec | null =
     catalog === 'unavailable'

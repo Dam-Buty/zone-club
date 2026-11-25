@@ -628,6 +628,18 @@ test('CAST BORNE: « Location terminée » se montre lecteur fermé ; un lecteur
   // Un autre film se regarde ici : le message attend que le lecteur se ferme.
   assert.equal(K.rentalOverStep({ playerOpen: true, playerHasRental: true }), 'wait');
 });
+test('CAST BORNE: location finie ou compte déconnecté — chacun son message (recette du 25/11)', () => {
+  assert.deepEqual(K.castEndNotice('rental_over', 'Dune'), { title: 'Location terminée', body: '« Dune »' });
+  assert.deepEqual(K.castEndNotice('rental_over', undefined), { title: 'Location terminée', body: undefined });
+  // Déconnecté pendant un Cast : la location continue, le dire (décision de Rusmir du 25/11).
+  assert.deepEqual(K.castEndNotice('logged_out', 'Dune'), {
+    title: 'Vous êtes déconnecté', body: 'Le film sur la télé est arrêté. Votre location continue.',
+  });
+  // Les autres messages du Cast sont ceux du lecteur, pas de la borne.
+  for (const code of [undefined, null, 'stopped_elsewhere', 'link_lost', 'tv_error', 'connect_failed']) {
+    assert.equal(K.castEndNotice(code, 'Dune'), null, String(code));
+  }
+});
 test('CAST BORNE: la barre du Cast prend sa place entre LOUER et la bande, sans rien pousser hors de l\'écran', () => {
   for (const [name, q] of Object.entries(PHONES)) {
     const L = K.phoneLayout(q, true);
