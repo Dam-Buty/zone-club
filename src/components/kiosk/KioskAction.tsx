@@ -91,6 +91,11 @@ export function KioskAction({ film, detail, onNotice, onRequestAuth, onRenting, 
         rent: () => state.rentFilm(film.id),
         // Même état serveur que le parcours du vidéoclub : la location est « sur place ».
         setMode: () => state.setViewingMode(film.id, 'sur_place'),
+        // Réponse perdue : le compte relu dit si la location a été enregistrée quand même.
+        landed: async () => {
+          await useStore.getState().fetchMe();
+          return useStore.getState().rentals.some((r) => r.filmId === film.id);
+        },
       },
       lock,
     );

@@ -152,3 +152,25 @@ test('distribution PC : le film du PC part d\'un écran 2:3 — le cadre est exa
   const t = D.screenTransform(ecran0, s.cadre, borne, s.exact);
   assert.ok(Math.abs(t.tx) < 0.5 && Math.abs(t.ty) < 0.5 && Math.abs(t.sx - 1) < 0.002 && Math.abs(t.sy - 1) < 0.002, JSON.stringify(t));
 });
+
+// ----- Batterie de tests du 25/11/2026 : le titre écrit sur la tranche de repli -----
+test('distribution : le titre de repli tient sur la tranche, quelle que soit sa longueur', () => {
+  // La tranche fait environ 7 fois sa largeur ; un titre de 22 caractères tient au corps de base.
+  assert.equal(D.fallbackTitleSize('Dernier train pour Bu'), 62);
+  const long = 'Borat : Leçons culturelles sur l\'Amérique pour profit glorieuse nation Kazakhstan';
+  const corps = D.fallbackTitleSize(D.fallbackTitle(long));
+  assert.ok(corps >= 24 && corps < 62, String(corps));
+  assert.ok(D.fallbackTitle(long).length * 0.46 * corps <= 630, 'le titre affiché tient dans la longueur de la tranche');
+  assert.ok(D.fallbackTitle(long).endsWith('…') && D.fallbackTitle(long).length <= 56, 'au-delà, il est coupé à la fin, pas des deux côtés');
+  assert.equal(D.fallbackTitle('Alien'), 'Alien');
+});
+
+test('distribution : un suivi vide ou incomplet n\'est pas un suivi', () => {
+  const bon = { images: 2, ips: 24, planche: [1, 1], debout: {}, couchee: {}, pas: [{ t: null, c: 0, e: [0, 0, 1, 1] }, { t: null, c: 0, e: [0, 0, 1, 1] }] };
+  assert.equal(D.isUsableSuivi(bon), true);
+  assert.equal(D.isUsableSuivi({ ...bon, pas: [] }), false, 'aucun pas : 8 s d\'écran noir sans cela');
+  assert.equal(D.isUsableSuivi({ ...bon, pas: bon.pas.slice(1) }), false, 'il manque une image');
+  assert.equal(D.isUsableSuivi({ ...bon, pas: [{ t: null, c: 0 }, { t: null, c: 0 }] }), false, 'pas sans boîte d\'écran');
+  assert.equal(D.isUsableSuivi(null), false);
+  assert.equal(D.isUsableSuivi('<html>'), false);
+});

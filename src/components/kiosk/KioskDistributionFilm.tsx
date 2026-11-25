@@ -2,6 +2,8 @@ import { forwardRef, useImperativeHandle, useRef, useState, type CSSProperties }
 import {
   boxStyle,
   fallbackSpineSrc,
+  fallbackTitle,
+  fallbackTitleSize,
   sheetPosition,
   spineSrc,
   wearLevel,
@@ -39,10 +41,12 @@ interface KioskDistributionFilmProps {
   letterbox: boolean;
   /** Le film dont la confirmation est ouverte ou qui vient d'être loué : sa tranche est demandée d'avance. */
   rented: { title: string; tmdbId: number | null; year: number | null } | null;
+  /** Un appui sur la vidéo (la borne décide s'il la passe : pas pendant le double appui de « Louer »). */
+  onTap?: () => void;
 }
 
 export const KioskDistributionFilm = forwardRef<KioskDistributionFilmHandle, KioskDistributionFilmProps>(function KioskDistributionFilm(
-  { film, sheets, player, active, stage, letterbox, rented },
+  { film, sheets, player, active, stage, letterbox, rented, onTap },
   ref,
 ) {
   const spineRef = useRef<HTMLDivElement | null>(null);
@@ -101,7 +105,7 @@ export const KioskDistributionFilm = forwardRef<KioskDistributionFilmHandle, Kio
     : { left: 0, top: 0, width: 0, height: 0 };
 
   return (
-    <div className={`${styles.film} ${shown ? styles.filmShown : ''}`} aria-hidden={!shown} onClick={shown ? player.skip : undefined}>
+    <div className={`${styles.film} ${shown ? styles.filmShown : ''}`} aria-hidden={!shown} onClick={shown ? (onTap ?? player.skip) : undefined}>
       <div className={styles.stage} style={stageStyle}>
         <video ref={player.videoRef} className={styles.video} src={player.src ?? undefined} playsInline preload="auto" width={film.largeur} height={film.hauteur} />
 
@@ -110,7 +114,8 @@ export const KioskDistributionFilm = forwardRef<KioskDistributionFilmHandle, Kio
         <div
           ref={spineRef}
           className={styles.spine}
-          style={{ maskImage: `url(${sheets.caches})`, WebkitMaskImage: `url(${sheets.caches})`, visibility: 'hidden' }}
+          // Les planches (≈ 390 Ko) ne sont demandées qu'avec un film en vue : pas à la simple ouverture de la borne.
+          style={{ ...(rented !== null ? { maskImage: `url(${sheets.caches})`, WebkitMaskImage: `url(${sheets.caches})` } : {}), visibility: 'hidden' }}
           data-testid="distribution-tranche"
         >
           <div ref={artRef} className={styles.spineArt} data-couchee="0">
@@ -125,11 +130,11 @@ export const KioskDistributionFilm = forwardRef<KioskDistributionFilmHandle, Kio
               <>
                 <img className={styles.artDebout} src={fallbackSpineSrc(level, false)} alt="" draggable={false} />
                 <img className={styles.artCouchee} src={fallbackSpineSrc(level, true)} alt="" draggable={false} />
-                <span className={styles.spineTitle}>{rented.title}</span>
+                <span className={styles.spineTitle} style={{ fontSize: `${fallbackTitleSize(fallbackTitle(rented.title))}cqw` }}>{fallbackTitle(rented.title)}</span>
               </>
             )}
           </div>
-          <div ref={shadeRef} className={styles.spineShade} style={{ backgroundImage: `url(${sheets.ombres})` }} />
+          <div ref={shadeRef} className={styles.spineShade} style={rented !== null ? { backgroundImage: `url(${sheets.ombres})` } : undefined} />
         </div>
 
         {shown && player.muted && (

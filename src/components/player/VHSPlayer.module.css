@@ -652,13 +652,19 @@
   }
 
   .header {
-    position: static;
+    /* Dans le flux, mais positionné (z-index 12) : l'écran bleu de STOP ne le recouvre pas. */
+    position: relative;
     padding: 0.5rem 0.6rem;
     gap: 0.5rem;
     align-items: start;
+    /* Le bouton de retour et la pile du Cast gardent leur largeur ; le titre prend ce qui reste et se tronque. Avec
+       trois colonnes élastiques, la colonne du bouton rétrécissait sous lui et le titre passait par-dessus (batterie
+       de tests du 25/11/2026 : seul le quart gauche du bouton répondait sur un téléphone de 360 points). */
+    grid-template-columns: auto minmax(0, 1fr) auto;
   }
 
   .headerCenter {
+    min-width: 0;
     max-width: 100%;
   }
 

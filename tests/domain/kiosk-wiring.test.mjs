@@ -1023,7 +1023,7 @@ test('DISTRIBUTION FILMÉE: corrections de la relecture du 25/11/2026', () => {
   const hook = readText(path.join(ROOT, 'src/components/kiosk/useDistributionFilm.ts'));
   const welcome = readText(path.join(ROOT, 'src/components/kiosk/KioskWelcome.tsx'));
   // L'écran de la borne passe au-dessus de la vidéo : un appui sur lui doit la passer aussi.
-  assert.ok(/ref=\{screenRef\}[^>]*onClick=\{filmPlaying \? distributionFilm\.skip : undefined\}/.test(view), 'un appui sur l\'écran passe la vidéo');
+  assert.ok(/ref=\{screenRef\}[^>]*onClick=\{filmPlaying \? tapFilm : undefined\}/.test(view) && /const tapFilm = useCallback\(\(\) => \{\s*if \(filmTapSkips\(filmStartedAtRef\.current, performance\.now\(\)\)\) distributionFilm\.skip\(\);/.test(view), 'un appui sur l\'écran passe la vidéo (hors double appui de « Louer »)');
   // Quelle que soit la fin, la vidéo s'arrête : pas de son sous le panneau.
   const done = hook.slice(hook.indexOf('const done = useCallback'), hook.indexOf('const start = useCallback'));
   assert.ok(done.includes('videoRef.current?.pause()'), 'done() met la vidéo en pause');
@@ -1084,4 +1084,31 @@ test('SESSION (batterie du 25/11/2026): une panne ne déconnecte personne, et un
   const view = readText(path.join(ROOT, 'src/components/kiosk/KioskView.tsx'));
   assert.match(view, /if \(accountOpen && !isAuthenticated\) \{[\s\S]{0,400}requestAuth\(/, '« Mon compte » ouvert sans session : la connexion est redemandée, pas de compte fantôme');
   assert.match(view, /logout\(\)\.then\(\(ok\) => \{[\s\S]{0,600}Déconnexion impossible/, 'déconnexion ratée : un message, et le compte reste ouvert');
+});
+test('DISTRIBUTION FILMÉE (batterie du 25/11/2026): fin sans image parasite, planches à la demande, réponse perdue', () => {
+  const view = readText(path.join(ROOT, 'src/components/kiosk/KioskView.tsx'));
+  // À la fin, l'écran reste au-dessus du calque de la vidéo pendant son fondu : plus de fiche d'un autre film un instant.
+  assert.match(view, /window\.setTimeout\(\(\) => setLiftHeld\(false\), FILM_FADE_HOLD_MS\)/, 'l\'écran ne redescend qu\'après le fondu');
+  assert.match(view, /\$\{screenLifted \? styles\.ksLifted : ''\}/, 'la classe suit ce délai, pas la phase seule');
+  const css = readText(path.join(ROOT, 'src/components/kiosk/KioskDistributionFilm.module.css'));
+  const fondu = Number(/transition: opacity (\d+)ms linear, visibility/.exec(css)[1]);
+  assert.ok(Number(/FILM_FADE_HOLD_MS = (\d+)/.exec(view)[1]) > fondu, 'le délai dépasse la durée du fondu');
+  const film = readText(path.join(ROOT, 'src/components/kiosk/KioskDistributionFilm.tsx'));
+  assert.ok(film.includes('rented !== null ? { maskImage:') && film.includes('rented !== null ? { backgroundImage:'), 'les planches ne sont demandées qu\'avec un film en vue');
+  assert.ok(film.includes('fallbackTitleSize(fallbackTitle(rented.title))'), 'le titre de repli est ajusté à la tranche');
+  const action = readText(path.join(ROOT, 'src/components/kiosk/KioskAction.tsx'));
+  assert.match(action, /landed: async \(\) => \{[\s\S]{0,200}fetchMe\(\)[\s\S]{0,160}rentals\.some/, 'réponse perdue : le compte est relu pour savoir si la location existe');
+  assert.match(readText(path.join(ROOT, 'src/api/index.ts')), /api\/rentals\/\$\{filmId\}`, \{ method: 'POST', signal: AbortSignal\.timeout\(90_000\) \}/, 'la location garde un délai plus long que celui de la borne');
+  assert.ok(!readText(path.join(ROOT, 'src/components/kiosk/KioskAccount.tsx')).includes('styles.kAccount}'), 'plus de classe « undefined »');
+});
+test('LECTEUR (batterie du 25/11/2026): sur téléphone, « NO SIGNAL » ne couvre plus les commandes et le titre ne couvre plus le retour', () => {
+  const portrait = (css) => css.slice(css.indexOf('@media (orientation: portrait) and (max-width: 900px)'));
+  const controls = portrait(readText(path.join(ROOT, 'src/components/player/VHSControls.module.css')));
+  // En portrait les commandes sont dans le flux : sans position, leur z-index ne valait rien et l'écran bleu (absolu,
+  // z-index 5) passait devant PLAY, STOP et EJECT.
+  assert.match(controls, /\.controls \{[^}]*position: relative;[^}]*z-index: 10;/, 'les commandes restent au-dessus de l\'écran bleu');
+  assert.ok(!/\.controls \{[^}]*position: static;/.test(controls), 'plus de position statique en portrait');
+  const player = portrait(readText(path.join(ROOT, 'src/components/player/VHSPlayer.module.css')));
+  assert.match(player, /\.header \{[^}]*position: relative;[^}]*grid-template-columns: auto minmax\(0, 1fr\) auto;/, 'le bouton de retour garde sa largeur, le titre prend ce qui reste');
+  assert.match(player, /\.headerCenter \{[^}]*min-width: 0;/, 'le titre se tronque au lieu de déborder sur le bouton');
 });

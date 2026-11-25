@@ -143,7 +143,8 @@ async function illusion(page, nom) {
   // 5 bis. Un appui SUR L'ÉCRAN de la borne (il passe au-dessus de la vidéo et couvre l'essentiel du cadre au début).
   await choisis(page, 'Killers of the Flower Moon');
   await (await loue(page)).tap();
-  const vu5b = await suis(page, { agir: { a: 0.3, fais: async (p) => {
+  // (après la garde du double appui : pendant 0,8 s un appui ne passe pas la vidéo)
+  const vu5b = await suis(page, { agir: { a: 1.2, fais: async (p) => {
     const r = await p.evaluate(() => { const k = document.querySelector('[class*="KioskView_ks__"]').getBoundingClientRect(); return [k.left + k.width / 2, k.top + k.height / 2]; });
     await p.touchscreen.tap(r[0], r[1]);
   } } });

@@ -9,7 +9,7 @@
 // À la différence du film d'approche, celle-ci a du son. Elle part après l'appel au serveur, donc après l'appui : un
 // navigateur peut refuser la lecture sonore. Elle repart alors muette, et `muted` le dit pour que la borne le signale.
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
-import { frameAt, type Suivi } from './kiosk-distribution-logic';
+import { frameAt, isUsableSuivi, type Suivi } from './kiosk-distribution-logic';
 
 /** idle : rien ne joue. starting : lecture demandée, première image pas encore à l'écran. playing : à l'écran. */
 export type DistributionPhase = 'idle' | 'starting' | 'playing';
@@ -91,7 +91,8 @@ export function useDistributionFilm({ url, assets, durationMs, load, onFrame, on
         if (!response.ok) throw new Error(`suivi de la distribution : ${response.status}`);
         return response.json() as Promise<Suivi>;
       })
-      .then((suivi) => { if (!cancelled) suiviRef.current = suivi; })
+      // Un suivi vide ou incomplet n'est pas un suivi : la vidéo ne partira pas (sinon : 8 s d'écran noir).
+      .then((suivi) => { if (!cancelled && isUsableSuivi(suivi)) suiviRef.current = suivi; })
       .catch(() => {});
     sheetsRef.current = 0;
     for (const sheet of [assets.caches, assets.ombres]) {

@@ -122,7 +122,7 @@ export function KioskAccount({ films, prefOpen, onPrefOpen, onWatch, onReview, o
 
   if (prefOpen) {
     return (
-      <div className={`${styles.kSearchPane} ${styles.kAccount}`}>
+      <div className={styles.kSearchPane}>
         <VersionList
           title="Version préférée"
           rows={prefRows}
@@ -152,7 +152,7 @@ export function KioskAccount({ films, prefOpen, onPrefOpen, onWatch, onReview, o
   }
 
   return (
-    <div className={`${styles.kSearchPane} ${styles.kAccount}`}>
+    <div className={styles.kSearchPane}>
       <button type="button" className={styles.kAuthBack} onClick={onBack}>
         Retour
       </button>

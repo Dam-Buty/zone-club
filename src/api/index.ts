@@ -207,7 +207,9 @@ export const auth = {
 export const rentals = {
   async rent(filmId: number): Promise<{ rental: ApiRentalWithFilm }> {
     // filmId ici est l'ID interne du film (pas tmdb_id)
-    return request(`/api/rentals/${filmId}`, { method: 'POST' });
+    // Délai plus long que les autres requêtes : la borne a son propre délai d'attente (KIOSK_RENT_TIMEOUT_MS), et une
+    // réponse tardive doit encore pouvoir arriver — la location est peut-être déjà enregistrée.
+    return request(`/api/rentals/${filmId}`, { method: 'POST', signal: AbortSignal.timeout(90_000) });
   },
 
   async updateProgress(filmId: number, progress: number, position?: number): Promise<{ ok: boolean }> {

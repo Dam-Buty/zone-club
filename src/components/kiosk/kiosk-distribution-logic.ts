@@ -82,6 +82,33 @@ export function fallbackSpineSrc(level: WearLevel, couchee: boolean): string {
   return `/kiosk-tranches/repli-${level}${couchee ? '-c' : ''}.webp`;
 }
 
+/** Longueur au-delà de laquelle le titre de repli est coupé (à la fin, avec des points de suspension). */
+const FALLBACK_TITLE_MAX = 56;
+
+/** Le titre écrit sur la tranche de repli : entier s'il tient, sinon coupé à la FIN (il l'était des deux côtés). */
+export function fallbackTitle(title: string): string {
+  const t = title.trim();
+  return t.length <= FALLBACK_TITLE_MAX ? t : `${t.slice(0, FALLBACK_TITLE_MAX - 1).trimEnd()}…`;
+}
+
+/**
+ * Corps du titre de repli, en cqw de la tranche (centièmes de sa largeur). La tranche est environ 7 fois plus longue
+ * que large et une capitale de la police de la borne avance d'environ 0,46 em : 22 caractères tiennent au corps de
+ * base (62), au-delà le corps diminue pour que tout le titre tienne, jusqu'à 24.
+ */
+export function fallbackTitleSize(title: string): number {
+  return Math.max(24, Math.min(62, Math.floor(1350 / Math.max(1, title.length))));
+}
+
+/** Un suivi utilisable : un pas par image, chacun avec la boîte de l'écran. Sinon la vidéo ne part pas. */
+export function isUsableSuivi(value: unknown): value is Suivi {
+  const s = value as Partial<Suivi> | null;
+  return (
+    typeof s === 'object' && s !== null && typeof s.images === 'number' && s.images > 0 && typeof s.ips === 'number' &&
+    Array.isArray(s.pas) && s.pas.length === s.images && s.pas.every((p) => p !== null && typeof p === 'object' && Array.isArray(p.e) && p.e.length === 4)
+  );
+}
+
 /** L'image du film que la vidéo présente à cet instant (son `mediaTime`), bornée au film. */
 export function frameAt(mediaTimeS: number, suivi: Pick<Suivi, 'images' | 'ips'>): number {
   return Math.min(suivi.images - 1, Math.max(0, Math.round(mediaTimeS * suivi.ips)));

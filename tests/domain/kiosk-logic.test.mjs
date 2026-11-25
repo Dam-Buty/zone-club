@@ -102,8 +102,9 @@ test('BORNE: un double appui ne lance qu\'une location', async () => {
 });
 test('BORNE: un refus du serveur remonte son message et libère le verrou', async () => {
   const lock = { busy: false };
-  const res = await K.rentFlow({ rent: async () => { throw new Error('Non authentifié'); }, setMode: async () => {} }, lock);
-  assert.deepEqual(res, { status: 'error', message: 'Non authentifié', httpStatus: null });
+  // Un refus du serveur porte son code HTTP (ApiError) ; sans code, c'est une panne de liaison (voir plus bas).
+  const res = await K.rentFlow({ rent: async () => { throw Object.assign(new Error('Non authentifié'), { status: 401 }); }, setMode: async () => {} }, lock);
+  assert.deepEqual(res, { status: 'error', message: 'Non authentifié', httpStatus: 401 });
   assert.equal(lock.busy, false);
 });
 test('BORNE: un échec du mode de visionnage ne fait pas échouer la location', async () => {
@@ -763,4 +764,34 @@ test('BORNE: le geste retour pendant la vidéo de distribution saute au panneau,
   assert.equal(K.kioskBackAction({ ...base, filmPlaying: true }), 'skip-film');
   assert.equal(K.kioskBackAction({ ...base, filmPlaying: true, detailOpen: true, searchOpen: true }), 'skip-film');
   assert.equal(K.kioskBackAction({ ...base, waiting: true }), 'none');
+});
+
+// ----- Batterie de tests du 25/11/2026 (testeur « location ») -----
+test('BORNE: réponse perdue après la location — si elle est enregistrée, la borne continue comme une réussite', async () => {
+  // Le serveur a débité et enregistré, mais sa réponse n'est jamais arrivée : la borne disait « Location impossible ».
+  const perdue = () => { throw new Error('Connexion au serveur impossible.'); };          // aucune réponse : pas de statut HTTP
+  const ok = await K.rentFlow({ rent: async () => perdue(), setMode: async () => {}, landed: async () => true }, { busy: false });
+  assert.deepEqual(ok, { status: 'ok' });
+  // Pas enregistrée (ou toujours pas de réseau pour le savoir) : un refus, qui renvoie vers « Mon compte ».
+  for (const landed of [async () => false, async () => { throw new Error('toujours coupé'); }]) {
+    const res = await K.rentFlow({ rent: async () => perdue(), setMode: async () => {}, landed }, { busy: false });
+    assert.equal(res.status, 'error');
+    assert.equal(res.httpStatus, null);
+    assert.ok(res.message.includes('Mon compte'), res.message);
+  }
+});
+
+test('BORNE: un refus du serveur n\'est jamais revérifié', async () => {
+  let appels = 0;
+  const res = await K.rentFlow({ rent: async () => { throw Object.assign(new Error('Crédits insuffisants'), { status: 400 }); }, setMode: async () => {}, landed: async () => { appels += 1; return true; } }, { busy: false });
+  assert.equal(res.status, 'error');
+  assert.equal(res.message, 'Crédits insuffisants');
+  assert.equal(appels, 0, 'le serveur a répondu : sa réponse fait foi');
+});
+
+test('BORNE: un double appui sur « Louer » ne passe pas la vidéo de distribution', () => {
+  assert.equal(K.filmTapSkips(0, 150), false, 'le second appui du double appui arrive pendant la garde');
+  assert.equal(K.filmTapSkips(0, K.FILM_TAP_GUARD_MS - 1), false);
+  assert.equal(K.filmTapSkips(0, K.FILM_TAP_GUARD_MS), true, 'ensuite un appui passe la vidéo');
+  assert.equal(K.filmTapSkips(null, 5000), true, 'sans heure de départ connue, on ne bloque rien');
 });

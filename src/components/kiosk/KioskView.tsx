@@ -28,6 +28,7 @@ import {
   creditsLabel,
   creditsLine,
   filmsForTab,
+  filmTapSkips,
   firstNonEmptyTab,
   followBaseline,
   KIOSK_RENT_TIMEOUT_MS,
@@ -133,6 +134,9 @@ function useScreenDensity(): number | undefined {
   }, []);
   return ratio;
 }
+
+/** Durée pendant laquelle l'écran reste au-dessus du calque de la vidéo après sa fin : son fondu (280 ms) et une marge. */
+const FILM_FADE_HOLD_MS = 340;
 
 /** Même requête que la feuille de style : l'écran 2:3 du PC garde sa mise en page fixe. */
 const PC_QUERY = '(min-width: 769px) and (pointer: fine)';
@@ -410,6 +414,27 @@ export function KioskView() {
   );
   // Fenêtre redimensionnée ou téléphone tourné pendant la vidéo : le cadre ne vaut plus, on passe au panneau.
   const filmPlaying = distribution?.phase === 'film';
+  // À la fin de la vidéo, son calque s'efface en fondu (280 ms) : l'écran de la borne reste AU-DESSUS de lui pendant ce
+  // temps. Rendu dessous tout de suite, il laissait voir un instant l'écran filmé de la dernière image — la fiche d'un
+  // autre film (batterie de tests du 25/11/2026).
+  const [liftHeld, setLiftHeld] = useState(false);
+  useEffect(() => {
+    if (filmPlaying) {
+      setLiftHeld(true);
+      return;
+    }
+    const id = window.setTimeout(() => setLiftHeld(false), FILM_FADE_HOLD_MS);
+    return () => window.clearTimeout(id);
+  }, [filmPlaying]);
+  const screenLifted = filmPlaying || liftHeld;
+  // Un appui passe la vidéo — sauf le second appui d'un double appui sur « Louer », qui tombait sur elle.
+  const filmStartedAtRef = useRef<number | null>(null);
+  useEffect(() => {
+    filmStartedAtRef.current = filmPlaying ? performance.now() : null;
+  }, [filmPlaying]);
+  const tapFilm = useCallback(() => {
+    if (filmTapSkips(filmStartedAtRef.current, performance.now())) distributionFilm.skip();
+  }, [distributionFilm]);
   useEffect(() => {
     if (!filmPlaying) return;
     const skipFilm = distributionFilm.skip;
@@ -814,6 +839,7 @@ export function KioskView() {
         ref={filmLayerRef}
         film={variant.film}
         sheets={variantAssets}
+        onTap={tapFilm}
         player={distributionFilm}
         active={filmPlaying}
         stage={filmStage}
@@ -833,7 +859,7 @@ export function KioskView() {
             <div className={styles.ksPlace}>
             {/* PC : la borne modélisée, derrière son écran — la première image du film de distribution. */}
             {decor && <img className={styles.decor} src={decor.src} alt="" width={decor.largeur} height={decor.hauteur} style={decorStyle(decor.ecran)} decoding="async" draggable={false} onLoad={() => setDecorLoaded(true)} onError={() => setDecorFailed(true)} />}
-            <div ref={screenRef} onClick={filmPlaying ? distributionFilm.skip : undefined} className={`${styles.ks} ${filmPlaying ? styles.ksLifted : ''}`} style={{ '--k-dpx': lcdDevicePixel(density), '--k-lcd-n': lcdPitchInDevicePixels(density) } as CSSProperties}>
+            <div ref={screenRef} onClick={filmPlaying ? tapFilm : undefined} className={`${styles.ks} ${screenLifted ? styles.ksLifted : ''}`} style={{ '--k-dpx': lcdDevicePixel(density), '--k-lcd-n': lcdPitchInDevicePixels(density) } as CSSProperties}>
               <div className={styles.screen} data-mode={mode} data-cast-bar={castBarFilm !== null || undefined} style={layoutVars}>
                 <div className={styles.kTop} inert={welcome || overlay !== null || distribution !== null}>
                   <div className={styles.kLogo}>

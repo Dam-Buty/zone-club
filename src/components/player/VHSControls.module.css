@@ -215,7 +215,10 @@
 /* ===== Portrait mobile: stack as a 90s VCR remote ===== */
 @media (orientation: portrait) and (max-width: 900px) {
   .controls {
-    position: static;
+    /* Dans le flux, mais positionnées : leur z-index doit valoir, sinon l'écran bleu de STOP (absolu, z-index 5) passe
+       devant PLAY, STOP et EJECT et prend les appuis (batterie de tests du 25/11/2026). */
+    position: relative;
+    z-index: 10;
     flex-direction: column;
     align-items: stretch;
     gap: 0.6rem;

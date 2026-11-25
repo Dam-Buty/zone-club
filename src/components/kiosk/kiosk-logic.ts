@@ -300,7 +300,12 @@ export function offersRelogin(result: RentFlowResult): boolean {
  * pas répondu ; un échec du mode de visionnage n'annule pas une location déjà enregistrée.
  */
 export async function rentFlow(
-  deps: { rent: () => Promise<unknown>; setMode: () => Promise<unknown> },
+  deps: {
+    rent: () => Promise<unknown>;
+    setMode: () => Promise<unknown>;
+    /** Sans réponse du serveur : la location a-t-elle été enregistrée quand même ? (relecture du compte) */
+    landed?: () => Promise<boolean>;
+  },
   lock: { busy: boolean },
 ): Promise<RentFlowResult> {
   if (lock.busy) return { status: 'busy' };
@@ -316,14 +321,36 @@ export async function rentFlow(
   } catch (error) {
     // Le code HTTP du refus (ApiError.status) est gardé : lui seul dit si la session a expiré.
     const status = (error as { status?: unknown } | null)?.status;
-    return {
-      status: 'error',
-      message: error instanceof Error ? error.message : 'Erreur inconnue',
-      httpStatus: typeof status === 'number' ? status : null,
-    };
+    const message = error instanceof Error ? error.message : 'Erreur inconnue';
+    if (typeof status !== 'number') {
+      // Aucune réponse : la demande a pu arriver au serveur et sa réponse se perdre en route — le visiteur serait alors
+      // débité devant « Location impossible » (batterie de tests du 25/11/2026). On relit le compte : si la location y
+      // est, c'est une réussite ; sinon on le renvoie vers « Mon compte » avant qu'il ne réessaie.
+      try {
+        if (deps.landed && (await deps.landed())) return { status: 'ok' };
+      } catch {
+        // Toujours pas de réponse : on ne sait pas.
+      }
+      return { status: 'error', message: `${message} ${RENT_UNKNOWN_HINT}`, httpStatus: null };
+    }
+    return { status: 'error', message, httpStatus: status };
   } finally {
     lock.busy = false;
   }
+}
+
+/** Ajouté au message quand on ne sait pas si la location a été enregistrée. */
+export const RENT_UNKNOWN_HINT = 'Avant de réessayer, regardez « Mon compte » : la location y est peut-être déjà.';
+
+/**
+ * La vidéo de distribution part à l'appui sur « Louer » de la confirmation : le second appui d'un double appui tombait
+ * sur elle et la passait aussitôt. Pendant ce délai après son départ, un appui ne la passe pas.
+ */
+export const FILM_TAP_GUARD_MS = 800;
+
+/** Un appui à l'instant `nowMs` passe-t-il la vidéo partie à `startedAtMs` ? */
+export function filmTapSkips(startedAtMs: number | null, nowMs: number): boolean {
+  return startedAtMs === null || nowMs - startedAtMs >= FILM_TAP_GUARD_MS;
 }
 
 /** « 19 novembre à 18:42 » — l'échéance d'une location. `timeZone` ne sert qu'aux tests. */
