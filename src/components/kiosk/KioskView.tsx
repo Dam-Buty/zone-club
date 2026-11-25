@@ -674,6 +674,14 @@ export function KioskView() {
     // Le compte se consulte à tout moment, sans avoir à louer d'abord (Rusmir, 17/11/2026).
     setAccountOpen(true);
   };
+  // « Mon compte » ouvert alors que la session n'existe plus (cookie expiré ou supprimé pendant la visite : la relecture
+  // du compte répond 401) : pas de compte fantôme au pseudo vide — la connexion est redemandée, et le compte rouvert après.
+  useEffect(() => {
+    if (accountOpen && !isAuthenticated) {
+      setAccountOpen(false);
+      requestAuth(() => setAccountOpen(true));
+    }
+  }, [accountOpen, isAuthenticated, requestAuth]);
 
   // ----- « Location terminée » (refonte du Cast, spec 2026-11-18, § 5.2 bis) -----
   // La location du film qui passait sur la TV a disparu (échéance, retour, déconnexion) : le service a arrêté la TV et
@@ -912,7 +920,16 @@ export function KioskView() {
                       onReview={(filmId) => setReviewFilmId(filmId)}
                       onLogout={() => {
                         setAccountOpen(false);
-                        void logout();
+                        void logout().then((ok) => {
+                          if (ok) return;
+                          // Le serveur n'a pas reçu la déconnexion : le cookie est toujours là, on ne prétend pas le contraire.
+                          setAccountOpen(true);
+                          setNotice({
+                            title: 'Déconnexion impossible',
+                            body: 'Le serveur est injoignable : vous êtes toujours connecté sur cet appareil. Réessayez dès que la connexion revient.',
+                            primary: { label: 'Fermer', onPress: () => setNotice(null) },
+                          });
+                        });
                       }}
                       onBack={() => setAccountOpen(false)}
                     />

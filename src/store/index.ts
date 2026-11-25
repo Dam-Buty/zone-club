@@ -109,7 +109,7 @@ export interface VideoClubState extends CastSlice, VersionSlice {
   recoveryPhrase: string | null;
   login: (username: string, password: string) => Promise<boolean>;
   register: (username: string, password: string) => Promise<boolean>;
-  logout: () => Promise<void>;
+  logout: () => Promise<boolean>;
   clearAuthError: () => void;
   clearRecoveryPhrase: () => void;
   fetchMe: () => Promise<void>;
@@ -387,7 +387,7 @@ export interface VideoClubState extends CastSlice, VersionSlice {
 }
 
 /** Connexion acceptée par le serveur mais session absente à la relecture : le cookie n'a pas été gardé. */
-const SESSION_NOT_KEPT = 'Connexion acceptée, mais la session n\u2019a pas tenu : ce navigateur refuse peut-être les cookies de ce site. Autorisez-les, ou ouvrez le site dans un autre navigateur.';
+export const SESSION_NOT_KEPT = 'Connexion acceptée, mais la session n\u2019a pas tenu : ce navigateur refuse peut-être les cookies de ce site. Autorisez-les, ou ouvrez le site dans un autre navigateur.';
 
 export const useStore = create<VideoClubState>()(
   persist(
@@ -438,6 +438,13 @@ export const useStore = create<VideoClubState>()(
             // Compte neuf, sans fetchMe : ni préférence ni choix par film, et la table de l'appareil devient la sienne.
             versionPref: null, filmVersions: {}, filmVersionsUser: user.id,
           });
+          // Le compte existe ; la session tient-elle ? Si le navigateur a refusé le cookie, la borne doit le savoir —
+          // la phrase reste affichée (elle seule permet de retrouver le compte), et la connexion est redemandée après.
+          try {
+            await api.me.get();
+          } catch (error) {
+            if (error instanceof ApiError && error.status === 401) set({ isAuthenticated: false, authUser: null });
+          }
           return true;
         } catch (error) {
           set({
@@ -455,8 +462,11 @@ export const useStore = create<VideoClubState>()(
         get().castLoggedOut();
         try {
           await api.auth.logout();
-        } catch {
-          // Ignorer les erreurs de déconnexion
+        } catch (error) {
+          // Un 401 : le serveur ne nous connaît déjà plus, on finit le ménage. Toute autre erreur (réseau coupé, panne) :
+          // le cookie de session est toujours dans le navigateur — annoncer « déconnecté » serait faux, et le visiteur
+          // suivant sur le même appareil se retrouverait connecté à ce compte au rechargement.
+          if (!(error instanceof ApiError && error.status === 401)) return false;
         }
         set({
           isAuthenticated: false,
@@ -478,6 +488,7 @@ export const useStore = create<VideoClubState>()(
           versionPref: null,
           filmVersions: {}, filmVersionsUser: null,
         });
+        return true;
       },
 
       clearAuthError: () => set({ authError: null }),
@@ -531,8 +542,12 @@ export const useStore = create<VideoClubState>()(
           // Non connecté, pas d'erreur. Les choix par film et leur propriétaire restent sur l'appareil. La version préférée
           // ne part que sur un vrai 401 (keepsVersionPref) : une panne ne fait pas changer la version en plein film.
           const status = error instanceof ApiError ? error.status : null;
+          // Seul un 401 dit « non connecté ». Une panne (réseau coupé, erreur 5xx) ne déconnecte personne : le compte
+          // reste à l'écran tel qu'il était, la lecture suivante le rafraîchira. Sans cela « Mon compte » s'ouvrait sur
+          // un pseudo vide et des crédits inventés (batterie de tests du 25/11/2026).
+          if (status !== 401) return;
           set({
-            isAuthenticated: false, authUser: null, rentalHistory: [], userReviews: [], reviewEligibility: {}, weeklyBonusStatus: null,
+            isAuthenticated: false, authUser: null, rentals: [], rentalHistory: [], userReviews: [], reviewEligibility: {}, weeklyBonusStatus: null,
             ...(keepsVersionPref(status) ? {} : { versionPref: null }),
           });
         }
@@ -1146,6 +1161,9 @@ export const useStore = create<VideoClubState>()(
       name: 'videoclub-storage',
       partialize: (state) => ({
         localUser: state.localUser,
+        // La phrase de récupération tant qu'elle n'est pas notée : un rechargement (onglet déchargé pendant qu'on va
+        // la coller ailleurs) la faisait disparaître pour toujours. « J'ai noté ma phrase » et la déconnexion l'effacent.
+        recoveryPhrase: state.recoveryPhrase,
         rentalHistory: state.rentalHistory,
         hasSeenOnboarding: state.hasSeenOnboarding,
         hasSeenVHSSwipeHint: state.hasSeenVHSSwipeHint,

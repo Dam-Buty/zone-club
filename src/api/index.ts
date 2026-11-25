@@ -95,11 +95,23 @@ export interface ApiGenre {
 
 // Error handling
 export class ApiError extends Error {
-  constructor(public status: number, message: string) {
+  status: number;
+
+  constructor(status: number, message: string) {
     super(message);
+    this.status = status;
     this.name = 'ApiError';
   }
 }
+
+/** Pas de réponse du tout (réseau coupé, serveur injoignable). */
+export const NETWORK_DOWN = 'Connexion au serveur impossible. Vérifiez votre connexion, puis réessayez.';
+/** Le serveur n'a pas répondu dans le délai. */
+export const SERVER_SLOW = 'Le serveur met trop de temps à répondre. Réessayez dans un instant.';
+/** Le serveur a répondu, mais pas ce qu'on attend de lui (erreur 5xx sans message, réponse coupée). */
+export const SERVER_BROKEN = 'Le serveur ne répond pas correctement. Réessayez dans un instant.';
+/** Délai maximal d'une requête : au-delà, le visiteur n'attend plus devant « Un instant… » sans fin. */
+export const REQUEST_TIMEOUT_MS = 30_000;
 
 async function request<T>(
   endpoint: string,
@@ -107,22 +119,31 @@ async function request<T>(
 ): Promise<T> {
   const url = `${API_BASE}${endpoint}`;
 
-  const response = await fetch(url, {
-    ...options,
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Requested-With': 'XMLHttpRequest',
-      ...options.headers,
-    },
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      ...options,
+      credentials: 'include',
+      signal: options.signal ?? AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest',
+        ...options.headers,
+      },
+    });
+  } catch (error) {
+    // Aucune réponse : ni statut HTTP ni ApiError (les appelants lisent `null` comme « panne », jamais comme un refus).
+    // Le navigateur dit « Failed to fetch » en anglais : la borne le dit en français.
+    const slow = error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError');
+    throw new Error(slow ? SERVER_SLOW : NETWORK_DOWN);
+  }
 
   if (!response.ok) {
     // Backend convention: errors are { error: string } (NextResponse.json
     // across all 79 sites + proxy.ts). Older code wrote `message` — kept
     // as fallback for compat with any drift.
-    const errorData = await response.json().catch(() => ({ error: 'Erreur inconnue' }));
-    const msg = errorData.error || errorData.message || `Erreur ${response.status}`;
+    const errorData = await response.json().catch(() => null);
+    const msg = errorData?.error || errorData?.message || (response.status >= 500 ? SERVER_BROKEN : `Erreur ${response.status}`);
     throw new ApiError(response.status, msg);
   }
 
@@ -131,7 +152,12 @@ async function request<T>(
     return {} as T;
   }
 
-  return response.json();
+  try {
+    return await response.json();
+  } catch {
+    // Réponse coupée en route : l'erreur du décodeur JSON (en anglais) n'a rien à faire à l'écran.
+    throw new ApiError(response.status, SERVER_BROKEN);
+  }
 }
 
 // ============ AUTH ============

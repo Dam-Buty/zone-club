@@ -1055,3 +1055,33 @@ test('CONNEXION: une session que le navigateur ne garde pas se dit, au lieu de n
   assert.ok(/await get\(\)\.fetchMe\(\);\s*if \(!get\(\)\.isAuthenticated\) \{[\s\S]{0,600}authError: SESSION_NOT_KEPT[\s\S]{0,80}return false;/.test(login), 'après la connexion, la session est relue ; absente, c\'est une erreur affichée');
   assert.ok(/SESSION_NOT_KEPT = '[^']*cookies[^']*'/.test(src), 'le message parle des cookies');
 });
+test('SESSION (batterie du 25/11/2026): une panne ne déconnecte personne, et une session perdue se dit', () => {
+  const store = readText(path.join(ROOT, 'src/store/index.ts'));
+  const debut = store.indexOf('fetchMe: async () => {');
+  const fetchMe = store.slice(debut, store.indexOf('// User local (fallback)', debut));
+  const failure = fetchMe.slice(fetchMe.indexOf('catch'));
+  // I1 / I3 : seul un 401 dit « non connecté ». Un 500 ou une coupure laisse le compte tel qu'il est à l'écran.
+  assert.match(failure, /if \(status !== 401\) return;/, 'une panne (réseau, 5xx) ne touche pas à la session');
+  assert.match(failure, /rentals: \[\]/, 'un vrai 401 vide aussi les locations en cours (plus de « Regarder » sans compte)');
+  // I2 : l'inscription vérifie que la session tient, comme la connexion.
+  const register = store.slice(store.indexOf('register: async (username, password)'), store.indexOf('logout: async'));
+  assert.match(register, /await api\.me\.get\(\);[\s\S]{0,300}status === 401[\s\S]{0,120}isAuthenticated: false/, 'compte créé mais cookie refusé : la borne le sait');
+  // I6 : une déconnexion qui n'a pas atteint le serveur n'est pas annoncée comme faite.
+  const debutLogout = store.indexOf('logout: async');
+  const logout = store.slice(debutLogout, store.indexOf('clearAuthError: ()', debutLogout));
+  assert.match(logout, /catch \(error\) \{[\s\S]{0,800}return false;/, 'échec de la déconnexion : on reste connecté, et on le dit');
+  assert.ok(logout.trimEnd().includes('return true;'), 'succès : true');
+  // I8 : la phrase de récupération survit à un rechargement tant qu'elle n'est pas notée.
+  const partialize = store.slice(store.indexOf('partialize: (state) => ({'));
+  assert.match(partialize.slice(0, 1600), /recoveryPhrase: state\.recoveryPhrase/, 'la phrase est gardée sur l\'appareil jusqu\'à « J\'ai noté ma phrase »');
+
+  const auth = readText(path.join(ROOT, 'src/components/kiosk/KioskAuth.tsx'));
+  const ack = auth.slice(auth.indexOf('const acknowledgePhrase'), auth.indexOf('// ----- Écran final'));
+  assert.match(ack, /if \(!useStore\.getState\(\)\.isAuthenticated\) \{[\s\S]{0,600}setFormError\(SESSION_NOT_KEPT\)/, 'phrase notée mais session absente : retour à la connexion, avec le message');
+  // I9 : après une récupération, la phrase est NOUVELLE et l'ancienne ne marche plus.
+  assert.ok(auth.includes('Votre nouvelle phrase de récupération') && auth.includes('ancienne ne fonctionne plus'), 'la nouvelle phrase s\'annonce comme telle');
+
+  const view = readText(path.join(ROOT, 'src/components/kiosk/KioskView.tsx'));
+  assert.match(view, /if \(accountOpen && !isAuthenticated\) \{[\s\S]{0,400}requestAuth\(/, '« Mon compte » ouvert sans session : la connexion est redemandée, pas de compte fantôme');
+  assert.match(view, /logout\(\)\.then\(\(ok\) => \{[\s\S]{0,600}Déconnexion impossible/, 'déconnexion ratée : un message, et le compte reste ouvert');
+});

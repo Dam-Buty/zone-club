@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
-import { useStore } from '../../store';
+import { SESSION_NOT_KEPT, useStore } from '../../store';
 import api from '../../api';
 import { accountFormError } from '../../utils/account-rules';
 import type { KioskAuthMode } from './kiosk-logic';
@@ -115,6 +115,14 @@ export function KioskAuth({ initialMode = 'login', onDone, onCancel }: KioskAuth
 
   const acknowledgePhrase = () => {
     clearRecoveryPhrase();
+    if (!useStore.getState().isAuthenticated) {
+      // Le compte existe et sa phrase est notée, mais le navigateur n'a pas gardé la session : on le dit, sur la connexion.
+      setPassword('');
+      setConfirm('');
+      setMode('login');
+      setFormError(SESSION_NOT_KEPT);
+      return;
+    }
     onDone();
   };
 
@@ -122,10 +130,10 @@ export function KioskAuth({ initialMode = 'login', onDone, onCancel }: KioskAuth
   if (pendingPhrase) {
     return (
       <div className={styles.kAuth}>
-        <h2 className={styles.kAuthTitle}>Votre phrase de récupération</h2>
+        <h2 className={styles.kAuthTitle}>{mode === 'recover' ? 'Votre nouvelle phrase de récupération' : 'Votre phrase de récupération'}</h2>
         <code ref={phraseRef} className={styles.kAuthPhrase}>{pendingPhrase}</code>
         <p className={styles.kAuthText}>
-          Notez-la : elle seule permet de retrouver votre compte si vous oubliez votre mot de passe.
+          {mode === 'recover' ? 'L’ancienne ne fonctionne plus. ' : ''}Notez-la : elle seule permet de retrouver votre compte si vous oubliez votre mot de passe.
         </p>
         <div className={styles.kAuthLinks}>
           <button type="button" className={styles.kAuthLink} onClick={copyPhrase}>

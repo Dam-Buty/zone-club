@@ -14,7 +14,9 @@ export const PASSWORD_MIN = 8;
 
 /** Refus du pseudo, ou `null` s'il convient. */
 export function usernameRuleError(username: string): string | null {
-  if (username.length < USERNAME_MIN || username.length > USERNAME_MAX) {
+  // Les espaces autour ne comptent pas (et ne sont pas enregistrés) : trois espaces ne font pas un pseudo.
+  const length = username.trim().length;
+  if (length < USERNAME_MIN || length > USERNAME_MAX) {
     return `Le pseudo doit faire entre ${USERNAME_MIN} et ${USERNAME_MAX} caractères`;
   }
   return null;
