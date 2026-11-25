@@ -689,6 +689,12 @@
     letter-spacing: 0.06em;
   }
 
+  /* « NO SIGNAL » dans la zone de la vidéo (sous l'en-tête, haute de 9/16 de la largeur), pas derrière les commandes. */
+  .blueScreen {
+    align-items: flex-start;
+    padding-top: calc(5rem + 28vw);
+  }
+
   .video {
     width: 100vw;
     height: auto;

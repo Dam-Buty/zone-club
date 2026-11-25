@@ -1177,3 +1177,16 @@ test('PANNEAUX (batterie du 25/11/2026): sur PC les formulaires tiennent dans l\
   assert.match(css, /\.kAuthLink \{[^}]*min-height: max\(40px, 10cqw\);/, 'liens du panneau de connexion : 40 px au moins');
   assert.match(css, /\.kBonusLine > span:first-child \{[^}]*white-space: nowrap;/, 'le nom de la ligne du bonus ne se coupe pas');
 });
+test('CATALOGUE: le préchargement de la page retient lui aussi les rayons en échec', () => {
+  // Vu dans le navigateur le 25/11/2026 : le catalogue arrive d'abord par le préchargement d'App.tsx, pas par le magasin ;
+  // un rayon en échec y était simplement sauté, et la borne le disait « vide ».
+  const app = readText(path.join(ROOT, 'src/App.tsx'));
+  assert.match(app, /useStore\.setState\(\{ failedAisles: AISLES\.filter\(\(_, i\) => !results\[i\]\) \}\);/, 'les rayons que le préchargement n\'a pas rapportés sont retenus');
+});
+test('LECTEUR: sur téléphone l\'écran bleu de STOP reste dans la zone de la vidéo', () => {
+  const css = readText(path.join(ROOT, 'src/components/player/VHSControls.module.css'));
+  const portrait = css.slice(css.indexOf('@media (orientation: portrait) and (max-width: 900px)'));
+  assert.match(portrait, /box-shadow: inset 0 6px 18px rgba\(0, 255, 247, 0\.06\), 0 100vh 0 100vh #0a0a10;/, 'sous les commandes, le fond du lecteur et non l\'écran bleu');
+  const player = readText(path.join(ROOT, 'src/components/player/VHSPlayer.module.css'));
+  assert.match(player.slice(player.indexOf('@media (orientation: portrait) and (max-width: 900px)')), /\.blueScreen \{[^}]*align-items: flex-start;/, '« NO SIGNAL » est écrit dans la zone de la vidéo, pas derrière les commandes');
+});

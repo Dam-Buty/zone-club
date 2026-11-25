@@ -562,6 +562,8 @@ function App() {
         if (!result) continue;
         setFilmsForAisle(result.aisle, result.films);
       }
+      // Un rayon que le préchargement n'a pas rapporté est en échec, pas vide : la borne le dit et propose de réessayer.
+      useStore.setState({ failedAisles: AISLES.filter((_, i) => !results[i]) });
     });
   }, [setFilmsForAisle]);
 
