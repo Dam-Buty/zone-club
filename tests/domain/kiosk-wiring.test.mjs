@@ -1018,3 +1018,21 @@ test('DISTRIBUTION PC: la borne du PC a son film, ses relevés et son décor mod
   assert.ok(css.includes('.root[data-decor]') && css.includes('.decor'), 'avec le décor, les bandes de couleur et le cadre dessiné s\'effacent');
   assert.ok(!/\.root\[data-decor\][^}]*\{[^}]*(padding|gap|width)\s*:/.test(css), 'le décor ne change aucune cote : l\'écran reste où le film d\'approche l\'attend');
 });
+test('DISTRIBUTION FILMÉE: corrections de la relecture du 25/11/2026', () => {
+  const view = readText(path.join(ROOT, 'src/components/kiosk/KioskView.tsx'));
+  const hook = readText(path.join(ROOT, 'src/components/kiosk/useDistributionFilm.ts'));
+  const welcome = readText(path.join(ROOT, 'src/components/kiosk/KioskWelcome.tsx'));
+  // L'écran de la borne passe au-dessus de la vidéo : un appui sur lui doit la passer aussi.
+  assert.ok(/ref=\{screenRef\}[^>]*onClick=\{filmPlaying \? distributionFilm\.skip : undefined\}/.test(view), 'un appui sur l\'écran passe la vidéo');
+  // Quelle que soit la fin, la vidéo s'arrête : pas de son sous le panneau.
+  const done = hook.slice(hook.indexOf('const done = useCallback'), hook.indexOf('const start = useCallback'));
+  assert.ok(done.includes('videoRef.current?.pause()'), 'done() met la vidéo en pause');
+  // Un suivi mal formé ne doit pas faire disparaître le panneau.
+  const start = hook.slice(hook.indexOf('const start = useCallback'), hook.indexOf('const skip = useCallback'));
+  assert.ok(/try \{\s*onFrameRef\.current\(0, suivi\);\s*\} catch/.test(start) && start.includes('return false'), 'la première mise en place est gardée : en cas d\'erreur, pas de vidéo, le panneau s\'ouvre');
+  // Le décor ne remplace la borne dessinée qu'une fois chargé ; changer de variante en cours de vidéo la passe.
+  assert.ok(view.includes('onLoad={() => setDecorLoaded(true)}') && /data-decor=\{decor && decorLoaded \? '' : undefined\}/.test(view), 'le décor attend son image');
+  assert.ok(/useEffect\(\(\) => \{\s*skipFilmRef\.current\(\);\s*\}, \[variant\]\)/.test(view), 'changement de variante : la vidéo est passée');
+  // L'accueil : pas de cadre « Les nouveautés » vide, pas de jaquette cassée.
+  assert.ok(welcome.includes('list.length > 0 &&') && welcome.includes('onError={() => drop(film.id)}'), 'cadre masqué sans nouveauté, affiche en échec retirée');
+});

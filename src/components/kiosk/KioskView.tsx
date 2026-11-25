@@ -354,6 +354,7 @@ export function KioskView() {
   useEffect(() => { filmRatioRef.current = variant.film.largeur / variant.film.hauteur; }, [variant]);
   // Le décor (PC) : s'il ne se charge pas, la borne dessinée reprend sa place.
   const [decorFailed, setDecorFailed] = useState(false);
+  const [decorLoaded, setDecorLoaded] = useState(false);
   const decor = variant.decor && !decorFailed ? variant.decor : null;
   const filmLayerRef = useRef<KioskDistributionFilmHandle | null>(null);
   const filmGeometryRef = useRef<{ stage: Rect; screen: Rect; exact: boolean } | null>(null);
@@ -415,6 +416,12 @@ export function KioskView() {
     window.addEventListener('resize', skipFilm);
     return () => window.removeEventListener('resize', skipFilm);
   }, [filmPlaying, distributionFilm.skip]);
+  // Téléphone ↔ PC en cours de vidéo (souris branchée sur une tablette) : le film n'est plus le bon, on passe au panneau.
+  const skipFilmRef = useRef(distributionFilm.skip);
+  useEffect(() => { skipFilmRef.current = distributionFilm.skip; }, [distributionFilm.skip]);
+  useEffect(() => {
+    skipFilmRef.current();
+  }, [variant]);
   // Filet : quelle que soit la façon dont la phase « film » se termine, l'écran ne garde aucune transformation.
   useEffect(() => {
     if (!filmPlaying) releaseScreen();
@@ -792,7 +799,7 @@ export function KioskView() {
 
   return (
     <>
-    <div className={`${styles.root} ${hidden ? states.rootHidden : ''}`} data-decor={decor ? '' : undefined} inert={isPlayerOpen || hidden} onContextMenu={blockContextMenu}>
+    <div className={`${styles.root} ${hidden ? states.rootHidden : ''}`} data-decor={decor && decorLoaded ? '' : undefined} inert={isPlayerOpen || hidden} onContextMenu={blockContextMenu}>
       {/* La vidéo de distribution : dans la borne, sous son écran (qui est l'écran filmé) et au-dessus de tout le reste.
           Toujours montée, pour que le crochet trouve sa balise à la réponse du serveur ; visible en phase « film ». */}
       <KioskDistributionFilm
@@ -817,8 +824,8 @@ export function KioskView() {
           <div className={styles.bezel}>
             <div className={styles.ksPlace}>
             {/* PC : la borne modélisée, derrière son écran — la première image du film de distribution. */}
-            {decor && <img className={styles.decor} src={decor.src} alt="" width={decor.largeur} height={decor.hauteur} style={decorStyle(decor.ecran)} decoding="async" draggable={false} onError={() => setDecorFailed(true)} />}
-            <div ref={screenRef} className={`${styles.ks} ${filmPlaying ? styles.ksLifted : ''}`} style={{ '--k-dpx': lcdDevicePixel(density), '--k-lcd-n': lcdPitchInDevicePixels(density) } as CSSProperties}>
+            {decor && <img className={styles.decor} src={decor.src} alt="" width={decor.largeur} height={decor.hauteur} style={decorStyle(decor.ecran)} decoding="async" draggable={false} onLoad={() => setDecorLoaded(true)} onError={() => setDecorFailed(true)} />}
+            <div ref={screenRef} onClick={filmPlaying ? distributionFilm.skip : undefined} className={`${styles.ks} ${filmPlaying ? styles.ksLifted : ''}`} style={{ '--k-dpx': lcdDevicePixel(density), '--k-lcd-n': lcdPitchInDevicePixels(density) } as CSSProperties}>
               <div className={styles.screen} data-mode={mode} data-cast-bar={castBarFilm !== null || undefined} style={layoutVars}>
                 <div className={styles.kTop} inert={welcome || overlay !== null || distribution !== null}>
                   <div className={styles.kLogo}>
@@ -969,7 +976,7 @@ export function KioskView() {
 
                 {overlay && <KioskNotice {...overlay} />}
 
-                {welcome && <KioskWelcome films={filmsForTab(films, firstNonEmptyTab(films), 'rayon')} hint={quitHint} onEnter={() => setWelcome(false)} onQuit={quit} />}
+                {welcome && <KioskWelcome films={films.nouveautes ?? []} hint={quitHint} onEnter={() => setWelcome(false)} onQuit={quit} />}
 
                 {/* Allumage des tubes du rétroéclairage : l'écran part du noir et monte, un peu chaud et terne. */}
                 {warming && <div className={styles.kWarm} aria-hidden="true" onAnimationEnd={() => setWarming(false)} />}

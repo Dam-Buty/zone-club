@@ -121,6 +121,9 @@ export function useDistributionFilm({ url, assets, durationMs, load, onFrame, on
     if (doneRef.current) return;
     doneRef.current = true;
     clearTimers();
+    // Quelle que soit la fin (délai de la première image, garde, erreur), la vidéo s'arrête : sinon elle jouerait son
+    // son, invisible, sous le panneau. Sans effet après `ended`.
+    videoRef.current?.pause();
     // La borne reste montée : la location suivante doit pouvoir rejouer la vidéo.
     phaseRef.current = 'idle';
     setPhase('idle');
@@ -170,7 +173,18 @@ export function useDistributionFilm({ url, assets, durationMs, load, onFrame, on
     }
     timersRef.current.push(window.setTimeout(done, DISTRIBUTION_START_TIMEOUT_MS));
     // Tout est en place AVANT la première image : la tranche sur la K7, l'écran dans son cadre.
-    onFrameRef.current(0, suivi);
+    try {
+      onFrameRef.current(0, suivi);
+    } catch {
+      // Suivi mal formé : pas de vidéo. L'appelant ouvre le panneau (il reçoit false) ; rien ne reste armé.
+      doneRef.current = true;
+      clearTimers();
+      video.removeEventListener('ended', done);
+      video.removeEventListener('error', done);
+      phaseRef.current = 'idle';
+      setPhase('idle');
+      return false;
+    }
 
     try {
       video.currentTime = 0;

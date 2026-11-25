@@ -17,7 +17,7 @@ export const WELCOME_FILMS = 10;
 const SLOTS = [-2, -1, 0, 1, 2] as const;
 
 interface KioskWelcomeProps {
-  /** Les nouveautés, de la plus récemment arrivée au vidéoclub à la plus ancienne (l'ordre de l'API). */
+  /** Les nouveautés, de la plus récemment arrivée au vidéoclub à la plus ancienne (l'ordre de l'API). Aucune : pas de cadre. */
   films: Film[];
   /** Le geste retour ne quitte pas la borne : « Quitter » s'éclaire pour le rappeler. */
   hint: boolean;
@@ -26,7 +26,10 @@ interface KioskWelcomeProps {
 }
 
 export function KioskWelcome({ films, hint, onEnter, onQuit }: KioskWelcomeProps) {
-  const list = useMemo(() => films.filter((film) => film.poster_path).slice(0, WELCOME_FILMS), [films]);
+  // Une affiche qui ne se charge pas sort du défilement : jamais de cadre vide.
+  const [broken, setBroken] = useState<number[]>([]);
+  const drop = (id: number) => setBroken((ids) => (ids.includes(id) ? ids : [...ids, id]));
+  const list = useMemo(() => films.filter((film) => film.poster_path && !broken.includes(film.id)).slice(0, WELCOME_FILMS), [films, broken]);
   const [index, setIndex] = useState(0);
 
   useEffect(() => {
@@ -56,20 +59,22 @@ export function KioskWelcome({ films, hint, onEnter, onQuit }: KioskWelcomeProps
         <div className={styles.termSub}>VIDEOCLUB · LOCATION DE K7 · 24H/24</div>
       </div>
 
+      {list.length > 0 && (
       <div className={styles.news} aria-hidden="true">
         <div className={styles.newsTitle}>Les nouveautés</div>
         <div className={styles.stage}>
           {list.length >= 5
             ? SLOTS.map((slot) => {
                 const film = at(slot);
-                return <img key={film.id} className={styles.poster} data-slot={slot} src={posterSrc(film, 'w342') ?? undefined} alt="" decoding="async" draggable={false} />;
+                return <img key={film.id} className={styles.poster} data-slot={slot} src={posterSrc(film, 'w342') ?? undefined} alt="" decoding="async" draggable={false} onError={() => drop(film.id)} />;
               })
-            : centre && <img className={styles.poster} data-slot={0} src={posterSrc(centre, 'w342') ?? undefined} alt="" decoding="async" draggable={false} />}
+            : centre && <img className={styles.poster} data-slot={0} src={posterSrc(centre, 'w342') ?? undefined} alt="" decoding="async" draggable={false} onError={() => drop(centre.id)} />}
         </div>
         <div className={styles.caption}>
           {centre ? centre.title : ''}
         </div>
       </div>
+      )}
 
       <div className={styles.cta} aria-hidden="true">
         <span className={styles.ctaLabel}>Touchez l'écran</span>

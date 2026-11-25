@@ -140,6 +140,16 @@ async function illusion(page, nom) {
   dit(vu5.agi && vu5.pret > 0 && vu5.apresAgi < 800 && vu5.fin.pause === true && vu5.fin.transformation === '', `5  appui à 2 s : panneau ${vu5.apresAgi} ms après, vidéo en pause, écran remis en place`);
   await plusTard(page);
 
+  // 5 bis. Un appui SUR L'ÉCRAN de la borne (il passe au-dessus de la vidéo et couvre l'essentiel du cadre au début).
+  await choisis(page, 'Killers of the Flower Moon');
+  await (await loue(page)).tap();
+  const vu5b = await suis(page, { agir: { a: 0.3, fais: async (p) => {
+    const r = await p.evaluate(() => { const k = document.querySelector('[class*="KioskView_ks__"]').getBoundingClientRect(); return [k.left + k.width / 2, k.top + k.height / 2]; });
+    await p.touchscreen.tap(r[0], r[1]);
+  } } });
+  dit(vu5b.agi && vu5b.pret > 0 && vu5b.apresAgi < 800 && vu5b.fin.pause === true && vu5b.fin.transformation === '', `5b appui sur l'écran de la borne : panneau ${vu5b.apresAgi} ms après, vidéo en pause, écran remis en place`);
+  await plusTard(page);
+
   // 6. Le geste retour pendant la vidéo.
   await choisis(page, 'Ex Machina');
   await (await loue(page)).tap();
