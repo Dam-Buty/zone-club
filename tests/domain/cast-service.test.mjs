@@ -616,3 +616,61 @@ test('CAST SERVICE R2: une promesse d\'envoi rejetée tente la même reprise', a
   assert.deepEqual(fake.calls.requestSessionById, [tv.getSessionId()]);
   assert.equal(state().phase, 'remote');
 });
+
+// F7, mesuré sur le Pixel 9a et le vidéoprojecteur le 25/11/2026 : film fini sur la télé, page gelée cinq minutes
+// (appel téléphonique). Au retour la liaison est morte et la reprise par identifiant ne la ranime pas : dix secondes
+// d'envois refusés (InvalidStateError), aucun événement du SDK. Le film suivant partait dessus et échouait en 3 ms
+// (« Le film n'a pas pu démarrer »), « Réessayer » aussi. Seul remède mesuré : rouvrir le sélecteur dans l'appui —
+// choisir la télé ranime la liaison, toujours sans événement de séance.
+const deadLink = () => { throw new DOMException('Presentation connection is disconnected.', 'InvalidStateError'); };
+
+test('CAST SERVICE F7: liaison morte après un film fini → la demande suivante rouvre le sélecteur dans l\'appui', async (t) => {
+  const { fake, tv, state, playing } = await remoteOn(t);
+  playing.update({ playerState: 'IDLE', idleReason: 'FINISHED' }, false);
+  assert.equal(state().phase, 'ended');
+  tv.sendMessageImpl = deadLink;
+  tv.loadMediaImpl = () => Promise.reject(new DOMException('dead', 'InvalidStateError'));
+  fake.setVisibility('hidden');
+  fake.setVisibility('visible');                     // la sonde demande la reprise ; elle reste sans effet
+  let inTap = false;
+  let openedInTap = null;
+  fake.context.requestSessionImpl = () => {
+    openedInTap = inTap;
+    tv.sendMessageImpl = () => Promise.resolve();    // choisir la télé ranime la liaison (mesuré)
+    tv.loadMediaImpl = () => Promise.resolve();
+    return Promise.resolve(null);                    // … sans aucun événement de séance
+  };
+  inTap = true;
+  service.sendCast({ ...ask(8) });
+  inTap = false;
+  assert.equal(openedInTap, true, 'le sélecteur s\'ouvre avant que l\'appui ne rende la main');
+  assert.equal(fake.calls.loadMedia.length, 0, 'rien n\'est chargé sur la liaison morte');
+  assert.equal(state().phase, 'choosing');
+  await flush();
+  assert.equal(fake.calls.loadMedia.length, 1, 'la télé choisie, le film part');
+  assert.equal(state().phase, 'loading');
+  assert.equal(state().notice, null, 'aucun « Le film n\'a pas pu démarrer »');
+});
+
+test('CAST SERVICE F7: sélecteur refermé sur une liaison morte → repos sans message ; la demande suivante le rouvre', async (t) => {
+  const { fake, tv, state, playing } = await remoteOn(t);
+  playing.update({ playerState: 'IDLE', idleReason: 'FINISHED' }, false);
+  tv.sendMessageImpl = deadLink;
+  fake.context.requestSessionImpl = () => Promise.reject('cancel');
+  service.sendCast(ask(8));
+  await flush();
+  assert.equal(state().phase, 'idle');
+  assert.equal(state().notice, null);
+  service.sendCast(ask(8));
+  assert.equal(fake.calls.requestSession, 2, 'toujours le sélecteur, jamais la liaison morte');
+  assert.equal(fake.calls.loadMedia.length, 0);
+});
+
+test('CAST SERVICE F7: liaison saine, film fini → le film suivant part directement, sans sélecteur', async (t) => {
+  const { fake, state, playing } = await remoteOn(t);
+  playing.update({ playerState: 'IDLE', idleReason: 'FINISHED' }, false);
+  service.sendCast(ask(8));
+  assert.equal(fake.calls.requestSession, 0);
+  assert.equal(fake.calls.loadMedia.length, 1);
+  assert.equal(state().phase, 'loading');
+});
