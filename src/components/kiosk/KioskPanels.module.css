@@ -192,7 +192,7 @@
 
 .kAuthLink {
   flex: 1 1 auto;
-  min-height: 10cqw;
+  min-height: max(40px, 10cqw);
   padding: 1cqw 3cqw 1.2cqw;
   font-size: 4.4cqw;
 }
@@ -620,6 +620,11 @@ span.kSearchPoster {
   background: linear-gradient(180deg, rgba(6, 24, 76, 0.8) 0%, rgba(2, 12, 50, 0.8) 100%);
 }
 
+.kBonusLine > span:first-child {
+  flex: none;
+  white-space: nowrap;
+}
+
 .kBonusState {
   margin-left: auto;
   text-align: right;
@@ -915,4 +920,17 @@ span.kSearchPoster {
 .kSearchMeta,
 .kNoticeBody {
   font-family: var(--k-font-text);
+}
+
+/* ===== PC : l'écran est en 2:3, moins haut que celui du téléphone (5:9) =====
+   Les formulaires (connexion, inscription, récupération, critique) y dépassaient : le bouton principal sortait de
+   l'écran dès qu'un message s'affichait (batterie de tests du 25/11/2026). Le panneau devient son propre conteneur de
+   mesure, plus étroit que l'écran : tout ce qu'il contient est écrit en cqw et rétrécit donc d'autant (82 %), sans
+   toucher aucune autre règle. Le fond, lui, couvre toujours tout l'écran. */
+@media (min-width: 769px) and (pointer: fine) {
+  .kAuth {
+    container-type: inline-size;
+    padding-left: 9cqw;
+    padding-right: 9cqw;
+  }
 }

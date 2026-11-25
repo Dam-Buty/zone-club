@@ -120,17 +120,21 @@ const KIOSK_DESKTOP_RATIO = 2 / 3;
 const KIOSK_DESKTOP_VITRINE = 0.62; // la vitrine à gauche de l'écran : 0,62 × la largeur de l'écran
 const KIOSK_DESKTOP_LEFT = 62; // bordure 3 + marge 26 + écart 20 + cadre 13
 const KIOSK_DESKTOP_AROUND = 104; // tout ce qui entoure vitrine et écran : 2 × (3 + 26) + 20 + 2 × 13
+// « margin-left » du corps sur les fenêtres plus larges que le décor : il le centre dans la fenêtre (un test vérifie que
+// ce coefficient suit la boîte de l'écran dans le décor, src/data/kiosk-distribution.json).
+const KIOSK_DESKTOP_DECOR_SHIFT = 1.3301;
 
 /**
  * Où sera l'écran de KioskView sur un bureau. Le corps de la borne est collé à GAUCHE de la
- * fenêtre : sa vitrine, puis l'écran (2:3, haut de 94 % de la fenêtre, 1100 px au plus), centré en
+ * fenêtre — décalé, sur une fenêtre plus large que le décor, de ce qu'il faut pour centrer le décor : sa vitrine, puis l'écran (2:3, haut de 94 % de la fenêtre, 1100 px au plus), centré en
  * hauteur. Sur une fenêtre étroite la vitrine cède de la place avant l'écran.
  */
 export function kioskScreenBoxDesktop(vw: number, vh: number): Box {
   const height = Math.min(KIOSK_DESKTOP_HEIGHT * vh, KIOSK_DESKTOP_MAX_HEIGHT);
   const width = height * KIOSK_DESKTOP_RATIO;
   const vitrine = clamp(0, vw - width - KIOSK_DESKTOP_AROUND, KIOSK_DESKTOP_VITRINE * width);
-  return { left: vitrine + KIOSK_DESKTOP_LEFT, top: (vh - height) / 2, width, height };
+  const shift = Math.max(0, vw / 2 - width * KIOSK_DESKTOP_DECOR_SHIFT - KIOSK_DESKTOP_LEFT);
+  return { left: vitrine + KIOSK_DESKTOP_LEFT + shift, top: (vh - height) / 2, width, height };
 }
 
 // Au-delà de cette marge, le film léger serait trop agrandi : on prend la haute définition.

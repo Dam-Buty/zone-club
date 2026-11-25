@@ -265,6 +265,10 @@
     align-items: center;
     gap: 20px;
     padding: 0 26px;
+    /* Fenêtre plus large que le décor (au-delà d'environ 1,84 fois sa hauteur : un Chrome agrandi sur un écran Full HD) :
+       le corps se décale pour que le décor soit centré, au lieu de laisser toute la bande noire à droite. Même formule
+       dans storefront-layout.ts (kioskScreenBoxDesktop), où le film d'approche amène son écran. */
+    margin-left: max(0px, calc(50vw - var(--ks-w) * 1.3301 - 62px));
     background: linear-gradient(180deg, #23213a 0%, #191827 40%, #14131f 100%);
     border-left: 3px solid #34324a;
     border-right: 3px solid #34324a;
@@ -300,6 +304,16 @@
   max-width: none;
   pointer-events: none;
   user-select: none;
+}
+
+/* Les bords du décor se fondent dans le noir de la page : là où il ne couvre pas la fenêtre (fenêtre très large ou
+   très haute), pas de coupure nette. Sans effet quand ses bords sont hors de la fenêtre. */
+.decorFade {
+  position: absolute;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, #05050a 0%, rgba(5, 5, 10, 0) 5%, rgba(5, 5, 10, 0) 95%, #05050a 100%),
+    linear-gradient(180deg, #05050a 0%, rgba(5, 5, 10, 0) 4%, rgba(5, 5, 10, 0) 96%, #05050a 100%);
 }
 
 .root[data-decor] {

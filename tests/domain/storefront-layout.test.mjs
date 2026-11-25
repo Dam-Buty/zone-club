@@ -165,11 +165,34 @@ test('BUREAU: câblage de la devanture', () => {
 
 test('APPROCHE: l\'écran de l\'interface du bureau, aux positions mesurées à l\'écran le 18/11/2026', () => {
   const cas = [[1280, 720, 341.7, 21.6, 451.2, 676.8], [1440, 900, 411.7, 27, 564, 846], [1920, 1080, 481.6, 32.4, 676.8, 1015.2],
-    [2560, 1080, 481.6, 32.4, 676.8, 1015.2], [2560, 1440, 516.7, 170, 733.3, 1100], [1024, 768, 360.4, 23, 481.3, 721.9]];
+    [1024, 768, 360.4, 23, 481.3, 721.9],
+    // Fenêtres plus larges que le décor (batterie de tests du 25/11/2026) : la borne se décale pour que le décor soit
+    // centré dans la fenêtre, au lieu de laisser une bande noire à droite. Écran = milieu de la fenêtre − 0,71 × sa largeur.
+    [2560, 1080, 799.4, 32.4, 676.8, 1015.2], [2560, 1440, 759.2, 170, 733.3, 1100], [1920, 950, 537.2, 28.5, 595.3, 893]];
   for (const [vw, vh, left, top, width, height] of cas) {
     const b = kioskScreenBoxDesktop(vw, vh);
     for (const [k, v] of [['left', left], ['top', top], ['width', width], ['height', height]]) assert.ok(Math.abs(b[k] - v) < 0.6, `${vw}×${vh} ${k} : ${b[k]} au lieu de ${v}`);
   }
+});
+
+test('APPROCHE: sur une fenêtre large, le décor du PC est centré — plus de bande noire d\'un seul côté', () => {
+  const css = readFileSync(path.join(ROOT, 'src/components/kiosk/KioskView.module.css'), 'utf8');
+  const decor = JSON.parse(readFileSync(path.join(ROOT, 'src/data/kiosk-distribution.json'), 'utf8')).pc.decor;
+  const [x0, , x1] = decor.ecran, parEcran = 1 / (x1 - x0);                  // largeur du décor, en largeurs d'écran
+  // Décalage du corps : moitié de fenêtre − (demi-décor − ce qui dépasse à gauche de la vitrine) − bordure, marge, écart, cadre.
+  const k = parEcran / 2 - (x0 * parEcran - 0.62);
+  const ecrit = /margin-left: max\(0px, calc\(50vw - var\(--ks-w\) \* ([0-9.]+) - 62px\)\);/.exec(css);
+  assert.ok(ecrit, 'la feuille décale le corps de la borne sur les fenêtres larges');
+  assert.ok(Math.abs(Number(ecrit[1]) - k) < 0.002, `le coefficient suit la boîte de l'écran dans le décor (${k.toFixed(4)})`);
+  for (const [vw, vh] of [[1920, 950], [2560, 1080], [3440, 1440], [1536, 730], [1366, 657]]) {
+    const b = kioskScreenBoxDesktop(vw, vh), largeur = b.width * parEcran, gauche = b.left - x0 * largeur;
+    assert.ok(Math.abs(gauche - (vw - (gauche + largeur))) < 1.5, `${vw}×${vh} : marges égales (${gauche.toFixed(1)} à gauche)`);
+  }
+  // Fenêtres où le décor couvrait déjà tout : rien ne bouge.
+  for (const [vw, vh, left] of [[1440, 900, 411.7], [1920, 1080, 481.6], [1280, 720, 341.7]]) assert.ok(Math.abs(kioskScreenBoxDesktop(vw, vh).left - left) < 0.6);
+  // Les bords du décor se fondent dans le noir : là où il ne couvre pas la fenêtre, pas de coupure nette.
+  assert.match(css, /\.decorFade \{[^}]*linear-gradient\(90deg, #05050a 0%/, 'bords fondus');
+  assert.ok(readFileSync(path.join(ROOT, 'src/components/kiosk/KioskView.tsx'), 'utf8').includes('styles.decorFade'), 'le fondu est posé sur le décor');
 });
 
 test('APPROCHE: la formule du bureau suit KioskView.module.css', () => {

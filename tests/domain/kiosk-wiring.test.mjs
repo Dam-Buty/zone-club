@@ -1169,3 +1169,11 @@ test('BORNE (batterie du 25/11/2026): sur PC, Échap fait ce que fait le geste r
   const view = readText(path.join(ROOT, 'src/components/kiosk/KioskView.tsx'));
   assert.match(view, /if \(event\.key !== 'Escape' \|\| event\.defaultPrevented\) return;[\s\S]{0,300}onBackRef\.current\(\)/, 'Échap ferme le message, le panneau, la fiche… comme le geste retour');
 });
+test('PANNEAUX (batterie du 25/11/2026): sur PC les formulaires tiennent dans l\'écran 2:3, et les liens gardent la taille d\'un appui', () => {
+  const css = readText(path.join(ROOT, 'src/components/kiosk/KioskPanels.module.css'));
+  const pc = css.slice(css.indexOf('@media (min-width: 769px) and (pointer: fine)'));
+  // Le panneau devient son propre conteneur, plus étroit : tout ce qu'il contient (en cqw) rétrécit d'autant.
+  assert.match(pc, /\.kAuth \{[^}]*container-type: inline-size;[^}]*padding-left: 9cqw;[^}]*padding-right: 9cqw;/, 'formulaires réduits sur l\'écran 2:3 du PC');
+  assert.match(css, /\.kAuthLink \{[^}]*min-height: max\(40px, 10cqw\);/, 'liens du panneau de connexion : 40 px au moins');
+  assert.match(css, /\.kBonusLine > span:first-child \{[^}]*white-space: nowrap;/, 'le nom de la ligne du bonus ne se coupe pas');
+});

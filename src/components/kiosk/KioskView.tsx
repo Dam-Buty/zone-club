@@ -875,6 +875,7 @@ export function KioskView() {
             <div className={styles.ksPlace}>
             {/* PC : la borne modélisée, derrière son écran — la première image du film de distribution. */}
             {decor && <img className={styles.decor} src={decor.src} alt="" width={decor.largeur} height={decor.hauteur} style={decorStyle(decor.ecran)} decoding="async" draggable={false} onLoad={() => setDecorLoaded(true)} onError={() => setDecorFailed(true)} />}
+            {decor && decorLoaded && <div className={styles.decorFade} style={decorStyle(decor.ecran)} aria-hidden="true" />}
             <div ref={screenRef} onClick={filmPlaying ? tapFilm : undefined} className={`${styles.ks} ${screenLifted ? styles.ksLifted : ''}`} style={{ '--k-dpx': lcdDevicePixel(density), '--k-lcd-n': lcdPitchInDevicePixels(density) } as CSSProperties}>
               <div className={styles.screen} data-mode={mode} data-cast-bar={castBarFilm !== null || undefined} style={layoutVars}>
                 <div className={styles.kTop} inert={welcome || overlay !== null || distribution !== null}>
