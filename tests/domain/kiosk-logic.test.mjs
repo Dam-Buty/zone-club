@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { readText } from '../helpers/repo.mjs';
 import * as K from '../../src/components/kiosk/kiosk-logic.ts';
+import * as VA from '../../src/components/kiosk/viewing-angle.ts';
 
 const f = (id, title, extra = {}) => ({ id, title, overview: '', poster_path: `/p${id}.jpg`, backdrop_path: null,
   release_date: '2014-01-01', runtime: 100, vote_average: 0, genres: [], ...extra });
@@ -445,37 +446,97 @@ test('DALLE: la bande tourne à 25 images par seconde, avec un ralenti en fin de
 
 test('DALLE: l\'angle de vue d\'une TN — délavée vue d\'en dessus, assombrie vue d\'en dessous', () => {
   const zero = { washOut: 0, darken: 0, warm: 0, cool: 0, reflectX: 0, reflectY: 0 };
-  assert.deepEqual(K.viewingAngle(0, 0), zero);
-  const small = K.viewingAngle(3, -3);
+  assert.deepEqual(VA.viewingAngle(0, 0), zero);
+  const small = VA.viewingAngle(3, -3);
   assert.equal(small.washOut + small.darken + small.warm + small.cool, 0, 'zone morte : tenir le téléphone ne bouge rien');
-  const above = K.viewingAngle(20, 0);
+  const above = VA.viewingAngle(20, 0);
   assert.ok(above.washOut > 0 && above.darken === 0, 'vue d\'en dessus : délavée');
-  const below = K.viewingAngle(-20, 0);
+  const below = VA.viewingAngle(-20, 0);
   assert.ok(below.darken > 0 && below.washOut === 0, 'vue d\'en dessous : assombrie');
-  assert.equal(K.viewingAngle(90, 0).washOut, 1, 'plafonné');
-  assert.ok(K.viewingAngle(0, 20).warm > 0 && K.viewingAngle(0, -20).cool > 0, 'de côté : la teinte glisse');
-  assert.ok(K.viewingAngle(20, -10).reflectY > 0 && K.viewingAngle(20, -10).reflectX < 0, 'le reflet suit l\'inclinaison');
-  assert.equal(K.viewingAngle(0, 500).reflectX, 1, 'reflet plafonné');
-  assert.deepEqual(K.viewingAngle(NaN, Infinity), zero, 'mesure illisible : rien');
+  assert.equal(VA.viewingAngle(90, 0).washOut, 1, 'plafonné');
+  assert.ok(VA.viewingAngle(0, 20).warm > 0 && VA.viewingAngle(0, -20).cool > 0, 'de côté : la teinte glisse');
+  assert.ok(VA.viewingAngle(20, -10).reflectY > 0 && VA.viewingAngle(20, -10).reflectX < 0, 'le reflet suit l\'inclinaison');
+  assert.equal(VA.viewingAngle(0, 500).reflectX, 1, 'reflet plafonné');
+  assert.deepEqual(VA.viewingAngle(NaN, Infinity), zero, 'mesure illisible : rien');
 });
 
-test('DALLE: la position « de face » suit lentement la façon dont on tient le téléphone', () => {
-  assert.equal(K.followBaseline(NaN, 40, 16), 40, 'première mesure : elle devient la référence');
-  assert.equal(K.followBaseline(40, 60, 0), 40, 'sans temps écoulé, rien ne bouge');
-  const afterTau = K.followBaseline(40, 60, 4000, 4000);
-  assert.ok(Math.abs(afterTau - (40 + 20 * (1 - Math.exp(-1)))) < 1e-9, 'au bout d\'une constante de temps : 63 % du chemin');
-  assert.ok(K.followBaseline(40, 60, 16) - 40 < 0.2, 'un geste rapide ne déplace presque pas la référence');
+// Le capteur tel que Chrome le calcule (services/device/generic_sensor/orientation_util.cc, branches
+// génériques), d'après l'orientation du téléphone : matrice appareil → monde, rangée par lignes.
+const d2r = Math.PI / 180;
+const mul3 = (a, b) => { const o = Array(9).fill(0); for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) for (let k = 0; k < 3; k++) o[i * 3 + j] += a[i * 3 + k] * b[k * 3 + j]; return o; };
+const rotX = (deg) => { const c = Math.cos(deg * d2r), s = Math.sin(deg * d2r); return [1, 0, 0, 0, c, -s, 0, s, c]; };
+const rotY = (deg) => { const c = Math.cos(deg * d2r), s = Math.sin(deg * d2r); return [c, 0, s, 0, 1, 0, -s, 0, c]; };
+const rotZ = (deg) => { const c = Math.cos(deg * d2r), s = Math.sin(deg * d2r); return [c, -s, 0, s, c, 0, 0, 0, 1]; };
+function chromeSensor(r) {
+  let a, b, g;
+  if (r[8] > 0) { a = Math.atan2(-r[1], r[4]); b = Math.asin(r[7]); g = Math.atan2(-r[6], r[8]); }
+  else { a = Math.atan2(r[1], -r[4]); b = -Math.asin(r[7]); b += b >= 0 ? -Math.PI : Math.PI; g = Math.atan2(r[6], -r[8]); }
+  if (a < 0) a += 2 * Math.PI;
+  return { alpha: a / d2r, beta: b / d2r, gamma: g / d2r };
+}
+/** Passe une suite d'orientations dans followView, à 60 relevés par seconde ; rend les angles de vue. */
+function replay(orientations) {
+  let eye = null;
+  return orientations.map((r, i) => {
+    const s = chromeSensor(r);
+    const step = VA.followView(eye, s.alpha, s.beta, s.gamma, i ? 1000 / 60 : 0);
+    eye = step.eye;
+    return step;
+  });
+}
+
+test('DALLE: la première mesure est la position de face, une inclinaison se lit en degrés', () => {
+  const first = VA.followView(null, 0, 45, 0, 16);
+  assert.ok(Math.abs(first.dBeta) < 1e-9 && Math.abs(first.dGamma) < 1e-9, 'première mesure : rien ne bouge');
+  const top = VA.followView(first.eye, 0, 55, 0, 0);
+  assert.ok(Math.abs(top.dBeta - 10) < 0.5 && Math.abs(top.dGamma) < 0.5, `haut vers soi de 10° : ${top.dBeta}, ${top.dGamma}`);
+  const side = VA.followView(first.eye, 0, 45, 15, 0);
+  assert.ok(Math.abs(side.dGamma - 15) < 0.5 && Math.abs(side.dBeta) < 0.5, `penché de 15° : ${side.dBeta}, ${side.dGamma}`);
+  assert.equal(VA.followView(first.eye, 0, NaN, 0, 16).eye, first.eye, 'mesure illisible : la référence ne bouge pas');
+});
+
+test('DALLE: allongé dans le canapé, pencher lentement l\'écran ne fait plus sauter le reflet', () => {
+  // Rusmir, 25/11/2026 : téléphone « à 90-100° », un « mouvement lent » vers la gauche provoque le
+  // « décrochage ». Le capteur passe de β 101,7 γ -86,7 à β 77,5 γ 90 : l'ancien calcul (un angle
+  // par axe, référence suivie angle par angle) envoyait le reflet d'un bord à l'autre.
+  const path = Array.from({ length: 361 }, (_, i) => mul3(rotX(100 - (12 * i) / 360), rotZ((-15 * i) / 360)));
+  const steps = replay(path);
+  let worst = 0;
+  for (let i = 1; i < steps.length; i++) {
+    const a = VA.viewingAngle(steps[i - 1].dBeta, steps[i - 1].dGamma);
+    const b = VA.viewingAngle(steps[i].dBeta, steps[i].dGamma);
+    worst = Math.max(worst, Math.abs(b.reflectX - a.reflectX) + Math.abs(b.reflectY - a.reflectY) + Math.abs(b.warm - a.warm) + Math.abs(b.cool - a.cool));
+  }
+  assert.ok(worst < 0.05, `plus grand saut en 1/60 s : ${worst}`);
+  // Pencher l'écran dans son propre plan ne change pas l'angle sous lequel on le regarde.
+  const last = steps.at(-1);
+  assert.ok(Math.abs(last.dGamma) < 15, `de côté : ${last.dGamma}`);
+});
+
+test('DALLE: téléphone droit, le tourner comme une porte se voit ; le faire tourner dans son plan, non', () => {
+  const upright = rotX(90);
+  const door = replay([upright, mul3(rotZ(20), upright)]).at(-1);
+  assert.ok(Math.abs(Math.abs(door.dGamma) - 20) < 1, `tourné de 20° autour de la verticale : ${door.dGamma}`);
+  const wheel = replay([upright, mul3(upright, rotZ(20))]).at(-1);
+  assert.ok(Math.abs(wheel.dGamma) < 1 && Math.abs(wheel.dBeta) < 1, `tourné dans son plan : ${wheel.dBeta}, ${wheel.dGamma}`);
+});
+
+test('DALLE: la position « de face » suit lentement la façon dont on tient le téléphone (8 s)', () => {
+  const start = rotX(45);
+  const held = mul3(start, rotY(20));
+  const steps = replay([start, ...Array(8 * 60).fill(held)]);
+  assert.ok(Math.abs(steps[1].dGamma - 20) < 0.5, 'un geste rapide se voit en entier');
+  const ratio = steps.at(-1).dGamma / steps[1].dGamma;
+  assert.ok(Math.abs(ratio - Math.exp(-1)) < 0.03, `au bout de 8 s il en reste e⁻¹ : ${ratio}`);
 });
 
 test('DALLE: l\'angle de vue se répartit jusqu\'à 60°, et la position de face revient en 8 s', () => {
   // Rusmir, 17/11/2026 : « la partie gyroscope devrait pouvoir avoir plus d'angle réaliste, le
   // mouvement est trop restreint ».
-  assert.ok(K.viewingAngle(35, 0).washOut < 0.6, 'à 35° l\'effet n\'est plus au maximum');
-  assert.equal(K.viewingAngle(60, 0).washOut, 1, 'plein effet à 60°');
-  assert.ok(K.viewingAngle(-45, 0).darken > K.viewingAngle(-30, 0).darken, 'l\'effet croît encore au-delà de 30°');
-  assert.ok(Math.abs(K.viewingAngle(0, 30).reflectX - 0.5) < 1e-9, 'le reflet suit l\'inclinaison sur toute la plage');
-  const b = K.followBaseline(0, 10, 8000);
-  assert.ok(Math.abs(b - 10 * (1 - Math.exp(-1))) < 1e-9, 'constante de temps par défaut : 8 s');
+  assert.ok(VA.viewingAngle(35, 0).washOut < 0.6, 'à 35° l\'effet n\'est plus au maximum');
+  assert.equal(VA.viewingAngle(60, 0).washOut, 1, 'plein effet à 60°');
+  assert.ok(VA.viewingAngle(-45, 0).darken > VA.viewingAngle(-30, 0).darken, 'l\'effet croît encore au-delà de 30°');
+  assert.ok(Math.abs(VA.viewingAngle(0, 30).reflectX - 0.5) < 1e-9, 'le reflet suit l\'inclinaison sur toute la plage');
 });
 
 // ===== Distribution de la K7, livraison 1 (spec 2026-11-17, § 7) =====

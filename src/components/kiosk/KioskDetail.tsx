@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useStore } from '../../store';
-import api, { type FilmExtrasResponse, type RelatedFilmsResponse, type ReviewsResponse, type TrailerStatusResponse } from '../../api';
+import api, { type FilmExtrasResponse, type RelatedFilmsResponse, type ReviewsResponse } from '../../api';
+import { trailerNotice, trailerReady, trailerUrl, useTrailerPlayback, useTrailerStatus, type TrailerState } from '../../hooks/useTrailer';
 import type { Film } from '../../types';
 import { parseServerDate } from '../../utils/server-date';
 import type { KioskFilmDetail } from './KioskAction';
@@ -186,68 +187,13 @@ const TRAILER_LANG: Record<'vf' | 'vost' | 'vo', string> = {
   vost: 'Version originale sous-titrée',
   vo: 'Version originale',
 };
-/** Relevés de l'état pendant la préparation : toutes les deux secondes, deux minutes au plus. */
-const TRAILER_POLL_MS = 2000;
-const TRAILER_POLL_MAX = 60;
 
-// La bande-annonce, sans publicité (Rusmir, 17/11/2026 : « on veut la bande-annonce sans pub,
-// point ») : le serveur la récupère une fois chez Allociné, la garde, et elle est jouée ici par un
-// simple lecteur vidéo, dans l'écran de la borne, sous la dalle et la vitre.
-function BandeAnnonce({ film, covered }: { film: Film; covered: boolean }) {
-  const tmdbId = film.tmdb_id ?? null;
-  // Recouverte (message, connexion, location, lecteur, téléphone couché) : la bande-annonce se tait. Elle continuait de
-  // jouer avec le son sous le film loué, sans que le visiteur puisse l'arrêter (batterie de tests du 25/11/2026).
-  const videoRef = useRef<HTMLVideoElement>(null);
-  useEffect(() => {
-    if (covered) videoRef.current?.pause();
-  }, [covered]);
-  // Le fichier ne se lit pas : on le dit, au lieu d'un lecteur gris à 0:00.
-  const [broken, setBroken] = useState(false);
-  const [status, setStatus] = useState<{ id: number; value: TrailerStatusResponse | 'error' } | null>(null);
-  useEffect(() => {
-    if (tmdbId === null) return;
-    let cancelled = false;
-    let timer = 0;
-    let tries = 0;
-    const poll = () => {
-      api.films.getTrailerStatus(tmdbId).then(
-        (value) => {
-          if (cancelled) return;
-          if (value.state === 'preparing' && ++tries >= TRAILER_POLL_MAX) {
-            setStatus({ id: tmdbId, value: 'error' });
-            return;
-          }
-          setStatus({ id: tmdbId, value });
-          if (value.state === 'preparing') timer = window.setTimeout(poll, TRAILER_POLL_MS);
-        },
-        () => {
-          if (!cancelled) setStatus({ id: tmdbId, value: 'error' });
-        },
-      );
-    };
-    poll();
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [tmdbId]);
-
-  const value = tmdbId !== null && status?.id === tmdbId ? status.value : null;
-  if (value === null || (value !== 'error' && value.state === 'preparing')) {
-    return <p className={styles.kDetailNote}>Préparation de la bande-annonce…</p>;
-  }
-  if (value !== 'error' && value.state === 'none') return <p className={styles.kDetailNote}>Pas de bande-annonce pour ce film.</p>;
-  if (value === 'error' || value.state !== 'ready' || broken) {
-    return <p className={styles.kDetailNote}>La bande-annonce n&apos;a pas pu être récupérée. Réessayez plus tard.</p>;
-  }
-  return (
-    <>
-      <div className={styles.kTrailer}>
-        <video ref={videoRef} src={`/api/films/${tmdbId}/trailer`} controls autoPlay={!covered} playsInline preload="auto" aria-label={`Bande-annonce de ${film.title}`} onError={() => setBroken(true)} />
-      </div>
-      <p className={styles.kDetailNote}>{TRAILER_LANG[value.lang]}</p>
-    </>
-  );
+// La rubrique « Bande-annonce » : le lecteur lui-même est monté plus haut, dès l'ouverture de la
+// fiche, pour se précharger (voir KioskDetail) ; la rubrique dit où elle en est, ou sa langue.
+function BandeAnnonceNote({ state, broken }: { state: TrailerState; broken: boolean }) {
+  const notice = trailerNotice(state, broken);
+  if (notice) return <p className={styles.kDetailNote}>{notice}</p>;
+  return trailerReady(state) ? <p className={styles.kDetailNote}>{TRAILER_LANG[state.lang]}</p> : null;
 }
 
 function VoirAussi({ related, onOpenFilm }: { related: Loaded<RelatedFilmsResponse>; onOpenFilm: (film: Film) => void }) {
@@ -312,11 +258,16 @@ export function KioskDetail({ film, detail, detailFailed, covered, tab, onTab, o
   const extras = useFilmLoad(tmdbId, loadExtras);
   const related = useFilmLoad(tab === 'voir-aussi' ? tmdbId : null, loadRelated);
   const reviews = useFilmLoad(tab === 'avis' ? film.id : null, loadReviews);
-  // Dès l'ouverture de la fiche, le serveur commence à récupérer la bande-annonce (quelques
-  // secondes la première fois) : elle est souvent prête quand on ouvre sa rubrique.
-  useEffect(() => {
-    if (tmdbId !== null) api.films.getTrailerStatus(tmdbId).catch(() => {});
-  }, [tmdbId]);
+  // La bande-annonce se prépare dès l'ouverture de la fiche : le serveur la récupère s'il ne l'a pas
+  // (quelques secondes la première fois), puis le lecteur, monté caché, la télécharge. Elle est prête
+  // quand on ouvre sa rubrique. Recouverte (message, connexion, location, lecteur, téléphone couché),
+  // elle se tait : elle jouait avec le son sous le film loué (batterie de tests du 25/11/2026).
+  const trailer = useTrailerStatus(tmdbId);
+  const trailerVideo = useRef<HTMLVideoElement>(null);
+  const [trailerBroken, setTrailerBroken] = useState<number | null>(null);
+  const trailerBrokenNow = trailerBroken === tmdbId;
+  const trailerShown = tab === 'bande-annonce' && trailerReady(trailer) && !trailerBrokenNow;
+  useTrailerPlayback(trailerVideo, trailerShown && !covered);
 
   const audience = typeof extras === 'object' ? audienceLabel(extras.certification) : null;
   const availability = availabilityText(
@@ -375,12 +326,26 @@ export function KioskDetail({ film, detail, detailFailed, covered, tab, onTab, o
       {/* La rubrique choisie, dans tout le cadre du dessous ; la disponibilité y reste affichée. */}
       <div ref={bodyRef} className={styles.kDetailBody} role="tabpanel" aria-label={tabName}>
         {availability && <p className={styles.kDetailAvail}>{availability}</p>}
+        {tmdbId !== null && trailerReady(trailer) && !trailerBrokenNow && (
+          <div className={styles.kTrailer} hidden={!trailerShown}>
+            <video
+              key={tmdbId}
+              ref={trailerVideo}
+              src={trailerUrl(tmdbId)}
+              controls
+              playsInline
+              preload="auto"
+              aria-label={`Bande-annonce de ${film.title}`}
+              onError={() => setTrailerBroken(tmdbId)}
+            />
+          </div>
+        )}
         <div ref={scrollRef} className={`${styles.kDetailScroll} ${styles.kRise}`} key={`${film.id}-${tab}`} onScroll={syncMore}>
           {tab === 'resume' && <Resume film={film} detail={detail} extras={extras} />}
           {tab === 'distribution' && <Distribution detail={detail} failed={detailFailed} />}
           {tab === 'equipe' && <Equipe detail={detail} extras={extras} />}
           {tab === 'avis' && <Avis reviews={reviews} extras={extras} />}
-          {tab === 'bande-annonce' && <BandeAnnonce key={film.id} film={film} covered={covered} />}
+          {tab === 'bande-annonce' && <BandeAnnonceNote state={trailer} broken={trailerBrokenNow} />}
           {tab === 'voir-aussi' && <VoirAussi related={related} onOpenFilm={onOpenFilm} />}
         </div>
       </div>

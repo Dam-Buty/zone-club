@@ -29,7 +29,6 @@ import {
   creditsLine,
   filmsForTab,
   firstNonEmptyTab,
-  followBaseline,
   KIOSK_RENT_TIMEOUT_MS,
   hidesKioskInLandscape,
   kioskBackAction,
@@ -41,11 +40,11 @@ import {
   readyVersionRow,
   castEndNotice,
   rentalOverStep,
-  viewingAngle,
   watchEntry,
   type DetailTab,
   type KioskTab,
 } from './kiosk-logic';
+import { followView, viewingAngle, type EyeDirection } from './viewing-angle';
 import states from './KioskStates.module.css';
 import { useFilmTap, useLiftHold, useRentalEnd, useWaitingBonus } from './kiosk-hooks';
 import styles from './KioskView.module.css';
@@ -179,7 +178,7 @@ function usePhoneLayoutVars(screen: RefObject<HTMLDivElement | null>, castBar: b
 }
 
 /**
- * L'angle de vue d'une dalle TN, d'après l'inclinaison du téléphone (viewingAngle) : vue d'en
+ * L'angle de vue d'une dalle TN, d'après l'orientation du téléphone (followView, puis viewingAngle) : vue d'en
  * dessus l'image se délave, vue d'en dessous elle s'assombrit, de côté sa teinte glisse, et le
  * reflet glisse sur la vitre. Écrit en variables CSS sur l'écran de la borne, à chaque image, sans
  * passer par React. Rien sur un appareil sans capteur (PC), ni sur iPhone, qui exigerait une
@@ -190,20 +189,19 @@ function useViewingAngle(screen: RefObject<HTMLDivElement | null>) {
     const el = screen.current;
     if (!el || typeof window.DeviceOrientationEvent === 'undefined') return;
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    let baseBeta = NaN;
-    let baseGamma = NaN;
+    let eye: EyeDirection | null = null;
     let last = 0;
     let frame = 0;
-    let sample: { beta: number; gamma: number } | null = null;
+    let sample: { alpha: number | null; beta: number; gamma: number } | null = null;
     const apply = () => {
       frame = 0;
       if (!sample) return;
       const now = performance.now();
       const dt = last ? now - last : 0;
       last = now;
-      baseBeta = followBaseline(baseBeta, sample.beta, dt);
-      baseGamma = followBaseline(baseGamma, sample.gamma, dt);
-      const a = viewingAngle(sample.beta - baseBeta, sample.gamma - baseGamma);
+      const view = followView(eye, sample.alpha, sample.beta, sample.gamma, dt);
+      eye = view.eye;
+      const a = viewingAngle(view.dBeta, view.dGamma);
       el.style.setProperty('--k-view-wash', a.washOut.toFixed(3));
       el.style.setProperty('--k-view-dark', a.darken.toFixed(3));
       el.style.setProperty('--k-view-warm', a.warm.toFixed(3));
@@ -213,7 +211,7 @@ function useViewingAngle(screen: RefObject<HTMLDivElement | null>) {
     };
     const onOrientation = (event: DeviceOrientationEvent) => {
       if (event.beta === null || event.gamma === null) return;
-      sample = { beta: event.beta, gamma: event.gamma };
+      sample = { alpha: event.alpha, beta: event.beta, gamma: event.gamma };
       if (!frame) frame = requestAnimationFrame(apply);
     };
     window.addEventListener('deviceorientation', onOrientation);

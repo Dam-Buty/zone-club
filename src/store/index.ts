@@ -147,6 +147,9 @@ export interface VideoClubState extends CastSlice, VersionSlice {
   currentAisle: AisleType;
   selectedFilmId: number | null;
   setScene: (scene: SceneType) => void;
+  /** Le visiteur sort du vidéoclub par la porte : vrai le temps du fondu au noir, puis la devanture (App). */
+  leavingStore: boolean;
+  leaveStore: () => void;
   setAisle: (aisle: AisleType) => void;
   selectFilm: (filmId: number | null) => void;
 
@@ -743,7 +746,9 @@ export const useStore = create<VideoClubState>()(
       currentScene: 'exterior',
       currentAisle: 'nouveautes',
       selectedFilmId: null,
-      setScene: (scene) => set((s) => ({ currentScene: scene, isSceneReady: scene !== 'interior' || s.interiorWarm })),
+      setScene: (scene) => set((s) => ({ currentScene: scene, isSceneReady: scene !== 'interior' || s.interiorWarm, leavingStore: false })),
+      leavingStore: false,
+      leaveStore: () => set((s) => (s.currentScene === 'interior' ? { leavingStore: true } : {})),
       setAisle: (aisle) => set({ currentAisle: aisle }),
       selectFilm: (filmId) => {
         if (filmId !== null) {

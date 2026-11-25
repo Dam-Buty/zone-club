@@ -233,7 +233,7 @@ const PINCH_SENSITIVITY = 3.0;       // maps normalized pinchDelta → zoomFacto
 export const RAYCAST_LAYER_CASSETTE = 1;
 export const RAYCAST_LAYER_INTERACTIVE = 2;
 
-type InteractiveTarget = "manager" | "bell" | "tv" | "couch" | "lazone" | "board" | "boardNote" | "minitel" | null;
+type InteractiveTarget = "manager" | "bell" | "tv" | "couch" | "lazone" | "board" | "boardNote" | "minitel" | "exitDoor" | null;
 
 export function Controls({
   onCassetteClick,
@@ -412,6 +412,11 @@ export function Controls({
       return;
     }
 
+    if (interactive === "exitDoor") {
+      // La porte : on sort du vidéoclub (fondu au noir puis devanture, voir App).
+      useStore.getState().leaveStore();
+      return;
+    }
     if (interactive === "manager" || interactive === "bell") {
       showManager();
       return;
@@ -934,6 +939,11 @@ export function Controls({
                 handled = true;
                 break;
               }
+              if (obj.userData?.isExitDoor) {
+                useStore.getState().leaveStore();
+                handled = true;
+                break;
+              }
               if (obj.userData?.isLaZoneCRT) {
                 const { isInteractingWithLaZone, isWatchingLaZone } = useStore.getState();
                 if (isWatchingLaZone || isInteractingWithLaZone) {
@@ -1053,6 +1063,10 @@ export function Controls({
             }
             if (obj.userData?.isServiceBell) {
               foundInteractive = "bell";
+              break;
+            }
+            if (obj.userData?.isExitDoor) {
+              foundInteractive = "exitDoor";
               break;
             }
             if (obj.userData?.isLaZoneCRT) {

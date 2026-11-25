@@ -4,6 +4,7 @@ import { preloadPosterImage } from './utils/CassetteTextureArray';
 import './utils/asset-preload'; // Side-effect import: registers the HDR/KTX2/wasm prefetch (starts once the storefront is shown)
 import { afterStorefront, hasWebGPU, isInteriorPreloadOpen, pauseInteriorPreload, releaseInteriorPreload, shouldMountInterior, whileStorefront } from './utils/interior-preload-gate';
 import api, { apiFilmToFilm } from './api';
+import { sceneAtLoad } from './utils/scene-at-load';
 import type { AisleType, Film } from './types';
 import './utils/perf-beacon'; // Side-effect import: mesure de terrain de l'entrée dans la boutique (POST /api/perf)
 
@@ -59,6 +60,8 @@ const KioskViewLazy = lazy(() => loadKiosk().catch(() => loadKiosk()).then(m => 
  */
 // Durée du fondu par lequel la borne apparaît sur la devanture (film d'approche ou ouverture directe).
 const KIOSK_REVEAL_MS = 280;
+// Durée du fondu au noir quand on sort du vidéoclub par la porte ; la devanture apparaît ensuite en fondu.
+const LEAVE_STORE_FADE_MS = 450;
 
 function KioskMount() {
   const [Kiosk] = useState(() => KioskViewLoaded ?? KioskViewLazy);
@@ -483,24 +486,17 @@ function App() {
     fetchBoardNotes();
   }, [fetchMe, fetchBoardNotes]);
 
-  // L3 warmup screen: force ExteriorView at fresh page load even if persisted
-  // currentScene === 'interior'. Acts as a buffer where asset-preload.ts and
-  // module-level useGLTF.preload() fetches populate the cache while user reads
-  // the storefront / clicks "Entrer". SessionStorage flag distinguishes a fresh
-  // page load from a tab-switch (where we want to keep the user where they were).
+  // Un chargement de la page repart de la devanture, qu'on ait quitté la borne ou le vidéoclub
+  // (voir sceneAtLoad pour les deux exceptions). La devanture sert aussi de sas : les préchargements
+  // de l'intérieur s'y font pendant que le visiteur la regarde.
   useEffect(() => {
-    const SESSION_KEY = 'zone-club-session-active';
-    const isFreshLoad = !sessionStorage.getItem(SESSION_KEY);
-    if (!isFreshLoad) return;
-    sessionStorage.setItem(SESSION_KEY, '1');
-
-    // Don't override if user is being deep-linked into interior (cast notification).
-    if (new URLSearchParams(window.location.search).has('castEnded')) return;
-
-    // Vaut pour la borne comme pour l'intérieur : un chargement frais repart de la devanture.
-    if (useStore.getState().currentScene !== 'exterior') {
-      setScene('exterior');
-    }
+    const persisted = useStore.getState().currentScene;
+    const scene = sceneAtLoad({
+      persisted,
+      castEnded: new URLSearchParams(window.location.search).has('castEnded'),
+      wasDiscarded: (document as Document & { wasDiscarded?: boolean }).wasDiscarded === true,
+    });
+    if (scene !== persisted) setScene(scene);
   }, [setScene]);
 
   // Sans WebGPU, l'intérieur est inatteignable : une scène 'interior' restaurée (onglet rouvert
@@ -639,6 +635,17 @@ function App() {
     setExteriorVisit((visit) => visit + 1);
   }, [currentScene, stopKioskReveal]);
 
+  // Sortie par la porte du vidéoclub (Controls) : fondu au noir, puis la devanture. La souris est
+  // rendue tout de suite : la scène reste montée, cachée, sous la devanture (préchauffage), et
+  // garderait sinon le pointeur capturé.
+  const leavingStore = useStore(state => state.leavingStore);
+  useEffect(() => {
+    if (!leavingStore) return;
+    if (document.pointerLockElement) document.exitPointerLock();
+    const timer = window.setTimeout(() => setScene('exterior'), LEAVE_STORE_FADE_MS);
+    return () => window.clearTimeout(timer);
+  }, [leavingStore, setScene]);
+
   const isInterior = currentScene === 'interior';
   const isKiosk = currentScene === 'kiosk';
 
@@ -700,6 +707,14 @@ function App() {
         <>
           <style>{`@keyframes entry-fade-out { from { opacity: 1 } to { opacity: 0 } }`}</style>
           <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: '#000', pointerEvents: 'none', animation: 'entry-fade-out 0.6s ease forwards' }} />
+        </>
+      )}
+
+      {/* Sortie par la porte : fondu au noir avant la devanture */}
+      {leavingStore && (
+        <>
+          <style>{`@keyframes leave-store-fade { from { opacity: 0 } to { opacity: 1 } }`}</style>
+          <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: '#000', pointerEvents: 'all', animation: `leave-store-fade ${LEAVE_STORE_FADE_MS}ms ease-in forwards` }} />
         </>
       )}
 

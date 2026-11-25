@@ -367,8 +367,10 @@ test('FICHE: la jaquette ouvre la fiche détaillée, le geste retour la ferme', 
 
 test('FICHE: la bande-annonce est jouée par le lecteur de la borne, depuis notre serveur', () => {
   const detail = readText(path.join(ROOT, 'src/components/kiosk/KioskDetail.tsx'));
-  assert.ok(/<video[\s\S]*?\/api\/films\/\$\{[^}]+\}\/trailer/.test(detail), 'un <video> qui lit /api/films/<tmdbId>/trailer');
-  assert.ok(detail.includes('getTrailerStatus'), 'la fiche demande où en est la bande-annonce (et lance sa récupération)');
+  assert.ok(/<video[\s\S]*?src=\{trailerUrl\(tmdbId\)\}/.test(detail), 'un <video> qui lit notre fichier');
+  const hook = readText(path.join(ROOT, 'src/hooks/useTrailer.ts'));
+  assert.ok(hook.includes('`/api/films/${tmdbId}/trailer`'), 'le fichier vient de /api/films/<tmdbId>/trailer');
+  assert.ok(hook.includes('getTrailerStatus') && detail.includes('useTrailerStatus(tmdbId)'), 'la fiche demande où en est la bande-annonce (et lance sa récupération)');
 });
 
 test('BORNE: un bouton « (i) Fiche film » à côté du titre ouvre la fiche ; plus de bandeau sur la jaquette', () => {
@@ -1138,8 +1140,9 @@ test('BONUS: le bonus de la semaine se reçoit dans la borne — « Mon compte �
 });
 test('FICHE (batterie du 25/11/2026): la bande-annonce se tait dès qu\'autre chose passe devant, et dit quand elle ne se lit pas', () => {
   const detail = readText(path.join(ROOT, 'src/components/kiosk/KioskDetail.tsx'));
-  assert.match(detail, /if \(covered\) videoRef\.current\?\.pause\(\);/, 'recouverte (message, connexion, location, lecteur, paysage) : en pause');
-  assert.match(detail, /<video ref=\{videoRef\}[^>]*onError=\{\(\) => setBroken\(true\)\}/, 'fichier illisible : un message, pas un lecteur gris');
+  assert.match(detail, /useTrailerPlayback\(trailerVideo, trailerShown && !covered\)/, 'recouverte (message, connexion, location, lecteur, paysage) : en pause');
+  assert.match(readText(path.join(ROOT, 'src/hooks/useTrailer.ts')), /if \(!playing\) \{\s*el\.pause\(\);/, 'en pause dès qu\'elle ne doit plus jouer');
+  assert.match(detail, /ref=\{trailerVideo\}[\s\S]*?onError=\{\(\) => setTrailerBroken\(tmdbId\)\}/, 'fichier illisible : un message, pas un lecteur gris');
   const view = readText(path.join(ROOT, 'src/components/kiosk/KioskView.tsx'));
   assert.match(view, /covered=\{overlay !== null \|\| distribution !== null \|\| authVisible \|\| isPlayerOpen \|\| hidden\}/, 'la borne dit à la fiche quand elle est recouverte');
   // En paysage la borne doit vraiment disparaître : `.rootHidden` perdait contre `.root { display: flex }`.
