@@ -98,8 +98,8 @@ function Resume({ film, detail, extras }: { film: Film; detail: KioskFilmDetail 
   );
 }
 
-function Distribution({ detail }: { detail: KioskFilmDetail | null }) {
-  if (!detail) return <Pending what="loading" />;
+function Distribution({ detail, failed }: { detail: KioskFilmDetail | null; failed: boolean }) {
+  if (!detail) return <Pending what={failed ? 'error' : 'loading'} />;
   if (detail.roles.length === 0) return <p className={styles.kDetailNote}>La distribution de ce film n&apos;est pas renseignée.</p>;
   return (
     <ul className={styles.kDetailCast}>
@@ -193,8 +193,16 @@ const TRAILER_POLL_MAX = 60;
 // La bande-annonce, sans publicité (Rusmir, 17/11/2026 : « on veut la bande-annonce sans pub,
 // point ») : le serveur la récupère une fois chez Allociné, la garde, et elle est jouée ici par un
 // simple lecteur vidéo, dans l'écran de la borne, sous la dalle et la vitre.
-function BandeAnnonce({ film }: { film: Film }) {
+function BandeAnnonce({ film, covered }: { film: Film; covered: boolean }) {
   const tmdbId = film.tmdb_id ?? null;
+  // Recouverte (message, connexion, location, lecteur, téléphone couché) : la bande-annonce se tait. Elle continuait de
+  // jouer avec le son sous le film loué, sans que le visiteur puisse l'arrêter (batterie de tests du 25/11/2026).
+  const videoRef = useRef<HTMLVideoElement>(null);
+  useEffect(() => {
+    if (covered) videoRef.current?.pause();
+  }, [covered]);
+  // Le fichier ne se lit pas : on le dit, au lieu d'un lecteur gris à 0:00.
+  const [broken, setBroken] = useState(false);
   const [status, setStatus] = useState<{ id: number; value: TrailerStatusResponse | 'error' } | null>(null);
   useEffect(() => {
     if (tmdbId === null) return;
@@ -229,13 +237,13 @@ function BandeAnnonce({ film }: { film: Film }) {
     return <p className={styles.kDetailNote}>Préparation de la bande-annonce…</p>;
   }
   if (value !== 'error' && value.state === 'none') return <p className={styles.kDetailNote}>Pas de bande-annonce pour ce film.</p>;
-  if (value === 'error' || value.state !== 'ready') {
+  if (value === 'error' || value.state !== 'ready' || broken) {
     return <p className={styles.kDetailNote}>La bande-annonce n&apos;a pas pu être récupérée. Réessayez plus tard.</p>;
   }
   return (
     <>
       <div className={styles.kTrailer}>
-        <video src={`/api/films/${tmdbId}/trailer`} controls autoPlay playsInline preload="auto" aria-label={`Bande-annonce de ${film.title}`} />
+        <video ref={videoRef} src={`/api/films/${tmdbId}/trailer`} controls autoPlay={!covered} playsInline preload="auto" aria-label={`Bande-annonce de ${film.title}`} onError={() => setBroken(true)} />
       </div>
       <p className={styles.kDetailNote}>{TRAILER_LANG[value.lang]}</p>
     </>
@@ -286,6 +294,10 @@ interface KioskDetailProps {
   film: Film;
   /** Détail du film (base) ; `null` tant qu'il n'est pas arrivé. */
   detail: KioskFilmDetail | null;
+  /** Le détail a été demandé et n'est pas arrivé (panne) : la fiche le dit au lieu d'attendre sans fin. */
+  detailFailed: boolean;
+  /** Autre chose est affiché par-dessus la fiche : la bande-annonce se met en pause. */
+  covered: boolean;
   tab: DetailTab;
   onTab: (tab: DetailTab) => void;
   onBack: () => void;
@@ -295,7 +307,7 @@ interface KioskDetailProps {
   action: ReactNode;
 }
 
-export function KioskDetail({ film, detail, tab, onTab, onBack, onOpenFilm, action }: KioskDetailProps) {
+export function KioskDetail({ film, detail, detailFailed, covered, tab, onTab, onBack, onOpenFilm, action }: KioskDetailProps) {
   const tmdbId = film.tmdb_id ?? null;
   const extras = useFilmLoad(tmdbId, loadExtras);
   const related = useFilmLoad(tab === 'voir-aussi' ? tmdbId : null, loadRelated);
@@ -365,10 +377,10 @@ export function KioskDetail({ film, detail, tab, onTab, onBack, onOpenFilm, acti
         {availability && <p className={styles.kDetailAvail}>{availability}</p>}
         <div ref={scrollRef} className={`${styles.kDetailScroll} ${styles.kRise}`} key={`${film.id}-${tab}`} onScroll={syncMore}>
           {tab === 'resume' && <Resume film={film} detail={detail} extras={extras} />}
-          {tab === 'distribution' && <Distribution detail={detail} />}
+          {tab === 'distribution' && <Distribution detail={detail} failed={detailFailed} />}
           {tab === 'equipe' && <Equipe detail={detail} extras={extras} />}
           {tab === 'avis' && <Avis reviews={reviews} extras={extras} />}
-          {tab === 'bande-annonce' && <BandeAnnonce film={film} />}
+          {tab === 'bande-annonce' && <BandeAnnonce key={film.id} film={film} covered={covered} />}
           {tab === 'voir-aussi' && <VoirAussi related={related} onOpenFilm={onOpenFilm} />}
         </div>
       </div>

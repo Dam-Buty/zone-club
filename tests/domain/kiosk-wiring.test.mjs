@@ -1137,3 +1137,35 @@ test('BONUS: le bonus de la semaine se reçoit dans la borne — « Mon compte �
   assert.ok(view.includes('styles.kNavBonus') && view.includes('const waitingBonus = useWaitingBonus();'), 'le bouton « Compte » rappelle le bonus qui attend');
   assert.match(readText(path.join(ROOT, 'src/components/kiosk/kiosk-hooks.ts')), /\[isAuthenticated, credits, refreshWeeklyBonus\]/, 'l\'état du bonus est relu quand le solde bouge');
 });
+test('FICHE (batterie du 25/11/2026): la bande-annonce se tait dès qu\'autre chose passe devant, et dit quand elle ne se lit pas', () => {
+  const detail = readText(path.join(ROOT, 'src/components/kiosk/KioskDetail.tsx'));
+  assert.match(detail, /if \(covered\) videoRef\.current\?\.pause\(\);/, 'recouverte (message, connexion, location, lecteur, paysage) : en pause');
+  assert.match(detail, /<video ref=\{videoRef\}[^>]*onError=\{\(\) => setBroken\(true\)\}/, 'fichier illisible : un message, pas un lecteur gris');
+  const view = readText(path.join(ROOT, 'src/components/kiosk/KioskView.tsx'));
+  assert.match(view, /covered=\{overlay !== null \|\| distribution !== null \|\| authVisible \|\| isPlayerOpen \|\| hidden\}/, 'la borne dit à la fiche quand elle est recouverte');
+  // En paysage la borne doit vraiment disparaître : `.rootHidden` perdait contre `.root { display: flex }`.
+  assert.match(readText(path.join(ROOT, 'src/components/kiosk/KioskStates.module.css')), /\.rootHidden \{\s*display: none !important;/, 'la borne cachée est vraiment cachée');
+});
+
+test('FICHE (batterie du 25/11/2026): un détail qui n\'arrive pas se dit, et se redemande', () => {
+  const view = readText(path.join(ROOT, 'src/components/kiosk/KioskView.tsx'));
+  assert.match(view, /setDetailFailed\(displayedId\)/, 'l\'échec est retenu, pour ce film');
+  assert.match(view, /\[displayedId, displayedTmdbId, detailRetry\]/, 'le détail est redemandé à la réouverture de la fiche');
+  assert.match(view, /if \(!film\?\.rental_status\) throw/, 'une réponse sans contenu est un échec, pas une exception');
+  const detail = readText(path.join(ROOT, 'src/components/kiosk/KioskDetail.tsx'));
+  assert.match(detail, /if \(!detail\) return <Pending what=\{failed \? 'error' : 'loading'\} \/>;/, '« Chargement… » ne reste pas pour toujours');
+});
+
+test('CATALOGUE (batterie du 25/11/2026): un rayon qui n\'a pas pu être chargé ne se dit pas vide', () => {
+  const store = readText(path.join(ROOT, 'src/store/index.ts'));
+  assert.match(store, /failedAisles: failed/, 'le magasin retient les rayons en échec');
+  assert.match(store, /failed\.includes\(aisle as AisleType\) \? get\(\)\.films\[aisle as AisleType\]/, 'un rayon en échec garde ses films déjà connus');
+  const browse = readText(path.join(ROOT, 'src/components/kiosk/KioskBrowse.tsx'));
+  assert.ok(browse.includes('Ce rayon n’a pas pu être chargé.') && browse.includes('Réessayer'), 'le rayon dit l\'échec et propose de réessayer');
+  assert.ok(browse.includes('Aucun film dans ce rayon.'), 'un rayon vraiment vide le dit toujours');
+});
+
+test('BORNE (batterie du 25/11/2026): sur PC, Échap fait ce que fait le geste retour', () => {
+  const view = readText(path.join(ROOT, 'src/components/kiosk/KioskView.tsx'));
+  assert.match(view, /if \(event\.key !== 'Escape' \|\| event\.defaultPrevented\) return;[\s\S]{0,300}onBackRef\.current\(\)/, 'Échap ferme le message, le panneau, la fiche… comme le geste retour');
+});

@@ -630,6 +630,21 @@
   color: #bfe3ff;
 }
 
+/* « Réessayer » d'un rayon qui n'a pas pu être chargé : un bouton de la borne, à la taille d'un appui. */
+.kRailRetry {
+  display: inline-block;
+  min-height: max(40px, 9cqw);
+  margin-left: 1.5cqw;
+  padding: 0 3.4cqw;
+  font-size: 3.6cqw;
+  font-weight: 800;
+  color: #fff;
+  text-shadow: var(--k-text-shadow);
+  border: 0.4cqw solid var(--k-edge-orange);
+  border-radius: var(--k-radius);
+  background: var(--k-skin-orange);
+}
+
 /* ----- fiche détaillée -----
    Ouverte d'un appui sur la jaquette. Mêmes codes que le parcours : la colonne d'onglets porte les
    rubriques du film, l'ardoise reste en haut, la rubrique choisie prend tout le cadre du dessous,

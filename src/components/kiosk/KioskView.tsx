@@ -312,6 +312,8 @@ export function KioskView() {
   const openDetail = useCallback(() => {
     setDetailTab('resume');
     setDetailOpen(true);
+    // Un détail resté en échec est redemandé à l'ouverture de la fiche.
+    setDetailRetry((n) => n + 1);
   }, []);
   const closeDetail = useCallback(() => setDetailOpen(false), []);
   // Un seul message à la fois dans l'écran.
@@ -619,6 +621,9 @@ export function KioskView() {
   // La réponse porte l'identifiant du film demandé : celle d'un film qu'on ne regarde déjà plus
   // est ignorée. En cas d'échec le détail reste inconnu (version « — », stock non vérifié).
   const [detail, setDetail] = useState<{ filmId: number; data: KioskFilmDetail } | null>(null);
+  // L'échec est retenu (pour ce film) : la fiche le dit, et sa réouverture redemande le détail.
+  const [detailFailed, setDetailFailed] = useState<number | null>(null);
+  const [detailRetry, setDetailRetry] = useState(0);
   const displayedId = displayed?.id ?? null;
   const displayedTmdbId = displayed?.tmdb_id ?? null;
   useEffect(() => {
@@ -627,6 +632,9 @@ export function KioskView() {
     api.films.getById(displayedTmdbId).then(
       (film) => {
         if (cancelled) return;
+        // Une réponse sans contenu est un échec, pas une exception au milieu du rendu.
+        if (!film?.rental_status) throw new Error('détail incomplet');
+        setDetailFailed(null);
         setDetail({
           filmId: displayedId,
           data: {
@@ -642,14 +650,14 @@ export function KioskView() {
           },
         });
       },
-      () => {
-        // Détail indisponible : la fiche reste utilisable, le serveur tranchera à la location.
-      },
-    );
+    ).catch(() => {
+      // Détail indisponible : la fiche reste utilisable (elle le dit), le serveur tranchera à la location.
+      if (!cancelled) setDetailFailed(displayedId);
+    });
     return () => {
       cancelled = true;
     };
-  }, [displayedId, displayedTmdbId]);
+  }, [displayedId, displayedTmdbId, detailRetry]);
   const currentDetail = detail !== null && detail.filmId === displayedId ? detail.data : null;
 
   const closeNotice = useCallback(() => setNotice(null), []);
@@ -741,6 +749,9 @@ export function KioskView() {
 
   const onBack = () => {
     setTrapArmed(false);
+    back();
+  };
+  const back = () => {
     const action = kioskBackAction({
       playerOpen: isPlayerOpen,
       noticeOpen: overlay !== null,
@@ -778,6 +789,20 @@ export function KioskView() {
     else if (action === 'close-search') closeSearch();
     else if (overlay === null && !authVisible && distribution === null) setQuitHintTick((tick) => tick + 1);
   };
+  // Sur PC, Échap fait ce que fait le geste retour d'un téléphone (le lecteur a sa propre touche Échap).
+  const onBackRef = useRef(back);
+  useEffect(() => {
+    onBackRef.current = back;
+  });
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      if (useStore.getState().isPlayerOpen) return;
+      onBackRef.current();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
   const guardArmed = useArmedAfterMount();
   const [trapArmed, setTrapArmed] = useState(true);
   useBackGuard(guardArmed && trapArmed, onBack);
@@ -917,6 +942,8 @@ export function KioskView() {
                     <KioskDetail
                       film={displayed}
                       detail={currentDetail}
+                      detailFailed={currentDetail === null && detailFailed === displayedId}
+                      covered={overlay !== null || distribution !== null || authVisible || isPlayerOpen || hidden}
                       tab={detailTab}
                       onTab={setDetailTab}
                       onBack={closeDetail}

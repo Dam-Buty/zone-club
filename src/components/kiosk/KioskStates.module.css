@@ -5,8 +5,10 @@
    affiche pas et demande de redresser l'appareil. Mêmes contraintes que le reste de la borne :
    du DOM et du CSS seulement, ni flou d'arrière-plan, ni filtre, ni animation. */
 
+/* `!important` : `.root { display: flex }` de KioskView.module.css gagnait selon l'ordre des feuilles, et la borne
+   « cachée » restait affichée sous le panneau (sa bande-annonce continuait de jouer). */
 .rootHidden {
-  display: none;
+  display: none !important;
 }
 
 .rotate {

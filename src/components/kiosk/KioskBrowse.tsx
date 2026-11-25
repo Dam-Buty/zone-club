@@ -128,6 +128,8 @@ interface KioskBrowseProps {
 
 export function KioskBrowse({ selectedId, versions, credits, onSelect, onSearch, onOpenDetail, actionSlot, initialTab }: KioskBrowseProps) {
   const films = useStore((state) => state.films);
+  const failedAisles = useStore((state) => state.failedAisles);
+  const reloadFilms = useStore((state) => state.loadFilmsFromApi);
   const [tab, setTab] = useState<KioskTab>(() => initialTab ?? firstNonEmptyTab(films));
   const [page, setPage] = useState(() => Math.max(0, TAB_PAGES.findIndex((p) => p.includes(tab))));
   const railRef = useRef<HTMLDivElement>(null);
@@ -295,7 +297,16 @@ export function KioskBrowse({ selectedId, versions, credits, onSelect, onSearch,
           <span className={styles.kArrowShape} aria-hidden="true" />
         </button>
         <div className={styles.kRail} ref={railRef} onScroll={syncArrows}>
-          {list.length === 0 && <p className={styles.kRailEmpty}>Aucun film dans ce rayon.</p>}
+          {list.length === 0 && (tab !== 'tous' && failedAisles.includes(tab) ? (
+            <p className={styles.kRailEmpty}>
+              Ce rayon n’a pas pu être chargé.{' '}
+              <button type="button" className={styles.kRailRetry} onClick={() => void reloadFilms()}>
+                Réessayer
+              </button>
+            </p>
+          ) : (
+            <p className={styles.kRailEmpty}>Aucun film dans ce rayon.</p>
+          ))}
           {list.map((item) => (
             <button
               key={item.id}

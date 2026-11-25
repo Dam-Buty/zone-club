@@ -152,6 +152,8 @@ export interface VideoClubState extends CastSlice, VersionSlice {
 
   // Films cache
   films: Record<AisleType, Film[]>;
+  /** Les rayons dont le dernier chargement a échoué : la borne ne les dit pas « vides ». */
+  failedAisles: AisleType[];
   filmRentalCounts: Record<number, { stock: number; activeRentals: number }>;
   setFilmRentalCounts: (filmId: number, stock: number, activeRentals: number) => void;
   setFilmsForAisle: (aisle: AisleType, films: Film[]) => void;
@@ -765,6 +767,7 @@ export const useStore = create<VideoClubState>()(
       },
 
       // Films cache
+      failedAisles: [],
       films: {
         nouveautes: [],
         action: [],
@@ -804,15 +807,17 @@ export const useStore = create<VideoClubState>()(
       loadFilmsFromApi: async () => {
         const aisles: AisleType[] = ['nouveautes', 'action', 'aventure', 'horreur', 'comedie', 'drame', 'thriller', 'policier', 'sf', 'animation', 'classiques', 'bizarre', 'romance'];
         try {
+          // Un rayon en échec n'est pas un rayon vide : il est retenu, et garde les films qu'on lui connaissait.
+          const failed: AisleType[] = [];
           const results = await Promise.all(
-            aisles.map(aisle => api.films.getByAisle(aisle).catch(() => ({ aisle, films: [] })))
+            aisles.map(aisle => api.films.getByAisle(aisle).catch(() => { failed.push(aisle); return { aisle, films: [] }; }))
           );
           const filmsMap: Record<AisleType, Film[]> = {
             nouveautes: [], action: [], aventure: [], horreur: [], comedie: [], drame: [], thriller: [], policier: [], sf: [], animation: [], classiques: [], bizarre: [], romance: [],
           };
           const rentalCounts: Record<number, { stock: number; activeRentals: number }> = {};
           for (const { aisle, films: aisleFilms } of results) {
-            const converted = (aisleFilms as ApiFilm[]).map(apiFilmToFilm);
+            const converted = failed.includes(aisle as AisleType) ? get().films[aisle as AisleType] : (aisleFilms as ApiFilm[]).map(apiFilmToFilm);
             filmsMap[aisle as AisleType] = converted;
             for (const film of converted) {
               rentalCounts[film.id] = {
@@ -821,7 +826,7 @@ export const useStore = create<VideoClubState>()(
               };
             }
           }
-          set({ films: filmsMap, filmRentalCounts: rentalCounts });
+          set({ films: filmsMap, filmRentalCounts: rentalCounts, failedAisles: failed });
         } catch (error) {
           console.error('Erreur chargement films:', error);
         }
