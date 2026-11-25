@@ -5,6 +5,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { TextureCache } from '../../utils/TextureCache'
 import { useKTX2Textures } from '../../hooks/useKTX2Textures'
 import { SHARED_WALL_MATERIAL } from './constants'
+import { RAYCAST_LAYER_INTERACTIVE } from './Controls'
 
 interface StorefrontProps {
   position: [number, number, number]
@@ -398,6 +399,11 @@ export function Storefront({ position, roomWidth, roomHeight, posterPaths }: Sto
       </mesh>
 
       {/* ===== DOOR ===== */}
+      {/* La porte est la sortie du vidéoclub (Rusmir, 25/11/2026 : « le bouton sortir devrait être sur
+          la porte ») : viser ou toucher l'un de ses éléments ramène à la devanture (Controls.tsx). Le rayon des
+          contrôles ne voit que les calques des cassettes et des objets interactifs : chaque maillage de la porte
+          est ajouté au second, comme la sonnette ou le canapé. */}
+      <group userData={{ isExitDoor: true }} ref={(door) => door?.traverse((o) => o.layers.enable(RAYCAST_LAYER_INTERACTIVE))}>
       {/* Door glass (full height) */}
       <mesh position={[DOOR_CENTER_X, DOOR_HEIGHT / 2, Z_GLASS]} material={DOOR_GLASS_MAT}>
         <planeGeometry args={[DOOR_WIDTH - 0.08, DOOR_HEIGHT - 0.08]} />
@@ -433,6 +439,7 @@ export function Storefront({ position, roomWidth, roomHeight, posterPaths }: Sto
       <mesh position={[DOOR_CENTER_X, DOOR_HEIGHT + doorFrameThickness / 2, Z_FRAME]} material={DOOR_FRAME_MAT} castShadow>
         <boxGeometry args={[DOOR_WIDTH + doorFrameThickness * 2, doorFrameThickness, doorFrameDepth]} />
       </mesh>
+      </group>
 
       {/* ===== KICKBOARD (split around door opening) ===== */}
       {/* Left segment: -roomWidth/2 to DOOR_CENTER_X - DOOR_WIDTH/2 */}

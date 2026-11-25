@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useDrag } from "@use-gesture/react";
 import { useStore, useCredits } from "../../store";
-import { tmdb, type TMDBVideo } from "../../services/tmdb";
+import { tmdb } from "../../services/tmdb";
 import api, { type FilmWithRentalStatus, type FilmRatings } from "../../api";
 import { AuthModal } from "../auth/AuthModal";
 import { ReviewModal } from "../review/ReviewModal";
@@ -15,6 +15,7 @@ import {
 } from "../../types";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { useBackGuard } from "../../hooks/useBackGuard";
+import { K7Trailer } from "./K7Trailer";
 import { getRentalTier } from "../../utils/rental-tier";
 
 interface VHSCaseOverlayProps {
@@ -368,8 +369,6 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
   const [isRenting, setIsRenting] = useState(false);
   const [rentSuccess, setRentSuccess] = useState(false);
   const [showTrailer, setShowTrailer] = useState(false);
-  const [trailerKey, setTrailerKey] = useState<string | null>(null);
-  const [loadingTrailer, setLoadingTrailer] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [settingMode, setSettingMode] = useState(false);
@@ -606,7 +605,6 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
   useEffect(() => {
     if (!isOpen) {
       setShowTrailer(false);
-      setTrailerKey(null);
       setRentSuccess(false);
       setIsRenting(false);
       setShowAuthModal(false);
@@ -718,36 +716,7 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [isOpen, onClose, showTrailer, showAuthModal, showReviewModal, selectedPerson, showReturnConfirm]);
 
-  const handleWatchTrailer = useCallback(async () => {
-    if (!film || loadingTrailer) return;
-    const tmdbFilmId = film.tmdb_id;
-    if (!tmdbFilmId) return;
-    setLoadingTrailer(true);
-    try {
-      const videos = await tmdb.getVideos(tmdbFilmId);
-      const trailer =
-        videos.find(
-          (v: TMDBVideo) =>
-            v.site === "YouTube" && v.type === "Trailer" && v.official,
-        ) ||
-        videos.find(
-          (v: TMDBVideo) => v.site === "YouTube" && v.type === "Trailer",
-        ) ||
-        videos.find(
-          (v: TMDBVideo) => v.site === "YouTube" && v.type === "Teaser",
-        ) ||
-        videos.find((v: TMDBVideo) => v.site === "YouTube");
-
-      if (trailer) {
-        setTrailerKey(trailer.key);
-        setShowTrailer(true);
-      }
-    } catch (error) {
-      console.error("Failed to fetch trailer:", error);
-    } finally {
-      setLoadingTrailer(false);
-    }
-  }, [film, loadingTrailer]);
+  const handleWatchTrailer = useCallback(() => setShowTrailer(true), []);
 
   const handleAskManager = useCallback(() => {
     if (!film) return;
@@ -1571,55 +1540,8 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
         </div>
       )}
 
-      {/* Trailer fullscreen overlay */}
-      {showTrailer && trailerKey && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.95)",
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 200,
-            padding: "20px",
-          }}
-        >
-          <div
-            style={{ width: "100%", maxWidth: "900px", aspectRatio: "16/9" }}
-          >
-            <iframe
-              src={tmdb.getYouTubeEmbedUrl(trailerKey)}
-              title="Bande-annonce"
-              style={{
-                width: "100%",
-                height: "100%",
-                border: "2px solid #ff2d95",
-                borderRadius: "4px",
-              }}
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-              allowFullScreen
-            />
-          </div>
-          <button
-            onClick={() => setShowTrailer(false)}
-            style={{
-              marginTop: "20px",
-              padding: "12px 30px",
-              background: "transparent",
-              border: "2px solid #ff2d95",
-              color: "#ff2d95",
-              fontFamily: "Orbitron, sans-serif",
-              fontSize: "0.9rem",
-              cursor: "pointer",
-              borderRadius: "4px",
-            }}
-          >
-            FERMER
-          </button>
-        </div>
-      )}
+      {/* Bande-annonce : montée dès l'ouverture de la fiche, cachée, pour se précharger (K7Trailer) */}
+      <K7Trailer tmdbId={isOpen ? film?.tmdb_id ?? null : null} title={film?.title ?? ''} open={showTrailer} onClose={() => setShowTrailer(false)} />
 
       {/* Success overlay */}
       {rentSuccess && (
@@ -1969,10 +1891,7 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
               <div style={{ display: "flex", gap: "6px", marginTop: "6px" }}>
                 <button
                   onClick={handleWatchTrailer}
-                  disabled={loadingTrailer}
                   style={mobilePillStyle("#ff4444", "#ff4444", {
-                    opacity: loadingTrailer ? 0.6 : 1,
-                    cursor: loadingTrailer ? "wait" : "pointer",
                     ...(tutorialStep === 3 && tutorialHighlight === 'louer' ? {
                       animation: 'tutorialGlow 1.5s ease-in-out infinite',
                     } : {}),
@@ -2518,19 +2437,16 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
               } : undefined}>
                 <button
                   onClick={handleWatchTrailer}
-                  disabled={loadingTrailer}
                   style={sideButtonStyle("#ff4444", "#ff4444", {
                     width: "100%",
                     justifyContent: "center",
-                    opacity: loadingTrailer ? 0.6 : 1,
-                    cursor: loadingTrailer ? "wait" : "pointer",
                   })}
                 >
                   ▶ BANDE-ANNONCE
                 </button>
               </div>
               {(tutorialStep === 2 || (tutorialStep === 3 && tutorialHighlight === 'louer')) && (
-                <div style={tutorialAnnotation}>↑ BANDE-ANNONCE YOUTUBE</div>
+                <div style={tutorialAnnotation}>↑ BANDE-ANNONCE</div>
               )}
 
               <div style={tutorialStep === 3 && tutorialHighlight === 'trailer' ? {

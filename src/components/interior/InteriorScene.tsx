@@ -645,6 +645,8 @@ function UIOverlays({ isMobile }: { isMobile: boolean }) {
           hint = 'Lire [E]'
         } else if (targetedInteractive === 'board') {
           hint = 'Ecrire [E]'
+        } else if (targetedInteractive === 'exitDoor') {
+          hint = 'Sortir [E]'
         }
         if (!hint) return null
         return (
