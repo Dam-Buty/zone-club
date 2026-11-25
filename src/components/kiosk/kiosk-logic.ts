@@ -339,6 +339,19 @@ export async function rentFlow(
   }
 }
 
+/**
+ * La location qui finit la première (échue comprise, tant que le serveur ne l'a pas retirée) : la borne arme une
+ * minuterie dessus pour relire le compte et prévenir le visiteur — sinon « REGARDER » restait affiché sur un film qui
+ * ne se lançait plus, sans un mot (batterie de tests du 25/11/2026).
+ */
+export function nextRentalEnd(rentals: readonly { filmId: number; expiresAt: number }[], _nowMs: number): { filmId: number; at: number } | null {
+  let next: { filmId: number; at: number } | null = null;
+  for (const r of rentals) {
+    if (next === null || r.expiresAt < next.at) next = { filmId: r.filmId, at: r.expiresAt };
+  }
+  return next;
+}
+
 /** Ajouté au message quand on ne sait pas si la location a été enregistrée. */
 export const RENT_UNKNOWN_HINT = 'Avant de réessayer, regardez « Mon compte » : la location y est peut-être déjà.';
 

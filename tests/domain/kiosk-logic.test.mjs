@@ -795,3 +795,11 @@ test('BORNE: un double appui sur « Louer » ne passe pas la vidéo de distribut
   assert.equal(K.filmTapSkips(0, K.FILM_TAP_GUARD_MS), true, 'ensuite un appui passe la vidéo');
   assert.equal(K.filmTapSkips(null, 5000), true, 'sans heure de départ connue, on ne bloque rien');
 });
+
+test('BORNE: la prochaine fin de location à surveiller', () => {
+  const now = 1_000_000;
+  assert.equal(K.nextRentalEnd([], now), null);
+  assert.deepEqual(K.nextRentalEnd([{ filmId: 1, expiresAt: now + 9000 }, { filmId: 2, expiresAt: now + 3000 }], now), { filmId: 2, at: now + 3000 });
+  // Une location déjà échue que le serveur n'a pas encore retirée : à traiter tout de suite, pas ignorée.
+  assert.deepEqual(K.nextRentalEnd([{ filmId: 3, expiresAt: now - 5 }], now), { filmId: 3, at: now - 5 });
+});

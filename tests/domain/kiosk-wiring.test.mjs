@@ -1112,3 +1112,9 @@ test('LECTEUR (batterie du 25/11/2026): sur téléphone, « NO SIGNAL » ne couv
   assert.match(player, /\.header \{[^}]*position: relative;[^}]*grid-template-columns: auto minmax\(0, 1fr\) auto;/, 'le bouton de retour garde sa largeur, le titre prend ce qui reste');
   assert.match(player, /\.headerCenter \{[^}]*min-width: 0;/, 'le titre se tronque au lieu de déborder sur le bouton');
 });
+test('BORNE (batterie du 25/11/2026): la fin d\'une location, borne ouverte, se dit', () => {
+  const view = readText(path.join(ROOT, 'src/components/kiosk/KioskView.tsx'));
+  assert.match(view, /const next = nextRentalEnd\(rentals, Date\.now\(\)\);/, 'la borne surveille la prochaine échéance');
+  assert.match(view, /fetchMeNow\(\)\.then\(\(\) => \{[\s\S]{0,900}title: 'Location terminée'/, 'à l\'échéance le compte est relu, puis le visiteur est prévenu');
+  assert.match(view, /if \(useStore\.getState\(\)\.getRental\(next\.filmId\)\) return;/, 'une location prolongée entre-temps ne déclenche rien');
+});

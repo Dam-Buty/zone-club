@@ -34,6 +34,7 @@ import {
   KIOSK_RENT_TIMEOUT_MS,
   hidesKioskInLandscape,
   kioskBackAction,
+  nextRentalEnd,
   lcdDevicePixel,
   lcdPitchInDevicePixels,
   phoneLayout,
@@ -483,6 +484,33 @@ export function KioskView() {
     }
     setDistribution({ phase: 'ready', filmId, fresh: false });
   };
+  // ----- La fin d'une location pendant que la borne est ouverte -----
+  // À l'échéance, le compte est relu (le serveur ne rend plus cette location), le panneau de ce film se ferme et le
+  // visiteur est prévenu. Le lecteur, lui, se ferme de lui-même : tant qu'il est ouvert, la borne ne dit rien dessous.
+  const rentals = useStore((state) => state.rentals);
+  const fetchMeNow = useStore((state) => state.fetchMe);
+  // Chaque échéance n'est traitée qu'une fois : si le serveur rendait encore la location, on ne relirait pas en boucle.
+  const handledEndsRef = useRef(new Set<string>());
+  useEffect(() => {
+    const next = nextRentalEnd(rentals, Date.now());
+    if (!next || handledEndsRef.current.has(`${next.filmId}:${next.at}`)) return;
+    const id = window.setTimeout(() => {
+      handledEndsRef.current.add(`${next.filmId}:${next.at}`);
+      void fetchMeNow().then(() => {
+        // Prolongée entre-temps, ou relecture en panne (la location est toujours là) : rien à dire.
+        if (useStore.getState().getRental(next.filmId)) return;
+        setDistribution((d) => (d?.phase === 'ready' && d.filmId === next.filmId ? null : d));
+        if (useStore.getState().isPlayerOpen) return;
+        const title = allFilms(useStore.getState().films).find((f) => f.id === next.filmId)?.title;
+        setNotice({
+          title: 'Location terminée',
+          body: title ? `« ${title} » : la durée de location est écoulée.` : 'La durée de location est écoulée.',
+          primary: { label: 'Fermer', onPress: () => setNotice(null) },
+        });
+      });
+    }, Math.min(Math.max(0, next.at - Date.now()) + 1500, 2_000_000_000));
+    return () => window.clearTimeout(id);
+  }, [rentals, fetchMeNow]);
   /** « Sur ce téléphone » : le panneau a demandé, le lecteur ne redemande pas et lance le film. */
   const watchHere = (filmId: number) => {
     closeReady();
