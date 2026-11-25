@@ -82,6 +82,17 @@ export function fallbackSpineSrc(level: WearLevel, couchee: boolean): string {
   return `/kiosk-tranches/repli-${level}${couchee ? '-c' : ''}.webp`;
 }
 
+/**
+ * La vidéo de distribution part à l'appui sur « Louer » de la confirmation : le second appui d'un double appui tombait
+ * sur elle et la passait aussitôt. Pendant ce délai après son départ, un appui ne la passe pas.
+ */
+export const FILM_TAP_GUARD_MS = 800;
+
+/** Un appui à l'instant `nowMs` passe-t-il la vidéo partie à `startedAtMs` ? */
+export function filmTapSkips(startedAtMs: number | null, nowMs: number): boolean {
+  return startedAtMs === null || nowMs - startedAtMs >= FILM_TAP_GUARD_MS;
+}
+
 /** Longueur au-delà de laquelle le titre de repli est coupé (à la fin, avec des points de suspension). */
 const FALLBACK_TITLE_MAX = 56;
 

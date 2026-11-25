@@ -354,6 +354,8 @@ export interface VideoClubState extends CastSlice, VersionSlice {
   weeklyBonusStatus: WeeklyBonusStatus | null;
   setWeeklyBonusStatus: (s: WeeklyBonusStatus | null) => void;
   claimWeeklyBonus: () => Promise<boolean>;
+  /** Relit l'état du bonus : il dépend du solde, qui bouge à chaque location, retour ou critique. */
+  refreshWeeklyBonus: () => Promise<void>;
 
   // Tutorial
   tutorialStep: number | null;
@@ -1122,10 +1124,18 @@ export const useStore = create<VideoClubState>()(
           if (authUser) {
             set({ authUser: { ...authUser, credits: result.new_balance } });
           }
-          set({ weeklyBonusStatus: { canClaim: false, amount: 0 } });
+          set({ weeklyBonusStatus: { canClaim: false, amount: 0, code: 'claimed' } });
           return true;
         } catch {
           return false;
+        }
+      },
+      refreshWeeklyBonus: async () => {
+        if (!get().isAuthenticated) return;
+        try {
+          set({ weeklyBonusStatus: await api.me.getWeeklyBonus() });
+        } catch {
+          // En panne : l'état connu reste, le serveur tranchera à l'appui.
         }
       },
 

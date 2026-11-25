@@ -455,6 +455,8 @@ export interface WeeklyBonusStatus {
   canClaim: boolean;
   amount: number;
   reason?: string;
+  /** Pourquoi : bonus à recevoir, déjà reçu cette semaine, ou solde déjà suffisant. Absent d'un serveur plus ancien. */
+  code?: 'available' | 'claimed' | 'enough';
 }
 
 // History entry = a rental row + the joined film title/poster (server enriches via LEFT JOIN), so the
@@ -494,6 +496,10 @@ export const me = {
 
   async getNotifications(): Promise<{ notifications: ApiReturnRequest[] }> {
     return request('/api/me/notifications');
+  },
+
+  async getWeeklyBonus(): Promise<WeeklyBonusStatus> {
+    return request('/api/me/weekly-bonus');
   },
 
   async claimWeeklyBonus(): Promise<{ credits_awarded: number; new_balance: number }> {

@@ -599,6 +599,52 @@ span.kSearchPoster {
   background: linear-gradient(180deg, rgba(6, 24, 76, 0.8) 0%, rgba(2, 12, 50, 0.8) 100%);
 }
 
+/* « Bonus de la semaine » : même cadre que la ligne « Version préférée », toujours au même endroit sous le solde. Ce
+   n'est pas un bouton : son état est du texte, et seul un bonus à recevoir y pose un bouton. */
+.kBonusLine {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 3cqw;
+  width: 100%;
+  min-height: max(44px, 12cqw);
+  margin-top: 2.4cqw;
+  padding: 1.2cqw 3cqw;
+  font-size: 4.9cqw;
+  font-weight: 700;
+  color: #e3f1ff;
+  text-shadow: var(--k-text-shadow);
+  border: 0.4cqw solid var(--k-frame);
+  border-color: var(--k-frame-hi) var(--k-frame) var(--k-frame-lo) var(--k-frame);
+  border-radius: var(--k-radius);
+  background: linear-gradient(180deg, rgba(6, 24, 76, 0.8) 0%, rgba(2, 12, 50, 0.8) 100%);
+}
+
+.kBonusState {
+  margin-left: auto;
+  text-align: right;
+  font-size: 4cqw;
+  font-weight: 600;
+  line-height: 1.15;
+  color: #9fb8d8;
+}
+
+.kNoticeBtn.kBonusGet {
+  flex: none;
+  margin-left: auto;
+  min-height: max(40px, 9cqw);
+  padding: 0 3cqw;
+  font-size: 4.2cqw;
+  white-space: nowrap;
+}
+
+.kBonusFail {
+  margin-top: 1.2cqw;
+  font-size: 3.8cqw;
+  font-weight: 600;
+  color: #ffb0a0;
+}
+
 .kPrefValue {
   margin-left: auto;
   display: flex;

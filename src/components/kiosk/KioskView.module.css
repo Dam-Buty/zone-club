@@ -845,6 +845,14 @@
   color: #ffe08a;
 }
 
+/* Le bonus de la semaine qui attend : « +3 » à la suite du solde. */
+.kNavBonus {
+  margin-left: 1.2cqw;
+  font-size: 3.4cqw;
+  font-weight: 800;
+  color: #8dffa8;
+}
+
 /* Triangle évidé, comme sur la référence. */
 .kNavTri {
   width: 2.6cqw;

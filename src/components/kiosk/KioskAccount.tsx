@@ -4,6 +4,7 @@ import type { Film } from '../../types';
 import { FULL_OFFER, versionName, versionRows, type VersionChoice } from '../../utils/version-choice';
 import { VersionList } from '../version/VersionList';
 import { KioskPoster } from './KioskBrowse';
+import { bonusButtonLabel, bonusLine, bonusLineText } from './kiosk-account-logic';
 import { accountHistoryRows, creditsLabel, dayLabel, rentalRows, reviewStateFor, type KioskReviewState } from './kiosk-logic';
 import styles from './KioskPanels.module.css';
 
@@ -72,6 +73,23 @@ export function KioskAccount({ films, prefOpen, onPrefOpen, onWatch, onReview, o
   const versionPref = useStore((state) => state.versionPref);
   const setVersionPref = useStore((state) => state.setVersionPref);
   const credits = useCredits();
+
+  // ----- « Bonus de la semaine » : une ligne toujours présente sous le solde, qui dit son état (spec 2026-11-20, § 5.5) -----
+  const bonus = bonusLine(useStore((state) => state.weeklyBonusStatus));
+  const claimWeeklyBonus = useStore((state) => state.claimWeeklyBonus);
+  const [bonusBusy, setBonusBusy] = useState(false);
+  // Le montant qui vient d'être reçu (« +3 crédits reçus »), ou un refus.
+  const [bonusGot, setBonusGot] = useState<number | null>(null);
+  const [bonusFailed, setBonusFailed] = useState(false);
+  const claimBonus = async (amount: number) => {
+    if (bonusBusy) return;
+    setBonusBusy(true);
+    setBonusFailed(false);
+    const ok = await claimWeeklyBonus();
+    setBonusBusy(false);
+    if (ok) setBonusGot(amount);
+    else setBonusFailed(true);
+  };
 
   // ----- « Version préférée » : un réglage que le visiteur fait lui-même, jamais déduit (spec 2026-11-19, § 4.2) -----
   const [expanded, setExpanded] = useState(false);
@@ -161,6 +179,19 @@ export function KioskAccount({ films, prefOpen, onPrefOpen, onWatch, onReview, o
         <span>{authUser?.username ?? ''}</span>
         <span className={styles.kAccountCredits}>{creditsLabel(credits)}</span>
       </p>
+      <div className={styles.kBonusLine} data-testid="borne-bonus">
+        <span>Bonus de la semaine</span>
+        {bonus.state === 'available' ? (
+          <button type="button" className={`${styles.kNoticeBtn} ${styles.kNoticeBtnPrimary} ${styles.kBonusGet}`} aria-busy={bonusBusy} onClick={() => void claimBonus(bonus.amount)}>
+            {bonusButtonLabel(bonus.amount)}
+          </button>
+        ) : (
+          <span className={styles.kBonusState}>
+            {bonusGot !== null ? `+${creditsLabel(bonusGot)} reçu${bonusGot > 1 ? 's' : ''}` : bonusLineText(bonus)}
+          </span>
+        )}
+      </div>
+      {bonusFailed && <p className={styles.kBonusFail} role="alert">Le bonus n’a pas pu être reçu. Réessayez dans un instant.</p>}
       <button type="button" className={styles.kPrefLine} onClick={openPref}>
         <span>Version préférée</span>
         <span className={styles.kPrefValue}>

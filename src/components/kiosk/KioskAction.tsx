@@ -4,6 +4,7 @@ import { RENTAL_COSTS, type Film } from '../../types';
 import { getRentalTier } from '../../utils/rental-tier';
 import { NO_PLAYABLE_VERSION } from '../../utils/version-choice';
 import type { KioskNoticeSpec } from './KioskNotice';
+import { bonusLine, insufficientText } from './kiosk-account-logic';
 import { actionLabel, confirmRentText, creditsLabel, offersRelogin, rentAction, rentFlow } from './kiosk-logic';
 import styles from './KioskBrowse.module.css';
 
@@ -155,7 +156,30 @@ export function KioskAction({ film, detail, onNotice, onRequestAuth, onRenting, 
       return;
     }
     if (now === 'insufficient') {
-      say('Crédits insuffisants', `Ce film coûte ${creditsLabel(cost)}. Vous en avez ${nowCredits}.`);
+      // Le bonus de la semaine se propose là où les crédits manquent (spec 2026-11-20, § 5.5). Son état dépend du solde,
+      // qui a pu bouger depuis la dernière lecture du compte : il est relu d'abord.
+      await state.refreshWeeklyBonus();
+      const text = insufficientText({ cost, credits: nowCredits, bonus: bonusLine(useStore.getState().weeklyBonusStatus) });
+      if (text.offer === null) {
+        say(text.title, text.body);
+        return;
+      }
+      onNotice({
+        title: text.title,
+        body: text.body,
+        primary: {
+          label: `Recevoir ${creditsLabel(text.offer)}`,
+          onPress: () => {
+            close();
+            void useStore.getState().claimWeeklyBonus().then((ok) => {
+              // Reçu : la location reprend, par sa confirmation habituelle. Refusé : on le dit, rien n'est perdu.
+              if (ok) void press();
+              else say('Bonus indisponible', 'Le bonus n’a pas pu être reçu. Réessayez depuis « Mon compte ».');
+            });
+          },
+        },
+        secondary: { label: 'Fermer', onPress: close },
+      });
       return;
     }
     if (now === 'unavailable') {

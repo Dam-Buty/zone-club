@@ -174,3 +174,10 @@ test('distribution : un suivi vide ou incomplet n\'est pas un suivi', () => {
   assert.equal(D.isUsableSuivi(null), false);
   assert.equal(D.isUsableSuivi('<html>'), false);
 });
+
+test('distribution : un double appui sur « Louer » ne passe pas la vidéo de distribution', () => {
+  assert.equal(D.filmTapSkips(0, 150), false, 'le second appui du double appui arrive pendant la garde');
+  assert.equal(D.filmTapSkips(0, D.FILM_TAP_GUARD_MS - 1), false);
+  assert.equal(D.filmTapSkips(0, D.FILM_TAP_GUARD_MS), true, 'ensuite un appui passe la vidéo');
+  assert.equal(D.filmTapSkips(null, 5000), true, 'sans heure de départ connue, on ne bloque rien');
+});

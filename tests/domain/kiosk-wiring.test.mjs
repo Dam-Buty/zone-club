@@ -1023,7 +1023,7 @@ test('DISTRIBUTION FILMÉE: corrections de la relecture du 25/11/2026', () => {
   const hook = readText(path.join(ROOT, 'src/components/kiosk/useDistributionFilm.ts'));
   const welcome = readText(path.join(ROOT, 'src/components/kiosk/KioskWelcome.tsx'));
   // L'écran de la borne passe au-dessus de la vidéo : un appui sur lui doit la passer aussi.
-  assert.ok(/ref=\{screenRef\}[^>]*onClick=\{filmPlaying \? tapFilm : undefined\}/.test(view) && /const tapFilm = useCallback\(\(\) => \{\s*if \(filmTapSkips\(filmStartedAtRef\.current, performance\.now\(\)\)\) distributionFilm\.skip\(\);/.test(view), 'un appui sur l\'écran passe la vidéo (hors double appui de « Louer »)');
+  assert.ok(/ref=\{screenRef\}[^>]*onClick=\{filmPlaying \? tapFilm : undefined\}/.test(view) && view.includes('const tapFilm = useFilmTap(filmPlaying, distributionFilm.skip);') && /if \(filmTapSkips\(startedAtRef\.current, performance\.now\(\)\)\) skip\(\);/.test(readText(path.join(ROOT, 'src/components/kiosk/kiosk-hooks.ts'))), 'un appui sur l\'écran passe la vidéo (hors double appui de « Louer »)');
   // Quelle que soit la fin, la vidéo s'arrête : pas de son sous le panneau.
   const done = hook.slice(hook.indexOf('const done = useCallback'), hook.indexOf('const start = useCallback'));
   assert.ok(done.includes('videoRef.current?.pause()'), 'done() met la vidéo en pause');
@@ -1088,11 +1088,13 @@ test('SESSION (batterie du 25/11/2026): une panne ne déconnecte personne, et un
 test('DISTRIBUTION FILMÉE (batterie du 25/11/2026): fin sans image parasite, planches à la demande, réponse perdue', () => {
   const view = readText(path.join(ROOT, 'src/components/kiosk/KioskView.tsx'));
   // À la fin, l'écran reste au-dessus du calque de la vidéo pendant son fondu : plus de fiche d'un autre film un instant.
-  assert.match(view, /window\.setTimeout\(\(\) => setLiftHeld\(false\), FILM_FADE_HOLD_MS\)/, 'l\'écran ne redescend qu\'après le fondu');
+  const hooks = readText(path.join(ROOT, 'src/components/kiosk/kiosk-hooks.ts'));
+  assert.match(hooks, /window\.setTimeout\(\(\) => setHeld\(false\), FILM_FADE_HOLD_MS\)/, 'l\'écran ne redescend qu\'après le fondu');
+  assert.ok(view.includes('const screenLifted = useLiftHold(filmPlaying);'), 'la coque s\'en sert');
   assert.match(view, /\$\{screenLifted \? styles\.ksLifted : ''\}/, 'la classe suit ce délai, pas la phase seule');
   const css = readText(path.join(ROOT, 'src/components/kiosk/KioskDistributionFilm.module.css'));
   const fondu = Number(/transition: opacity (\d+)ms linear, visibility/.exec(css)[1]);
-  assert.ok(Number(/FILM_FADE_HOLD_MS = (\d+)/.exec(view)[1]) > fondu, 'le délai dépasse la durée du fondu');
+  assert.ok(Number(/FILM_FADE_HOLD_MS = (\d+)/.exec(hooks)[1]) > fondu, 'le délai dépasse la durée du fondu');
   const film = readText(path.join(ROOT, 'src/components/kiosk/KioskDistributionFilm.tsx'));
   assert.ok(film.includes('rented !== null ? { maskImage:') && film.includes('rented !== null ? { backgroundImage:'), 'les planches ne sont demandées qu\'avec un film en vue');
   assert.ok(film.includes('fallbackTitleSize(fallbackTitle(rented.title))'), 'le titre de repli est ajusté à la tranche');
@@ -1114,7 +1116,24 @@ test('LECTEUR (batterie du 25/11/2026): sur téléphone, « NO SIGNAL » ne couv
 });
 test('BORNE (batterie du 25/11/2026): la fin d\'une location, borne ouverte, se dit', () => {
   const view = readText(path.join(ROOT, 'src/components/kiosk/KioskView.tsx'));
-  assert.match(view, /const next = nextRentalEnd\(rentals, Date\.now\(\)\);/, 'la borne surveille la prochaine échéance');
-  assert.match(view, /fetchMeNow\(\)\.then\(\(\) => \{[\s\S]{0,900}title: 'Location terminée'/, 'à l\'échéance le compte est relu, puis le visiteur est prévenu');
-  assert.match(view, /if \(useStore\.getState\(\)\.getRental\(next\.filmId\)\) return;/, 'une location prolongée entre-temps ne déclenche rien');
+  const hooks = readText(path.join(ROOT, 'src/components/kiosk/kiosk-hooks.ts'));
+  assert.match(hooks, /const next = nextRentalEnd\(rentals, Date\.now\(\)\);/, 'la borne surveille la prochaine échéance');
+  assert.match(hooks, /fetchMe\(\)\.then\(\(\) => \{[\s\S]{0,400}onEndedRef\.current\(next\.filmId/, 'à l\'échéance le compte est relu, puis la borne est prévenue');
+  assert.match(hooks, /if \(useStore\.getState\(\)\.getRental\(next\.filmId\)\) return;/, 'une location prolongée entre-temps ne déclenche rien');
+  assert.match(view, /useRentalEnd\(\(filmId, title\) => \{[\s\S]{0,500}title: 'Location terminée'/, 'le visiteur est prévenu');
+});
+test('BONUS: le bonus de la semaine se reçoit dans la borne — « Mon compte », « Crédits insuffisants », bouton « Compte »', () => {
+  const bonus = readText(path.join(ROOT, 'lib/bonus.ts'));
+  assert.ok(bonus.includes("code: 'enough'") && bonus.includes("code: 'claimed'") && bonus.includes("code: 'available'"), 'le serveur dit POURQUOI le bonus n\'est pas disponible, par un code');
+  const account = readText(path.join(ROOT, 'src/components/kiosk/KioskAccount.tsx'));
+  assert.ok(account.includes('Bonus de la semaine') && account.includes('bonusLine(') && account.includes('claimWeeklyBonus') && account.includes('bonusLineText(bonus)'), 'la ligne est dans « Mon compte », toujours présente');
+  // Dans l'écran lui-même (les commentaires du fichier citent aussi ces deux noms) : le solde, le bonus, puis la version.
+  const solde = account.indexOf('styles.kAccountCredits');
+  const ligne = account.indexOf('<span>Bonus de la semaine</span>');
+  assert.ok(solde > 0 && solde < ligne && ligne < account.indexOf('<span>Version préférée</span>'), 'sous le solde, au même endroit');
+  const action = readText(path.join(ROOT, 'src/components/kiosk/KioskAction.tsx'));
+  assert.match(action, /if \(now === 'insufficient'\) \{[\s\S]{0,900}insufficientText\([\s\S]{0,900}claimWeeklyBonus\(\)[\s\S]{0,300}press\(\)/, 'crédits insuffisants : le bonus est proposé, puis la location reprend');
+  const view = readText(path.join(ROOT, 'src/components/kiosk/KioskView.tsx'));
+  assert.ok(view.includes('styles.kNavBonus') && view.includes('const waitingBonus = useWaitingBonus();'), 'le bouton « Compte » rappelle le bonus qui attend');
+  assert.match(readText(path.join(ROOT, 'src/components/kiosk/kiosk-hooks.ts')), /\[isAuthenticated, credits, refreshWeeklyBonus\]/, 'l\'état du bonus est relu quand le solde bouge');
 });

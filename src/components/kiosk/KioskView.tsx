@@ -28,13 +28,11 @@ import {
   creditsLabel,
   creditsLine,
   filmsForTab,
-  filmTapSkips,
   firstNonEmptyTab,
   followBaseline,
   KIOSK_RENT_TIMEOUT_MS,
   hidesKioskInLandscape,
   kioskBackAction,
-  nextRentalEnd,
   lcdDevicePixel,
   lcdPitchInDevicePixels,
   phoneLayout,
@@ -48,6 +46,7 @@ import {
   type KioskTab,
 } from './kiosk-logic';
 import states from './KioskStates.module.css';
+import { useFilmTap, useLiftHold, useRentalEnd, useWaitingBonus } from './kiosk-hooks';
 import styles from './KioskView.module.css';
 
 // La vidéo de distribution, écrite par tools/devanture-borne/distribution_sorties.py, et ce qui l'accompagne
@@ -135,9 +134,6 @@ function useScreenDensity(): number | undefined {
   }, []);
   return ratio;
 }
-
-/** Durée pendant laquelle l'écran reste au-dessus du calque de la vidéo après sa fin : son fondu (280 ms) et une marge. */
-const FILM_FADE_HOLD_MS = 340;
 
 /** Même requête que la feuille de style : l'écran 2:3 du PC garde sa mise en page fixe. */
 const PC_QUERY = '(min-width: 769px) and (pointer: fine)';
@@ -294,6 +290,7 @@ export function KioskView() {
   // Le lecteur ne dessine rien sans location (voir « Location terminée » plus bas).
   const playerHasRental = useStore((state) => state.currentPlayingFilm !== null && state.getRental(state.currentPlayingFilm) !== undefined);
   const credits = useCredits();
+  const waitingBonus = useWaitingBonus();
   const phoneLandscape = usePhoneLandscape();
   const density = useScreenDensity();
   const screenRef = useRef<HTMLDivElement>(null);
@@ -415,27 +412,9 @@ export function KioskView() {
   );
   // Fenêtre redimensionnée ou téléphone tourné pendant la vidéo : le cadre ne vaut plus, on passe au panneau.
   const filmPlaying = distribution?.phase === 'film';
-  // À la fin de la vidéo, son calque s'efface en fondu (280 ms) : l'écran de la borne reste AU-DESSUS de lui pendant ce
-  // temps. Rendu dessous tout de suite, il laissait voir un instant l'écran filmé de la dernière image — la fiche d'un
-  // autre film (batterie de tests du 25/11/2026).
-  const [liftHeld, setLiftHeld] = useState(false);
-  useEffect(() => {
-    if (filmPlaying) {
-      setLiftHeld(true);
-      return;
-    }
-    const id = window.setTimeout(() => setLiftHeld(false), FILM_FADE_HOLD_MS);
-    return () => window.clearTimeout(id);
-  }, [filmPlaying]);
-  const screenLifted = filmPlaying || liftHeld;
-  // Un appui passe la vidéo — sauf le second appui d'un double appui sur « Louer », qui tombait sur elle.
-  const filmStartedAtRef = useRef<number | null>(null);
-  useEffect(() => {
-    filmStartedAtRef.current = filmPlaying ? performance.now() : null;
-  }, [filmPlaying]);
-  const tapFilm = useCallback(() => {
-    if (filmTapSkips(filmStartedAtRef.current, performance.now())) distributionFilm.skip();
-  }, [distributionFilm]);
+  // L'écran reste au-dessus de la vidéo pendant son fondu de fin ; un appui la passe, hors double appui de « Louer ».
+  const screenLifted = useLiftHold(filmPlaying);
+  const tapFilm = useFilmTap(filmPlaying, distributionFilm.skip);
   useEffect(() => {
     if (!filmPlaying) return;
     const skipFilm = distributionFilm.skip;
@@ -484,33 +463,17 @@ export function KioskView() {
     }
     setDistribution({ phase: 'ready', filmId, fresh: false });
   };
-  // ----- La fin d'une location pendant que la borne est ouverte -----
-  // À l'échéance, le compte est relu (le serveur ne rend plus cette location), le panneau de ce film se ferme et le
-  // visiteur est prévenu. Le lecteur, lui, se ferme de lui-même : tant qu'il est ouvert, la borne ne dit rien dessous.
-  const rentals = useStore((state) => state.rentals);
-  const fetchMeNow = useStore((state) => state.fetchMe);
-  // Chaque échéance n'est traitée qu'une fois : si le serveur rendait encore la location, on ne relirait pas en boucle.
-  const handledEndsRef = useRef(new Set<string>());
-  useEffect(() => {
-    const next = nextRentalEnd(rentals, Date.now());
-    if (!next || handledEndsRef.current.has(`${next.filmId}:${next.at}`)) return;
-    const id = window.setTimeout(() => {
-      handledEndsRef.current.add(`${next.filmId}:${next.at}`);
-      void fetchMeNow().then(() => {
-        // Prolongée entre-temps, ou relecture en panne (la location est toujours là) : rien à dire.
-        if (useStore.getState().getRental(next.filmId)) return;
-        setDistribution((d) => (d?.phase === 'ready' && d.filmId === next.filmId ? null : d));
-        if (useStore.getState().isPlayerOpen) return;
-        const title = allFilms(useStore.getState().films).find((f) => f.id === next.filmId)?.title;
-        setNotice({
-          title: 'Location terminée',
-          body: title ? `« ${title} » : la durée de location est écoulée.` : 'La durée de location est écoulée.',
-          primary: { label: 'Fermer', onPress: () => setNotice(null) },
-        });
-      });
-    }, Math.min(Math.max(0, next.at - Date.now()) + 1500, 2_000_000_000));
-    return () => window.clearTimeout(id);
-  }, [rentals, fetchMeNow]);
+  // La fin d'une location pendant que la borne est ouverte : son panneau se ferme et le visiteur est prévenu. Le lecteur,
+  // lui, se ferme de lui-même : tant qu'il est ouvert, la borne ne dit rien dessous.
+  useRentalEnd((filmId, title) => {
+    setDistribution((d) => (d?.phase === 'ready' && d.filmId === filmId ? null : d));
+    if (useStore.getState().isPlayerOpen) return;
+    setNotice({
+      title: 'Location terminée',
+      body: title ? `« ${title} » : la durée de location est écoulée.` : 'La durée de location est écoulée.',
+      primary: { label: 'Fermer', onPress: () => setNotice(null) },
+    });
+  });
   /** « Sur ce téléphone » : le panneau a demandé, le lecteur ne redemande pas et lance le film. */
   const watchHere = (filmId: number) => {
     closeReady();
@@ -901,6 +864,8 @@ export function KioskView() {
                           {/* L'espace ne se voit pas (bouton en flex) mais sépare les mots pour un lecteur d'écran. */}
                           {' '}
                           <span className={styles.kNavCredits}>{creditsLabel(credits)}</span>
+                          {/* Un bonus de la semaine attend : son montant s'ajoute au solde affiché. Aucun message ne surgit. */}
+                          {waitingBonus !== null && <span className={styles.kNavBonus} aria-label={`bonus de ${creditsLabel(waitingBonus)} à recevoir`}>+{waitingBonus}</span>}
                         </>
                       )}
                     </button>
