@@ -122,6 +122,40 @@
   -webkit-user-select: text;
 }
 
+ /* Le mot de passe et son bouton « Voir » : le champ prend la place, le bouton a sa hauteur. */
+.kPassRow {
+  display: flex;
+  align-items: stretch;
+  gap: 1.6cqw;
+  margin-top: 1cqw;
+}
+
+.kPassRow .kInput {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-top: 0;
+}
+
+.kPassShow {
+  flex: none;
+  min-width: 19cqw;
+  padding: 0 2.4cqw;
+  font-family: var(--k-font);
+  font-size: 4.6cqw;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: var(--k-text-shadow);
+  border: 0.4cqw solid var(--k-edge-teal);
+  border-radius: var(--k-radius);
+  background: var(--k-skin-teal);
+  box-shadow: var(--k-bevel);
+}
+
+.kPassShow[aria-pressed="true"] {
+  border-color: var(--k-edge-orange);
+  background: var(--k-skin-orange);
+}
+
 .kInput:focus {
   border-color: var(--k-edge-orange);
   box-shadow: inset 0 0.5cqw 1.2cqw rgba(0, 0, 20, 0.6), 0 0 0 0.5cqw rgba(255, 179, 71, 0.35);

@@ -1036,3 +1036,14 @@ test('DISTRIBUTION FILMÉE: corrections de la relecture du 25/11/2026', () => {
   // L'accueil : pas de cadre « Les nouveautés » vide, pas de jaquette cassée.
   assert.ok(welcome.includes('list.length > 0 &&') && welcome.includes('onError={() => drop(film.id)}'), 'cadre masqué sans nouveauté, affiche en échec retirée');
 });
+test('BORNE: le mot de passe peut s\'afficher en clair pendant la saisie', () => {
+  // Rusmir, 25/11/2026 : « on devrait pouvoir afficher le mdp en clair pendant qu'on le tape ».
+  const src = readText(path.join(ROOT, 'src/components/kiosk/KioskAuth.tsx'));
+  assert.ok(src.includes("const [passwordShown, setPasswordShown] = useState(false)"), 'caché par défaut');
+  assert.equal(src.split("type={passwordShown ? 'text' : 'password'}").length - 1, 2, 'le mot de passe et sa confirmation suivent le même réglage');
+  assert.ok(/<button\s+type="button"[^>]*aria-pressed=\{passwordShown\}[^>]*onClick=\{\(\) => setPasswordShown\(\(shown\) => !shown\)\}/.test(src.replace(/\n\s*/g, ' ')), 'un bouton, jamais de type submit, dit son état');
+  assert.ok(src.includes("{passwordShown ? 'Cacher' : 'Voir'}"), 'libellé en clair');
+  const switchMode = src.slice(src.indexOf('const switchMode'), src.indexOf('const submit'));
+  assert.ok(switchMode.includes('setPasswordShown(false)'), 'changer de formulaire recache le mot de passe');
+  assert.ok(!/type=\{passwordShown[^}]*\}[^>]*autoCorrect="on"/.test(src) && src.includes('spellCheck={false}'), 'un mot de passe affiché n\'est ni corrigé ni mis en majuscule');
+});

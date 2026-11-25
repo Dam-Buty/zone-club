@@ -32,6 +32,9 @@ export function KioskAuth({ initialMode = 'login', onDone, onCancel }: KioskAuth
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
+  // Le mot de passe peut s'afficher en clair pendant la saisie (Rusmir, 25/11/2026) : sur un téléphone on tape à
+  // l'aveugle, et cinq essais ratés bloquent la connexion un quart d'heure. Caché par défaut.
+  const [passwordShown, setPasswordShown] = useState(false);
   const [phrase, setPhrase] = useState('');
   // Refus du formulaire lui-même, ou du serveur pour la récupération (qui ne passe pas par le magasin).
   const [formError, setFormError] = useState<string | null>(null);
@@ -61,6 +64,7 @@ export function KioskAuth({ initialMode = 'login', onDone, onCancel }: KioskAuth
     setPassword('');
     setConfirm('');
     setPhrase('');
+    setPasswordShown(false);
     setMode(next);
   };
 
@@ -180,17 +184,33 @@ export function KioskAuth({ initialMode = 'login', onDone, onCancel }: KioskAuth
           </label>
         )}
 
-        <label className={styles.kField} htmlFor={`${fieldId}-pass`}>
-          <span className={styles.kFieldLabel}>{mode === 'recover' ? 'Nouveau mot de passe' : 'Mot de passe'}</span>
-          <input
-            id={`${fieldId}-pass`}
-            className={styles.kInput}
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            autoComplete={passwordAutoComplete}
-          />
-        </label>
+        <div className={styles.kField}>
+          <label className={styles.kFieldLabel} htmlFor={`${fieldId}-pass`}>
+            {mode === 'recover' ? 'Nouveau mot de passe' : 'Mot de passe'}
+          </label>
+          <div className={styles.kPassRow}>
+            <input
+              id={`${fieldId}-pass`}
+              className={styles.kInput}
+              type={passwordShown ? 'text' : 'password'}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete={passwordAutoComplete}
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+            />
+            <button
+              type="button"
+              className={styles.kPassShow}
+              aria-pressed={passwordShown}
+              aria-label="Afficher le mot de passe en clair"
+              onClick={() => setPasswordShown((shown) => !shown)}
+            >
+              {passwordShown ? 'Cacher' : 'Voir'}
+            </button>
+          </div>
+        </div>
 
         {mode !== 'login' && (
           <label className={styles.kField} htmlFor={`${fieldId}-confirm`}>
@@ -198,10 +218,13 @@ export function KioskAuth({ initialMode = 'login', onDone, onCancel }: KioskAuth
             <input
               id={`${fieldId}-confirm`}
               className={styles.kInput}
-              type="password"
+              type={passwordShown ? 'text' : 'password'}
               value={confirm}
               onChange={(e) => setConfirm(e.target.value)}
               autoComplete="new-password"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
             />
           </label>
         )}
