@@ -386,6 +386,9 @@ export interface VideoClubState extends CastSlice, VersionSlice {
   fetchBoardNotes: () => Promise<void>;
 }
 
+/** Connexion acceptée par le serveur mais session absente à la relecture : le cookie n'a pas été gardé. */
+const SESSION_NOT_KEPT = 'Connexion acceptée, mais la session n\u2019a pas tenu : ce navigateur refuse peut-être les cookies de ce site. Autorisez-les, ou ouvrez le site dans un autre navigateur.';
+
 export const useStore = create<VideoClubState>()(
   persist(
     (set, get, store) => ({
@@ -407,6 +410,12 @@ export const useStore = create<VideoClubState>()(
           });
           // Charger les locations actives
           await get().fetchMe();
+          if (!get().isAuthenticated) {
+            // Le serveur a accepté la connexion, mais la relecture du compte dit « non connecté » : le navigateur n'a pas
+            // gardé le cookie de session. Le dire — sans cela le panneau se rouvrait sans un mot (Rusmir, 25/11/2026).
+            set({ isLoading: false, authError: SESSION_NOT_KEPT });
+            return false;
+          }
           return true;
         } catch (error) {
           set({

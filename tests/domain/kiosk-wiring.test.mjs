@@ -1047,3 +1047,11 @@ test('BORNE: le mot de passe peut s\'afficher en clair pendant la saisie', () =>
   assert.ok(switchMode.includes('setPasswordShown(false)'), 'changer de formulaire recache le mot de passe');
   assert.ok(!/type=\{passwordShown[^}]*\}[^>]*autoCorrect="on"/.test(src) && src.includes('spellCheck={false}'), 'un mot de passe affiché n\'est ni corrigé ni mis en majuscule');
 });
+test('CONNEXION: une session que le navigateur ne garde pas se dit, au lieu de ne rien faire', () => {
+  // Rusmir, 25/11/2026 : bon pseudo, bon mot de passe, « il ne se passe rien, pas d'erreur ». Le serveur acceptait la
+  // connexion, le navigateur refusait le cookie de session, et le panneau se rouvrait sans un mot.
+  const src = readText(path.join(ROOT, 'src/store/index.ts'));
+  const login = src.slice(src.indexOf('login: async (username, password)'), src.indexOf('register: async (username, password)'));
+  assert.ok(/await get\(\)\.fetchMe\(\);\s*if \(!get\(\)\.isAuthenticated\) \{[\s\S]{0,600}authError: SESSION_NOT_KEPT[\s\S]{0,80}return false;/.test(login), 'après la connexion, la session est relue ; absente, c\'est une erreur affichée');
+  assert.ok(/SESSION_NOT_KEPT = '[^']*cookies[^']*'/.test(src), 'le message parle des cookies');
+});
