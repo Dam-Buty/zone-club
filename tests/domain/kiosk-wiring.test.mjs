@@ -617,12 +617,11 @@ test('CAST BORNE: la TV joue un autre film — « Sur ma télé » dit qu\'il le
   assert.match(view, /<KioskReady\s+filmId=\{filmId\}/, 'le panneau sait de quel film il parle');
 });
 
-test('CAST BORNE: « Location terminée » est dit par la borne, et le fermer efface le message du Cast', () => {
+test('CAST BORNE: « Location terminée » (ou « Vous êtes déconnecté ») est dit par la borne, et le fermer efface le message du Cast', () => {
   const view = KIOSK('KioskView.tsx');
-  assert.ok(view.includes("castNotice?.code === 'rental_over'"), 'le message du service');
-  assert.ok(view.includes("title: 'Location terminée'"), 'texte exact');
+  assert.ok(view.includes('castEndNotice(castNotice?.code'), 'le message du service, choisi par la fonction testée');
   assert.ok(view.includes('rentalOverStep('), 'la décision est la fonction testée');
-  assert.match(view, /title: 'Location terminée'[\s\S]{0,200}onPress: castDismiss/, '« Fermer » appelle castDismiss');
+  assert.match(view, /title: castEnd\.title[\s\S]{0,200}onPress: castDismiss/, '« Fermer » appelle castDismiss');
   assert.match(view, /action === 'close-notice'[\s\S]{0,80}castDismiss\(\)/, 'le geste retour aussi');
   assert.match(view, /rentalStep === 'close-player'\) closePlayer\(\)/, 'un lecteur resté ouvert sans location se ferme');
 });

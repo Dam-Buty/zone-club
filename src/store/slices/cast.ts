@@ -217,7 +217,8 @@ export const createCastSlice: StateCreator<VideoClubState, [['zustand/persist', 
     castLoggedOut: () => {
       const service = getCastState()
       const owned = castOwnsFilm(service)
-      if (owned !== null && service.tracked) sendCast({ type: 'RENTAL_GONE', filmId: owned })
+      // Pas RENTAL_GONE : la location continue, seul ce téléphone la lâche (« Vous êtes déconnecté », recette du 25/11).
+      if (owned !== null && service.tracked) sendCast({ type: 'LOGGED_OUT', filmId: owned })
     },
 
     castPlayerClosed: (filmId) => {

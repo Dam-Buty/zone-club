@@ -74,8 +74,10 @@ export function castNoticeView(code: CastNotice, deviceName: string | null): { t
   const tv = castDeviceLabel(deviceName);
   switch (code) {
     case 'stopped_elsewhere': return { text: `La diffusion sur ${tv} s'est arrêtée`, retry: false, mirroring: false };
+    case 'link_lost': return { text: `La liaison avec ${tv} est perdue`, retry: false, mirroring: false };
     case 'tv_error': return { text: "La télé n'a pas pu lire le film", retry: true, mirroring: false };
     case 'rental_over': return { text: 'Location terminée', retry: false, mirroring: false };
+    case 'logged_out': return { text: 'Vous êtes déconnecté : le film sur la télé est arrêté. Votre location continue.', retry: false, mirroring: false };
     case 'connect_failed': return { text: `Impossible de joindre ${tv}`, retry: true, mirroring: false };
     case 'load_failed': return { text: `Le film n'a pas pu démarrer sur ${tv}`, retry: true, mirroring: false };
     case 'no_source': return { text: "Ce film n'a pas de source vidéo à envoyer sur la télé", retry: false, mirroring: false };

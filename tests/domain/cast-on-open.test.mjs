@@ -125,7 +125,7 @@ test('LECTEUR B4 / B9: une question, un Cast raté ou absent, un film mémorisé
   // Le Cast vient d'échouer, ou manque à ce navigateur (panneau « recopie d'écran ») : le visiteur choisit.
   for (const code of ['connect_failed', 'load_failed', 'unavailable']) assert.equal(noticeHoldsPlayback(code), true, code);
   // Les autres messages n'attendent pas de réponse : un arrêt laisse déjà le lecteur en pause (reprise `play: false`).
-  for (const code of ['stopped_elsewhere', 'tv_error', 'rental_over', 'no_source']) assert.equal(noticeHoldsPlayback(code), false, code);
+  for (const code of ['stopped_elsewhere', 'link_lost', 'tv_error', 'rental_over', 'logged_out', 'no_source']) assert.equal(noticeHoldsPlayback(code), false, code);
 });
 
 // Tâche 8 (spec 2026-11-19-versions-et-erreurs-de-lecture, § 4.1) : ouvert hors de la borne avec une décision « ask »

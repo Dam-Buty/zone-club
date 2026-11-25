@@ -22,7 +22,9 @@ export const CAST_REPORT_EVERY_MS = 10000;
 const END_RATIO = 0.95;
 
 export type CastPhase = 'idle' | 'choosing' | 'connecting' | 'loading' | 'remote' | 'ended' | 'lost';
-export type CastNotice = 'stopped_elsewhere' | 'tv_error' | 'rental_over' | 'connect_failed' | 'load_failed' | 'unavailable' | 'no_source';
+// `link_lost` : la séance a pris fin sans que la TV ait dit d'arrêt (Wi-Fi coupé) — elle joue peut-être encore.
+// `logged_out` : le compte s'est déconnecté pendant le Cast — la TV est arrêtée, la location continue.
+export type CastNotice = 'stopped_elsewhere' | 'link_lost' | 'tv_error' | 'rental_over' | 'logged_out' | 'connect_failed' | 'load_failed' | 'unavailable' | 'no_source';
 export interface CastMediaRequest { url: string; title: string; startAt: number; subtitles: { id: number; url: string; language: 'fr' | 'en'; label: string }[]; activeSubtitleId: number | null }
 export interface CastState {
   phase: CastPhase;
@@ -77,6 +79,8 @@ export type CastEvent =
   // La location n'a pas pu être relue (réseau, compte déconnecté) : rien n'en est conclu.
   | { type: 'RENTAL_UNREAD'; filmId: number }
   | { type: 'RENTAL_GONE'; filmId: number }
+  // Le compte se déconnecte : la location de `filmId` n'est plus à lui ici, mais elle continue.
+  | { type: 'LOGGED_OUT'; filmId: number }
   | { type: 'COMMAND'; command: CastCommand }
   | { type: 'COMMAND_DONE' } | { type: 'COMMAND_FAILED' }
   | { type: 'TIMEOUT'; timer: 'connect' | 'load' }
@@ -128,7 +132,8 @@ export function castReduce(state: CastState, event: CastEvent): Step {
     case 'POSITION': return state.phase === 'remote' ? { state: { ...state, position: event.position }, effects: [] } : unchanged(state);
     case 'RENTAL_STATE': return onRentalState(state, event);
     case 'RENTAL_UNREAD': return onRentalUnread(state, event.filmId);
-    case 'RENTAL_GONE': return onRentalGone(state, event.filmId);
+    case 'RENTAL_GONE': return onRentalGone(state, event.filmId, 'rental_over');
+    case 'LOGGED_OUT': return onRentalGone(state, event.filmId, 'logged_out');
     case 'COMMAND': case 'COMMAND_DONE': case 'COMMAND_FAILED': return onCommand(state, event);
     case 'TICK': case 'PAGE_VISIBLE': case 'PAGE_HIDDEN': case 'USER_RETRY': return onWatch(state, event);
     case 'USER_CANCEL': return onCancel(state);
@@ -282,7 +287,7 @@ function finish(state: CastState, filmId: number): Step {
  * relancée d'office. `closeAt` : position notée sur la séance serveur ; null quand la nôtre est périmée ou
  * inconnue.
  */
-function interrupted(state: CastState, filmId: number, code: 'stopped_elsewhere' | 'tv_error', closeAt: number | null): Step {
+function interrupted(state: CastState, filmId: number, code: 'stopped_elsewhere' | 'link_lost' | 'tv_error', closeAt: number | null): Step {
   return {
     state: toIdle(state, {
       notice: { code, filmId, deviceName: state.deviceName },
@@ -293,14 +298,15 @@ function interrupted(state: CastState, filmId: number, code: 'stopped_elsewhere'
 }
 
 /**
- * La location a disparu (échéance, retour, compte déconnecté) : la TV s'arrête, la séance se termine, une
- * ligne « Location terminée » reste. Pas de reprise locale : il n'y a plus rien à reprendre.
+ * La location a disparu (échéance, retour : « Location terminée ») ou le compte s'est déconnecté (« Vous êtes
+ * déconnecté », la location continue) : la TV s'arrête, la séance se termine, le message reste. Pas de reprise
+ * locale : il n'y a plus rien à reprendre ici.
  */
-function rentalOver(state: CastState, filmId: number): Step {
+function rentalOver(state: CastState, filmId: number, code: 'rental_over' | 'logged_out'): Step {
   return {
     state: toIdle(state, {
       ...closingSession,
-      notice: { code: 'rental_over', filmId, deviceName: state.deviceName },
+      notice: { code, filmId, deviceName: state.deviceName },
       resume: state.resume?.filmId === filmId ? null : state.resume,
     }),
     effects: [
@@ -405,7 +411,9 @@ function onSessionEnded(state: CastState): Step {
   switch (state.phase) {
     case 'remote': case 'lost':
       if (state.filmId === null) return unchanged(state);
-      return interrupted({ ...state, connected: false }, state.filmId, 'stopped_elsewhere', knownPosition(state));
+      // La TV n'a pas dit d'arrêt (elle l'aurait fait par un IDLE, voir onTvIdle) : c'est la liaison qui manque.
+      // Wi-Fi coupé, recette du 25/11 : la TV jouait encore une minute — « s'est arrêtée » aurait été faux.
+      return interrupted({ ...state, connected: false }, state.filmId, 'link_lost', knownPosition(state));
     case 'idle': case 'choosing': case 'connecting': case 'loading': case 'ended':
       return { state: { ...state, connected: false, stopping: false }, effects: [] };
   }
@@ -520,11 +528,11 @@ function onRentalState(state: CastState, e: Extract<CastEvent, { type: 'RENTAL_S
       // Une location disparue reste disparue, attendue ou non. Sinon seule la relecture demandée ici (plus de média)
       // conclut : une plus ancienne, partie avant que la TV ne réponde (page rechargée, séance revenue après le délai
       // de reprise), dirait « arrêtée » d'un film qu'elle joue — télécommande coupée, séance serveur close (A1).
-      if (!e.exists) return rentalOver(state, e.filmId);
+      if (!e.exists) return rentalOver(state, e.filmId, 'rental_over');
       return state.rentalAsked ? concludeFromRental(state, e) : unchanged(state);
     case 'idle':
       // Film mémorisé d'une page rechargée, la TV muette ou à l'accueil : le serveur seul sait ce qu'il est devenu.
-      if (!e.exists) return rentalOver(state, e.filmId);
+      if (!e.exists) return rentalOver(state, e.filmId, 'rental_over');
       return concludeFromRental(state, e);
     case 'choosing': case 'connecting': case 'loading': case 'ended':
       return unchanged(state);
@@ -554,11 +562,12 @@ function onRentalUnread(state: CastState, filmId: number): Step {
   return state.phase === 'idle' && state.filmId === filmId ? { state: toIdle(state), effects: [] } : unchanged(state);
 }
 
-function onRentalGone(state: CastState, filmId: number): Step {
+/** La location de `filmId` disparaît (`rental_over`) ou le compte se déconnecte (`logged_out`) : même arrêt, son message. */
+function onRentalGone(state: CastState, filmId: number, code: 'rental_over' | 'logged_out'): Step {
   if (filmId !== state.filmId) return unchanged(state);
   switch (state.phase) {
     case 'remote': case 'lost': case 'loading':
-      return rentalOver(state, filmId);
+      return rentalOver(state, filmId, code);
     case 'ended':
       // Film déjà fini : plus de puce « Film terminé » pour une location qui n'existe plus. La TV reste à
       // son accueil, rien à arrêter.
@@ -652,11 +661,12 @@ function leaveTv(state: CastState, play: boolean): Step {
 /**
  * Le lecteur de `filmId` se ferme : le message qu'il montrait (celui de ce film, ou sans film) et une reprise locale de
  * ce film qu'il n'a pas prise n'ont plus d'objet — sinon ils restaient indéfiniment, et reparaissaient à une ouverture
- * lointaine (B6). Sauf « Location terminée », que la borne montre lecteur fermé. La phase ne bouge pas : un film
- * terminé reste signalé (« Film terminé ») jusqu'au rembobinage ou à l'éjection.
+ * lointaine (B6). Sauf « Location terminée » et « Vous êtes déconnecté », que la borne montre lecteur fermé. La phase
+ * ne bouge pas : un film terminé reste signalé (« Film terminé ») jusqu'au rembobinage ou à l'éjection.
  */
 function onPlayerClosed(state: CastState, filmId: number): Step {
-  const shown = state.notice !== null && state.notice.code !== 'rental_over' && (state.notice.filmId === filmId || state.notice.filmId === null);
+  const kioskSays = state.notice?.code === 'rental_over' || state.notice?.code === 'logged_out';
+  const shown = state.notice !== null && !kioskSays && (state.notice.filmId === filmId || state.notice.filmId === null);
   const pending = state.resume?.filmId === filmId;
   if (!shown && !pending) return unchanged(state);
   return { state: { ...state, notice: shown ? null : state.notice, resume: pending ? null : state.resume }, effects: [] };
