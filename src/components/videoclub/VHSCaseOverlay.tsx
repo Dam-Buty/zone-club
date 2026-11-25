@@ -9,26 +9,18 @@ import {
   RENTAL_COSTS,
   RENTAL_DURATIONS,
   type Film,
-  type RentalTier,
   type CreditPerson,
   type DetailedCredits,
   type PersonDetail,
 } from "../../types";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { useBackGuard } from "../../hooks/useBackGuard";
+import { getRentalTier } from "../../utils/rental-tier";
 
 interface VHSCaseOverlayProps {
   film: Film | null;
   isOpen: boolean;
   onClose: () => void;
-}
-
-function getRentalTier(film: Film): RentalTier {
-  const year = new Date(film.release_date).getFullYear();
-  const currentYear = new Date().getFullYear();
-  if (currentYear - year <= 1) return "nouveaute";
-  if (currentYear - year >= 20) return "classique";
-  return "standard";
 }
 
 function formatDuration(ms: number): string {
@@ -369,9 +361,9 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
   const hasSeenSwipeHint = useStore((state) => state.hasSeenVHSSwipeHint);
   const setHasSeenSwipeHint = useStore((state) => state.setHasSeenVHSSwipeHint);
   const tutorialStep = useStore((state) => state.tutorialStep);
-  const activeCastFilmId = useStore((state) => state.activeCastFilmId);
   const isTutorialActive = tutorialStep !== null;
-  const isCastBlocked = activeCastFilmId !== null && activeCastFilmId !== film?.id;
+  // Un autre film sur la TV ne bloque pas celui-ci : le lecteur s'ouvre en local, avec son bandeau « … est en cours
+  // sur … », et « Regarder sur TV » remplace le film de la TV après confirmation (spec Cast du 18/11, § 5.4).
 
   const [isRenting, setIsRenting] = useState(false);
   const [rentSuccess, setRentSuccess] = useState(false);
@@ -1097,7 +1089,16 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
   // cause — et pendant la location, au moment de lancer le film : c'est là qu'on veut savoir en quelle
   // langue on va regarder.
   function renderVersionBadges() {
-    if (!filmVersions || (!filmVersions.vf && !filmVersions.vo)) return null;
+    if (!filmVersions) return null;
+    // Aucune version lisible (fichiers absents, ou marqués par `npm run media:check -- --mark`) : la fiche le dit avant la
+    // location, au lieu de se taire jusqu'au refus du serveur.
+    if (!filmVersions.vf && !filmVersions.vo) {
+      return (
+        <span role="status" style={{ display: 'block', marginTop: 6, fontSize: '0.7rem', fontFamily: 'Orbitron, sans-serif', color: '#ff9a3c', letterSpacing: '0.3px', textAlign: 'center' }}>
+          Aucune version lisible pour le moment
+        </span>
+      );
+    }
     const pill = (label: string, on: boolean) => (
       <span
         style={{
@@ -1202,24 +1203,18 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
           {renderVersionBadges()}
           {renderDesktopRewindStatus()}
           {renderDesktopExtensionButton()}
-          {isCastBlocked ? (
-            <div style={{ color: '#ff6b6b', fontSize: '0.75rem', fontFamily: "'Orbitron', monospace", textAlign: 'center', padding: '8px 0' }}>
-              DIFFUSION EN COURS — ARRÊTEZ D'ABORD
-            </div>
-          ) : (
-            <button
-              onClick={handleSitDown}
-              style={sideButtonStyle("#00fff7", "#ffffff", {
-                width: "100%",
-                justifyContent: "center",
-                background: "linear-gradient(135deg, rgba(0,255,247,0.3), rgba(0,200,255,0.3))",
-                boxShadow: "0 0 16px rgba(0,255,247,0.35)",
-                fontSize: "1.28rem",
-              })}
-            >
-              🛋️ S'INSTALLER ET REGARDER
-            </button>
-          )}
+          <button
+            onClick={handleSitDown}
+            style={sideButtonStyle("#00fff7", "#ffffff", {
+              width: "100%",
+              justifyContent: "center",
+              background: "linear-gradient(135deg, rgba(0,255,247,0.3), rgba(0,200,255,0.3))",
+              boxShadow: "0 0 16px rgba(0,255,247,0.35)",
+              fontSize: "1.28rem",
+            })}
+          >
+            🛋️ S'INSTALLER ET REGARDER
+          </button>
           {renderDesktopReturnButton()}
         </>
       );
@@ -1346,21 +1341,15 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
           {renderVersionBadges()}
           {renderMobileRewindStatus()}
           {renderMobileExtensionButton()}
-          {isCastBlocked ? (
-            <div style={{ color: '#ff6b6b', fontSize: '0.7rem', fontFamily: "'Orbitron', monospace", textAlign: 'center', padding: '6px 0' }}>
-              DIFFUSION EN COURS — ARRÊTEZ D'ABORD
-            </div>
-          ) : (
-            <button
-              onClick={handleSitDown}
-              style={mobilePillStyle("#00fff7", "#ffffff", {
-                background: "rgba(0,255,247,0.2)",
-                boxShadow: "0 0 10px rgba(0,255,247,0.3)",
-              })}
-            >
-              🛋️ S'INSTALLER
-            </button>
-          )}
+          <button
+            onClick={handleSitDown}
+            style={mobilePillStyle("#00fff7", "#ffffff", {
+              background: "rgba(0,255,247,0.2)",
+              boxShadow: "0 0 10px rgba(0,255,247,0.3)",
+            })}
+          >
+            🛋️ S'INSTALLER
+          </button>
           {returnBtn}
         </>
       );

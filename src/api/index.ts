@@ -3,6 +3,8 @@
  */
 
 import type { Film } from '../types';
+import type { PlaybackFailure } from '../../lib/playback-failure-parse';
+import type { VersionChoice } from '../utils/version-choice';
 
 const API_BASE = '';
 
@@ -13,6 +15,8 @@ export interface ApiUser {
   credits: number;
   is_admin: boolean;
   created_at: string;
+  /** La version préférée du compte (« Mon compte ») ; null = « Automatique ». Rendue par /api/me seulement. */
+  version_pref?: VersionChoice | null;
 }
 
 // Les routes de liste (/api/films, /api/films/aisle, /api/films/genre,
@@ -91,11 +95,23 @@ export interface ApiGenre {
 
 // Error handling
 export class ApiError extends Error {
-  constructor(public status: number, message: string) {
+  status: number;
+
+  constructor(status: number, message: string) {
     super(message);
+    this.status = status;
     this.name = 'ApiError';
   }
 }
+
+/** Pas de réponse du tout (réseau coupé, serveur injoignable). */
+export const NETWORK_DOWN = 'Connexion au serveur impossible. Vérifiez votre connexion, puis réessayez.';
+/** Le serveur n'a pas répondu dans le délai. */
+export const SERVER_SLOW = 'Le serveur met trop de temps à répondre. Réessayez dans un instant.';
+/** Le serveur a répondu, mais pas ce qu'on attend de lui (erreur 5xx sans message, réponse coupée). */
+export const SERVER_BROKEN = 'Le serveur ne répond pas correctement. Réessayez dans un instant.';
+/** Délai maximal d'une requête : au-delà, le visiteur n'attend plus devant « Un instant… » sans fin. */
+export const REQUEST_TIMEOUT_MS = 30_000;
 
 async function request<T>(
   endpoint: string,
@@ -103,22 +119,31 @@ async function request<T>(
 ): Promise<T> {
   const url = `${API_BASE}${endpoint}`;
 
-  const response = await fetch(url, {
-    ...options,
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Requested-With': 'XMLHttpRequest',
-      ...options.headers,
-    },
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      ...options,
+      credentials: 'include',
+      signal: options.signal ?? AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest',
+        ...options.headers,
+      },
+    });
+  } catch (error) {
+    // Aucune réponse : ni statut HTTP ni ApiError (les appelants lisent `null` comme « panne », jamais comme un refus).
+    // Le navigateur dit « Failed to fetch » en anglais : la borne le dit en français.
+    const slow = error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError');
+    throw new Error(slow ? SERVER_SLOW : NETWORK_DOWN);
+  }
 
   if (!response.ok) {
     // Backend convention: errors are { error: string } (NextResponse.json
     // across all 79 sites + proxy.ts). Older code wrote `message` — kept
     // as fallback for compat with any drift.
-    const errorData = await response.json().catch(() => ({ error: 'Erreur inconnue' }));
-    const msg = errorData.error || errorData.message || `Erreur ${response.status}`;
+    const errorData = await response.json().catch(() => null);
+    const msg = errorData?.error || errorData?.message || (response.status >= 500 ? SERVER_BROKEN : `Erreur ${response.status}`);
     throw new ApiError(response.status, msg);
   }
 
@@ -127,7 +152,12 @@ async function request<T>(
     return {} as T;
   }
 
-  return response.json();
+  try {
+    return await response.json();
+  } catch {
+    // Réponse coupée en route : l'erreur du décodeur JSON (en anglais) n'a rien à faire à l'écran.
+    throw new ApiError(response.status, SERVER_BROKEN);
+  }
 }
 
 // ============ AUTH ============
@@ -177,7 +207,9 @@ export const auth = {
 export const rentals = {
   async rent(filmId: number): Promise<{ rental: ApiRentalWithFilm }> {
     // filmId ici est l'ID interne du film (pas tmdb_id)
-    return request(`/api/rentals/${filmId}`, { method: 'POST' });
+    // Délai plus long que les autres requêtes : la borne a son propre délai d'attente (KIOSK_RENT_TIMEOUT_MS), et une
+    // réponse tardive doit encore pouvoir arriver — la location est peut-être déjà enregistrée.
+    return request(`/api/rentals/${filmId}`, { method: 'POST', signal: AbortSignal.timeout(90_000) });
   },
 
   async updateProgress(filmId: number, progress: number, position?: number): Promise<{ ok: boolean }> {
@@ -311,6 +343,25 @@ export interface FilmWithRentalStatus extends ApiFilm {
   };
 }
 
+/** Données TMDB de la fiche détaillée de la borne (lib/tmdb-extras.ts). */
+export interface FilmExtrasResponse {
+  tagline: string | null;
+  certification: string | null;
+  releaseDate: string | null;
+  countries: string[];
+  crew: { screenplay: string[]; music: string[]; photography: string[]; editing: string[] };
+  vote: { average: number; count: number } | null;
+}
+
+/** Bande-annonce d'un film, récupérée par le serveur (lib/trailers.ts) : vf, vost ou vo. */
+export type TrailerStatusResponse = { state: 'ready'; lang: 'vf' | 'vost' | 'vo' } | { state: 'preparing' } | { state: 'none' } | { state: 'failed' };
+
+/** « À voir aussi » : identifiants internes de films de nos rayons (lib/related-films.ts). */
+export interface RelatedFilmsResponse {
+  sameDirector: number[];
+  sameCast: { id: number; names: string[] }[];
+}
+
 export interface ApiReturnRequest {
   id: number;
   film_id: number;
@@ -364,6 +415,19 @@ export const films = {
     return request(`/api/films/${tmdbId}`);
   },
 
+  async getExtras(tmdbId: number): Promise<FilmExtrasResponse> {
+    return request(`/api/films/${tmdbId}/extras`);
+  },
+
+  async getRelated(tmdbId: number): Promise<RelatedFilmsResponse> {
+    return request(`/api/films/${tmdbId}/related`);
+  },
+
+  /** Où en est la bande-annonce ; lance sa récupération côté serveur si besoin. */
+  async getTrailerStatus(tmdbId: number): Promise<TrailerStatusResponse> {
+    return request(`/api/films/${tmdbId}/trailer/status`);
+  },
+
   async getAll(): Promise<ApiFilm[]> {
     return request('/api/films');
   },
@@ -391,6 +455,8 @@ export interface WeeklyBonusStatus {
   canClaim: boolean;
   amount: number;
   reason?: string;
+  /** Pourquoi : bonus à recevoir, déjà reçu cette semaine, ou solde déjà suffisant. Absent d'un serveur plus ancien. */
+  code?: 'available' | 'claimed' | 'enough';
 }
 
 // History entry = a rental row + the joined film title/poster (server enriches via LEFT JOIN), so the
@@ -398,6 +464,20 @@ export interface WeeklyBonusStatus {
 export interface ApiRentalHistoryEntry extends ApiRental {
   film_title: string | null;
   film_poster_url: string | null;
+  watch_progress?: number | null;
+  rewind_claimed?: number | boolean | null;
+  returned_early?: number | boolean | null;
+  /** Dates SQLite (UTC sans fuseau) ; nulles pour les locations antérieures à leur colonne. */
+  returned_at?: string | null;
+  expired_at?: string | null;
+}
+
+/** Ce qu'un film loué et pas encore critiqué permet (« Mon compte » de la borne). */
+export interface ApiReviewEligibility {
+  film_id: number;
+  allowed: boolean;
+  reason: string | null;
+  available_at_ms: number | null;
 }
 
 export interface MeResponse {
@@ -406,6 +486,7 @@ export interface MeResponse {
   rentalHistory: ApiRentalHistoryEntry[];
   reviews: ReviewWithUser[];
   weeklyBonus: WeeklyBonusStatus;
+  reviewEligibility?: ApiReviewEligibility[];
 }
 
 export const me = {
@@ -417,8 +498,21 @@ export const me = {
     return request('/api/me/notifications');
   },
 
+  async getWeeklyBonus(): Promise<WeeklyBonusStatus> {
+    return request('/api/me/weekly-bonus');
+  },
+
   async claimWeeklyBonus(): Promise<{ credits_awarded: number; new_balance: number }> {
     return request('/api/me/weekly-bonus', { method: 'POST' });
+  },
+
+  // Le réglage « Version préférée » de « Mon compte » ; null = « Automatique ». Les deux champs nommés partent, null
+  // compris : le serveur refuse un seul des deux. La réponse dit ce qui est enregistré.
+  async setVersionPref(pref: VersionChoice | null): Promise<{ version_pref: VersionChoice | null }> {
+    return request('/api/me/version', {
+      method: 'PATCH',
+      body: JSON.stringify({ audio: pref?.audio ?? null, subtitle: pref?.subtitle ?? null }),
+    });
   },
 };
 
@@ -460,25 +554,51 @@ export const board = {
 // ============ CAST SESSIONS ============
 
 export const castSessions = {
-  async create(filmId: number, durationSeconds: number, currentPosition: number): Promise<{ session: unknown }> {
+  // La durée est facultative : quand le téléphone ne la connaît pas (0, absente), le serveur prend celle
+  // du film. `session` vaut null sans location active.
+  async create(filmId: number, currentPosition: number, durationSeconds?: number): Promise<{ session: unknown }> {
     return request('/api/cast-sessions', {
       method: 'POST',
-      body: JSON.stringify({ filmId, durationSeconds, currentPosition }),
+      body: JSON.stringify({ filmId, currentPosition, durationSeconds }),
     });
   },
 
-  async updatePosition(filmId: number, currentPosition: number): Promise<{ ok: boolean }> {
+  async updatePosition(filmId: number, currentPosition: number, durationSeconds?: number): Promise<{ ok: boolean }> {
     return request('/api/cast-sessions', {
       method: 'PATCH',
-      body: JSON.stringify({ filmId, currentPosition }),
+      body: JSON.stringify({ filmId, currentPosition, durationSeconds }),
     });
   },
 
-  async end(filmId: number): Promise<{ ok: boolean }> {
+  // `finished` : le téléphone a vu le film se terminer sur la TV (la location est notée vue) ; sans lui,
+  // c'est un arrêt en cours de film, et `position` dit où.
+  async end(filmId: number, opts?: { position?: number; finished?: boolean }): Promise<{ ok: boolean }> {
     return request('/api/cast-sessions', {
       method: 'DELETE',
-      body: JSON.stringify({ filmId }),
+      body: JSON.stringify({ filmId, currentPosition: opts?.position, finished: opts?.finished }),
     });
+  },
+};
+
+// ============ PLAYBACK FAILURES ============
+
+export const playbackFailures = {
+  // Une lecture qui ne démarre pas laisse une trace côté serveur (quel film, quelle version, où). `keepalive` : l'envoi
+  // survit à un onglet qui se ferme ou à un lecteur qui se démonte. Toute erreur est avalée — une trace perdue ne
+  // dérange jamais le visiteur, qui a déjà assez de son film qui ne démarre pas.
+  async report(failure: PlaybackFailure): Promise<void> {
+    const { filmId, audio, subtitle, place, kind, position } = failure;
+    try {
+      await request('/api/playback-failures', {
+        method: 'POST',
+        keepalive: true,
+        // Les six champs nommés, jamais l'objet reçu tel quel : rien d'autre (une adresse de diffusion, par exemple)
+        // ne part, même si l'appelant en porte une.
+        body: JSON.stringify({ filmId, audio, subtitle, place, kind, position }),
+      });
+    } catch {
+      // volontairement muet
+    }
   },
 };
 
@@ -591,6 +711,7 @@ export const api = {
   board,
   admin,
   castSessions,
+  playbackFailures,
   pushSubscribe,
 };
 

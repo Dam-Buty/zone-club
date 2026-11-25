@@ -1,6 +1,6 @@
 import { db } from './db';
-
-const MIN_REVIEW_LENGTH = 500;
+import { REVIEW_MIN_LENGTH as MIN_REVIEW_LENGTH } from '../src/utils/review-rules';
+import { reviewEligibility, type ReviewRentalFacts } from './review-eligibility';
 
 export interface Review {
     id: number;
@@ -102,15 +102,16 @@ export function canUserReview(userId: number, filmId: number, isAdmin?: boolean)
         return { allowed: false, reason: 'Vous avez déjà critiqué ce film' };
     }
 
-    // 2. Has user rented this film?
-    const rental = db.prepare(`
-        SELECT * FROM rentals
-        WHERE user_id = ? AND film_id = ?
-        ORDER BY rented_at DESC
-        LIMIT 1
-    `).get(userId, filmId) as { rented_at: string; watch_progress: number | null } | undefined;
+    // 2. Has user rented this film? Toutes ses locations comptent : n'importe laquelle qui remplit la règle
+    //    suffit (lib/review-eligibility.ts).
+    const rentals = db.prepare(`
+        SELECT r.watch_progress, r.watch_started_at, f.duration_sec, f.runtime
+        FROM rentals r
+        JOIN films f ON f.id = r.film_id
+        WHERE r.user_id = ? AND r.film_id = ?
+    `).all(userId, filmId) as ReviewRentalFacts[];
 
-    if (!rental) {
+    if (rentals.length === 0) {
         // Not rented — allow 1 non-rented review per week
         const weekStart = getISOWeekStart();
         const weeklyNonRentedReview = db.prepare(`
@@ -126,13 +127,9 @@ export function canUserReview(userId: number, filmId: number, isAdmin?: boolean)
         return { allowed: true };
     }
 
-    // 3. Rented — must have watched 80%+
-    if ((rental.watch_progress ?? 0) < 80) {
-        return { allowed: false, reason: 'Vous devez regarder au moins 80% du film' };
-    }
-
-    // No deadline — once watched 80%+, can review anytime
-    return { allowed: true };
+    // 3. Rented — 80 % vus et 80 % de la durée écoulés depuis le lancement, sur au moins une location.
+    const eligibility = reviewEligibility(rentals, Date.now());
+    return eligibility.allowed ? { allowed: true } : { allowed: false, reason: eligibility.reason ?? undefined };
 }
 
 // Helper: get ISO week start (Monday 00:00 UTC)
@@ -214,4 +211,31 @@ export function createReview(
     })();
 
     return getUserReview(userId, filmId)!;
+}
+
+export type FilmReviewEligibility = { film_id: number; allowed: boolean; reason: string | null; available_at_ms: number | null };
+
+/**
+ * Pour « Mon compte » : chaque film loué par ce visiteur et pas encore critiqué, avec ce que la règle en dit
+ * (lib/review-eligibility.ts). La borne affiche, elle n'a pas de copie de la règle.
+ */
+export function getReviewEligibilityForUser(userId: number): FilmReviewEligibility[] {
+    const rows = db.prepare(`
+        SELECT r.film_id, r.watch_progress, r.watch_started_at, f.duration_sec, f.runtime
+        FROM rentals r
+        JOIN films f ON f.id = r.film_id
+        WHERE r.user_id = ?
+          AND r.film_id NOT IN (SELECT film_id FROM reviews WHERE user_id = ?)
+    `).all(userId, userId) as (ReviewRentalFacts & { film_id: number })[];
+    const byFilm = new Map<number, ReviewRentalFacts[]>();
+    for (const row of rows) {
+        const list = byFilm.get(row.film_id) ?? [];
+        list.push(row);
+        byFilm.set(row.film_id, list);
+    }
+    const now = Date.now();
+    return [...byFilm].map(([filmId, rentals]) => {
+        const e = reviewEligibility(rentals, now);
+        return { film_id: filmId, allowed: e.allowed, reason: e.reason, available_at_ms: e.availableAtMs };
+    });
 }

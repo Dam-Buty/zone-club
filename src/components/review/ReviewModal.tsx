@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { REVIEW_MIN_LENGTH, REVIEW_RATING_LABELS } from '../../utils/review-rules';
 import { createPortal } from 'react-dom';
 import { useDrag } from '@use-gesture/react';
 import { useStore } from '../../store';
@@ -12,7 +13,7 @@ interface ReviewModalProps {
   film: Film | null;
 }
 
-const MIN_CONTENT_LENGTH = 500;
+const MIN_CONTENT_LENGTH = REVIEW_MIN_LENGTH;
 
 function extractPullQuote(text: string): { quote: string; rest: string } | null {
   const match = text.match(/^(.+?[.!?])\s/);
@@ -68,9 +69,9 @@ function ReviewReader({ review, filmTitle, totalReviews, currentIndex, onNavigat
   const restOfBody = bodyText.slice(1);
 
   const ratings = [
-    { label: 'Réalisation', value: review.rating_direction },
-    { label: 'Scénario', value: review.rating_screenplay },
-    { label: 'Jeu d\'acteur', value: review.rating_acting },
+    { label: REVIEW_RATING_LABELS.direction, value: review.rating_direction },
+    { label: REVIEW_RATING_LABELS.screenplay, value: review.rating_screenplay },
+    { label: REVIEW_RATING_LABELS.acting, value: review.rating_acting },
   ];
 
   return (
@@ -331,7 +332,7 @@ export function ReviewModal({ isOpen, onClose, film }: ReviewModalProps) {
                   className={styles.textarea}
                   value={content}
                   onChange={(e) => setContent(e.target.value)}
-                  placeholder="Ecrivez votre critique ici (minimum 500 caractères)..."
+                  placeholder={`Écrivez votre critique ici (minimum ${MIN_CONTENT_LENGTH} caractères)…`}
                   rows={8}
                 />
                 <div className={`${styles.charCount} ${content.length >= MIN_CONTENT_LENGTH ? styles.valid : ''}`}>

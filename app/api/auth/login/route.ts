@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { loginUser } from '@/lib/auth';
 import { createSessionToken } from '@/lib/session';
-import { checkRateLimit, getRateLimitKey } from '@/lib/rate-limit';
+import { checkRateLimit, forgiveAttempt, getRateLimitKey, tooManyAttempts } from '@/lib/rate-limit';
 
 export async function POST(request: NextRequest) {
     // IP-keyed bucket — defends against a single host hammering the endpoint.
@@ -10,14 +10,16 @@ export async function POST(request: NextRequest) {
     const ipRetryAfter = checkRateLimit(ipKey, 5, 15 * 60 * 1000);
     if (ipRetryAfter !== null) {
         return NextResponse.json(
-            { error: `Trop de tentatives. Reessayez dans ${Math.ceil(ipRetryAfter / 60)} minutes.` },
+            { error: tooManyAttempts(ipRetryAfter) },
             { status: 429 },
         );
     }
 
-    const { username, password } = await request.json();
+    const body = await request.json().catch(() => null);
+    const username = typeof body?.username === 'string' ? body.username.trim() : body?.username;
+    const password = body?.password;
 
-    if (!username || !password) {
+    if (!username || !password || typeof username !== 'string' || typeof password !== 'string') {
         return NextResponse.json({ error: 'Pseudo et mot de passe requis' }, { status: 400 });
     }
 
@@ -29,7 +31,7 @@ export async function POST(request: NextRequest) {
     const userRetryAfter = checkRateLimit(usernameKey, 10, 60 * 60 * 1000);
     if (userRetryAfter !== null) {
         return NextResponse.json(
-            { error: `Trop de tentatives sur ce compte. Reessayez dans ${Math.ceil(userRetryAfter / 60)} minutes.` },
+            { error: tooManyAttempts(userRetryAfter, 'Trop de tentatives sur ce compte') },
             { status: 429 },
         );
     }
@@ -39,6 +41,10 @@ export async function POST(request: NextRequest) {
     if (!user) {
         return NextResponse.json({ error: 'Pseudo ou mot de passe incorrect' }, { status: 401 });
     }
+
+    // Une connexion réussie n'est pas une tentative : seuls les échecs restent comptés.
+    forgiveAttempt(ipKey);
+    forgiveAttempt(usernameKey);
 
     const token = createSessionToken(user.id);
     const cookieStore = await cookies();

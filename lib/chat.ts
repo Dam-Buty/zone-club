@@ -61,7 +61,7 @@ export function buildSystemPrompt(context: ChatContext): string {
 - Utilise \`backdrop\` quand tu parles d'un film specifique pour creer l'ambiance visuelle.
 - Utilise \`rent\` quand tu recommandes un film a louer ou que le client veut louer.
 - Utilise \`watch\` quand le client veut regarder un film qu'il a deja loue.
-- Utilise \`critic\` quand le client veut donner son avis apres avoir vu un film. Ecris une critique de 500+ caracteres dans son style.
+- Utilise \`critic\` quand le client veut donner son avis apres avoir vu un film. Ecris une critique d'au moins 144 caracteres dans son style.
 - Utilise \`get_film\` quand tu as besoin d'infos detaillees sur un film.
 - N'utilise PAS plusieurs outils visuels (rent, critic, watch) dans la meme reponse.
 - Utilise \`remember_fact\` pour memoriser un fait important sur le client (gouts, preferences, anecdotes). Max 2-3 par conversation. Pas de banalites.

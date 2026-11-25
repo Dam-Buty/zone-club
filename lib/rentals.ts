@@ -1,6 +1,8 @@
 import { db } from './db';
+import { markWatchStarted } from './rental-marks';
 import { createRentalSymlinks, deleteRentalSymlinks, getStreamingUrl, isDirectMediaUrl } from './symlinks';
 import { getFilmById, getFilmTier, parseFilm, type Film } from './films';
+import { playableVersions } from './media/file-check';
 import { RENTAL_COSTS, RENTAL_DURATIONS } from '../src/types';
 import { access } from 'fs/promises';
 import { join } from 'path';
@@ -68,7 +70,8 @@ const IS_FORCED_RENTAL_MODE = !!(FORCED_RENTAL_VIDEO_URL || FORCED_RENTAL_FILE_P
 
 /** Colonnes média d'un film, seul sous-ensemble dont dépend le calcul des URLs. */
 type StreamableFilm = Pick<Film,
-    'file_path_vf_transcoded' | 'file_path_vo_transcoded' | 'subtitle_fr_vtt' | 'subtitle_en_vtt'
+    'file_path_vf_transcoded' | 'file_path_vo_transcoded' | 'subtitle_fr_vtt' | 'subtitle_en_vtt' |
+    'vf_unplayable' | 'vo_unplayable'
 >;
 
 /**
@@ -89,9 +92,11 @@ export function buildStreamingUrls(film: StreamableFilm, symlinkUuid: string): R
     if (FORCED_RENTAL_VIDEO_URL) {
         return { vf: FORCED_RENTAL_VIDEO_URL, vo: FORCED_RENTAL_VIDEO_URL, subtitles: null, subtitles_en: null };
     }
+    // Une version marquée illisible (scripts/media-check.ts --mark) compte comme absente : adresse nulle.
+    const playable = playableVersions(film);
     return {
-        vf: mediaUrl(film.file_path_vf_transcoded, symlinkUuid, 'film_vf.mp4'),
-        vo: mediaUrl(film.file_path_vo_transcoded, symlinkUuid, 'film_vo.mp4'),
+        vf: playable.vf ? mediaUrl(film.file_path_vf_transcoded, symlinkUuid, 'film_vf.mp4') : null,
+        vo: playable.vo ? mediaUrl(film.file_path_vo_transcoded, symlinkUuid, 'film_vo.mp4') : null,
         subtitles: mediaUrl(film.subtitle_fr_vtt, symlinkUuid, 'subs_fr.vtt'),
         subtitles_en: mediaUrl(film.subtitle_en_vtt, symlinkUuid, 'subs_en.vtt'),
     };
@@ -136,7 +141,8 @@ export function getUserActiveRentals(userId: number): RentalWithFilm[] {
                f.transcode_status as f_transcode_status, f.transcode_progress as f_transcode_progress,
                f.transcode_error as f_transcode_error, f.file_path_vo_transcoded as f_file_path_vo_transcoded,
                f.file_path_vf_transcoded as f_file_path_vf_transcoded, f.created_at as f_created_at,
-               f.subtitle_fr_vtt as f_subtitle_fr_vtt, f.subtitle_en_vtt as f_subtitle_en_vtt
+               f.subtitle_fr_vtt as f_subtitle_fr_vtt, f.subtitle_en_vtt as f_subtitle_en_vtt,
+               f.vf_unplayable as f_vf_unplayable, f.vo_unplayable as f_vo_unplayable
         FROM rentals r
         JOIN films f ON r.film_id = f.id
         WHERE r.user_id = ? AND r.is_active = 1 AND r.expires_at > datetime('now')
@@ -160,6 +166,7 @@ export function getUserActiveRentals(userId: number): RentalWithFilm[] {
             transcode_error: row.f_transcode_error, file_path_vo_transcoded: row.f_file_path_vo_transcoded,
             file_path_vf_transcoded: row.f_file_path_vf_transcoded, created_at: row.f_created_at,
             subtitle_fr_vtt: row.f_subtitle_fr_vtt, subtitle_en_vtt: row.f_subtitle_en_vtt,
+            vf_unplayable: row.f_vf_unplayable, vo_unplayable: row.f_vo_unplayable,
         });
 
         const expiresAt = new Date(row.expires_at + 'Z');
@@ -252,6 +259,13 @@ export async function rentFilm(userId: number, filmId: number): Promise<RentalWi
         throw new Error('Ce film n\'est pas disponible');
     }
 
+    // Plus aucune version jouable (fichiers absents, ou marqués illisibles par scripts/media-check.ts --mark) : refus
+    // avant le stock et les crédits, donc aucun crédit dépensé. Le mode FORCED_RENTAL_* sert sa propre vidéo.
+    const playable = playableVersions(film);
+    if (!IS_FORCED_RENTAL_MODE && !playable.vf && !playable.vo) {
+        throw new Error("Ce film n'a aucune version lisible pour le moment");
+    }
+
     // Multi-copy stock check
     const stock = getFilmStock(filmId);
     const activeRentals = getActiveRentalsForFilm(filmId);
@@ -280,6 +294,9 @@ export async function rentFilm(userId: number, filmId: number): Promise<RentalWi
     const symlinks = IS_FORCED_RENTAL_MODE
         ? { uuid: `forced-${randomUUID()}` }
         : await createRentalSymlinks(film.tmdb_id, {
+            // Tous les fichiers transcodés sont liés, version marquée comprise : son adresse est masquée par
+            // buildStreamingUrls et le téléchargement ne la sert pas, tous deux relisant le drapeau à chaque appel —
+            // une version démarquée pendant la location se lance donc aussitôt.
             vf: film.file_path_vf_transcoded,
             vo: film.file_path_vo_transcoded,
             subtitles: {
@@ -319,6 +336,9 @@ export function updateWatchProgress(userId: number, filmId: number, progress: nu
     `).get(userId, filmId) as Rental | null;
 
     if (!rental) throw new Error('Location active non trouvée');
+
+    // Premier lancement : noté avant toute écriture de position ou de progression (voir rental-marks.ts).
+    markWatchStarted(db, rental.id);
 
     // Always update position if provided (position can go backward on rewind)
     if (position !== undefined) {
@@ -433,35 +453,27 @@ export async function getRentalDownloadSource(userId: number, filmId: number): P
         };
     }
 
-    const vfPath = join(SYMLINKS_PATH, rental.symlink_uuid, 'film_vf.mp4');
-    const voPath = join(SYMLINKS_PATH, rental.symlink_uuid, 'film_vo.mp4');
-
-    let absolutePath: string | null;
-    let languageSuffix = 'VO';
-
-    try {
-        await access(vfPath);
-        absolutePath = vfPath;
-        languageSuffix = 'VF';
-    } catch {
+    // La VF d'abord, sinon la VO. Le lien d'une version marquée illisible existe (rentFilm lie tous les fichiers) :
+    // le drapeau, relu ici, est la seule garde qui l'empêche d'être servie.
+    const playable = playableVersions(film);
+    const candidates = [
+        { playable: playable.vf, path: join(SYMLINKS_PATH, rental.symlink_uuid, 'film_vf.mp4'), suffix: 'VF' },
+        { playable: playable.vo, path: join(SYMLINKS_PATH, rental.symlink_uuid, 'film_vo.mp4'), suffix: 'VO' },
+    ];
+    for (const candidate of candidates) {
+        if (!candidate.playable) continue;
         try {
-            await access(voPath);
-            absolutePath = voPath;
-            languageSuffix = 'VO';
+            await access(candidate.path);
         } catch {
-            absolutePath = null;
+            continue;
         }
+        return {
+            absolutePath: candidate.path,
+            filename: `${sanitizeDownloadName(film.title)}-${candidate.suffix}.mp4`
+        };
     }
 
-    if (!absolutePath) {
-        throw new Error('Aucun fichier vidéo disponible pour cette location');
-    }
-
-    const baseName = sanitizeDownloadName(film.title);
-    return {
-        absolutePath,
-        filename: `${baseName}-${languageSuffix}.mp4`
-    };
+    throw new Error('Aucun fichier vidéo disponible pour cette location');
 }
 
 const EARLY_RETURN_HOURS = 24;
@@ -483,7 +495,7 @@ export async function returnFilm(userId: number, filmId: number): Promise<{ earl
     await deleteRentalSymlinks(rental.symlink_uuid);
 
     db.transaction(() => {
-        db.prepare('UPDATE rentals SET is_active = 0, returned_early = ? WHERE id = ?')
+        db.prepare("UPDATE rentals SET is_active = 0, returned_early = ?, returned_at = datetime('now') WHERE id = ?")
             .run(isEarlyReturn ? 1 : 0, rental.id);
 
         if (isEarlyReturn) {
@@ -543,7 +555,7 @@ export async function cleanupExpiredRentals(): Promise<number> {
 
     for (const rental of expiredRentals) {
         await deleteRentalSymlinks(rental.symlink_uuid);
-        db.prepare('UPDATE rentals SET is_active = 0 WHERE id = ?').run(rental.id);
+        db.prepare('UPDATE rentals SET is_active = 0, expired_at = expires_at WHERE id = ?').run(rental.id);
     }
 
     return expiredRentals.length;

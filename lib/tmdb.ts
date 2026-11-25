@@ -1,3 +1,5 @@
+import type { TmdbMovieAppended } from './tmdb-extras';
+
 const TMDB_API_KEY = process.env.TMDB_API_KEY;
 const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p';
@@ -74,6 +76,14 @@ export async function getMovieImages(tmdbId: number): Promise<TmdbImages> {
     return tmdbFetch<TmdbImages>(`/movie/${tmdbId}/images`, {
         include_image_language: 'fr,null'
     });
+}
+
+/**
+ * Fiche détaillée de la borne : le film et, en un seul appel, son générique complet et ses dates
+ * de sortie (classification par pays) — en français (voir lib/tmdb-extras.ts).
+ */
+export async function getMovieForExtras(tmdbId: number): Promise<TmdbMovieAppended> {
+    return tmdbFetch<TmdbMovieAppended>(`/movie/${tmdbId}`, { append_to_response: 'credits,release_dates' });
 }
 
 export function getPosterUrl(path: string | null, size: 'w185' | 'w342' | 'w500' | 'original' = 'w500'): string | null {

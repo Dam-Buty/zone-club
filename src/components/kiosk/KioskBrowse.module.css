@@ -1,0 +1,916 @@
+/* Borne de location — le parcours des films : rayons, fiche, boutons, bande de jaquettes.
+   Positions en cqw, hauteurs prises dans les variables --k-* posées sur l'écran
+   (KioskView.module.css) : la même feuille sert l'écran haut du téléphone et l'écran 2:3 du PC. */
+
+/* ----- colonne des rayons -----
+   Comme sur la référence : des onglets collés les uns aux autres dans un cadre clair, séparés par
+   un simple filet. La capitale des libellés fait 43 % de la hauteur de l'onglet, et le plus long
+   (« Nouveautés », 4,02 em) garde 1,6cqw de marge de chaque côté. Pour grossir les libellés on
+   change le corps (--k-tab-size), jamais la hauteur des onglets (--k-tab-h). Seul l'onglet actif se détache, blanc à texte
+   orange — par sa couleur, sans rien recouvrir. */
+
+.kSide {
+  position: absolute;
+  left: 2.4cqw;
+  top: var(--k-card-top);
+  width: 26cqw;
+  /* Toujours la hauteur de la fiche, même sur la dernière page, qui a moins d'onglets. */
+  height: var(--k-card-h);
+  display: flex;
+  flex-direction: column;
+  padding: 0.5cqw;
+  border: 0.4cqw solid var(--k-frame);
+  border-color: var(--k-frame-hi) var(--k-frame) var(--k-frame-lo) var(--k-frame);
+  border-radius: 1.3cqw;
+  background: #1d6388;
+  box-shadow: 0 0.8cqw 2cqw rgba(0, 0, 20, 0.45), 0 0 1.4cqw rgba(120, 205, 245, 0.22);
+}
+
+.kTab {
+  height: var(--k-tab-h);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  font-size: var(--k-tab-size);
+  font-weight: 700;
+  line-height: 1;
+  color: var(--k-ink);
+  text-shadow: var(--k-text-shadow);
+  background: var(--k-skin-tab);
+  box-shadow: var(--k-bevel);
+}
+
+.kTab:first-child {
+  border-radius: 0.8cqw 0.8cqw 0 0;
+}
+
+.kTab:last-child {
+  border-radius: 0 0 0.8cqw 0.8cqw;
+}
+
+/* Ni ombre portée ni halo : ils débordaient sur l'onglet voisin et donnaient l'impression d'un
+   chevauchement. Le relief est tout entier à l'intérieur de l'onglet. */
+.kTabOn,
+.kTabOn:first-child,
+.kTabOn:last-child {
+  border-radius: 0.8cqw;
+  color: #e4501d;
+  text-shadow: none;
+  background: linear-gradient(180deg, #fbfdff 0%, #eef2f6 55%, #dde4ea 100%);
+  box-shadow: inset 0 0 0 0.25cqw rgba(255, 255, 255, 0.9), inset 0 -0.45cqw 0.5cqw rgba(110, 130, 150, 0.28);
+}
+
+/* « suite » : son triangle est dessiné, pas tiré d'une police de secours. */
+.kTabMore::after {
+  content: "";
+  width: 2.2cqw;
+  height: 1.4cqw;
+  margin: 0.5cqw 0 0 1.3cqw;
+  background: currentColor;
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+}
+
+/* ----- rémanence d'une dalle TN -----
+   Une dalle de 2007 ne change pas d'image d'un coup : ses cristaux mettent un instant à tourner, et
+   ce qui apparaît monte en quelques centièmes de seconde, comme une traînée. Seul ce qui change à
+   l'écran (jaquette, valeurs, titre, résumé, rubrique) est concerné ; le décor qui ne change pas ne
+   bouge pas. Un écran d'aujourd'hui, lui, change d'image instantanément. */
+.kRise {
+  animation: kLcdRise 90ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+@keyframes kLcdRise {
+  from {
+    opacity: 0.2;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* ----- fiche : le clap ----- */
+
+.kCard {
+  position: absolute;
+  left: 31cqw;
+  right: 3cqw;
+  top: var(--k-card-top);
+  height: var(--k-card-h);
+  color: #333;
+  text-shadow: none;
+}
+
+/* Le bras du clap, légèrement relevé comme sur la référence. */
+.kClap {
+  position: absolute;
+  left: -0.4cqw;
+  right: -0.4cqw;
+  top: 0.9cqw;
+  height: 6.2cqw;
+  z-index: 1;
+  transform: rotate(-1.5deg);
+  transform-origin: 0 100%;
+  background: repeating-linear-gradient(-58deg, #3b3b3f 0 5.2cqw, #eef2f6 5.2cqw 10.4cqw);
+  border-bottom: 0.45cqw solid #26262a;
+  border-radius: 0.5cqw 0.5cqw 0 0;
+  box-shadow: 0 0.5cqw 1.1cqw rgba(0, 0, 0, 0.4);
+}
+
+/* L'ardoise : blanche, coins du bas arrondis, et la hachure en biais de la référence — très
+   fine (quatre pixels physiques de pas), à bords doux pour ne pas crénelé. */
+.kSlate {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 6.6cqw;
+  bottom: 0;
+  overflow: hidden;
+  border-radius: 0 0 2cqw 2cqw;
+  background:
+    repeating-linear-gradient(
+      135deg,
+      rgb(20 40 80 / var(--k-hatch)) 0,
+      rgba(20, 40, 80, 0) calc(var(--k-dpx, 1px) * 1.5),
+      rgba(20, 40, 80, 0) calc(var(--k-dpx, 1px) * 2.5),
+      rgb(20 40 80 / var(--k-hatch)) calc(var(--k-dpx, 1px) * 4)
+    ),
+    linear-gradient(180deg, #f8fbff 0%, #eef3f8 60%, #e4ebf2 100%);
+  box-shadow: 0 1.2cqw 3cqw rgba(0, 0, 20, 0.55), 0 0 3cqw rgba(204, 224, 255, 0.34);
+}
+
+.kMeta {
+  position: absolute;
+  left: 2.6cqw;
+  top: 1.4cqw;
+  width: 23cqw;
+}
+
+/* Petites étiquettes de la fiche : sur la référence, une grotesque de largeur normale, en
+   capitales grises, sur un filet. Validé par Rusmir le 17/11/2026 après l'audit d'ergonomie :
+   2,3cqw (8,5 px sur un Pixel 9a) et un contraste de 4,35:1 ne se lisaient pas ; 2,8cqw
+   (10,4 px) et ce gris donnent 5,69:1 sur l'ardoise. */
+.kMeta dt,
+.kTitleLabel {
+  display: block;
+  padding-bottom: 0.5cqw;
+  font-family: var(--k-font-label);
+  font-size: 2.8cqw;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: 0.05em;
+  color: #5a6068;
+  border-bottom: 0.25cqw solid #c5cbd2;
+}
+
+.kMeta dt {
+  margin-top: var(--k-meta-gap);
+}
+
+.kMeta dd {
+  margin: 0.6cqw 0 0;
+  font-family: var(--k-font-marker);
+  font-size: var(--k-meta-year);
+  line-height: 1;
+  white-space: nowrap;
+  color: #f0641e;
+  transform: rotate(-3deg);
+  transform-origin: left;
+}
+
+.kMeta dd.kMetaSm {
+  font-size: var(--k-meta-sm);
+}
+
+/* Le cadre de la jaquette sur l'ardoise. Sur le parcours c'est un bouton : il ouvre la fiche détaillée. */
+/* 10 % plus grande depuis le 17/11/2026 (largeur : phoneLayout) : remontée au niveau de « ANNÉE » et
+   rapprochée du bord droit pour trouver la place. */
+.kPoster {
+  position: absolute;
+  right: 2cqw;
+  top: 1.4cqw;
+  width: var(--k-poster-w);
+  aspect-ratio: 2 / 3;
+  overflow: hidden;
+  background: #223;
+  box-shadow: 0 0 0 0.25cqw #2a2a2e, 0 0.6cqw 1.6cqw rgba(0, 0, 0, 0.45);
+}
+
+.kPosterFill {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+
+/* Jaquette absente ou qui ne charge pas : une vignette du même format, qui porte le titre. */
+.kPosterFallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6%;
+  overflow: hidden;
+  text-align: center;
+  overflow-wrap: anywhere;
+  font-family: var(--k-font);
+  font-weight: 700;
+  font-size: 3.6cqw;
+  line-height: 1.12;
+  color: #dff5ff;
+  background: linear-gradient(160deg, #1b46a3 0%, #0a1c4d 100%);
+}
+
+/* Le titre, au bas de l'ardoise, sous son filet. */
+.kTitleZone {
+  position: absolute;
+  left: 2.6cqw;
+  right: 2.6cqw;
+  bottom: 1.4cqw;
+  height: var(--k-title-h);
+  display: flex;
+  flex-direction: column;
+}
+
+/* La jaquette descend sur la ligne de l'étiquette : son filet s'arrête avant elle (jaquette à 2cqw du
+   bord droit de l'ardoise, zone du titre à 2,6cqw, 1,2cqw d'écart). */
+.kTitleLabel {
+  margin-right: calc(var(--k-poster-w) + 0.6cqw);
+}
+
+/* Le titre et, sur le parcours, le bouton « Fiche film » à sa droite. */
+.kTitleRow {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 1.6cqw;
+}
+
+.kTitle {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-size: var(--k-title-size);
+  font-weight: 800;
+  line-height: 1.04;
+  color: #f0641e;
+}
+
+/* Trois corps (titleScale) : grand ou moyen sur une ligne, petit sur deux. */
+.kTitle span {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.kTitleMd {
+  font-size: var(--k-title-size-md);
+}
+
+.kTitleSm {
+  font-size: var(--k-title-size-sm);
+}
+
+.kTitleSm span {
+  -webkit-line-clamp: 2;
+}
+
+/* « (i) Fiche » : un petit bouton secondaire, même aplat que « Compte » ; le « i » est une lettre
+   de la police des étiquettes dans un cercle dessiné, pas un pictogramme d'une police de secours.
+   Sa largeur est fixe : le corps du titre en dépend (TITLE_W_WITH_INFO). Réduit de 30 % le 17/11/2026
+   (« ce n'est pas très important s'il est moins lisible »), puis « Fiche film » → « Fiche », moins la
+   largeur de « film » ; sa zone d'appui, elle, garde 44 px. */
+.kInfoBtn {
+  position: relative;
+  flex: 0 0 12.7cqw;
+  align-self: center;
+  height: max(5.9cqw, 24px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.8cqw;
+  padding: 0 0.85cqw;
+  white-space: nowrap;
+  font-size: 2.66cqw;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--k-ink);
+  text-shadow: var(--k-text-shadow);
+  border: 0.25cqw solid var(--k-edge-teal);
+  border-radius: var(--k-radius);
+  background: var(--k-skin-teal);
+  box-shadow: inset 0 0.2cqw 0 rgba(255, 255, 255, 0.16), 0 0 0 0.2cqw rgba(0, 10, 30, 0.6), 0 0.4cqw 0.9cqw rgba(0, 0, 20, 0.35);
+}
+
+/* Zone d'appui bien plus haute que le bouton : 44 px au moins sur téléphone. */
+.kInfoBtn::after {
+  content: "";
+  position: absolute;
+  inset: min(-2.8cqw, -11px) -1cqw;
+}
+
+.kInfoMark {
+  flex: none;
+  width: 2.95cqw;
+  height: 2.95cqw;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--k-font-label);
+  font-size: 2.05cqw;
+  font-weight: 800;
+  line-height: 1;
+  border: 0.25cqw solid currentColor;
+  border-radius: 50%;
+}
+
+/* ----- sous la fiche : l'essentiel du film, dans un cadre fin -----
+   « En bref » (le synopsis) puis le générique : réalisation et interprètes. */
+
+.kUnder {
+  position: absolute;
+  left: 2.4cqw;
+  right: 2.4cqw;
+  top: var(--k-under-top);
+  height: var(--k-under-h);
+  /* Sur un petit téléphone, le cadre s'efface devant les jaquettes (phoneLayout). */
+  display: var(--k-under-display, block);
+  padding: 1.5cqw 2.4cqw;
+  overflow: hidden;
+  border: 0.3cqw solid rgba(110, 200, 245, 0.5);
+  border-color: rgba(190, 238, 255, 0.6) rgba(110, 200, 245, 0.5) rgba(60, 145, 190, 0.5) rgba(110, 200, 245, 0.5);
+  border-radius: 1.3cqw;
+  /* Comme le grand cadre de la référence : un simple filet, le fond se voit à travers. */
+  background: rgba(0, 8, 32, 0.2);
+}
+
+.kSyn,
+.kCredits {
+  overflow: hidden;
+  font-family: var(--k-font-text);
+  font-size: var(--k-syn-size);
+  font-weight: 500;
+  line-height: 1.24;
+  color: #e6f0f6;
+}
+
+.kSyn {
+  display: var(--k-syn-display, -webkit-box);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--k-syn-lines);
+}
+
+/* Générique : « De … » puis « Avec … », chacun sur sa ligne sur l'écran haut ; à la suite,
+   séparés par un filet, sur l'écran 2:3 (voir --k-credit-display dans KioskView.module.css).
+   Un nom trop long est coupé par des points de suspension, jamais renvoyé à la ligne. */
+.kCredits {
+  margin-top: 1cqw;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--k-ink-soft);
+}
+
+.kCreditPart {
+  display: var(--k-credit-display, block);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kCreditPart + .kCreditPart::before {
+  content: var(--k-credit-sep, none);
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.kSyn b,
+.kCredits b {
+  font-weight: 700;
+  color: #ffcf5a;
+}
+
+/* ----- boutons -----
+   Ceux de la référence : un aplat à trame fine dans un filet clair, lui-même cerné d'un trait
+   sombre ; un libellé gras qui respire dans sa case. Pas de brillance.
+   Casse (décision de Rusmir du 17/11/2026) : l'action principale est en CAPITALES (« LOUER »),
+   les autres boutons et les onglets prennent une majuscule initiale (« Recherche », « Suite »).
+   Les capitales sont posées ici, pas dans le texte : un lecteur d'écran lit « Louer ». */
+
+.kBtn {
+  position: absolute;
+  top: var(--k-btn-top);
+  height: var(--k-btn-h);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  padding: 0 2cqw;
+  white-space: nowrap;
+  font-weight: 800;
+  line-height: 1;
+  color: #fbfcf8;
+  border-radius: var(--k-radius);
+  box-shadow: inset 0 0.25cqw 0 rgba(255, 255, 255, 0.16), 0 0 0 0.25cqw rgba(0, 10, 30, 0.6), 0 0.9cqw 2cqw rgba(0, 0, 20, 0.5);
+}
+
+/* Le bouton d'action occupe toute la largeur de la fiche (l'« extrait » arrive en tranche c).
+   Il dit l'action ; le prix est à part, derrière un filet, comme les entrées de la barre du haut
+   de la référence (« account | back | quit »). */
+.kLouer {
+  left: 31cqw;
+  right: 3cqw;
+  gap: 2.6cqw;
+  font-size: var(--k-btn-size);
+  text-shadow: 0 0.25cqw 0.12cqw rgba(92, 34, 0, 0.55);
+  border: 0.4cqw solid var(--k-edge-orange);
+  background: var(--k-skin-orange);
+}
+
+.kLouer .kBtnLabel {
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.kPrice {
+  padding: 0.5cqw 0 0.5cqw 2.6cqw;
+  border-left: 0.3cqw solid rgba(255, 255, 255, 0.55);
+  font-size: var(--k-price-size);
+  font-weight: 600;
+  color: #fff1dc;
+}
+
+.kSearch {
+  left: 2.4cqw;
+  width: 26cqw;
+  font-size: var(--k-search-size);
+  text-shadow: 0 0.25cqw 0.12cqw rgba(0, 40, 70, 0.55);
+  border: 0.4cqw solid var(--k-edge-teal);
+  background: var(--k-skin-teal);
+}
+
+/* La loupe en filigrane, comme sur la référence : grande, à gauche, à peine visible sous le libellé. */
+.kSearchMark {
+  position: absolute;
+  left: 0.6cqw;
+  top: 50%;
+  width: 12cqw;
+  height: 12cqw;
+  transform: translateY(-46%);
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.15);
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  pointer-events: none;
+}
+
+.kBtnLabel {
+  position: relative;
+}
+
+/* ----- bande de jaquettes -----
+   Sous « LOUER », seulement elle, sur toute la hauteur qui reste, et trois K7 à la fois : la bande
+   est large de trois jaquettes exactement (--k-rail-poster-h : la hauteur d'une jaquette, posée par
+   phoneLayout sur téléphone), centrée entre les flèches. Validé par Rusmir le 17/11/2026. */
+
+.kStrip {
+  position: absolute;
+  left: 2.4cqw;
+  right: 2.4cqw;
+  top: var(--k-strip-top);
+  bottom: 2.4cqw;
+  display: flex;
+  align-items: center;
+  gap: 1cqw;
+  padding: 0 1cqw;
+  border: 0.4cqw solid var(--k-frame);
+  border-color: var(--k-frame-hi) var(--k-frame) var(--k-frame-lo) var(--k-frame);
+  border-radius: 1.3cqw;
+  /* Comme la bande de la référence : presque noire dans son filet bleu. */
+  background: linear-gradient(180deg, rgba(0, 5, 20, 0.82) 0%, rgba(0, 2, 10, 0.86) 100%);
+  box-shadow: inset 0 0.6cqw 1.6cqw rgba(0, 0, 10, 0.6), 0 0 1.4cqw rgba(120, 205, 245, 0.2);
+}
+
+/* Flèches : triangle dégradé cerné de blanc (deux triangles emboîtés), dans une zone d'appui bien
+   plus large que lui. Audit d'ergonomie du 17/11/2026 : la flèche faisait 24 px de large sur un
+   Pixel 9a, 22 sur un téléphone de 360 px — sous les 44 px du critère 2.5.5 des WCAG et les 48 dp
+   recommandés par Android. Le bouton prend toute la hauteur de la bande, et sa zone d'appui
+   s'étend jusqu'au bord de l'écran (::before) : 51 px de large sur le Pixel, 45 sur 360 px. Le
+   triangle, lui, ne s'élargit que d'un tiers (6,4 → 8,4cqw). */
+.kArrow {
+  position: relative;
+  flex: 0 0 10cqw;
+  align-self: stretch;
+  /* Pas jusqu'au bord haut de la bande : « par date » est juste au-dessus de la flèche droite. */
+  margin: 1.4cqw 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Prolongement invisible de la zone d'appui jusqu'au bord de l'écran : marge de la bande (2,4cqw),
+   sa bordure (0,4cqw) et son retrait intérieur (1cqw). */
+.kArrow::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+
+.kArrowL::before {
+  left: -3.8cqw;
+  right: 0;
+}
+
+.kArrowR::before {
+  left: 0;
+  right: -3.8cqw;
+}
+
+.kArrowShape {
+  position: relative;
+  width: 8.4cqw;
+  height: 17cqw;
+  transition: opacity 0.2s;
+}
+
+.kArrowShape::before,
+.kArrowShape::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+.kArrowShape::before {
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.kArrowShape::after {
+  background: linear-gradient(180deg, #6fd4f6 0%, #2a8fc4 55%, #0f5f9c 100%);
+}
+
+/* Liseré blanc de même épaisseur qu'avant l'élargissement (0,8cqw environ). */
+.kArrowL .kArrowShape::before {
+  clip-path: polygon(100% 0, 100% 100%, 0 50%);
+}
+
+.kArrowL .kArrowShape::after {
+  clip-path: polygon(90.8% 9%, 90.8% 91%, 10% 50%);
+}
+
+.kArrowR .kArrowShape::before {
+  clip-path: polygon(0 0, 0 100%, 100% 50%);
+}
+
+.kArrowR .kArrowShape::after {
+  clip-path: polygon(9.2% 9%, 9.2% 91%, 90% 50%);
+}
+
+/* Au début ou au bout de la bande, la flèche qui n'y mène plus nulle part s'éteint à moitié. Elle
+   reste un bouton (jamais l'attribut disabled, qui avale l'appui sans rien dire). */
+.kArrow[data-edge="true"] .kArrowShape {
+  opacity: 0.32;
+}
+
+/* La bande défile nativement (doigt, molette, trackpad), trois K7 par trois ; les flèches l'y aident. */
+.kRail {
+  flex: 0 0 auto;
+  width: calc(var(--k-rail-poster-h) * 2 + 1cqw);
+  margin: 0 auto;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.5cqw;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+}
+
+.kRail::-webkit-scrollbar {
+  display: none;
+}
+
+.kRailItem {
+  flex: 0 0 auto;
+  height: var(--k-rail-poster-h);
+  aspect-ratio: 2 / 3;
+  overflow: hidden;
+  scroll-snap-align: start;
+  border: 0.3cqw solid transparent;
+  background: #223;
+}
+
+.kRailItemOn {
+  border-color: #ffb347;
+  box-shadow: 0 0 2cqw #ffb347;
+}
+
+.kRailPoster {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.kRailPoster.kPosterFallback {
+  display: flex;
+  font-size: 1.9cqw;
+}
+
+.kRailEmpty {
+  flex: 1;
+  text-align: center;
+  font-size: 3.4cqw;
+  color: #bfe3ff;
+}
+
+/* « Réessayer » d'un rayon qui n'a pas pu être chargé : un bouton de la borne, à la taille d'un appui. */
+.kRailRetry {
+  display: inline-block;
+  min-height: max(40px, 9cqw);
+  margin-left: 1.5cqw;
+  padding: 0 3.4cqw;
+  font-size: 3.6cqw;
+  font-weight: 800;
+  color: #fff;
+  text-shadow: var(--k-text-shadow);
+  border: 0.4cqw solid var(--k-edge-orange);
+  border-radius: var(--k-radius);
+  background: var(--k-skin-orange);
+}
+
+/* ----- fiche détaillée -----
+   Ouverte d'un appui sur la jaquette. Mêmes codes que le parcours : la colonne d'onglets porte les
+   rubriques du film, l'ardoise reste en haut, la rubrique choisie prend tout le cadre du dessous,
+   « Retour » et « LOUER » sont au pied de l'écran. */
+
+.kDetail {
+  position: absolute;
+  inset: 0;
+}
+
+/* Six rubriques dans la hauteur de la fiche : chaque onglet est plus haut qu'un onglet de rayon,
+   et un libellé long (« Bande-annonce », « À voir aussi ») y passe sur deux lignes au même corps. */
+.kSideDetail .kTab {
+  flex: 1 1 0;
+  height: auto;
+  min-height: 0;
+  padding: 0 1.2cqw;
+  white-space: normal;
+  text-align: center;
+  line-height: 1.02;
+}
+
+.kDetailBody {
+  position: absolute;
+  left: 2.4cqw;
+  right: 2.4cqw;
+  top: var(--k-under-top);
+  bottom: calc(2.4cqw + var(--k-btn-h) + 1.8cqw);
+  display: flex;
+  flex-direction: column;
+  padding: 1.5cqw 2.4cqw;
+  border: 0.3cqw solid rgba(110, 200, 245, 0.5);
+  border-color: rgba(190, 238, 255, 0.6) rgba(110, 200, 245, 0.5) rgba(60, 145, 190, 0.5) rgba(110, 200, 245, 0.5);
+  border-radius: 1.3cqw;
+  background: rgba(0, 8, 32, 0.2);
+  font-family: var(--k-font-text);
+  font-size: var(--k-syn-size);
+  font-weight: 500;
+  line-height: 1.24;
+  color: #e6f0f6;
+}
+
+/* La disponibilité reste en tête du cadre, quelle que soit la rubrique. */
+.kDetailAvail {
+  flex: none;
+  margin: 0 0 1.2cqw;
+  padding-bottom: 1cqw;
+  font-weight: 700;
+  color: #ffcf5a;
+  border-bottom: 0.25cqw solid rgba(190, 238, 255, 0.3);
+}
+
+/* Une rubrique plus longue que le cadre défile vers le bas, dans le cadre seulement. */
+.kDetailScroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* Il reste du texte plus bas : un triangle au coin du cadre, dessiné comme les flèches de la bande.
+   Il ne prend aucune hauteur et ne capte pas les appuis ; il s'éteint en fin de défilement. */
+.kDetailBody::after {
+  content: "";
+  position: absolute;
+  right: 1.6cqw;
+  bottom: 1.2cqw;
+  width: 4.4cqw;
+  height: 3cqw;
+  pointer-events: none;
+  opacity: 0;
+  background: linear-gradient(180deg, #6fd4f6 0%, #2a8fc4 55%, #0f5f9c 100%);
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+  transition: opacity 0.2s;
+}
+
+.kDetailBody[data-more="true"]::after {
+  opacity: 1;
+}
+
+.kDetailText,
+.kDetailNote,
+.kDetailTagline {
+  margin: 0 0 1.2cqw;
+}
+
+.kDetailNote {
+  color: var(--k-ink-soft);
+}
+
+.kDetailTagline {
+  font-weight: 700;
+  color: #ffcf5a;
+}
+
+.kDetailFacts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 2.4cqw;
+  row-gap: 0.8cqw;
+  margin: 0 0 1.2cqw;
+}
+
+.kDetailFacts dt {
+  font-weight: 700;
+  color: #ffcf5a;
+}
+
+.kDetailFacts dd {
+  margin: 0;
+}
+
+.kDetailCast {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.kDetailCast li {
+  padding: 0.6cqw 0;
+  border-bottom: 0.2cqw solid rgba(190, 238, 255, 0.14);
+}
+
+.kDetailCast b {
+  font-weight: 700;
+  color: #fff;
+}
+
+.kDetailCast span {
+  color: var(--k-ink-soft);
+}
+
+.kDetailStars {
+  margin: 0 0 1.2cqw;
+  font-family: var(--k-font);
+  font-size: 6cqw;
+  font-weight: 800;
+  line-height: 1.05;
+  color: #fff;
+}
+
+.kDetailStars span {
+  letter-spacing: 0.08em;
+  color: #ffb347;
+}
+
+.kDetailStars small {
+  display: block;
+  font-family: var(--k-font-text);
+  font-size: var(--k-syn-size);
+  font-weight: 500;
+  color: var(--k-ink-soft);
+}
+
+.kDetailReview {
+  margin-bottom: 1.2cqw;
+  padding-top: 1cqw;
+  border-top: 0.25cqw solid rgba(190, 238, 255, 0.3);
+}
+
+.kDetailReviewHead {
+  margin: 0;
+}
+
+.kDetailReviewHead b {
+  color: #fff;
+}
+
+.kDetailReviewHead span {
+  margin-left: 1cqw;
+  color: #ffb347;
+}
+
+.kDetailReviewText {
+  display: -webkit-box;
+  margin: 0.4cqw 0 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+}
+
+/* La bande-annonce est jouée dans l'écran de la borne, sous la dalle et la vitre. Sa hauteur est
+   plafonnée à la place du cadre moins la légende : sans cela, quelques pixels de trop faisaient
+   apparaître une barre de défilement sur le Pixel 9a. */
+.kTrailer {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  max-height: calc(100% - 2.2em);
+  margin-bottom: 0.8cqw;
+  background: #000;
+  box-shadow: 0 0 0 0.3cqw #0a0a10;
+}
+
+.kTrailer + .kDetailNote {
+  margin-bottom: 0;
+}
+
+.kTrailer video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
+}
+
+.kDetailHeading {
+  margin: 0 0 1cqw;
+  font-family: var(--k-font);
+  font-size: 4.6cqw;
+  font-weight: 800;
+  line-height: 1.1;
+  color: #ffcf5a;
+}
+
+.kDetailRow {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1.6cqw;
+  margin-bottom: 2cqw;
+}
+
+.kDetailRelated {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6cqw;
+  min-width: 0;
+  text-align: left;
+}
+
+.kDetailRelatedPoster {
+  display: block;
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  background: #223;
+  box-shadow: 0 0 0 0.25cqw #2a2a2e;
+}
+
+.kDetailRelatedPoster.kPosterFallback {
+  display: flex;
+  font-size: 2.2cqw;
+}
+
+.kDetailRelatedCaption {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 0.82em;
+  line-height: 1.15;
+  color: var(--k-ink-soft);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+/* « Retour » à la place de « Recherche », « LOUER » à côté : au pied de l'écran. */
+.kDetail .kBtn {
+  top: auto;
+  bottom: 2.4cqw;
+}
+
+.kBack .kBtnLabel::before {
+  content: "";
+  display: inline-block;
+  width: 2.2cqw;
+  height: 3.2cqw;
+  margin-right: 1.8cqw;
+  vertical-align: -0.04em;
+  background: currentColor;
+  clip-path: polygon(100% 0, 100% 100%, 0 50%);
+}

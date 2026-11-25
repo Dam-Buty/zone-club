@@ -1,0 +1,48 @@
+{
+  "film": {
+    "src": "/kiosk-distribution.mp4",
+    "largeur": 720,
+    "hauteur": 1290,
+    "dureeMs": 8000,
+    "octets": 2394364
+  },
+  "arret": {
+    "debutS": 5.9,
+    "finS": 6.95,
+    "tranche": {
+      "x0": 0.19679,
+      "y0": 0.61731,
+      "x1": 0.80321,
+      "y1": 0.66577
+    },
+    "afficheur": {
+      "x0": 0.25921,
+      "y0": 0.49672,
+      "x1": 0.74079,
+      "y1": 0.54917
+    }
+  },
+  "pc": {
+    "film": {
+      "src": "/kiosk-distribution-pc.mp4",
+      "largeur": 1920,
+      "hauteur": 1020,
+      "dureeMs": 8000,
+      "octets": 4648092
+    },
+    "suivi": "/kiosk-distribution-pc-suivi.json",
+    "caches": "/kiosk-distribution-pc-caches.webp",
+    "ombres": "/kiosk-distribution-pc-ombres.webp",
+    "decor": {
+      "src": "/kiosk/decor-pc.webp",
+      "largeur": 3840,
+      "hauteur": 2040,
+      "ecran": [
+        0.2636,
+        0.03,
+        0.5965,
+        0.97
+      ]
+    }
+  }
+}

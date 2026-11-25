@@ -3,7 +3,7 @@
  *
  * Le receiver ne reçoit que le MP4 : les `<track>` du `<video>` local ne
  * traversent pas le réseau. On déclare donc les WebVTT en side-load dans le
- * `MediaInfo` (voir `useGoogleCast.castMedia`). Le receiver par défaut ne gère
+ * `MediaInfo` (voir `buildLoadRequest` dans src/cast/cast-service.ts). Le receiver par défaut ne gère
  * que les pistes texte, et une seule active à la fois.
  */
 

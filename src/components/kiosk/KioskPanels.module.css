@@ -1,0 +1,936 @@
+/* Borne de location — les panneaux posés sur l'écran : connexion, recherche, messages.
+   Même facture que le parcours (KioskBrowse.module.css) : boutons plats à trame et fine bordure
+   claire, angles à peine arrondis, typographie et variables --k-* de l'écran. */
+
+/* ----- boutons communs aux panneaux ----- */
+
+/* Même casse que sur le parcours : l'action principale en CAPITALES, les autres boutons avec
+   une majuscule initiale (leur texte est écrit ainsi). */
+.kAuthSubmit,
+.kNoticeBtnPrimary {
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.kAuthBack,
+.kAuthLink,
+.kNoticeBtn {
+  font-weight: 700;
+  color: #fff;
+  text-shadow: var(--k-text-shadow);
+  border: 0.4cqw solid var(--k-edge-teal);
+  border-radius: var(--k-radius);
+  background: var(--k-skin-teal);
+  box-shadow: var(--k-bevel);
+}
+
+.kAuthSubmit,
+.kNoticeBtnPrimary {
+  font-weight: 800;
+  color: #fff;
+  text-shadow: var(--k-text-shadow);
+  border: 0.4cqw solid var(--k-edge-orange);
+  border-radius: var(--k-radius);
+  background: var(--k-skin-orange);
+  box-shadow: var(--k-bevel), 0 0.8cqw 2cqw rgba(0, 0, 20, 0.5);
+}
+
+/* ----- connexion, inscription, récupération -----
+   Le panneau occupe l'écran sous la barre du haut. Il défile si la hauteur manque (clavier
+   virtuel ouvert), pour que le champ en cours de saisie reste atteignable. */
+
+.kAuth {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 11cqw;
+  bottom: 0;
+  z-index: 4;
+  overflow-y: auto;
+  padding: 2cqw 6cqw 8cqw;
+  background: radial-gradient(86% 47% at 56% 24%, var(--k-bg-stops));
+}
+
+.kAuthBack {
+  position: relative;
+  padding: 1.2cqw 3.2cqw 1.4cqw;
+  font-size: 4.2cqw;
+}
+
+/* Zone d'appui prolongée autour du bouton (36 px de haut sur un Pixel 9a, 48 avec elle) : rien
+   d'actionnable ne l'entoure. */
+.kAuthBack::after {
+  content: "";
+  position: absolute;
+  inset: -1.6cqw -1.2cqw;
+}
+
+/* Le triangle du retour est dessiné, pas tiré d'une police de secours. */
+.kAuthBack::before {
+  content: "";
+  display: inline-block;
+  width: 1.9cqw;
+  height: 2.8cqw;
+  margin-right: 1.5cqw;
+  vertical-align: -0.06em;
+  background: currentColor;
+  clip-path: polygon(100% 0, 100% 100%, 0 50%);
+}
+
+.kAuthTitle {
+  margin-top: 4cqw;
+  font-size: 7cqw;
+  font-weight: 800;
+  line-height: 1.1;
+  color: #ffb347;
+}
+
+.kField {
+  display: block;
+  margin-top: 3.4cqw;
+}
+
+.kFieldLabel {
+  display: block;
+  font-size: 4.2cqw;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #bfe3ff;
+}
+
+/* 16 px au minimum : en dessous, iOS zoome sur le champ à la prise de focus. La sélection de
+   texte, coupée sur toute la borne, est rétablie ici — sans elle certains navigateurs refusent
+   la saisie. */
+.kInput {
+  display: block;
+  width: 100%;
+  height: 12cqw;
+  min-height: 40px;
+  margin-top: 1cqw;
+  padding: 0 3cqw;
+  font: inherit;
+  font-size: max(16px, 5.4cqw);
+  font-weight: 500;
+  color: #fff;
+  background: #06205c;
+  border: 0.4cqw solid var(--k-frame);
+  border-color: var(--k-frame-lo) var(--k-frame) var(--k-frame-hi) var(--k-frame);
+  border-radius: var(--k-radius);
+  box-shadow: inset 0 0.5cqw 1.2cqw rgba(0, 0, 20, 0.6);
+  outline: none;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+ /* Le mot de passe et son bouton « Voir » : le champ prend la place, le bouton a sa hauteur. */
+.kPassRow {
+  display: flex;
+  align-items: stretch;
+  gap: 1.6cqw;
+  margin-top: 1cqw;
+}
+
+.kPassRow .kInput {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-top: 0;
+}
+
+.kPassShow {
+  flex: none;
+  min-width: 19cqw;
+  padding: 0 2.4cqw;
+  font-family: var(--k-font);
+  font-size: 4.6cqw;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: var(--k-text-shadow);
+  border: 0.4cqw solid var(--k-edge-teal);
+  border-radius: var(--k-radius);
+  background: var(--k-skin-teal);
+  box-shadow: var(--k-bevel);
+}
+
+.kPassShow[aria-pressed="true"] {
+  border-color: var(--k-edge-orange);
+  background: var(--k-skin-orange);
+}
+
+.kInput:focus {
+  border-color: var(--k-edge-orange);
+  box-shadow: inset 0 0.5cqw 1.2cqw rgba(0, 0, 20, 0.6), 0 0 0 0.5cqw rgba(255, 179, 71, 0.35);
+}
+
+/* Refus du formulaire ou du serveur : ambre, pas rouge. */
+.kAuthError {
+  margin-top: 3.4cqw;
+  padding: 2.2cqw 3cqw;
+  font-size: 4.5cqw;
+  font-weight: 500;
+  line-height: 1.22;
+  color: #ffe3b0;
+  background: rgba(2, 8, 40, 0.6);
+  border-left: 1cqw solid #ff9d2e;
+  border-radius: 0.6cqw;
+}
+
+.kAuthSubmit {
+  display: block;
+  width: 100%;
+  min-height: 12.5cqw;
+  margin-top: 4.4cqw;
+  padding: 1.2cqw 3cqw 1.4cqw;
+  font-size: 6cqw;
+}
+
+.kAuthLinks {
+  margin-top: 4.4cqw;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2.4cqw;
+}
+
+.kAuthLink {
+  flex: 1 1 auto;
+  min-height: max(40px, 10cqw);
+  padding: 1cqw 3cqw 1.2cqw;
+  font-size: 4.4cqw;
+}
+
+.kAuthPhrase {
+  display: block;
+  margin-top: 5cqw;
+  padding: 5cqw 3cqw;
+  text-align: center;
+  overflow-wrap: anywhere;
+  font-family: "Courier New", Courier, monospace;
+  font-size: 6.4cqw;
+  font-weight: 700;
+  line-height: 1.25;
+  color: #fff;
+  background: #041a52;
+  border: 0.4cqw solid var(--k-edge-orange);
+  border-radius: var(--k-radius);
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.kAuthText {
+  margin: 4cqw 0;
+  font-size: 4.6cqw;
+  font-weight: 500;
+  line-height: 1.28;
+  color: #e3f1ff;
+}
+
+/* ----- recherche par titre ----- */
+
+.kSearchPane {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 11cqw;
+  bottom: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  padding: 2cqw 6cqw 4cqw;
+  background: radial-gradient(86% 47% at 56% 24%, var(--k-bg-stops));
+}
+
+.kSearchPane .kAuthBack {
+  align-self: flex-start;
+}
+
+.kSearchResults {
+  flex: 1;
+  min-height: 0;
+  margin-top: 4cqw;
+  overflow-y: auto;
+  scrollbar-width: none;
+  overscroll-behavior: contain;
+}
+
+.kSearchResults::-webkit-scrollbar {
+  display: none;
+}
+
+.kSearchHint {
+  margin-top: 4cqw;
+  text-align: center;
+  font-size: 4.9cqw;
+  font-weight: 500;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+  color: #bfe3ff;
+}
+
+.kSearchRow {
+  display: flex;
+  align-items: center;
+  gap: 3.4cqw;
+  width: 100%;
+  padding: 1.4cqw;
+  margin-bottom: 1.4cqw;
+  text-align: left;
+  border: 0.4cqw solid var(--k-frame);
+  border-color: var(--k-frame-hi) var(--k-frame) var(--k-frame-lo) var(--k-frame);
+  border-radius: var(--k-radius);
+  background: linear-gradient(180deg, rgba(6, 24, 76, 0.8) 0%, rgba(2, 12, 50, 0.8) 100%);
+}
+
+.kSearchPoster {
+  flex: none;
+  display: block;
+  width: 12cqw;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  background: #223;
+}
+
+/* Vignette de remplacement (un <span>, là où la jaquette est une <img>) : son format de ligne. */
+span.kSearchPoster {
+  display: flex;
+  font-size: 1.6cqw;
+}
+
+.kSearchText {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6cqw;
+}
+
+.kSearchTitle {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 5.1cqw;
+  font-weight: 800;
+  color: #ffb347;
+}
+
+.kSearchMeta {
+  font-size: 4.1cqw;
+  font-weight: 500;
+  color: #d6ecff;
+}
+
+/* ----- message dans l'écran ----- */
+
+.kNoticeScrim {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6cqw;
+  background: rgba(2, 8, 40, 0.74);
+}
+
+.kNotice {
+  width: 100%;
+  padding: 5.4cqw 5cqw 5cqw;
+  text-align: center;
+  background: linear-gradient(180deg, #0c2f84 0%, #06206a 100%);
+  border: 0.4cqw solid var(--k-frame);
+  border-color: var(--k-frame-hi) var(--k-frame) var(--k-frame-lo) var(--k-frame);
+  border-radius: 1.4cqw;
+  box-shadow: 0 1.2cqw 4cqw rgba(0, 0, 20, 0.7), 0 0 2cqw rgba(120, 205, 245, 0.25);
+}
+
+.kNoticeTitle {
+  font-size: 6cqw;
+  font-weight: 800;
+  line-height: 1.1;
+  color: #ffb347;
+}
+
+.kNoticeBody {
+  margin-top: 2.6cqw;
+  font-size: 4.7cqw;
+  font-weight: 500;
+  line-height: 1.28;
+  overflow-wrap: anywhere;
+  color: #e3f1ff;
+}
+
+.kNoticeActions {
+  margin-top: 4.6cqw;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 2.4cqw;
+}
+
+.kNoticeBtn {
+  flex: 1 1 34cqw;
+  min-height: 11.5cqw;
+  padding: 1.2cqw 3cqw 1.4cqw;
+  font-size: 5.1cqw;
+}
+
+/* ----- distribution de la K7 : attente, puis « Votre K7 est prête » ----- */
+
+/* Barre de progression d'époque : des pavés qui avancent par crans, à la cadence de la borne. */
+.kWaitBar {
+  margin: 4.4cqw auto 0;
+  width: 60%;
+  height: 3.2cqw;
+  border: 0.4cqw solid var(--k-frame);
+  border-radius: 0.6cqw;
+  background:
+    repeating-linear-gradient(90deg, #ffb347 0 4cqw, transparent 4cqw 5.2cqw) 0 0 / 31.2cqw 100% no-repeat,
+    #041a52;
+  animation: kWaitStep 2.4s steps(6) infinite;
+}
+
+@keyframes kWaitStep {
+  from { background-size: 0 100%; }
+  to { background-size: 31.2cqw 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kWaitBar { animation: none; background-size: 31.2cqw 100%; }
+}
+
+.kReadyFilm {
+  margin-top: 2.8cqw;
+  font-size: 6.6cqw;
+  font-weight: 800;
+  line-height: 1.12;
+  overflow-wrap: anywhere;
+  color: #fff;
+  text-shadow: var(--k-text-shadow);
+}
+
+/* « Où voulez-vous regarder ? » : deux choix pleine largeur, chacun dit où et comment. */
+.kReadyQuestion {
+  margin-top: 4cqw;
+  font-family: var(--k-font-text);
+  font-size: 4.8cqw;
+  font-weight: 600;
+  color: #e3f1ff;
+}
+
+.kNoticeBtn.kReadyChoice {
+  display: flex;
+  align-items: center;
+  gap: 3.2cqw;
+  width: 100%;
+  margin-top: 2.6cqw;
+  min-height: max(56px, 15cqw);
+  padding: 1.6cqw 4cqw;
+  text-align: left;
+}
+
+.kReadyChoiceText {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4cqw;
+  line-height: 1.1;
+}
+
+.kReadyChoiceText small {
+  font-family: var(--k-font-text);
+  font-size: 3.7cqw;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  opacity: 0.92;
+}
+
+.kReadyIcon {
+  flex: none;
+  width: 7.6cqw;
+  height: 7.6cqw;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* « Plus tard » et « Mon compte » : des boutons qui se lisent comme des liens, mais gardent une
+   zone d'appui d'au moins 44 px de haut (KIOSK_MIN_PX.tab). */
+.kReadyLinks {
+  margin-top: 3.4cqw;
+  display: flex;
+  justify-content: space-between;
+  gap: 2.4cqw;
+}
+
+.kReadyLink {
+  min-height: max(44px, 10cqw);
+  padding: 0 3cqw;
+  font-family: var(--k-font-text);
+  font-size: 4.7cqw;
+  font-weight: 700;
+  color: #9fe3ff;
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+  background: none;
+  border: 0;
+}
+
+/* ----- « Mes locations » (sur le panneau de la recherche) ----- */
+
+.kRentalsTitle {
+  margin-top: 3.4cqw;
+  font-size: 6cqw;
+  font-weight: 800;
+  line-height: 1.1;
+  color: #ffb347;
+}
+
+/* Le bouton d'une ligne : à droite, sans s'étirer comme ceux des messages. */
+.kNoticeBtn.kRentalWatch {
+  flex: none;
+  min-height: max(44px, 10cqw);
+  font-size: 4.4cqw;
+}
+
+/* ----- « Mon compte » (sur le panneau de la recherche) ----- */
+
+.kAccountWho {
+  margin-top: 1.4cqw;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 3cqw;
+  font-size: 4.9cqw;
+  font-weight: 700;
+  color: #e3f1ff;
+}
+
+.kAccountCredits {
+  color: #ffb347;
+}
+
+.kAccountSection {
+  margin: 4cqw 0 1.6cqw;
+  font-size: 4.4cqw;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #9fe3ff;
+}
+
+/* Une ligne du compte : la jaquette en haut, les faits empilés à côté. */
+.kSearchRow.kAccountRow {
+  align-items: flex-start;
+}
+
+.kAccountFact,
+.kAccountReason {
+  display: flex;
+  align-items: center;
+  gap: 1.4cqw;
+  font-family: var(--k-font-text);
+  font-size: 4cqw;
+  font-weight: 500;
+  line-height: 1.25;
+  color: #d6ecff;
+}
+
+.kAccountReason {
+  color: #bfe3ff;
+  font-style: italic;
+}
+
+.kMarkOk,
+.kMarkNo {
+  flex: none;
+  width: 3.6cqw;
+  height: 3.6cqw;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.kMarkOk {
+  stroke: #6fe39a;
+}
+
+.kMarkNo {
+  stroke: #ff8a7a;
+}
+
+.kNoticeBtn.kAccountReview {
+  flex: none;
+  align-self: flex-start;
+  margin-top: 1cqw;
+  min-height: max(44px, 10cqw);
+  font-size: 4.2cqw;
+}
+
+.kNoticeBtn.kAccountLogout {
+  display: block;
+  width: 100%;
+  margin: 6cqw 0 2cqw;
+  min-height: max(44px, 11cqw);
+}
+
+/* ----- « Version préférée » : la ligne de « Mon compte » et la liste des versions -----
+   La liste est le composant partagé src/components/version/VersionList.tsx ; ces classes sont celles que « Mon compte »
+   lui passe. Lignes et ligne du réglage : 44 px de haut au moins (KIOSK_MIN_PX.tab). */
+
+/* La ligne du réglage, sous le solde : un vrai bouton (cadre et fond des lignes du compte), la valeur à droite. */
+.kPrefLine {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 3cqw;
+  width: 100%;
+  min-height: max(44px, 12cqw);
+  margin-top: 2.4cqw;
+  padding: 1.2cqw 3cqw;
+  text-align: left;
+  font-size: 4.9cqw;
+  font-weight: 700;
+  color: #e3f1ff;
+  text-shadow: var(--k-text-shadow);
+  border: 0.4cqw solid var(--k-frame);
+  border-color: var(--k-frame-hi) var(--k-frame) var(--k-frame-lo) var(--k-frame);
+  border-radius: var(--k-radius);
+  background: linear-gradient(180deg, rgba(6, 24, 76, 0.8) 0%, rgba(2, 12, 50, 0.8) 100%);
+}
+
+/* « Bonus de la semaine » : même cadre que la ligne « Version préférée », toujours au même endroit sous le solde. Ce
+   n'est pas un bouton : son état est du texte, et seul un bonus à recevoir y pose un bouton. */
+.kBonusLine {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 3cqw;
+  width: 100%;
+  min-height: max(44px, 12cqw);
+  margin-top: 2.4cqw;
+  padding: 1.2cqw 3cqw;
+  font-size: 4.9cqw;
+  font-weight: 700;
+  color: #e3f1ff;
+  text-shadow: var(--k-text-shadow);
+  border: 0.4cqw solid var(--k-frame);
+  border-color: var(--k-frame-hi) var(--k-frame) var(--k-frame-lo) var(--k-frame);
+  border-radius: var(--k-radius);
+  background: linear-gradient(180deg, rgba(6, 24, 76, 0.8) 0%, rgba(2, 12, 50, 0.8) 100%);
+}
+
+.kBonusLine > span:first-child {
+  flex: none;
+  white-space: nowrap;
+}
+
+.kBonusState {
+  margin-left: auto;
+  text-align: right;
+  font-size: 4cqw;
+  font-weight: 600;
+  line-height: 1.15;
+  color: #9fb8d8;
+}
+
+.kNoticeBtn.kBonusGet {
+  flex: none;
+  margin-left: auto;
+  min-height: max(40px, 9cqw);
+  padding: 0 3cqw;
+  font-size: 4.2cqw;
+  white-space: nowrap;
+}
+
+.kBonusFail {
+  margin-top: 1.2cqw;
+  font-size: 3.8cqw;
+  font-weight: 600;
+  color: #ffb0a0;
+}
+
+.kPrefValue {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 1.4cqw;
+  text-align: right;
+  color: #ffb347;
+}
+
+/* Chevron dessiné (aucun glyphe tiré d'une police de secours). */
+.kPrefLine::after,
+.kVersionMore::after {
+  content: "";
+  flex: none;
+  width: 2cqw;
+  height: 3.4cqw;
+  background: #9fe3ff;
+  clip-path: polygon(0 0, 45% 0, 100% 50%, 45% 100%, 0 100%, 55% 50%);
+}
+
+/* La liste prend l'écran du compte ; elle défile si les lignes dépliées ne tiennent pas. Elle ne s'étire pas : le
+   message d'échec, posé après elle, reste près des lignes. */
+.kVersionList {
+  flex: 0 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1.4cqw;
+  overflow-y: auto;
+  scrollbar-width: none;
+  overscroll-behavior: contain;
+}
+
+.kVersionList::-webkit-scrollbar {
+  display: none;
+}
+
+/* Une version : une pastille dessinée à gauche (pleine sur la version courante), le nom, le sous-libellé dessous. */
+.kVersionRow {
+  flex: none;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 3cqw;
+  align-items: center;
+  width: 100%;
+  min-height: max(44px, 12cqw);
+  padding: 1.6cqw 3cqw;
+  text-align: left;
+  color: #fff;
+  border: 0.4cqw solid var(--k-frame);
+  border-color: var(--k-frame-hi) var(--k-frame) var(--k-frame-lo) var(--k-frame);
+  border-radius: var(--k-radius);
+  background: linear-gradient(180deg, rgba(6, 24, 76, 0.8) 0%, rgba(2, 12, 50, 0.8) 100%);
+}
+
+.kVersionRow::before {
+  content: "";
+  grid-row: 1 / span 2;
+  width: 4.6cqw;
+  height: 4.6cqw;
+  border: 0.5cqw solid var(--k-frame);
+  border-radius: 50%;
+  background: #041a52;
+  box-shadow: inset 0 0.3cqw 0.6cqw rgba(0, 0, 20, 0.6);
+}
+
+.kVersionRowOn {
+  border-color: var(--k-edge-orange);
+}
+
+.kVersionRowOn::before {
+  border-color: var(--k-edge-orange);
+  background: radial-gradient(circle, #ffb347 0 40%, #041a52 46%);
+}
+
+.kVersionName {
+  grid-column: 2;
+  font-size: 5.4cqw;
+  font-weight: 800;
+  line-height: 1.1;
+  text-shadow: var(--k-text-shadow);
+}
+
+.kVersionRowOn .kVersionName {
+  color: #ffb347;
+}
+
+.kVersionSub {
+  grid-column: 2;
+  font-family: var(--k-font-text);
+  font-size: 4cqw;
+  font-weight: 500;
+  line-height: 1.2;
+  color: #d6ecff;
+}
+
+/* Une version que le film n'a pas : du texte estompé avec sa raison, aligné sur les noms — jamais un bouton. */
+.kVersionAbsent {
+  padding: 1.6cqw 3cqw 1.6cqw 10.6cqw;
+  font-family: var(--k-font-text);
+  font-size: 4.2cqw;
+  font-style: italic;
+  line-height: 1.25;
+  color: #bfe3ff;
+  opacity: 0.75;
+}
+
+/* « Autres versions » : se lit comme un lien, garde 44 px de haut. */
+.kVersionMore {
+  flex: none;
+  align-self: flex-start;
+  display: flex;
+  align-items: center;
+  gap: 2cqw;
+  min-height: max(44px, 11cqw);
+  padding: 0 3cqw;
+  font-family: var(--k-font-text);
+  font-size: 4.7cqw;
+  font-weight: 700;
+  color: #9fe3ff;
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+}
+
+/* « Retour » en pied de la liste : le retour des panneaux (.kAuthBack), à 44 px de haut au moins. */
+.kVersionBack {
+  flex: none;
+  align-self: flex-start;
+  margin-top: 2.6cqw;
+  min-height: max(44px, 11cqw);
+}
+
+/* Un choix part au serveur : les lignes attendent, l'appui y est ignoré. */
+.kVersionList[aria-busy="true"] .kVersionRow {
+  opacity: 0.7;
+  cursor: progress;
+}
+
+/* ----- la ligne « Version » du panneau « Votre K7 est prête » (spec 2026-11-19, § 4.3 a) -----
+   Entre l'échéance et les deux choix : le bouton de « Version préférée » (.kPrefLine, chevron compris) quand la liste
+   s'ouvre ; une simple ligne de texte, sans cadre ni chevron, quand le film n'a qu'une version. */
+.kReadyVersion {
+  margin-top: 3.4cqw;
+}
+
+.kReadyVersionFixed {
+  display: flex;
+  align-items: center;
+  gap: 3cqw;
+  padding: 1.2cqw 3cqw;
+  text-align: left;
+  font-size: 4.9cqw;
+  font-weight: 700;
+  color: #e3f1ff;
+  text-shadow: var(--k-text-shadow);
+}
+
+/* Une substitution, écrite sous la ligne (« VOSTFR · VF indisponible pour ce film ») : jamais muette. */
+.kReadyVersionNote {
+  margin-top: 1.2cqw;
+  padding: 0 3cqw;
+  text-align: left;
+  font-family: var(--k-font-text);
+  font-size: 4cqw;
+  font-style: italic;
+  line-height: 1.25;
+  color: #bfe3ff;
+}
+
+/* Dans le panneau, centré, les lignes de texte de la liste restent alignées sur les noms des versions. */
+.kNotice .kVersionAbsent {
+  text-align: left;
+}
+
+/* La question des sous-titres : les deux réponses pleine largeur, l'une sous l'autre, 48 px de haut au moins. */
+.kNoticeBtn.kReadyAnswer {
+  display: block;
+  width: 100%;
+  margin-top: 3cqw;
+  min-height: max(48px, 13cqw);
+}
+
+/* ----- critique écrite dans la borne ----- */
+
+.kReviewFilm {
+  margin-top: 1.4cqw;
+  font-size: 5.4cqw;
+  font-weight: 800;
+  color: #fff;
+  text-shadow: var(--k-text-shadow);
+  overflow-wrap: anywhere;
+}
+
+.kReviewRating {
+  margin-top: 3cqw;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2cqw;
+}
+
+.kStars {
+  display: flex;
+  gap: 0.6cqw;
+}
+
+/* Une étoile par note : zone d'appui de 44 px au moins (KIOSK_MIN_PX.tab). */
+.kStarBtn {
+  width: max(44px, 9.6cqw);
+  height: max(44px, 9.6cqw);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: none;
+  border: 0;
+}
+
+.kStarOn,
+.kStarOff {
+  width: 7cqw;
+  height: 7cqw;
+  stroke-width: 1.4;
+  stroke-linejoin: round;
+}
+
+.kStarOn {
+  fill: #ffb347;
+  stroke: #ffd28a;
+}
+
+.kStarOff {
+  fill: none;
+  stroke: #6f8fc2;
+}
+
+.kInput.kReviewText {
+  min-height: 34cqw;
+  resize: none;
+  line-height: 1.3;
+}
+
+.kReviewCount {
+  margin-top: 1cqw;
+  text-align: right;
+  font-family: var(--k-font-text);
+  font-size: 4cqw;
+  color: #bfe3ff;
+}
+
+.kReviewCountOk {
+  color: #6fe39a;
+}
+
+.kReviewBonus {
+  font-weight: 700;
+  text-transform: none;
+}
+
+/* ----- texte courant -----
+   Les libellés sont dans la police étroite de l'écran ; ce qui se LIT ou se SAISIT (champs,
+   consignes, messages) est dans sa version condensée ordinaire, plus confortable. */
+.kFieldLabel,
+.kInput,
+.kAuthError,
+.kAuthText,
+.kSearchHint,
+.kSearchMeta,
+.kNoticeBody {
+  font-family: var(--k-font-text);
+}
+
+/* ===== PC : l'écran est en 2:3, moins haut que celui du téléphone (5:9) =====
+   Les formulaires (connexion, inscription, récupération, critique) y dépassaient : le bouton principal sortait de
+   l'écran dès qu'un message s'affichait (batterie de tests du 25/11/2026). Le panneau devient son propre conteneur de
+   mesure, plus étroit que l'écran : tout ce qu'il contient est écrit en cqw et rétrécit donc d'autant (82 %), sans
+   toucher aucune autre règle. Le fond, lui, couvre toujours tout l'écran. */
+@media (min-width: 769px) and (pointer: fine) {
+  .kAuth {
+    container-type: inline-size;
+    padding-left: 9cqw;
+    padding-right: 9cqw;
+  }
+}

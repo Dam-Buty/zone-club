@@ -2,6 +2,7 @@ import { useState, useCallback, useId } from 'react';
 import { createPortal } from 'react-dom';
 import { useStore } from '../../store';
 import { useBackGuard } from '../../hooks/useBackGuard';
+import { accountFormError } from '../../utils/account-rules';
 import styles from './AuthModal.module.css';
 
 interface AuthModalProps {
@@ -22,6 +23,9 @@ export function AuthModal({ isOpen, onClose, onSuccess, initialMode = 'login' }:
   const [recoveryPhrase, setRecoveryPhrase] = useState('');
   const [newRecoveryPhrase, setNewRecoveryPhrase] = useState('');
   const [copied, setCopied] = useState(false);
+  // Refus du formulaire lui-même (règles du compte), ou du serveur pour la récupération, qui ne
+  // passe pas par le magasin. Les règles sont celles du serveur : src/utils/account-rules.ts.
+  const [formError, setFormError] = useState<string | null>(null);
 
   const formId = useId();
   const login = useStore(state => state.login);
@@ -39,6 +43,7 @@ export function AuthModal({ isOpen, onClose, onSuccess, initialMode = 'login' }:
     setRecoveryPhrase('');
     setNewRecoveryPhrase('');
     setCopied(false);
+    setFormError(null);
     clearAuthError();
   }, [clearAuthError]);
 
@@ -65,9 +70,10 @@ export function AuthModal({ isOpen, onClose, onSuccess, initialMode = 'login' }:
     e.preventDefault();
     clearAuthError();
 
-    if (password !== confirmPassword) {
-      return;
-    }
+    // Le refus est dit avant d'envoyer : l'inscription est limitée à 3 essais par quart d'heure.
+    const refusal = accountFormError('register', { username, password, confirm: confirmPassword, phrase: '' });
+    setFormError(refusal);
+    if (refusal) return;
 
     const success = await register(username, password);
     if (success) {
@@ -79,9 +85,9 @@ export function AuthModal({ isOpen, onClose, onSuccess, initialMode = 'login' }:
     e.preventDefault();
     clearAuthError();
 
-    if (password !== confirmPassword) {
-      return;
-    }
+    const refusal = accountFormError('recover', { username, password, confirm: confirmPassword, phrase: recoveryPhrase });
+    setFormError(refusal);
+    if (refusal) return;
 
     try {
       const response = await fetch('/api/auth/recover', {
@@ -100,7 +106,9 @@ export function AuthModal({ isOpen, onClose, onSuccess, initialMode = 'login' }:
       setNewRecoveryPhrase(data.newRecoveryPhrase);
       setMode('recovery-phrase');
     } catch (error) {
-      console.error('Recovery error:', error);
+      // Un refus du serveur (pseudo ou passphrase incorrects, trop d'essais) est affiché : il
+      // n'était que journalisé, et le formulaire restait muet.
+      setFormError(error instanceof Error ? error.message : 'Erreur de recuperation');
     }
   };
 
@@ -240,6 +248,7 @@ export function AuthModal({ isOpen, onClose, onSuccess, initialMode = 'login' }:
                 <p className={styles.error}>Les mots de passe ne correspondent pas</p>
               )}
 
+              {formError && <p className={styles.error}>{formError}</p>}
               {authError && <p className={styles.error}>{authError}</p>}
 
               <button
@@ -323,6 +332,7 @@ export function AuthModal({ isOpen, onClose, onSuccess, initialMode = 'login' }:
                 <p className={styles.error}>Les mots de passe ne correspondent pas</p>
               )}
 
+              {formError && <p className={styles.error}>{formError}</p>}
               {authError && <p className={styles.error}>{authError}</p>}
 
               <button

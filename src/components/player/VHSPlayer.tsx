@@ -2,46 +2,40 @@ import { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import { useStore } from '../../store';
 import { VHSEffects } from './VHSEffects';
 import { VHSControls } from './VHSControls';
+import { CastPanels, readHereLabel } from './CastPanels';
+import { CastNoticeLine, OtherFilmBanner } from './CastNotices';
+import { PlaybackFailurePanel } from './PlaybackFailurePanel';
+import { PlayerVersionPanel, VersionNoteLine } from './PlayerVersionPanel';
+import { usePlaybackFailure } from './usePlaybackFailure';
+import { usePlayerVersion } from './usePlayerVersion';
+import { useVideoLifecycle } from './useVideoLifecycle';
+import { useAirPlay, type AirPlayVideoElement } from './useAirPlay';
 import { RentalTimer } from '../ui/RentalTimer';
 import api, { type ReviewsResponse } from '../../api';
 import type { PlayerState } from '../../types';
-import { useGoogleCast, preloadCastSdk } from '../../hooks/useGoogleCast';
+import { castPending, castView } from '../../cast/cast-machine';
+import { CAST_UNAVAILABLE_TEXT, castDeviceLabel, castNoticeView, continueHereLabel } from '../../cast/cast-labels';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { useBackGuard } from '../../hooks/useBackGuard';
 import { buildCastSubtitleTracks, activeSubtitleId } from '../../utils/cast-subtitles';
+import { appleAirPlay, ghostClick, localAutoPlay, noticeHoldsPlayback, playHeldHere, playerWithoutRental, playsHere, rewindPromptFor } from '../../utils/cast-on-open';
+import { failureHoldsPlayback, failureLetsKeyThrough, failurePanel, failureTrace, type DeviceFailureKind } from '../../utils/playback-failure';
+import { nextSubtitle, versionName, type VersionChoice, type VersionSubtitle } from '../../utils/version-choice';
+import { swapResumeTime } from '../../utils/video-swap';
+import { REVIEW_MIN_LENGTH, REVIEW_RATING_LABELS } from '../../utils/review-rules';
 import styles from './VHSPlayer.module.css';
+import castStyles from './CastPanels.module.css';
 
-const MIN_CONTENT_LENGTH = 500;
+const MIN_CONTENT_LENGTH = REVIEW_MIN_LENGTH;
 
-function formatCastTime(seconds: number): string {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = Math.floor(seconds % 60);
-  if (h > 0) return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-  return `${m}:${s.toString().padStart(2, '0')}`;
-}
+/** Libellé de la piste de sous-titres montée dans le <video>. */
+const SUBTITLE_LABELS: Record<Exclude<VersionSubtitle, 'off'>, string> = { fr: 'Français', en: 'English' };
 
-export type AudioTrack = 'vf' | 'vo';
-
-/**
- * Piste de sous-titres affichée. Le pipeline média extrait FR et EN séparément
- * (`subtitle_fr_vtt` / `subtitle_en_vtt`) et la location les expose toutes les deux ;
- * les deux peuvent manquer indépendamment, d'où un état à trois valeurs plutôt qu'un booléen.
- */
-export type SubtitleTrack = 'off' | 'fr' | 'en';
-
-const SUBTITLE_LABELS: Record<Exclude<SubtitleTrack, 'off'>, { button: string; label: string; title: string }> = {
-  fr: { button: 'STFR', label: 'Français', title: 'Sous-titres français [T]' },
-  en: { button: 'STEN', label: 'English', title: 'Sous-titres anglais [T]' },
-};
+/** Échec d'une bascule de sous-titres sur la TV : montré dans la télécommande, effacé quand on la quitte. */
+const TV_SUBTITLE_ERROR = 'Sous-titres indisponibles sur la TV.';
 
 // Rewind state machine
 type RewindPhase = 'none' | 'prompt' | 'rewinding';
-
-type AirPlayVideoElement = HTMLVideoElement & {
-  webkitShowPlaybackTargetPicker?: () => void;
-  webkitCurrentPlaybackTargetIsWireless?: boolean;
-};
 
 export function VHSPlayer() {
   const isPlayerOpen = useStore(state => state.isPlayerOpen);
@@ -54,22 +48,50 @@ export function VHSPlayer() {
   const updateRentalProgress = useStore(state => state.updateRentalProgress);
   const isAuthenticated = useStore(state => state.isAuthenticated);
   const addCredits = useStore(state => state.addCredits);
-  const setActiveCastFilmId = useStore(state => state.setActiveCastFilmId);
-  const activeCastFilmId = useStore(state => state.activeCastFilmId);
-  const endCast = useStore(state => state.endCast);
+  const playerFrom = useStore(state => state.playerFrom);
+  const playerAsk = useStore(state => state.playerAsk);
+  // Le Cast se LIT dans la tranche du magasin et se DEMANDE par ses actions : le lecteur n'en écrit rien. Des valeurs
+  // simples (la vue de ce film, le message, la reprise) : la position qui avance chaque seconde ne redessine pas le lecteur.
+  const view = useStore(state => castView(state.cast, state.currentPlayingFilm));
+  const castNotice = useStore(state => state.cast.notice);
+  const castResume = useStore(state => state.cast.resume);
+  const castAvailable = useStore(state => state.cast.available);
+  const tvDeviceName = useStore(state => (state.cast.connected ? castDeviceLabel(state.cast.deviceName) : null));
+  const startCast = useStore(state => state.startCast);
+  const castFilm = useStore(state => state.castFilm);
+  const castToggle = useStore(state => state.castToggle);
+  const castDismiss = useStore(state => state.castDismiss);
+  const castSubtitle = useStore(state => state.castSubtitle);
+  const takeCastResume = useStore(state => state.takeCastResume);
+  const castRentalGone = useStore(state => state.castRentalGone);
+  // Page rechargée : la machine ne sait pas encore si la TV joue ce film (film mémorisé) — il ne part pas ici d'office.
+  const castPendingHere = useStore(state => castPending(state.cast, state.currentPlayingFilm, state.lastCastFilmId));
+  // La TV a ce film, ou le prend : les panneaux du Cast couvrent le lecteur.
+  const remoteActive = view !== 'local' && view !== 'other-on-tv' && view !== 'ended';
+  // La TV a ce film, le prend, ou vient de le finir : la vidéo locale se tait (jamais sur les deux écrans, et jamais
+  // sous « BE KIND REWIND »). Un AUTRE film sur la TV laisse la main à celui-ci.
+  const tvOwnsFilm = !playsHere(view);
+  // Le message du Cast pour ce film (ou sans film). « Cast indisponible » est un panneau, pas une ligne.
+  const noticeHere = castNotice && (castNotice.filmId === null || castNotice.filmId === currentPlayingFilm) ? castNotice : null;
+  const castMissing = noticeHere !== null && castNoticeView(noticeHere.code, null).mirroring;
+  // Le lancement vers la TV vient d'échouer, ou le Cast manque à ce navigateur (panneau « recopie d'écran ») : le
+  // visiteur choisit (réessayer, ou regarder ici), rien ne part seul.
+  const castFailedHere = noticeHere !== null && noticeHoldsPlayback(noticeHere.code);
+  const isMobile = useIsMobile();
   const videoRef = useRef<HTMLVideoElement>(null);
   const [playerState, setPlayerState] = useState<PlayerState>('paused');
-  const [audioTrack, setAudioTrack] = useState<AudioTrack>('vf');
-  const [subtitleTrack, setSubtitleTrack] = useState<SubtitleTrack>('fr');
-  const [currentTime, setCurrentTime] = useState(0);
   const [showBlueScreen, setShowBlueScreen] = useState(false);
   const [remoteError, setRemoteError] = useState<string | null>(null);
   const [showMirroringHelp, setShowMirroringHelp] = useState(false);
   const [mirroringContext, setMirroringContext] = useState<'generic' | 'cast' | 'airplay'>('generic');
-  const [isAirPlaySupported, setIsAirPlaySupported] = useState(false);
-  const [isAirPlayAvailable, setIsAirPlayAvailable] = useState(false);
-  const [isAirPlayConnected, setIsAirPlayConnected] = useState(false);
-  const [showMobileRemotePrompt, setShowMobileRemotePrompt] = useState(false);
+  // « Regarder sur TV ? » à l'ouverture : sur mobile, quand la TV n'a pas déjà ce film, si l'appelant la demande ou si le
+  // dernier lancement vers la TV a échoué. Calculée dès le premier rendu (le lecteur est monté à chaque ouverture) : la
+  // vidéo locale ne part pas avant elle.
+  const [showMobileRemotePrompt, setShowMobileRemotePrompt] = useState(() => isMobile && playsHere(view) && (playerAsk || castFailedHere));
+  // « Continuer sur ce téléphone » (cette tablette, cet ordinateur) : l'appareil lu comme les panneaux du Cast le lisent.
+  const [here] = useState(readHereLabel);
+  // « Regarder sur TV » alors qu'un autre film passe sur la TV : la question « Remplacer … ? » est posée.
+  const [confirmReplace, setConfirmReplace] = useState(false);
 
   // Push notification state.
   // ⚠️ Rien ne lit ces états et rien n'appelle handleEnablePushNotifications plus bas : c'est le SEUL
@@ -99,6 +121,9 @@ export function VHSPlayer() {
   const rewindStartRef = useRef(0);
   const rewindRafRef = useRef<number | null>(null);
   const [pendingEject, setPendingEject] = useState(false);
+  // Film dont la location a été relue sur le serveur depuis l'ouverture du lecteur (voir l'effet
+  // « Film already finished at opening »).
+  const [rentalFreshFor, setRentalFreshFor] = useState<number | null>(null);
   const [rewindCredited, setRewindCredited] = useState(false);
 
   // Rewind-to-start state (⏮ button)
@@ -123,39 +148,25 @@ export function VHSPlayer() {
   const [reviewData, setReviewData] = useState<ReviewsResponse | null>(null);
   const [reviewLoading, setReviewLoading] = useState(false);
 
-  const {
-    isReady: isCastReady,
-    castState,
-    hasDevices: hasCastDevices,
-    isConnected: isCastConnected,
-    connectedDeviceName: castDeviceName,
-    castMedia,
-    remoteCurrentTime: remoteCastTime,
-    remoteDuration: remoteCastDuration,
-    remoteIsPaused: remoteCastPaused,
-    remotePlayerState: remoteCastPlayerState,
-    remoteIsMediaLoaded: remoteCastMediaLoaded,
-    remotePlayOrPause,
-    remoteStop,
-    remoteSeek,
-    remoteSetVolume,
-    getRemoteCurrentTime,
-    setCastTextTrack,
-  } = useGoogleCast({
-    enabled: isPlayerOpen,
-    receiverApplicationId: process.env.NEXT_PUBLIC_GOOGLE_CAST_APP_ID,
-  });
-
-  // Track film info for cast session
-  const castFilmIdRef = useRef<number | null>(null);
-  const castDurationRef = useRef(0);
-  // Preserve last known remote position (SDK resets to 0 on disconnect before we can read it)
-  const lastKnownCastTimeRef = useRef(0);
-  if (remoteCastTime > 0) lastKnownCastTimeRef.current = remoteCastTime;
-  const isMobile = useIsMobile();
-
   const rental = currentPlayingFilm ? getRental(currentPlayingFilm) : null;
   const streamingUrls = rental?.streamingUrls;
+  // La version jouée : la décision unique, celle de la borne et du Cast (spec 2026-11-19, § 4.1 et 4.4). Le lecteur n'a
+  // plus de piste à lui ; la liste « Version », V, T, « Essayer en … » et la question changent le choix de CE film.
+  const { offer, version, note, question, choose, cycleAudio, cycleSubtitle } = usePlayerVersion(currentPlayingFilm, streamingUrls);
+  const subtitle = version?.subtitle ?? 'off';
+  const [versionListOpen, setVersionListOpen] = useState(false);
+  const closeVersionList = useCallback(() => setVersionListOpen(false), []);
+  // Le geste retour referme la liste avant le lecteur.
+  useBackGuard(versionListOpen, closeVersionList);
+  // La question des sous-titres (décision « ask » : la borne la pose avant d'ouvrir, le vidéoclub non) se pose ici quand
+  // la vidéo joue ici ; elle retient la vidéo et passe avant l'invite « Regarder sur TV ? ».
+  const asking = question !== null && playsHere(view);
+  // Le panneau « Version » (la question, sinon la liste ouverte) : jamais sous un Cast de ce film, « BE KIND REWIND » ou
+  // le rembobinage — comme les commandes. Ce qui le masque ferme aussi la liste : le geste retour ne reste pas armé sur
+  // une liste invisible, qui ne reparaît pas d'elle-même ensuite.
+  const versionPanelMasked = remoteActive || rewindPhase !== 'none' || rewindingToStart;
+  if (versionPanelMasked && versionListOpen) setVersionListOpen(false);
+  const versionPanelShown = (asking || versionListOpen) && !versionPanelMasked;
 
   // Get film title for display. La page admin ouvre un film qui n'est pas
   // forcément dans le cache d'un rayon : `previewFilm` est alors la seule source.
@@ -164,12 +175,6 @@ export function VHSPlayer() {
   const currentFilm = previewFilm?.id === currentPlayingFilm
     ? previewFilm
     : allFilms.find(f => f.id === currentPlayingFilm);
-
-  // Determine available tracks
-  const hasVF = !!streamingUrls?.vf;
-  const hasVO = !!streamingUrls?.vo;
-  const hasSubtitlesFr = !!streamingUrls?.subtitles;
-  const hasSubtitlesEn = !!streamingUrls?.subtitles_en;
 
   // Un <track> distant (sous-domaine storage) n'est chargé que si l'élément
   // <video> est en mode CORS : le navigateur refuse la piste sans l'attribut
@@ -182,224 +187,128 @@ export function VHSPlayer() {
   const hasRemoteSubtitles =
     /^https?:\/\//i.test(streamingUrls?.subtitles ?? '') ||
     /^https?:\/\//i.test(streamingUrls?.subtitles_en ?? '');
-  // Ordre d'affichage et de cycle clavier : FR d'abord, EN ensuite, et seulement ce qui existe.
-  const availableSubtitles = useMemo(
-    () => (['fr', 'en'] as const).filter(lang => (lang === 'fr' ? hasSubtitlesFr : hasSubtitlesEn)),
-    [hasSubtitlesFr, hasSubtitlesEn]
-  );
 
-  // Pistes envoyées au Chromecast. Le `<track>` local ne traverse pas le réseau :
-  // sans ça, le receiver ne reçoit que le MP4 et la TV n'a aucun sous-titre.
+  // Pistes que la TV peut charger (adresses absolues seulement, voir cast-subtitles) : les boutons STFR/STEN de la
+  // télécommande. La tranche du magasin les déclare elle-même au lancement.
   const castSubtitles = useMemo(
     () => buildCastSubtitleTracks(streamingUrls),
     [streamingUrls]
   );
-  // Dernière piste appliquée côté receiver, pour ne pas renvoyer un
-  // `editTracksInfo` identique à chaque rendu.
-  const castSubtitleIdRef = useRef<number | null>(null);
 
-  // Snap the selected audio track to a version that ACTUALLY exists for this rental. A film can be VF-only
-  // (e.g. The Big Short) or VO-only; without this the player keeps the default 'vf' and getVideoUrl
-  // silently serves the other version → UI says one thing, audio is another. Here we make the selection
-  // honest so the controls + the served stream agree.
-  useEffect(() => {
-    if (!streamingUrls) return;
-    if (audioTrack === 'vf' && !hasVF && hasVO) setAudioTrack('vo');
-    else if (audioTrack === 'vo' && !hasVO && hasVF) setAudioTrack('vf');
-  }, [streamingUrls, hasVF, hasVO, audioTrack]);
-
-  // Même principe pour les sous-titres : le défaut est FR, mais un film peut n'avoir que l'EN (ou rien).
-  // On ne retombe QUE depuis une langue absente — 'off' est un choix explicite de l'utilisateur et ne doit
-  // jamais être réactivé tout seul.
-  useEffect(() => {
-    if (!streamingUrls || subtitleTrack === 'off') return;
-    if (!availableSubtitles.includes(subtitleTrack)) {
-      setSubtitleTrack(availableSubtitles[0] ?? 'off');
-    }
-  }, [streamingUrls, availableSubtitles, subtitleTrack]);
-
-  // Basculer les sous-titres sur la TV pendant le cast (touche T ou boutons du
-  // panneau Now Playing). Au démarrage, `activeTrackIds` a déjà été envoyé dans
-  // la requête de chargement : le ref évite un `editTracksInfo` redondant.
-  useEffect(() => {
-    if (playerState !== 'casting') return;
-    const nextId = activeSubtitleId(castSubtitles, subtitleTrack);
-    if (nextId === castSubtitleIdRef.current) return;
-    void setCastTextTrack(nextId).then(result => {
-      if (result.ok) castSubtitleIdRef.current = nextId;
-      else setRemoteError(result.error ?? 'Sous-titres indisponibles sur la TV.');
+  // Sous-titres choisis par le visiteur pendant que la TV joue ce film (boutons STFR/STEN, touche T) : la TV suit sans
+  // recharger le film. Seulement sur son geste : au lancement, la TV a reçu la version d'ici avec le film. Le choix de
+  // ce film, lui, est écrit par l'appelant (choose, cycleSubtitle).
+  const subtitleToTv = useCallback((next: VersionSubtitle) => {
+    if (view !== 'remote' || castSubtitles.length === 0) return;
+    void castSubtitle(activeSubtitleId(castSubtitles, next)).then(ok => {
+      setRemoteError(ok ? null : TV_SUBTITLE_ERROR);
     });
-  }, [playerState, subtitleTrack, castSubtitles, setCastTextTrack]);
+  }, [view, castSubtitles, castSubtitle]);
 
-  // Get current video URL based on selected track
-  const getVideoUrl = useCallback(() => {
-    if (!streamingUrls) return rental?.videoUrl || '';
-    if (audioTrack === 'vf' && hasVF) return streamingUrls.vf!;
-    if (audioTrack === 'vo' && hasVO) return streamingUrls.vo!;
-    return streamingUrls.vf || streamingUrls.vo || rental?.videoUrl || '';
-  }, [streamingUrls, audioTrack, hasVF, hasVO, rental?.videoUrl]);
+  // Hors de la télécommande, son message d'échec des sous-titres n'a plus d'objet : il ne reparaît pas dans l'en-tête.
+  useEffect(() => {
+    if (view !== 'remote') setRemoteError(prev => (prev === TV_SUBTITLE_ERROR ? null : prev));
+  }, [view]);
 
-  // Check if 80%+ of the film has been watched (local or remote)
+  // Check if 80%+ of the film has been watched locally (sur la TV, c'est le service qui suit la fin)
   const hasReachedMilestone = useCallback(() => {
-    if (playerState === 'casting') {
-      if (!remoteCastDuration || remoteCastDuration <= 0) return false;
-      return getRemoteCurrentTime() / remoteCastDuration >= 0.8;
-    }
     const video = videoRef.current;
     if (!video || !video.duration) return false;
     return video.currentTime / video.duration >= 0.8;
-  }, [playerState, remoteCastDuration, getRemoteCurrentTime]);
+  }, []);
 
   const openMirroringFallback = useCallback((context: 'generic' | 'cast' | 'airplay' = 'generic') => {
     setMirroringContext(context);
     setShowMirroringHelp(true);
   }, []);
 
-  const videoUrl = getVideoUrl();
+  // L'adresse de la version décidée, et rien d'autre (sans version lisible : aucune source).
+  const videoUrl = (version && streamingUrls?.[version.audio]) || '';
 
-  // Handle audio track change - preserve current time
-  const handleAudioTrackChange = useCallback((newTrack: AudioTrack) => {
-    const video = videoRef.current;
-    if (video) {
-      setCurrentTime(video.currentTime);
-    }
-    setAudioTrack(newTrack);
-  }, []);
+  // La lecture locale est voulue : la vidéo part d'elle-même (localAutoPlay). Le délai « rien ne vient » ne court que là.
+  // `playHolds` : ce qui la retient hors de la question des sous-titres (la réponse la lance si rien d'autre ne la tient).
+  const playHolds = { view, prompt: showMobileRemotePrompt, rewind: rewindPhase !== 'none', castHeld: castFailedHere, pending: castPendingHere };
+  const playWanted = localAutoPlay({ ...playHolds, question: asking });
+  // Une version qui ne se lance pas : le panneau, et une trace au serveur (jamais pour une prévisualisation de /admin).
+  const isPreview = useStore(state => state.previewRental?.filmId === state.currentPlayingFilm);
+  const reportFailure = useCallback((kind: DeviceFailureKind) => {
+    if (!version) return;
+    const trace = failureTrace({ filmId: currentPlayingFilm, preview: isPreview, version, kind, currentTime: videoRef.current?.currentTime ?? 0, savedPosition: rental?.watchPosition });
+    if (trace) void api.playbackFailures.report(trace);
+  }, [currentPlayingFilm, isPreview, version, rental?.watchPosition]);
+  const { failure, retry, attempt } = usePlaybackFailure({ videoRef, videoKey: `${version?.audio}-${videoUrl}`, wanted: playWanted, onFailure: reportFailure });
+  // Deux clés : celle passée à usePlaybackFailure (`videoKey` du crochet) est la clé de la SOURCE, piste et adresse ; celle
+  // d'ici est la clé de l'ÉLÉMENT <video>, avec l'essai : remonté à chaque autre piste audio et à chaque « Réessayer ».
+  const videoKey = `${version?.audio}-${videoUrl}-${attempt}`;
+  const { isAirPlaySupported, isAirPlayAvailable, isAirPlayConnected, openAirPlayPicker } = useAirPlay(videoRef, isPlayerOpen, videoKey);
 
-  // Bouton STFR/STEN : cliquer la langue active la coupe, cliquer l'autre bascule dessus.
-  const handleSubtitleTrackChange = useCallback((lang: Exclude<SubtitleTrack, 'off'>) => {
-    setSubtitleTrack(prev => (prev === lang ? 'off' : lang));
-  }, []);
-
-  // Touche T : off → FR → EN → off, en ne s'arrêtant que sur les langues réellement présentes.
-  const cycleSubtitleTrack = useCallback(() => {
-    setSubtitleTrack(prev => {
-      const cycle: SubtitleTrack[] = ['off', ...availableSubtitles];
-      const index = cycle.indexOf(prev);
-      return cycle[(index + 1) % cycle.length] ?? 'off';
-    });
-  }, [availableSubtitles]);
-
-  // Restore playback position after track change
+  // Mobile ghost-click guard: when openPlayer fires from a touchstart on the
+  // seated TV menu (OK button), the synthesized click event arrives ~50-100ms
+  // later — by which time VHSPlayer has mounted and its eject button (or the
+  // subtitles question, shown at once) is at the same screen coordinate. Eject,
+  // the answers and « Retour » ignore that click (ghostClick, cast-on-open).
+  const mountedAtRef = useRef(performance.now());
   useEffect(() => {
-    const video = videoRef.current;
-    if (video && currentTime > 0) {
-      video.currentTime = currentTime;
-      if (playerState === 'playing') {
-        video.play().catch(() => {});
-      }
-    }
-    // Volontairement déclenché par le seul changement de piste : ajouter currentTime relancerait un
-    // seek à chaque timeupdate, et playerState ferait rejouer la vidéo à chaque pause.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [audioTrack]);
+    if (isPlayerOpen) mountedAtRef.current = performance.now();
+  }, [isPlayerOpen]);
+
+  // La réponse à la question des sous-titres : le choix de CE film, jamais la version préférée. Autre piste audio : le
+  // nouvel élément part de lui-même (lecture automatique) ; même piste, même élément, retenu derrière la question : il
+  // part maintenant, si rien d'autre ne le retient (l'invite « Regarder sur TV ? » attend alors sa propre réponse).
+  const answerQuestion = (v: VersionChoice) => {
+    if (ghostClick(mountedAtRef.current, performance.now())) return;
+    choose(v);
+    if (v.audio === version?.audio && localAutoPlay({ ...playHolds, question: false })) void videoRef.current?.play().catch(() => {});
+  };
+  // « Retour » sous la question ferme le lecteur, rien n'est choisi — sauf sur le clic fantôme de l'ouverture.
+  const quitQuestion = () => {
+    if (!ghostClick(mountedAtRef.current, performance.now())) closePlayer();
+  };
 
   // Aligner explicitement les textTracks du <video> sur la sélection. L'attribut `default` d'un <track>
   // inséré APRÈS le parse n'est pas honoré de façon fiable (la piste reste en mode 'disabled') ; avec une
   // seule langue le symptôme était intermittent, avec deux il devient un « je clique STEN et rien ne
   // change ». `addtrack` couvre le cas où la piste est montée après ce rendu (remount du <video> sur
-  // changement VF/VO).
+  // changement VF/VO, ou « Réessayer »).
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
     const tracks = video.textTracks;
     const applySelection = () => {
       for (const track of Array.from(tracks)) {
-        track.mode = subtitleTrack !== 'off' && track.language === subtitleTrack ? 'showing' : 'disabled';
+        track.mode = subtitle !== 'off' && track.language === subtitle ? 'showing' : 'disabled';
       }
     };
     applySelection();
     tracks.addEventListener('addtrack', applySelection);
     return () => tracks.removeEventListener('addtrack', applySelection);
-  }, [subtitleTrack, videoUrl]);
+  }, [subtitle, videoKey]);
 
   // Multi-device sync: refresh rental data on player open so seek picks up
   // progress made elsewhere (other browser/device, or background cast).
-  // Non-blocking: local seek effect below uses current store value immediately;
-  // when fetchMe resolves with a newer watchPosition, that effect re-runs.
+  // Non bloquant : useVideoLifecycle place l'élément à ses métadonnées, sur la
+  // position du magasin à cet instant ; une réponse plus tardive ne le déplace pas.
   useEffect(() => {
-    if (!isPlayerOpen) return;
-    fetchMe();
-  }, [isPlayerOpen, fetchMe]);
-
-  // Resume from saved position when player opens
-  useEffect(() => {
-    if (!isPlayerOpen || !rental?.watchPosition) return;
-    const video = videoRef.current;
-    if (!video) return;
-
-    const handleCanPlay = () => {
-      if (rental.watchPosition > 0 && video.currentTime < 1) {
-        video.currentTime = rental.watchPosition;
-      }
-    };
-
-    video.addEventListener('canplay', handleCanPlay, { once: true });
-    return () => video.removeEventListener('canplay', handleCanPlay);
-  }, [isPlayerOpen, rental?.watchPosition]);
-
-  // ===== Auto-detect existing cast session on player open =====
-  //
-  // Two paths into casting mode:
-  //   1) SDK confirms an active receiver session (isCastConnected &&
-  //      remoteCastMediaLoaded) → go straight to 'casting'.
-  //   2) Store-side `activeCastFilmId` matches the film just opened, but
-  //      the SDK hasn't republished its events yet (typical of close +
-  //      reopen — the cast is live on the TV but the SDK takes a moment
-  //      to fire CAST_STATE_CHANGED). Show 'awaitingCast' meanwhile. The
-  //      SDK-confirmation effect below will promote to 'casting' once
-  //      events catch up; the timeout effect below will give up after 6s.
-  useEffect(() => {
-    if (!isPlayerOpen) return;
-    if (playerState === 'casting' || playerState === 'awaitingCast') return;
-
-    const sdkSeesCast = isCastConnected && remoteCastMediaLoaded;
-    const storeKnowsCast =
-      activeCastFilmId !== null && activeCastFilmId === currentPlayingFilm;
-
-    if (sdkSeesCast) {
-      const video = videoRef.current;
-      if (video && !video.paused) video.pause();
-      setPlayerState('casting');
-      if (!storeKnowsCast) setActiveCastFilmId(currentPlayingFilm);
-      castFilmIdRef.current = currentPlayingFilm ?? null;
-      castDurationRef.current = remoteCastDuration || video?.duration || 0;
-      if (currentPlayingFilm) {
-        api.castSessions
-          .create(currentPlayingFilm, castDurationRef.current, getRemoteCurrentTime())
-          .catch(() => {});
-      }
+    if (!isPlayerOpen) {
+      setRentalFreshFor(null);
       return;
     }
+    const film = currentPlayingFilm;
+    void fetchMe().finally(() => setRentalFreshFor(film));
+  }, [isPlayerOpen, currentPlayingFilm, fetchMe]);
 
-    if (storeKnowsCast) {
-      const video = videoRef.current;
-      if (video && !video.paused) video.pause();
-      setPlayerState('awaitingCast');
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally triggers only on reconnect signals
-  }, [isPlayerOpen, isCastConnected, remoteCastMediaLoaded, activeCastFilmId, currentPlayingFilm]);
-
-  // ===== Awaiting-cast safety timeout =====
-  // If we entered 'awaitingCast' on reopen but the SDK never confirms the
-  // session (TV powered off mid-cast, network change, etc.) we don't want
-  // to leave the user staring at "Connexion à la TV…" forever. After 6s
-  // without confirmation, drop the cast tracking and let the user retry.
+  // Ouvert sur un film sans location (échue pendant le film puis relue, prévisualisation adoptée sur le site) : le
+  // lecteur ne dessine rien et resterait « ouvert » — la borne inerte dessous, Échap sans effet. Il se ferme lui-même
+  // une fois les données relues, et la machine est prévenue : un Cast de ce film s'arrête, « Location terminée ».
+  // La présence de la location est LUE dans le magasin (abonnement) : `getRental` est une fonction stable, et le
+  // lecteur ne se redessinait pas quand la location quittait `rentals` (vu à l'écran le 19/11).
+  const hasRental = useStore(state => state.currentPlayingFilm !== null && state.getRental(state.currentPlayingFilm) !== undefined);
+  const withoutRental = playerWithoutRental({ open: isPlayerOpen, hasRental, fresh: rentalFreshFor === currentPlayingFilm });
   useEffect(() => {
-    if (playerState !== 'awaitingCast') return;
-    const timer = setTimeout(() => {
-      // Re-check freshest state inside timer; the cast may have just
-      // confirmed and we'd otherwise wipe a valid casting state.
-      const stillAwaiting = playerState === 'awaitingCast';
-      const sdkConfirmed = isCastConnected && remoteCastMediaLoaded;
-      if (stillAwaiting && !sdkConfirmed) {
-        endCast();
-        setPlayerState('paused');
-      }
-    }, 6000);
-    return () => clearTimeout(timer);
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally tied to awaitingCast entry only
-  }, [playerState]);
+    if (!withoutRental) return;
+    if (currentPlayingFilm !== null) castRentalGone(currentPlayingFilm);
+    closePlayer();
+  }, [withoutRental, currentPlayingFilm, castRentalGone, closePlayer]);
 
   // ===== FF/RW Logic =====
 
@@ -413,6 +322,13 @@ export function VHSPlayer() {
     rwCleanupRef.current = null;
     rwSpeedRef.current = 0;
   }, []);
+
+  // Un nouvel élément <video> (autre version, « Réessayer ») part à vitesse normale : l'avance ou le retour rapide de
+  // l'ancien s'arrête avec lui (sa boucle visait sinon le nouvel élément, et « FF x2 » restait affiché).
+  useEffect(() => {
+    stopRW();
+    setFfSpeed(0);
+  }, [videoKey, stopRW]);
 
   // Resume play after RW/FF — pause first for clean decoder state
   const resumePlayFromRW = useCallback(() => {
@@ -543,28 +459,6 @@ export function VHSPlayer() {
 
   // Stop button: save position + pause + blue screen (or rewind prompt at 80%+)
   const handleStop = useCallback(() => {
-    // Casting mode: stop remote, save position, show rewind or blue screen
-    if (playerState === 'casting') {
-      const remoteTime = getRemoteCurrentTime();
-      if (currentPlayingFilm && remoteCastDuration > 0) {
-        const progress = Math.round((remoteTime / remoteCastDuration) * 100);
-        updateRentalProgress(currentPlayingFilm, progress, remoteTime).catch(() => {});
-      }
-      remoteStop();
-      setActiveCastFilmId(null);
-      if (currentPlayingFilm) {
-        api.castSessions.end(currentPlayingFilm).catch(() => {});
-      }
-      if (hasReachedMilestone() && !rental?.rewindClaimed) {
-        setPendingEject(false);
-        setRewindPhase('prompt');
-      } else {
-        setPlayerState('paused');
-        setShowBlueScreen(true);
-      }
-      return;
-    }
-
     const video = videoRef.current;
     if (!video) return;
 
@@ -587,7 +481,7 @@ export function VHSPlayer() {
       setPlayerState('paused');
       setShowBlueScreen(true);
     }
-  }, [stopRW, currentPlayingFilm, hasReachedMilestone, rental?.rewindClaimed, playerState, getRemoteCurrentTime, remoteCastDuration, remoteStop, setActiveCastFilmId, updateRentalProgress]);
+  }, [stopRW, currentPlayingFilm, hasReachedMilestone, rental?.rewindClaimed, updateRentalProgress]);
 
   // Rewind to start (⏮) — simulates VHS tape rewind with proportional duration
   const handleRewindToStart = useCallback(() => {
@@ -630,39 +524,10 @@ export function VHSPlayer() {
     rewindToStartRafRef.current = requestAnimationFrame(animate);
   }, [rewindingToStart, stopRW]);
 
-  // Mobile ghost-click guard: when openPlayer fires from a touchstart on the
-  // seated TV menu (OK button), the synthesized click event arrives ~50-100ms
-  // later — by which time VHSPlayer has mounted and its eject button is at the
-  // same screen coordinate. That click then fires handleEject which closes the
-  // player immediately. We block eject for the first 500ms after mount to
-  // swallow the ghost click without blocking legitimate user-initiated ejects.
-  const mountedAtRef = useRef(performance.now());
-  useEffect(() => {
-    if (isPlayerOpen) mountedAtRef.current = performance.now();
-  }, [isPlayerOpen]);
-
   // Eject: save position + close player (or rewind prompt at 80%+)
   const handleEject = useCallback(() => {
-    if (performance.now() - mountedAtRef.current < 500) {
-      // Likely a ghost click from the touchstart that opened the player.
-      return;
-    }
-    // Casting mode: save remote position, stop cast
-    if (playerState === 'casting') {
-      const remoteTime = getRemoteCurrentTime();
-      if (currentPlayingFilm && remoteCastDuration > 0) {
-        const progress = Math.round((remoteTime / remoteCastDuration) * 100);
-        updateRentalProgress(currentPlayingFilm, progress, remoteTime).catch(() => {});
-      }
-      remoteStop();
-      if (hasReachedMilestone() && !rental?.rewindClaimed) {
-        setPendingEject(true);
-        setRewindPhase('prompt');
-      } else {
-        closePlayer();
-      }
-      return;
-    }
+    // Likely a ghost click from the touchstart that opened the player (ghostClick, see mountedAtRef).
+    if (ghostClick(mountedAtRef.current, performance.now())) return;
 
     const video = videoRef.current;
     if (video && currentPlayingFilm && video.duration > 0) {
@@ -687,7 +552,7 @@ export function VHSPlayer() {
       setRewindingToStart(false);
       closePlayer();
     }
-  }, [closePlayer, stopRW, currentPlayingFilm, hasReachedMilestone, rental?.rewindClaimed, playerState, getRemoteCurrentTime, remoteCastDuration, remoteStop, updateRentalProgress]);
+  }, [closePlayer, stopRW, currentPlayingFilm, hasReachedMilestone, rental?.rewindClaimed, updateRentalProgress]);
 
   // Clean up intervals on unmount
   useEffect(() => {
@@ -709,6 +574,14 @@ export function VHSPlayer() {
     setShowBlueScreen(true);
   }, []);
 
+  // La proposition « BE KIND REWIND » se ferme en éjectant (bouton, Échap, fin du rembobinage). Film fini sur la TV :
+  // la machine l'oublie aussi, plus de puce « Film terminé ». Le lecteur se ferme d'abord : son dernier enregistrement
+  // voit encore le film terminé et n'écrase pas les 100 % notés par le service.
+  const ejectAfterPrompt = useCallback(() => {
+    closePlayer();
+    if (view === 'ended') castDismiss();
+  }, [closePlayer, castDismiss, view]);
+
   // Close rewind modal (during or after rewind)
   const closeRewindModal = useCallback(() => {
     if (rewindRafRef.current !== null) {
@@ -719,12 +592,12 @@ export function VHSPlayer() {
     setRewindProgress(0);
     setRewindCredited(false);
     if (pendingEject) {
-      closePlayer();
+      ejectAfterPrompt();
     } else {
       setPlayerState('paused');
       setShowBlueScreen(true);
     }
-  }, [pendingEject, closePlayer]);
+  }, [pendingEject, ejectAfterPrompt]);
 
   // ===== Keyboard Controls (VCR style) =====
   useEffect(() => {
@@ -733,6 +606,21 @@ export function VHSPlayer() {
     const handleKeyDown = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === 'TEXTAREA' || tag === 'INPUT') return;
+
+      // Pendant un Cast, le clavier ne touche plus la vidéo locale : Échap et E referment le lecteur et la TV
+      // continue ; Espace pilote la TV, T change ses sous-titres.
+      if (remoteActive) {
+        if (e.key === 'Escape' || e.key === 'e' || e.key === 'E') {
+          closePlayer();
+        } else if (e.key === ' ' && view === 'remote') {
+          e.preventDefault();
+          castToggle();
+        } else if ((e.key === 't' || e.key === 'T') && version) {
+          cycleSubtitle();
+          subtitleToTv(nextSubtitle(offer, version).subtitle);
+        }
+        return;
+      }
 
       // Block most keys during rewind-to-start or rewind flow (only Escape allowed)
       if (rewindingToStart) {
@@ -743,7 +631,7 @@ export function VHSPlayer() {
         if (e.key === 'Escape') {
           if (rewindPhase === 'prompt') {
             if (pendingEject) {
-              closePlayer();
+              ejectAfterPrompt();
             } else {
               setRewindPhase('none');
               setPlayerState('paused');
@@ -755,6 +643,23 @@ export function VHSPlayer() {
         }
         return;
       }
+      // Le panneau « Version » attend un choix : les touches ne visent plus la vidéo dessous. Échap ferme la liste ; sous la
+      // question, il fait comme « Retour » : le lecteur se ferme, rien n'est choisi.
+      if (versionPanelShown) {
+        if (e.key === 'Escape') {
+          if (asking) closePlayer();
+          else closeVersionList();
+        }
+        return;
+      }
+      // Sous le panneau « Cette version ne se lance pas », seule Échap passe (elle éjecte) : rien ne vise la vidéo en panne.
+      if (!failureLetsKeyThrough(failure !== null && version !== null, e.key)) return;
+
+      // Échap ferme le lecteur même sans vidéo montée (lecteur ouvert sur un film dont la location vient de disparaître).
+      if (e.key === 'Escape') {
+        handleEject();
+        return;
+      }
 
       const video = videoRef.current;
       if (!video) return;
@@ -762,9 +667,7 @@ export function VHSPlayer() {
       switch (e.key) {
         case ' ':
           e.preventDefault();
-          if (playerState === 'casting') {
-            remotePlayOrPause();
-          } else if (playerState === 'rewinding' || playerState === 'fastforwarding') {
+          if (playerState === 'rewinding' || playerState === 'fastforwarding') {
             resumePlayFromRW();
           } else if (video.paused) {
             video.play();
@@ -808,189 +711,138 @@ export function VHSPlayer() {
           break;
         case 'v':
         case 'V':
-          if (hasVF && hasVO) {
-            handleAudioTrackChange(audioTrack === 'vf' ? 'vo' : 'vf');
-          }
+          cycleAudio();
           break;
         case 't':
         case 'T':
-          if (availableSubtitles.length > 0) {
-            cycleSubtitleTrack();
-          }
+          cycleSubtitle();
           break;
         case 'r':
         case 'R':
           handleRewindToStart();
-          break;
-        case 'Escape':
-          handleEject();
           break;
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isPlayerOpen, playerState, rewindingToStart, rewindPhase, pendingEject, closePlayer, closeRewindModal, handleEject, handleStop, handleFFCycle, handleRWCycle, handleRewindToStart, resumePlayFromRW, hasVF, hasVO, availableSubtitles, cycleSubtitleTrack, audioTrack, handleAudioTrackChange, stopRW, remotePlayOrPause]);
+  }, [isPlayerOpen, playerState, rewindingToStart, rewindPhase, pendingEject, closePlayer, closeRewindModal, ejectAfterPrompt, handleEject, handleStop, handleFFCycle, handleRWCycle, handleRewindToStart, resumePlayFromRW, cycleAudio, cycleSubtitle, subtitleToTv, offer, version, versionPanelShown, asking, closeVersionList, stopRW, remoteActive, view, castToggle, failure]);
 
-  // ===== Remote playback (AirPlay) =====
-  useEffect(() => {
-    if (!isPlayerOpen) return;
-
-    const video = videoRef.current as AirPlayVideoElement | null;
-    if (!video) return;
-
-    video.setAttribute('x-webkit-airplay', 'allow');
-    video.setAttribute('airplay', 'allow');
-    (video as HTMLVideoElement & { disableRemotePlayback?: boolean }).disableRemotePlayback = false;
-
-    const supportsAirPlay = typeof video.webkitShowPlaybackTargetPicker === 'function';
-    setIsAirPlaySupported(supportsAirPlay);
-    setIsAirPlayAvailable(supportsAirPlay);
-    setIsAirPlayConnected(Boolean(video.webkitCurrentPlaybackTargetIsWireless));
-
-    const handleAvailability = (event: Event) => {
-      const availability = (event as Event & { availability?: string }).availability;
-      setIsAirPlayAvailable(availability === 'available');
-    };
-
-    const handleWirelessChange = () => {
-      setIsAirPlayConnected(Boolean(video.webkitCurrentPlaybackTargetIsWireless));
-    };
-
-    video.addEventListener('webkitplaybacktargetavailabilitychanged', handleAvailability as EventListener);
-    video.addEventListener('webkitcurrentplaybacktargetiswirelesschanged', handleWirelessChange as EventListener);
-
-    return () => {
-      video.removeEventListener('webkitplaybacktargetavailabilitychanged', handleAvailability as EventListener);
-      video.removeEventListener('webkitcurrentplaybacktargetiswirelesschanged', handleWirelessChange as EventListener);
-    };
-  }, [isPlayerOpen, videoUrl]);
-
-  const handleCastCurrentVideo = useCallback(async () => {
-    setRemoteError(null);
-
-    if (!videoUrl) {
-      setRemoteError('Aucune source vidéo disponible pour Google Cast.');
-      return;
-    }
-
-    // Pause local video immediately AND enter the awaiting state so the
-    // UI swaps from "playing locally" to "connecting to TV…" before the
-    // SDK device picker even opens. Without this transition the user
-    // sees a paused phone player with no indication that something is
-    // happening — which is what produced the "the cast didn't work,
-    // film still plays on phone" report.
-    const video = videoRef.current;
-    const wasPlaying = Boolean(video && !video.paused);
-    if (video && wasPlaying) video.pause();
-    setPlayerState('awaitingCast');
-
-    // Force-resolve the SDK. Idempotent — instant if already loaded (the
-    // preloadCastSdk() call on couch-sit warms the cache, see InteriorScene).
-    const sdkReady = await preloadCastSdk();
-    if (!sdkReady) {
-      setRemoteError('Google Cast indisponible sur ce navigateur.');
-      openMirroringFallback('cast');
-      setPlayerState(wasPlaying ? 'playing' : 'paused');
-      if (video && wasPlaying) void video.play().catch(() => {});
-      return;
-    }
-
-    // Fallback to rental.watchPosition if local video hasn't seeked yet (canplay
-    // race when user clicks Cast before <video> reaches its resume position).
-    const startTime = Math.max(video?.currentTime || 0, rental?.watchPosition || 0);
-    const castSubtitleId = activeSubtitleId(castSubtitles, subtitleTrack);
-    const result = await castMedia({
-      url: videoUrl,
-      title: currentFilm?.title || 'Zone Club',
-      currentTime: startTime,
-      autoplay: true,
-      subtitles: castSubtitles,
-      activeSubtitleId: castSubtitleId,
-    });
-
-    if (!result.ok) {
-      setRemoteError(result.error || 'Impossible de lancer Google Cast.');
-      openMirroringFallback('cast');
-      setPlayerState(wasPlaying ? 'playing' : 'paused');
-      if (video && wasPlaying) void video.play().catch(() => {});
-      return;
-    }
-
-    // Cast confirmed — switch to casting mode. Local already paused above
-    // (and autoplay is gated by playerState below in the <video> element).
-    // Le receiver a déjà appliqué cette piste via `activeTrackIds` : on la
-    // mémorise pour que l'effet de bascule ne la renvoie pas.
-    castSubtitleIdRef.current = castSubtitleId;
-    setPlayerState('casting');
-    setActiveCastFilmId(currentPlayingFilm);
-    castFilmIdRef.current = currentPlayingFilm ?? null;
-    castDurationRef.current = video?.duration || 0;
-    if (currentPlayingFilm) {
-      api.castSessions.create(currentPlayingFilm, video?.duration || 0, startTime).catch(() => {});
-      if (video && video.duration > 0) {
-        const progress = Math.round((startTime / video.duration) * 100);
-        updateRentalProgress(currentPlayingFilm, progress, startTime).catch(() => {});
-      }
-    }
-  }, [videoUrl, castMedia, currentFilm?.title, openMirroringFallback, currentPlayingFilm, setActiveCastFilmId, rental?.watchPosition, updateRentalProgress, castSubtitles, subtitleTrack]);
-
-  // Switch playback back to the phone without terminating the receiver
-  // session via the user-facing Stop flow (which triggers the eject + rewind
-  // prompt). Saves the current cast position, seeks the local <video> to it,
-  // calls remoteStop (which the SDK uses to free the receiver) and lets the
-  // disconnect useEffect resume local playback.
-  const handleSwitchToPhone = useCallback(() => {
-    const remoteTime = getRemoteCurrentTime();
-    if (currentPlayingFilm && remoteCastDuration > 0) {
-      const progress = Math.round((remoteTime / remoteCastDuration) * 100);
-      updateRentalProgress(currentPlayingFilm, progress, remoteTime).catch(() => {});
-      api.castSessions.end(currentPlayingFilm).catch(() => {});
-    }
-    // Seed lastKnownCastTimeRef so the disconnect resume logic picks up
-    // the right position even if the SDK has already started resetting state.
-    if (remoteTime > 0) lastKnownCastTimeRef.current = remoteTime;
-    remoteStop();
-    endCast();
-  }, [getRemoteCurrentTime, currentPlayingFilm, remoteCastDuration, remoteStop, endCast, updateRentalProgress]);
-
+  // ===== Remote playback (AirPlay, voir useAirPlay) =====
+  // Sélecteur d'Apple dans l'appui ; s'il ne s'ouvre pas, la raison dans l'en-tête et le panneau « recopie d'écran ».
   const handleAirPlayPicker = useCallback(() => {
+    const problem = openAirPlayPicker();
+    setRemoteError(problem);
+    if (problem) openMirroringFallback('airplay');
+  }, [openAirPlayPicker, openMirroringFallback]);
+
+  // « Regarder sur TV » : la demande part DANS le gestionnaire de l'appui (le sélecteur d'appareils exige son
+  // activation), avec la version que joue le lecteur et la position d'ici — à la règle de reprise de l'appareil
+  // (swapResumeTime). Trois écarts restent entre télé et téléphone (src/utils/video-swap.ts) : la borne sans durée de
+  // fichier, cet appui avant les métadonnées d'ici (durée inconnue), et takeCastResume. La machine du Cast décide du reste.
+  const sendToTv = useCallback(() => {
+    if (currentPlayingFilm === null) return;
     setRemoteError(null);
+    const video = videoRef.current;
+    castFilm(currentPlayingFilm, {
+      version: version ?? undefined,
+      startAt: swapResumeTime({ elementTime: video?.currentTime ?? 0, rentalPosition: rental?.watchPosition ?? 0, duration: video?.duration ?? null }),
+    });
+  }, [currentPlayingFilm, castFilm, version, rental?.watchPosition]);
 
-    const video = videoRef.current as AirPlayVideoElement | null;
-    if (!video || typeof video.webkitShowPlaybackTargetPicker !== 'function') {
-      setRemoteError('AirPlay indisponible sur ce navigateur.');
-      openMirroringFallback('airplay');
-      return;
-    }
-
-    if (!isAirPlayAvailable && !isAirPlayConnected) {
-      setRemoteError('Aucun appareil AirPlay détecté sur le même réseau.');
-      openMirroringFallback('airplay');
-      return;
-    }
-
-    video.webkitShowPlaybackTargetPicker();
-  }, [isAirPlayAvailable, isAirPlayConnected, openMirroringFallback]);
-
-  const handleWatchOnTVFromPrompt = useCallback(() => {
+  const handleWatchOnTV = useCallback(() => {
+    // D'abord la vidéo d'ici se tait, quelle que soit la suite (Cast, AirPlay, message, confirmation) : sans pause(),
+    // un élément qui n'a encore rien joué garde sa lecture automatique armée, et partirait seul sous un message.
+    videoRef.current?.pause();
     setShowMobileRemotePrompt(false);
-
-    // Apple devices: Cast SDK is blocked by Apple — go straight to AirPlay.
-    const isApple = typeof navigator !== 'undefined' && /(iPad|iPhone|iPod|Macintosh)/.test(navigator.userAgent);
-    if (isApple && isAirPlaySupported) {
+    // Appareils Apple : le SDK Cast y est bloqué, la TV passe par AirPlay (règle lue sur l'élément, voir appleAirPlay).
+    if (typeof navigator !== 'undefined' && appleAirPlay(navigator.userAgent, videoRef.current as AirPlayVideoElement | null)) {
       handleAirPlayPicker();
       return;
     }
+    // Un autre film passe sur la TV : il n'est remplacé qu'après confirmation (« Oui » relance la demande).
+    if (view === 'other-on-tv') {
+      setConfirmReplace(true);
+      return;
+    }
+    sendToTv();
+  }, [handleAirPlayPicker, view, sendToTv]);
 
-    // Everywhere else: try Cast. handleCastCurrentVideo handles SDK loading
-    // (awaits preloadCastSdk), pauses local immediately, resumes local on
-    // failure, and falls back to the mirroring help if the SDK can't load.
-    // We no longer gate on isCastReady/hasCastDevices because those state
-    // flags lag the actual SDK readiness — letting requestSession() decide
-    // is more robust to race conditions.
-    void handleCastCurrentVideo();
-  }, [isAirPlaySupported, handleCastCurrentVideo, handleAirPlayPicker]);
+  // « Continuer sur ce téléphone » : le visiteur a choisi ici, la lecture part maintenant (jamais avant sa réponse).
+  const handleWatchHere = useCallback(() => {
+    setShowMobileRemotePrompt(false);
+    void videoRef.current?.play().catch(() => {});
+  }, []);
+
+  // ===== Le Cast vu du lecteur : chaque effet lit la machine, aucun n'écrit son état =====
+
+  // Filet de sécurité : /admin monte le lecteur hors de l'application. Le service ne s'initialise qu'une fois, quel
+  // que soit le premier à le demander.
+  useEffect(() => {
+    startCast();
+  }, [startCast]);
+
+  // La TV prend ce film (sélecteur, connexion, lancement, télécommande, liaison perdue) ou vient de le finir : la vidéo
+  // locale se tait — jamais le film sur les deux écrans, jamais sous « BE KIND REWIND » ; l'invite n'a plus d'objet.
+  useEffect(() => {
+    if (!tvOwnsFilm) return;
+    stopRW();
+    setFfSpeed(0);
+    const video = videoRef.current;
+    if (video) {
+      video.playbackRate = 1;
+      video.pause();
+    }
+    setPlayerState('paused');
+    setShowMobileRemotePrompt(false);
+  }, [tvOwnsFilm, stopRW]);
+
+  // Lancement vers la TV raté pour ce film, ou Cast absent de ce navigateur (sous le panneau « recopie d'écran »), même
+  // vu à l'ouverture du lecteur, même au bureau, ou question des sous-titres affichée (même si la décision change en
+  // cours de film) : la vidéo d'ici ne part pas d'elle-même. pause() désarme aussi la lecture automatique d'un élément
+  // qui n'a encore rien joué.
+  useEffect(() => {
+    if (castFailedHere || asking) videoRef.current?.pause();
+  }, [castFailedHere, asking, videoUrl]);
+
+  // La question « Remplacer … ? » tombe avec son bandeau : elle ne reparaît pas d'elle-même au film suivant sur la TV.
+  useEffect(() => {
+    if (view !== 'other-on-tv') setConfirmReplace(false);
+  }, [view]);
+
+  // La TV joue ce film : la proposition de rembobinage faite à l'ouverture (fin estimée trop tôt par le serveur, film
+  // en pause sur la TV) cède la place à la télécommande, qu'elle couvrirait.
+  useEffect(() => {
+    if (remoteActive && rewindPhase === 'prompt' && !pendingEject) setRewindPhase('none');
+  }, [remoteActive, rewindPhase, pendingEject]);
+
+  // Le Cast rend la main à ce téléphone (« Arrêter », « Continuer sur ce téléphone », arrêt venu d'ailleurs) : reprise
+  // à la position de la TV (inconnue : celle de la location), lecture seulement si le visiteur l'a demandée.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!castResume || castResume.filmId !== currentPlayingFilm || !video) return;
+    const taken = takeCastResume(currentPlayingFilm);
+    if (!taken) return;
+    video.currentTime = taken.position ?? rental?.watchPosition ?? 0;
+    if (taken.play) void video.play().catch(() => {});
+    else video.pause();
+  }, [castResume, currentPlayingFilm, takeCastResume, rental?.watchPosition]);
+
+  // L'invite revient quand le film n'est pas parti sur la TV : une attente (sélecteur, connexion, lancement) qui
+  // retombe sur « local » — sélecteur refermé, « Annuler », connexion ou lancement raté (`connect_failed` et
+  // `load_failed` arrivent toujours ainsi). La vidéo reste en pause jusqu'à la réponse.
+  const viewBeforeRef = useRef(view);
+  useEffect(() => {
+    const before = viewBeforeRef.current;
+    viewBeforeRef.current = view;
+    const fellBack = before === 'choosing' || before === 'connecting' || before === 'loading';
+    if (isMobile && view === 'local' && fellBack) setShowMobileRemotePrompt(true);
+  }, [view, isMobile]);
+
+  // « Cast indisponible » ouvre le panneau « recopie d'écran », qui le dit.
+  useEffect(() => {
+    if (castMissing) openMirroringFallback('cast');
+  }, [castMissing, openMirroringFallback]);
 
   // Push notification subscription handler — aucun appelant, voir la note sur pushSubscribed en haut
   // du composant.
@@ -1016,32 +868,15 @@ export function VHSPlayer() {
     }
   }, []);
 
-  // Mobile prompt when player opens
-  useEffect(() => {
-    if (isPlayerOpen && isMobile) {
-      setShowMobileRemotePrompt(true);
-      return;
-    }
-    setShowMobileRemotePrompt(false);
-  }, [isPlayerOpen, isMobile]);
-
-  // ===== Watch Progress Reporting (every 30s) =====
+  // ===== Watch Progress Reporting (every 10s) =====
+  // Lecture locale seulement : pendant un Cast la vidéo d'ici est en pause, et c'est le service qui tient la position.
   useEffect(() => {
     if (!isPlayerOpen || !currentPlayingFilm) return;
 
     const interval = setInterval(() => {
-      // Casting mode: report remote position
-      if (playerState === 'casting' && remoteCastMediaLoaded && remoteCastDuration > 0) {
-        const remoteTime = getRemoteCurrentTime();
-        const progress = Math.round((remoteTime / remoteCastDuration) * 100);
-        updateRentalProgress(currentPlayingFilm, progress, remoteTime).catch(() => {});
-        api.castSessions.updatePosition(currentPlayingFilm, remoteTime).catch(() => {});
-        return;
-      }
-
-      // Local mode
       const video = videoRef.current;
-      if (!video || video.duration === 0 || video.paused) return;
+      // Durée inconnue (NaN : version en panne, relancée par play()) : rien à écrire, surtout pas la position 0.
+      if (!video || !(video.duration > 0) || video.paused) return;
 
       const progress = Math.round((video.currentTime / video.duration) * 100);
       updateRentalProgress(currentPlayingFilm, progress, video.currentTime).catch(() => {});
@@ -1049,24 +884,20 @@ export function VHSPlayer() {
     }, 10000);
 
     return () => clearInterval(interval);
-  }, [isPlayerOpen, currentPlayingFilm, playerState, remoteCastMediaLoaded, remoteCastDuration, getRemoteCurrentTime, updateRentalProgress]);
+  }, [isPlayerOpen, currentPlayingFilm, updateRentalProgress]);
 
   // ===== Flush position on player close =====
   //
   // The 10s save loop above can miss the final position if the user closes
-  // the player mid-interval — especially in the local-paused → cast → close
-  // flow, where the pause skips the local save branch entirely. This ref
-  // captures the latest snapshot-saver closure on every render, and the
-  // useEffect cleanup invokes it when isPlayerOpen flips false (or the
-  // component unmounts), guaranteeing one final write to rental.watchPosition.
+  // the player mid-interval. This ref captures the latest snapshot-saver
+  // closure on every render, and the useEffect cleanup invokes it when
+  // isPlayerOpen flips false (or the component unmounts), guaranteeing one
+  // final write to rental.watchPosition.
   const flushPositionRef = useRef<(() => void) | null>(null);
   flushPositionRef.current = () => {
-    if (!currentPlayingFilm) return;
-    if (playerState === 'casting' && lastKnownCastTimeRef.current > 0 && castDurationRef.current > 0) {
-      const progress = Math.round((lastKnownCastTimeRef.current / castDurationRef.current) * 100);
-      updateRentalProgress(currentPlayingFilm, progress, lastKnownCastTimeRef.current).catch(() => {});
-      return;
-    }
+    // Seule la lecture d'ici s'enregistre ici. La TV a le film, ou vient de le finir : le service tient la position, et
+    // la vidéo locale, en pause depuis, écraserait la sienne (voire les 100 % d'une fin vue sur la TV).
+    if (!currentPlayingFilm || tvOwnsFilm) return;
     const v = videoRef.current;
     if (v && v.duration > 0) {
       const progress = Math.round((v.currentTime / v.duration) * 100);
@@ -1078,179 +909,63 @@ export function VHSPlayer() {
     return () => { flushPositionRef.current?.(); };
   }, [isPlayerOpen]);
 
-  // ===== Page Visibility API (background resilience during cast) =====
-  useEffect(() => {
-    if (playerState !== 'casting' || !currentPlayingFilm) return;
-
-    const handleVisibility = () => {
-      if (document.hidden) {
-        // App going to background — save snapshot
-        const remoteTime = getRemoteCurrentTime();
-        if (remoteCastDuration > 0) {
-          const progress = Math.round((remoteTime / remoteCastDuration) * 100);
-          updateRentalProgress(currentPlayingFilm, progress, remoteTime).catch(() => {});
-        }
-      }
-      // On visible: Cast SDK auto-reconnects (ORIGIN_SCOPED).
-      // RemotePlayer reflects current receiver state automatically.
-      // If remoteCastPlayerState is IDLE, the film-ended useEffect handles it.
-    };
-
-    document.addEventListener('visibilitychange', handleVisibility);
-    return () => document.removeEventListener('visibilitychange', handleVisibility);
-  }, [playerState, currentPlayingFilm, getRemoteCurrentTime, remoteCastDuration, updateRentalProgress]);
-
-  // ===== MediaSession API (lock screen controls during cast) =====
-  useEffect(() => {
-    if (playerState !== 'casting' || !('mediaSession' in navigator)) return;
-
-    const posterUrl = currentFilm?.poster_path
-      ? `/api/poster/w200${currentFilm.poster_path}`
-      : undefined;
-
-    navigator.mediaSession.metadata = new MediaMetadata({
-      title: currentFilm?.title || 'Zone Club',
-      artist: 'Zone Club',
-      artwork: posterUrl ? [{ src: posterUrl, sizes: '200x300', type: 'image/jpeg' }] : [],
-    });
-
-    navigator.mediaSession.setActionHandler('play', remotePlayOrPause);
-    navigator.mediaSession.setActionHandler('pause', remotePlayOrPause);
-    navigator.mediaSession.setActionHandler('stop', remoteStop);
-
-    return () => {
-      navigator.mediaSession.setActionHandler('play', null);
-      navigator.mediaSession.setActionHandler('pause', null);
-      navigator.mediaSession.setActionHandler('stop', null);
-      navigator.mediaSession.metadata = null;
-    };
-  }, [playerState, currentFilm?.title, currentFilm?.poster_path, remotePlayOrPause, remoteStop]);
-
   // ===== End of Film — Rewind Prompt =====
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    const handleEnded = () => {
-      stopRW();
-      setFfSpeed(0);
-      // Send final progress (100%) + reset position to 0
-      if (currentPlayingFilm) {
-        updateRentalProgress(currentPlayingFilm, 100, 0).catch(() => {});
-      }
-      // Same flow as eject — pendingEject=true since film ended
-      if (!rental?.rewindClaimed) {
-        setPendingEject(true);
-        setRewindPhase('prompt');
-      } else {
-        closePlayer();
-      }
-    };
-
-    video.addEventListener('ended', handleEnded);
-    return () => video.removeEventListener('ended', handleEnded);
+  const handleEnded = useCallback(() => {
+    stopRW();
+    setFfSpeed(0);
+    // Send final progress (100%) + reset position to 0
+    if (currentPlayingFilm) {
+      updateRentalProgress(currentPlayingFilm, 100, 0).catch(() => {});
+    }
+    // Same flow as eject — pendingEject=true since film ended
+    if (!rental?.rewindClaimed) {
+      setPendingEject(true);
+      setRewindPhase('prompt');
+    } else {
+      closePlayer();
+    }
   }, [currentPlayingFilm, stopRW, rental?.rewindClaimed, closePlayer, updateRentalProgress]);
+  // La fin du film et la place de chaque élément, à l'ouverture comme remonté (autre version, « Réessayer »), suivent
+  // l'élément <video> courant ; où il reprend se décide dans video-swap (resumeSeek), sur la durée du fichier.
+  useVideoLifecycle({ videoRef, videoKey, filmId: currentPlayingFilm, rentalPosition: rental?.watchPosition ?? 0, onEnded: handleEnded });
 
-  // ===== Remote Film Ended / Stopped Detection =====
-  // IDLE can mean film finished OR manual stop on receiver — distinguish by position
-  const prevRemoteCastPlayerStateRef = useRef(remoteCastPlayerState);
+  // ===== BE KIND REWIND : fin vue par la TV, ou film déjà fini à l'ouverture =====
+  // Une seule décision (rewindPromptFor). Fin vue par la TV : ÉJECTER, ou la sortie si le rembobinage est déjà
+  // réclamé. Film vu jusqu'au bout ailleurs (fin de lecture, fin estimée d'un Cast, téléphone éteint) : proposé une
+  // fois par ouverture et par film, et « NON MERCI » laisse revoir le film (pendingEject faux).
+  const rewindOfferedForRef = useRef<number | null>(null);
   useEffect(() => {
-    const prev = prevRemoteCastPlayerStateRef.current;
-    prevRemoteCastPlayerStateRef.current = remoteCastPlayerState;
-
-    if (playerState !== 'casting') return;
-    if (remoteCastPlayerState === 'IDLE' && prev !== 'IDLE' && prev !== 'UNKNOWN') {
-      const remoteTime = getRemoteCurrentTime();
-      const isNearEnd = remoteCastDuration > 0 && remoteTime / remoteCastDuration >= 0.95;
-
-      // End cast session tracking
-      setActiveCastFilmId(null);
-      if (currentPlayingFilm) {
-        api.castSessions.end(currentPlayingFilm).catch(() => {});
-      }
-
-      if (isNearEnd) {
-        // Film finished — existing rewind prompt flow
-        if (currentPlayingFilm) {
-          updateRentalProgress(currentPlayingFilm, 100, 0).catch(() => {});
-        }
-        if (!rental?.rewindClaimed) {
-          setPendingEject(true);
-          setRewindPhase('prompt');
-        } else {
-          closePlayer();
-        }
-      } else {
-        // Manual stop on receiver — save position, stay paused
-        if (currentPlayingFilm && remoteCastDuration > 0) {
-          const progress = Math.round((remoteTime / remoteCastDuration) * 100);
-          updateRentalProgress(currentPlayingFilm, progress, remoteTime).catch(() => {});
-        }
-        const video = videoRef.current;
-        if (video) {
-          video.currentTime = remoteTime > 0 ? remoteTime : video.currentTime;
-        }
-        setPlayerState('paused');
-      }
+    if (!isPlayerOpen || !currentPlayingFilm) {
+      rewindOfferedForRef.current = null;
+      return;
     }
-  }, [remoteCastPlayerState, playerState, currentPlayingFilm, rental?.rewindClaimed, closePlayer, remoteCastDuration, getRemoteCurrentTime, setActiveCastFilmId, updateRentalProgress]);
-
-  // Track whether the SDK has EVER reported a connected cast session in
-  // this player mount. Without this gate, the disconnect handler below
-  // fires immediately on re-mount with `isCastConnected=false` and tears
-  // down a legitimately active receiver-side session before the SDK has
-  // had a chance to re-publish its CAST_STATE_CHANGED event. The gate
-  // ensures we only handle TRANSITIONS from connected→disconnected, not
-  // the initial unmounted-yet state.
-  const wasCastConnectedRef = useRef(false);
-  useEffect(() => {
-    if (isCastConnected) wasCastConnectedRef.current = true;
-  }, [isCastConnected]);
-
-  // ===== Unexpected Cast Disconnect — Resume Local =====
-  useEffect(() => {
-    if (!wasCastConnectedRef.current) return;
-    if (!isCastConnected && playerState === 'casting') {
-      // Cast disconnected — end session
-      endCast();
-      if (castFilmIdRef.current) {
-        api.castSessions.end(castFilmIdRef.current).catch(() => {});
-      }
-
-      // Use lastKnownCastTimeRef (SDK resets remoteTime to 0 on disconnect)
-      const savedTime = lastKnownCastTimeRef.current;
-      const duration = castDurationRef.current;
-      const isNearEnd = duration > 0 && savedTime / duration >= 0.95;
-
-      if (isNearEnd) {
-        // Film likely finished on receiver before disconnect (e.g. TV turned off after film ended)
-        if (currentPlayingFilm) {
-          updateRentalProgress(currentPlayingFilm, 100, 0).catch(() => {});
-        }
-        if (!rental?.rewindClaimed) {
-          setPendingEject(true);
-          setRewindPhase('prompt');
-        } else {
-          closePlayer();
-        }
-      } else {
-        // Mid-film disconnect — resume local from last known position
-        const video = videoRef.current;
-        if (video) {
-          if (savedTime > 0) video.currentTime = savedTime;
-          video.play().then(() => {
-            setPlayerState('playing');
-          }).catch(() => {
-            setPlayerState('paused');
-          });
-        } else {
-          setPlayerState('paused');
-        }
-      }
-
-      lastKnownCastTimeRef.current = 0;
+    if (!rental) return;
+    // Une proposition est déjà affichée (fin de lecture, STOP, fin du Cast) : on ne s'en mêle pas.
+    if (rewindPhase !== 'none') {
+      rewindOfferedForRef.current = currentPlayingFilm;
+      return;
     }
-  }, [isCastConnected, playerState, setActiveCastFilmId, currentPlayingFilm, rental?.rewindClaimed, closePlayer, endCast, updateRentalProgress]);
+    const decision = rewindPromptFor({
+      tv: view === 'ended' ? 'ended' : remoteActive ? 'busy' : 'free',
+      offered: rewindOfferedForRef.current === currentPlayingFilm,
+      fresh: rentalFreshFor === currentPlayingFilm,
+      watchProgress: rental.watchProgress ?? 0,
+      rewindClaimed: !!rental.rewindClaimed,
+    });
+    // Données pas encore relues, ou la TV a ce film : on décidera plus tard (si le Cast s'arrête, la vue redevient
+    // locale et l'effet repasse ; s'il finit, la vue passe à « ended »).
+    if (decision === 'wait') return;
+    rewindOfferedForRef.current = currentPlayingFilm;
+    if (decision === 'skip') return;
+    if (decision === 'close') {
+      ejectAfterPrompt();
+      return;
+    }
+    videoRef.current?.pause();
+    setPlayerState('paused');
+    setPendingEject(decision === 'eject');
+    setRewindPhase('prompt');
+  }, [isPlayerOpen, currentPlayingFilm, rental, view, remoteActive, rentalFreshFor, rewindPhase, ejectAfterPrompt]);
 
   // ===== Rewind Animation =====
   const startRewind = useCallback(() => {
@@ -1336,23 +1051,13 @@ export function VHSPlayer() {
       setRemoteError(null);
       setShowMirroringHelp(false);
       setMirroringContext('generic');
-      setIsAirPlaySupported(false);
-      setIsAirPlayAvailable(false);
-      setIsAirPlayConnected(false);
       setShowMobileRemotePrompt(false);
+      setConfirmReplace(false);
       setRewindPhase('none');
       setRewindProgress(0);
       setPendingEject(false);
       setRewindCredited(false);
-      castFilmIdRef.current = null;
-      castDurationRef.current = 0;
-      lastKnownCastTimeRef.current = 0;
-      // Important: do NOT end the cast session here. The receiver on the TV
-      // continues playing independent of whether the phone player overlay is
-      // open, and the next openPlayer call reads activeCastFilmId to enter
-      // remote-control mode automatically. Calling castSessions.end here is
-      // what made closing the player wipe the cast tracking and forced users
-      // to manually re-cast on reopen.
+      // Rien du Cast ici : la TV continue sans le lecteur, et le service la suit (voir src/cast/).
       // Reset review state
       setReviewContent('');
       setRatingDirection(3);
@@ -1380,6 +1085,11 @@ export function VHSPlayer() {
       setOverlayVisible(false);
     }, 4000);
   }, []);
+
+  // Une ligne du Cast est sous l'en-tête (message, bandeau d'un autre film, question « Remplacer … ? ») : l'en-tête ne se
+  // masque pas, « Réessayer », « Oui », « Non » et ✕ restent visibles et actifs sans bouger la souris. Sans version
+  // lisible non plus (`version === null`) : sa note est tout ce que montre un écran resté noir.
+  const castLineShown = view === 'other-on-tv' || (noticeHere !== null && !castMissing);
 
   useEffect(() => {
     if (!isPlayerOpen || rewindPhase !== 'none' || rewindingToStart) return;
@@ -1415,7 +1125,7 @@ export function VHSPlayer() {
       // primary UI the user needs (play/pause/stop on the TV). Letting them
       // fade out after 4s of inactivity leaves only the info overlay visible,
       // which feels like "no controls at all" to the user.
-      if (checkPortraitMobile() || playerState === 'casting') disableAutoHide();
+      if (checkPortraitMobile() || remoteActive || castLineShown || version === null) disableAutoHide();
       else enableAutoHide();
     };
 
@@ -1426,19 +1136,46 @@ export function VHSPlayer() {
       window.removeEventListener('resize', apply);
       disableAutoHide();
     };
-  }, [isPlayerOpen, rewindPhase, rewindingToStart, resetIdleTimer, isMobile, playerState]);
+  }, [isPlayerOpen, rewindPhase, rewindingToStart, resetIdleTimer, isMobile, remoteActive, castLineShown, version]);
 
   if (!isPlayerOpen || !rental) return null;
-  const connectedTvLabel = castDeviceName || (isAirPlayConnected ? 'TV AirPlay connectée' : null);
+  const connectedTvLabel = tvDeviceName || (isAirPlayConnected ? 'TV AirPlay connectée' : null);
+
+  // STFR / STEN de la télécommande (les pistes que la TV sait charger), et l'échec d'une bascule, qui sans eux
+  // resterait muet : les commandes VHS sont démontées pendant le Cast. Un appui sur la langue active la coupe, sur
+  // l'autre bascule dessus : la version de ce film change (même piste audio), et la TV suit.
+  const castSubtitleRow = castSubtitles.length === 0 ? null : (
+    <>
+      {castSubtitles.map(track => {
+        const isActive = activeSubtitleId(castSubtitles, subtitle) === track.id;
+        const next = isActive ? 'off' : track.language;
+        return (
+          <button
+            key={track.id}
+            type="button"
+            className={`${castStyles.nowPlayingSecondaryBtn} ${isActive ? castStyles.nowPlayingSubtitleBtnActive : ''}`}
+            aria-pressed={isActive}
+            onClick={() => {
+              if (version) choose({ audio: version.audio, subtitle: next });
+              subtitleToTv(next);
+            }}
+          >
+            {track.language === 'fr' ? 'STFR' : 'STEN'}
+          </button>
+        );
+      })}
+      {remoteError && <div className={castStyles.nowPlayingError} role="alert">{remoteError}</div>}
+    </>
+  );
 
   return (
     <div className={styles.player} style={!overlayVisible && rewindPhase === 'none' ? { cursor: 'none' } : undefined}>
-      {/* Chrome haut en trois colonnes : retour au vidéoclub à gauche, titre
-          (avec le timer de location) au centre, cast / AirPlay / miroir empilés
-          à droite. Masqué pendant le cast et l'attente de connexion : le
-          panneau Now Playing occupe alors tout l'écran et porte ses propres
-          actions. */}
-      {playerState !== 'casting' && playerState !== 'awaitingCast' && (
+      {/* Chrome haut en trois colonnes : retour (à la borne ou au vidéoclub,
+          selon l'origine) à gauche, titre (avec le timer de location) au
+          centre, cast / AirPlay / miroir empilés à droite ; dessous, les
+          lignes du Cast. Masqué quand la TV a ce film : les panneaux du Cast
+          occupent alors tout l'écran et portent leurs propres actions. */}
+      {!remoteActive && (
         <div className={styles.header} style={{
           opacity: overlayVisible ? 1 : 0,
           transition: 'opacity 0.4s',
@@ -1449,9 +1186,9 @@ export function VHSPlayer() {
               type="button"
               className={styles.backToStoreBtn}
               onClick={handleEject}
-              title="Retourner dans le vidéoclub [Échap]"
+              title={playerFrom === 'kiosk' ? 'Retourner à la borne [Échap]' : 'Retourner dans le vidéoclub [Échap]'}
             >
-              <span aria-hidden="true">←</span> RETOUR VIDÉOCLUB
+              <span aria-hidden="true">←</span> {playerFrom === 'kiosk' ? 'RETOUR À LA BORNE' : 'RETOUR VIDÉOCLUB'}
             </button>
           </div>
 
@@ -1466,20 +1203,20 @@ export function VHSPlayer() {
             <div className={styles.castStack}>
               <button
                 type="button"
-                onClick={handleCastCurrentVideo}
-                className={`${styles.castStackBtn} ${isCastConnected ? styles.castStackBtnActive : ''}`}
+                onClick={handleWatchOnTV}
+                className={`${styles.castStackBtn} ${tvDeviceName ? styles.castStackBtnActive : ''}`}
                 title={
-                  isCastConnected
-                    ? 'Casting actif'
-                    : !isCastReady
+                  tvDeviceName
+                    ? `Connecté à ${tvDeviceName}`
+                    : castAvailable === null
                       ? 'Google Cast en cours de chargement…'
-                      : hasCastDevices
+                      : castAvailable
                         ? 'Google Cast'
-                        : 'Aucun appareil Cast sur le réseau'
+                        : 'Google Cast indisponible sur ce navigateur'
                 }
-                style={!isCastReady && !isCastConnected ? { opacity: 0.5, cursor: 'wait' } : undefined}
+                style={castAvailable === null && !tvDeviceName ? { opacity: 0.5, cursor: 'wait' } : undefined}
               >
-                {isCastConnected ? 'CAST ON' : castState === 'CONNECTING' || !isCastReady ? 'CAST…' : hasCastDevices ? 'CAST' : 'CAST ?'}
+                {tvDeviceName ? 'CAST ON' : castAvailable === null ? 'CAST…' : castAvailable ? 'CAST' : 'CAST ?'}
               </button>
               <button
                 type="button"
@@ -1500,30 +1237,41 @@ export function VHSPlayer() {
             </div>
             {remoteError && <div className={styles.castError}>{remoteError}</div>}
           </div>
+
+          {view === 'other-on-tv' && (
+            <OtherFilmBanner
+              confirming={confirmReplace}
+              onConfirm={() => {
+                setConfirmReplace(false);
+                sendToTv();
+              }}
+              onCancel={() => setConfirmReplace(false)}
+            />
+          )}
+          <CastNoticeLine filmId={rental.filmId} onRetry={sendToTv} />
+          {note && <VersionNoteLine text={note} />}
         </div>
       )}
 
-      {/* Video element with key to force reload on track change.
-          autoPlay is gated by playerState so that when we're casting or
-          awaiting the cast device, the <video> doesn't fire its own play
-          event after a remount — which would race with the cast handoff
-          and produce "film plays on phone AND TV" or restart from start
-          on player reopen during an active cast. */}
+      {/* L'élément est remonté à chaque autre piste audio (key). La vidéo
+          locale ne part d'elle-même que si elle a la main (la TV n'a pas ce
+          film, ou en joue un autre), qu'aucune question n'attend (invite,
+          sous-titres), qu'aucun lancement vers la TV n'a échoué ou trouvé le
+          Cast absent, et que la machine sait que la TV ne joue pas ce film
+          (localAutoPlay) : jamais le film sur les deux écrans, jamais de
+          lecture lancée d'office. */}
       <video
-        key={`${audioTrack}-${videoUrl}`}
+        key={videoKey}
         ref={videoRef}
         className={styles.video}
         crossOrigin={hasRemoteSubtitles ? 'anonymous' : undefined}
-        autoPlay={playerState !== 'casting' && playerState !== 'awaitingCast'}
+        autoPlay={playWanted}
         playsInline
         onPlay={() => {
-          // Ignore play events while we're handing off to the cast device —
-          // the receiver is the canonical playback target, not the local
-          // <video>. Without this guard, an autoplay-triggered play event
-          // would flip playerState back to 'playing' and break the casting UI.
-          if (playerState === 'casting' || playerState === 'awaitingCast') {
-            const v = videoRef.current;
-            if (v && !v.paused) v.pause();
+          // La TV a ce film, le prend ou vient de le finir, le panneau d'échec ou la question des sous-titres est affiché :
+          // la vidéo locale ne joue pas, même lancée par une reprise du Cast ou une touche média.
+          if (playHeldHere({ tvOwnsFilm, failure: failureHoldsPlayback(failure), question: asking })) {
+            videoRef.current?.pause();
             return;
           }
           if (!isTransitioningRef.current) {
@@ -1536,12 +1284,10 @@ export function VHSPlayer() {
           if (
             !isTransitioningRef.current &&
             playerState !== 'rewinding' &&
-            playerState !== 'fastforwarding' &&
-            playerState !== 'casting' &&
-            playerState !== 'awaitingCast'
+            playerState !== 'fastforwarding'
           ) {
             setPlayerState('paused');
-            // Persist the local pause position. Without this, the 30s save loop
+            // Persist the local pause position. Without this, the 10s save loop
             // bails on `video.paused` (see watch-progress useEffect), so a user
             // who pauses then switches to cast loses the pre-pause timestamp.
             const v = videoRef.current;
@@ -1559,13 +1305,13 @@ export function VHSPlayer() {
         {/* Une seule piste montée à la fois, avec `default` pour qu'elle s'affiche : swapper le `src`
             d'un <track> déjà monté ne rafraîchit pas la textTrack côté navigateur, alors qu'un
             démontage/remontage (via la key) est le chemin que le toggle on/off empruntait déjà. */}
-        {subtitleTrack !== 'off' && (
+        {subtitle !== 'off' && (
           <track
-            key={subtitleTrack}
+            key={subtitle}
             kind="subtitles"
-            src={(subtitleTrack === 'fr' ? streamingUrls?.subtitles : streamingUrls?.subtitles_en) ?? undefined}
-            srcLang={subtitleTrack}
-            label={SUBTITLE_LABELS[subtitleTrack].label}
+            src={(subtitle === 'fr' ? streamingUrls?.subtitles : streamingUrls?.subtitles_en) ?? undefined}
+            srcLang={subtitle}
+            label={SUBTITLE_LABELS[subtitle]}
             default
           />
         )}
@@ -1580,174 +1326,42 @@ export function VHSPlayer() {
         </div>
       )}
 
-      {/* Awaiting-cast overlay — radio-wave pulse + animated dots. The
-          satellite dish tilts while three concentric rings emanate from it,
-          producing a visceral "signal en cours" feedback. If the SDK has
-          already published the receiver's friendlyName we surface it in a
-          pill so the user sees exactly which device they're connecting to. */}
-      {playerState === 'awaitingCast' && rewindPhase === 'none' && (
-        <div className={styles.castingOverlay}>
-          <div className={styles.awaitingIcon}>
-            <span className={styles.awaitingRing} />
-            <span className={styles.awaitingDish} role="img" aria-label="satellite">📡</span>
-          </div>
-          <div className={styles.castingTitle}>
-            Connexion à{' '}
-            {castDeviceName ? (
-              <span className={styles.awaitingDeviceName}>{castDeviceName}</span>
-            ) : (
-              'ta TV'
-            )}
-            <span className={styles.awaitingDots} aria-hidden="true">
-              <span>.</span><span>.</span><span>.</span>
-            </span>
-          </div>
-          <div style={{ fontSize: '0.85rem', opacity: 0.7, marginTop: '0.5rem', textAlign: 'center', padding: '0 1.5rem' }}>
-            Choisis ton appareil dans la fenêtre Google Cast.
-          </div>
-          <button
-            type="button"
-            className={styles.awaitingCancelBtn}
-            onClick={() => {
-              endCast();
-              setPlayerState('paused');
-            }}
-          >
-            Annuler
-          </button>
-        </div>
+      {/* « Cette version ne se lance pas » : l'autre version à la même position (le choix de ce film, jamais la version
+          préférée), la même à nouveau, ou la sortie. */}
+      {failure && version && (
+        <PlaybackFailurePanel
+          panel={failurePanel({ title: currentFilm?.title ?? '', version, offer })}
+          onTryOther={choose}
+          onRetry={retry}
+          onBack={closePlayer}
+        />
       )}
 
-      {/* Now Playing — unified cast control surface. Replaces the old
-          split "info overlay on top + VHS remote duplicate below". Header
-          identifies the receiver + film title, then the timeline, then a
-          three-button transport row, then secondary actions (switch back
-          to phone, stop the cast). Volume slider only renders when the
-          SDK has reported a media-loaded state — before that, the receiver
-          isn't actually responding to volume changes yet. */}
-      {playerState === 'casting' && rewindPhase === 'none' && (
-        <div className={styles.castingOverlay}>
-          <div className={styles.nowPlayingHeader}>
-            <div className={styles.nowPlayingDeviceChip}>
-              {castDeviceName || (isAirPlayConnected ? 'AirPlay' : 'TV')}
-            </div>
-            {currentFilm && (
-              <div className={styles.nowPlayingFilmTitle}>{currentFilm.title}</div>
-            )}
-          </div>
-
-          <div className={styles.castingTimer} style={{ marginTop: 18 }}>
-            {formatCastTime(remoteCastTime)} / {formatCastTime(remoteCastDuration)}
-          </div>
-          {remoteCastDuration > 0 && (
-            <>
-              <div className={styles.castingBarContainer}>
-                <div
-                  className={styles.castingBarFill}
-                  style={{ width: `${Math.min(100, (remoteCastTime / remoteCastDuration) * 100)}%` }}
-                />
-              </div>
-              <div className={styles.castingPercent}>
-                {Math.round((remoteCastTime / remoteCastDuration) * 100)}%
-              </div>
-            </>
-          )}
-
-          <div className={styles.nowPlayingTransport}>
-            <button
-              type="button"
-              className={styles.nowPlayingBtn}
-              onClick={() => {
-                const t = Math.max(0, getRemoteCurrentTime() - 15);
-                remoteSeek(t);
-              }}
-              aria-label="Reculer de 15 secondes"
-            >
-              −15s
-            </button>
-            <button
-              type="button"
-              className={`${styles.nowPlayingBtn} ${styles.nowPlayingBtnPrimary}`}
-              onClick={remotePlayOrPause}
-              aria-label={remoteCastPaused ? 'Lecture' : 'Pause'}
-            >
-              {remoteCastPaused ? '▶' : '⏸'}
-            </button>
-            <button
-              type="button"
-              className={styles.nowPlayingBtn}
-              onClick={() => {
-                const max = remoteCastDuration > 0 ? remoteCastDuration : Infinity;
-                const t = Math.min(max, getRemoteCurrentTime() + 15);
-                remoteSeek(t);
-              }}
-              aria-label="Avancer de 15 secondes"
-            >
-              +15s
-            </button>
-          </div>
-
-          {remoteCastMediaLoaded && (
-            <div className={styles.nowPlayingVolumeRow}>
-              <span aria-hidden="true">🔉</span>
-              <input
-                type="range"
-                min={0}
-                max={1}
-                step={0.05}
-                defaultValue={1}
-                onChange={(e) => remoteSetVolume(Number(e.target.value))}
-                className={styles.nowPlayingVolumeSlider}
-                aria-label="Volume TV"
-              />
-            </div>
-          )}
-
-          {/* Sans ces boutons, changer de langue pendant le cast serait
-              impossible au doigt sur mobile (le clavier seul pilote `T`). */}
-          {castSubtitles.length > 0 && (
-            <div className={styles.nowPlayingSubtitleRow}>
-              {castSubtitles.map(track => {
-                const isActive = activeSubtitleId(castSubtitles, subtitleTrack) === track.id;
-                return (
-                  <button
-                    key={track.id}
-                    type="button"
-                    className={`${styles.nowPlayingSecondaryBtn} ${isActive ? styles.nowPlayingSubtitleBtnActive : ''}`}
-                    aria-pressed={isActive}
-                    onClick={() => handleSubtitleTrackChange(track.language)}
-                  >
-                    {track.language === 'fr' ? 'STFR' : 'STEN'}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-          {/* Les contrôles VHS (seul autre afficheur de `remoteError`) sont
-              démontés pendant le cast : sans ça, un échec de bascule de piste
-              resterait totalement silencieux. */}
-          {remoteError && <div className={styles.nowPlayingError}>{remoteError}</div>}
-
-          <div className={styles.nowPlayingSecondary}>
-            <button
-              type="button"
-              className={styles.nowPlayingSecondaryBtn}
-              onClick={handleSwitchToPhone}
-            >
-              📱 Sur le tel
-            </button>
-            <button
-              type="button"
-              className={`${styles.nowPlayingSecondaryBtn} ${styles.nowPlayingStopBtn}`}
-              onClick={handleStop}
-            >
-              ⏹ Arrêter
-            </button>
-          </div>
-        </div>
+      {/* « Version » : la liste des versions de ce film, ou la question des sous-titres (vidéo retenue derrière). */}
+      {versionPanelShown && (
+        <PlayerVersionPanel
+          view={asking ? 'question' : 'list'}
+          offer={offer}
+          current={version}
+          question={question}
+          onPick={v => { choose(v); closeVersionList(); }}
+          onAnswer={answerQuestion}
+          onClose={closeVersionList}
+          onQuit={quitQuestion}
+        />
       )}
 
-      {showMobileRemotePrompt && rewindPhase === 'none' && playerState !== 'casting' && playerState !== 'awaitingCast' && (
+      {/* Le Cast de ce film : attente (sélecteur, connexion, lancement), télécommande ou liaison perdue. Rien en
+          lecture locale, ni pour un autre film sur la TV ou un film fini : bandeau et « BE KIND REWIND » sont au lecteur. */}
+      <CastPanels
+        filmId={rental.filmId}
+        title={currentFilm?.title ?? ''}
+        onBack={closePlayer}
+        subtitles={castSubtitleRow}
+        posterUrl={currentFilm?.poster_path ? `/api/poster/w200${currentFilm.poster_path}` : undefined}
+      />
+
+      {showMobileRemotePrompt && !asking && rewindPhase === 'none' && !remoteActive && (
         <div className={styles.mobileRemotePrompt}>
           <div className={styles.mobileRemotePromptTitle}>Regarder sur TV ?</div>
           <div className={styles.mobileRemotePromptText}>
@@ -1756,11 +1370,11 @@ export function VHSPlayer() {
               : 'Caster/AirPlay disponible si votre TV est sur le même Wi-Fi.'}
           </div>
           <div className={styles.mobileRemotePromptActions}>
-            <button className={styles.mobileRemotePrimaryBtn} onClick={handleWatchOnTVFromPrompt}>
+            <button className={styles.mobileRemotePrimaryBtn} onClick={handleWatchOnTV}>
               {connectedTvLabel ? `Regarder sur ${connectedTvLabel}` : 'Regarder sur TV'}
             </button>
-            <button className={styles.mobileRemoteSecondaryBtn} onClick={() => setShowMobileRemotePrompt(false)}>
-              Continuer sur smartphone
+            <button className={styles.mobileRemoteSecondaryBtn} onClick={handleWatchHere}>
+              {continueHereLabel(here)}
             </button>
           </div>
         </div>
@@ -1824,7 +1438,7 @@ export function VHSPlayer() {
               ◀◀ REMBOBINER
             </button>
             {pendingEject ? (
-              <button onClick={closePlayer} className={styles.ejectRewindBtn}>
+              <button onClick={ejectAfterPrompt} className={styles.ejectRewindBtn}>
                 ⏏ ÉJECTER
               </button>
             ) : (
@@ -1940,9 +1554,9 @@ export function VHSPlayer() {
                 {/* Ratings row */}
                 <div className={styles.rewindRatingsRow}>
                   {[
-                    { label: 'RÉAL', value: ratingDirection, setter: setRatingDirection },
-                    { label: 'SCÉN', value: ratingScreenplay, setter: setRatingScreenplay },
-                    { label: 'JEU', value: ratingActing, setter: setRatingActing },
+                    { label: REVIEW_RATING_LABELS.direction, value: ratingDirection, setter: setRatingDirection },
+                    { label: REVIEW_RATING_LABELS.screenplay, value: ratingScreenplay, setter: setRatingScreenplay },
+                    { label: REVIEW_RATING_LABELS.acting, value: ratingActing, setter: setRatingActing },
                   ].map(({ label, value, setter }) => (
                     <div key={label} className={styles.rewindRatingGroup}>
                       <span className={styles.rewindRatingLabel}>{label}</span>
@@ -1967,7 +1581,7 @@ export function VHSPlayer() {
                     className={styles.rewindTextarea}
                     value={reviewContent}
                     onChange={(e) => setReviewContent(e.target.value)}
-                    placeholder="Votre critique (min. 500 caractères)..."
+                    placeholder={`Votre critique (au moins ${MIN_CONTENT_LENGTH} caractères)…`}
                     rows={4}
                   />
                   <span className={`${styles.rewindCharCount} ${reviewContent.length >= MIN_CONTENT_LENGTH ? styles.rewindCharValid : ''}`}>
@@ -1993,9 +1607,7 @@ export function VHSPlayer() {
           <div className={styles.mirroringPanel}>
             <div className={styles.mirroringTitle}>MODE MIROIR (FALLBACK)</div>
             {mirroringContext === 'cast' && (
-              <div className={styles.mirroringContextHint}>
-                Google Cast n&apos;est pas disponible, utilisez la recopie d&apos;écran.
-              </div>
+              <div className={styles.mirroringContextHint}>{CAST_UNAVAILABLE_TEXT}</div>
             )}
             {mirroringContext === 'airplay' && (
               <div className={styles.mirroringContextHint}>
@@ -2017,17 +1629,24 @@ export function VHSPlayer() {
             <div className={styles.mirroringFootnote}>
               Téléphone/tablette et TV doivent être sur le même réseau Wi-Fi.
             </div>
-            <button className={styles.mirroringCloseBtn} onClick={() => setShowMirroringHelp(false)}>
+            <button
+              className={styles.mirroringCloseBtn}
+              onClick={() => {
+                setShowMirroringHelp(false);
+                // Le message « Cast indisponible » est lu : la machine l'oublie.
+                if (castMissing) castDismiss();
+              }}
+            >
               FERMER
             </button>
           </div>
         </div>
       )}
 
-      {/* VCR Controls — only show when not in rewind sequence AND not
-          casting (the Now Playing panel above provides cast-specific
+      {/* VCR Controls — only show when not in rewind sequence AND when the TV
+          doesn't have this film (the Cast panels above carry their own
           controls; rendering both produced the duplicate-UI bug). */}
-      {rewindPhase === 'none' && !rewindingToStart && playerState !== 'casting' && playerState !== 'awaitingCast' && (
+      {rewindPhase === 'none' && !rewindingToStart && !remoteActive && (
         <div style={{
           opacity: overlayVisible ? 1 : 0,
           transition: 'opacity 0.4s',
@@ -2035,6 +1654,7 @@ export function VHSPlayer() {
         }}>
         <VHSControls
           videoRef={videoRef}
+          videoKey={videoKey}
           playerState={playerState}
           onStateChange={setPlayerState}
           onStop={handleStop}
@@ -2044,14 +1664,8 @@ export function VHSPlayer() {
           onRWCycle={handleRWCycle}
           onRewindToStart={handleRewindToStart}
           onResumeFromRW={resumePlayFromRW}
-          audioTrack={audioTrack}
-          onAudioTrackChange={handleAudioTrackChange}
-          subtitleTrack={subtitleTrack}
-          onSubtitleTrackChange={handleSubtitleTrackChange}
-          hasVF={hasVF}
-          hasVO={hasVO}
-          hasSubtitlesFr={hasSubtitlesFr}
-          hasSubtitlesEn={hasSubtitlesEn}
+          versionLabel={version ? versionName(version) : '—'}
+          onOpenVersion={() => setVersionListOpen(true)}
         />
         </div>
       )}

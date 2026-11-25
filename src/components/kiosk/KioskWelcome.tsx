@@ -1,0 +1,86 @@
+// Borne 24/7 — l'écran d'accueil : ce que la borne affiche tant que personne ne l'a touchée.
+//
+// Décision de Rusmir du 23/11/2026 : vue de la rue, la borne ne doit pas montrer la fiche d'un film déjà choisi, mais
+// un écran par défaut qui donne envie de la toucher — le nom du vidéoclub (« Club LaZone », en vert, dans une police
+// d'ordinateur des années 90), les nouveautés qui défilent, et une invitation à toucher l'écran.
+import { useEffect, useMemo, useState } from 'react';
+import type { Film } from '../../types';
+import { posterSrc } from './kiosk-logic';
+import styles from './KioskWelcome.module.css';
+
+/** Durée d'affichage d'une nouveauté au centre. */
+export const WELCOME_STEP_MS = 3200;
+/** Nombre de nouveautés qui tournent. */
+export const WELCOME_FILMS = 10;
+
+/** Places autour du centre : −2 et 2 sont hors champ, elles servent à l'entrée et à la sortie. */
+const SLOTS = [-2, -1, 0, 1, 2] as const;
+
+interface KioskWelcomeProps {
+  /** Les nouveautés, de la plus récemment arrivée au vidéoclub à la plus ancienne (l'ordre de l'API). Aucune : pas de cadre. */
+  films: Film[];
+  /** Le geste retour ne quitte pas la borne : « Quitter » s'éclaire pour le rappeler. */
+  hint: boolean;
+  onEnter: () => void;
+  onQuit: () => void;
+}
+
+export function KioskWelcome({ films, hint, onEnter, onQuit }: KioskWelcomeProps) {
+  // Une affiche qui ne se charge pas sort du défilement : jamais de cadre vide.
+  const [broken, setBroken] = useState<number[]>([]);
+  const drop = (id: number) => setBroken((ids) => (ids.includes(id) ? ids : [...ids, id]));
+  const list = useMemo(() => films.filter((film) => film.poster_path && !broken.includes(film.id)).slice(0, WELCOME_FILMS), [films, broken]);
+  const [index, setIndex] = useState(0);
+
+  useEffect(() => {
+    if (list.length < 2 || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const timer = window.setInterval(() => setIndex((i) => i + 1), WELCOME_STEP_MS);
+    return () => window.clearInterval(timer);
+  }, [list.length]);
+
+  const at = (offset: number) => list[(((index + offset) % list.length) + list.length) % list.length];
+  const centre = list.length > 0 ? at(0) : null;
+
+  return (
+    <div className={styles.welcome} data-testid="borne-accueil">
+      {/* Tout l'écran est le bouton : on touche n'importe où. « Quitter » est posé par-dessus. */}
+      <button type="button" className={styles.enter} onClick={onEnter} aria-label="Toucher l'écran pour louer une K7" />
+
+      <div className={styles.top}>
+        <button type="button" className={`${styles.quit} ${hint ? styles.quitHint : ''}`} onClick={onQuit}>
+          Quitter
+        </button>
+      </div>
+
+      <div className={styles.term} aria-hidden="true">
+        <div className={styles.name}>
+          Club LaZone<i className={styles.cursor} />
+        </div>
+        <div className={styles.termSub}>VIDEOCLUB · LOCATION DE K7 · 24H/24</div>
+      </div>
+
+      {list.length > 0 && (
+      <div className={styles.news} aria-hidden="true">
+        <div className={styles.newsTitle}>Les nouveautés</div>
+        <div className={styles.stage}>
+          {list.length >= 5
+            ? SLOTS.map((slot) => {
+                const film = at(slot);
+                return <img key={film.id} className={styles.poster} data-slot={slot} src={posterSrc(film, 'w342') ?? undefined} alt="" decoding="async" draggable={false} onError={() => drop(film.id)} />;
+              })
+            : centre && <img className={styles.poster} data-slot={0} src={posterSrc(centre, 'w342') ?? undefined} alt="" decoding="async" draggable={false} onError={() => drop(centre.id)} />}
+        </div>
+        <div className={styles.caption}>
+          {centre ? centre.title : ''}
+        </div>
+      </div>
+      )}
+
+      <div className={styles.cta} aria-hidden="true">
+        <span className={styles.ctaLabel}>Touchez l'écran</span>
+        <span className={styles.ctaSub}>pour louer une K7</span>
+      </div>
+
+    </div>
+  );
+}

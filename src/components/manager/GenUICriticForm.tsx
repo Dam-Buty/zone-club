@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import api from '../../api';
+import { REVIEW_MIN_LENGTH, REVIEW_RATING_LABELS } from '../../utils/review-rules';
 import { useStore } from '../../store';
 import type { GenUICriticData } from '../../types/chat';
 import styles from './ManagerChat.module.css';
@@ -16,7 +17,7 @@ export function GenUICriticForm({ data }: Props) {
   const fetchMe = useStore(s => s.fetchMe);
 
   const handleSubmit = async () => {
-    if (content.length < 500) return;
+    if (content.length < REVIEW_MIN_LENGTH) return;
     setState('submitting');
     try {
       await api.reviews.create(data.filmId, {
@@ -52,12 +53,12 @@ export function GenUICriticForm({ data }: Props) {
         disabled={state === 'submitting'}
       />
       <div className={styles.genUICharCount}>
-        {content.length}/500 {content.length < 500 ? '(min 500)' : ''}
+        {content.length}/{REVIEW_MIN_LENGTH} {content.length < REVIEW_MIN_LENGTH ? `(au moins ${REVIEW_MIN_LENGTH})` : ''}
       </div>
       <div className={styles.genUIRatings}>
         {(['direction', 'screenplay', 'acting'] as const).map((key) => (
           <div key={key} className={styles.genUIRatingRow}>
-            <span>{key === 'direction' ? 'Realisation' : key === 'screenplay' ? 'Scenario' : 'Jeu d\'acteurs'}</span>
+            <span>{REVIEW_RATING_LABELS[key as keyof typeof REVIEW_RATING_LABELS]}</span>
             <div className={styles.genUIStars}>
               {[1, 2, 3, 4, 5].map((n) => (
                 <button
@@ -76,7 +77,7 @@ export function GenUICriticForm({ data }: Props) {
       <button
         className={styles.genUIButton}
         onClick={handleSubmit}
-        disabled={content.length < 500 || state === 'submitting'}
+        disabled={content.length < REVIEW_MIN_LENGTH || state === 'submitting'}
       >
         {state === 'submitting' ? 'Publication...' : 'Publier la critique'}
       </button>

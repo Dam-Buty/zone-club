@@ -2,6 +2,7 @@ import { db } from './db';
 import { fetchFullMovieData } from './tmdb';
 import { addMovie as addToRadarr } from './radarr';
 import { type RentalTier } from '../src/types';
+import { getRentalTier } from '../src/utils/rental-tier';
 
 export interface Film {
     id: number;
@@ -40,6 +41,12 @@ export interface Film {
     transcode_error: string | null;
     file_path_vo_transcoded: string | null;
     file_path_vf_transcoded: string | null;
+    /**
+     * 1 = version marquée illisible par `npm run media:check -- --mark` : elle compte comme absente partout (fiche,
+     * location). Toujours lue par `playableVersions` (lib/media/file-check.ts), jamais à la main.
+     */
+    vf_unplayable: number;
+    vo_unplayable: number;
     created_at: string;
 }
 
@@ -157,10 +164,9 @@ export function autoAssignAisle(genres: { id: number }[], releaseYear?: number |
     return null
 }
 
+/** Palier facturé. La règle vit dans src/utils/rental-tier.ts, partagée avec ce que le client affiche. */
 export function getFilmTier(film: Film): RentalTier {
-    if (film.is_nouveaute) return 'nouveaute';
-    if (film.aisle === 'classiques') return 'classique';
-    return 'standard';
+    return getRentalTier(film);
 }
 
 export async function addFilmFromTmdb(tmdbId: number): Promise<Film> {
@@ -315,7 +321,7 @@ export function getAllAvailableFilmsGroupedByAisle(): Map<string, Film[]> {
 
 export function getNouveautes(): FilmListItem[] {
     return db.prepare(
-        `SELECT ${filmListColumns()} FROM films WHERE is_nouveaute = 1 AND is_available = 1 ORDER BY created_at DESC`
+        `SELECT ${filmListColumns()} FROM films WHERE is_nouveaute = 1 AND is_available = 1 ORDER BY created_at DESC, id DESC`
     ).all().map(parseFilmListRow);
 }
 

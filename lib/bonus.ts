@@ -9,12 +9,18 @@ export function getISOWeek(): string {
     return `${now.getUTCFullYear()}-W${String(weekNumber).padStart(2, '0')}`;
 }
 
-export function canClaimWeeklyBonus(userId: number): { canClaim: boolean; amount: number; reason?: string } {
+/**
+ * `code` dit POURQUOI, à côté de la phrase : la borne écrit sa propre ligne (« déjà reçu », « quand il vous reste moins
+ * de 5 crédits ») et ne peut pas la tirer d'une phrase destinée à un message d'erreur.
+ */
+export type WeeklyBonusCode = 'available' | 'claimed' | 'enough';
+
+export function canClaimWeeklyBonus(userId: number): { canClaim: boolean; amount: number; reason?: string; code?: WeeklyBonusCode } {
     const user = db.prepare('SELECT credits FROM users WHERE id = ?').get(userId) as { credits: number } | undefined;
     if (!user) return { canClaim: false, amount: 0, reason: 'Utilisateur non trouvé' };
 
     if (user.credits >= 5) {
-        return { canClaim: false, amount: 0, reason: 'Solde >= 5 crédits' };
+        return { canClaim: false, amount: 0, reason: 'Solde >= 5 crédits', code: 'enough' };
     }
 
     const week = getISOWeek();
@@ -23,11 +29,11 @@ export function canClaimWeeklyBonus(userId: number): { canClaim: boolean; amount
     ).get(userId, week);
 
     if (existing) {
-        return { canClaim: false, amount: 0, reason: 'Bonus déjà réclamé cette semaine' };
+        return { canClaim: false, amount: 0, reason: 'Bonus déjà réclamé cette semaine', code: 'claimed' };
     }
 
     const amount = Math.min(3, 5 - user.credits);
-    return { canClaim: true, amount };
+    return { canClaim: true, amount, code: 'available' };
 }
 
 export function claimWeeklyBonus(userId: number): { credits_awarded: number; new_balance: number } {

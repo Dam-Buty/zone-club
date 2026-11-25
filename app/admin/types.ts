@@ -1,4 +1,6 @@
 import type { ApiFilm } from '../../src/api';
+import type { PlaybackFailureSummary } from '../../lib/playback-failures';
+import { parseVersionChoice, versionName } from '../../src/utils/version-choice.ts';
 
 /**
  * Ligne renvoyée par `/api/films?all=true` pour un admin : `getAllFilms` sert la
@@ -128,4 +130,39 @@ export function coverageOf(films: AdminFilmRow[]) {
         frPct: total ? Math.round((fr / total) * 100) : 0,
         enPct: total ? Math.round((en / total) * 100) : 0,
     };
+}
+
+/**
+ * Une ligne du résumé des lectures en échec, telle que `GET /api/admin/playback-failures` la rend : un film, une piste
+ * audio et un lieu, avec le nombre d'échecs et la date du plus récent (UTC, au format de SQLite). Le type est celui du
+ * serveur, pas une seconde copie.
+ */
+export type PlaybackFailureGroup = PlaybackFailureSummary;
+
+/** La version d'une ligne : « VF » ou « VO » — la piste audio, pas les sous-titres. Une valeur inconnue se montre telle quelle. */
+export function failureVersionLabel(audio: string): string {
+    const version = parseVersionChoice(audio, 'off');
+    return version ? versionName(version) : audio;
+}
+
+/** Le lieu d'une ligne : « appareil » (le lecteur du visiteur) ou « télé » (le Cast). */
+export function failurePlaceLabel(place: string): string {
+    if (place === 'device') return 'appareil';
+    if (place === 'tv') return 'télé';
+    return place;
+}
+
+/** La date d'une trace : SQLite écrit « maintenant » en UTC, sans fuseau (`2026-11-20 10:05:09`). Illisible → null. */
+export function parseDbDate(value: string): Date | null {
+    const match = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})$/.exec(value);
+    if (!match) return null;
+    const date = new Date(`${match[1]}T${match[2]}Z`);
+    return Number.isNaN(date.getTime()) ? null : date;
+}
+
+/** La date d'une trace dans le fuseau de l'administrateur : « 20 nov., 11:05 ». Illisible : montrée telle quelle. */
+export function failureDateLabel(value: string): string {
+    const date = parseDbDate(value);
+    if (!date) return value;
+    return date.toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 }

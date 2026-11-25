@@ -54,7 +54,9 @@ export async function POST(
     const response = NextResponse.json({
         film_id: film.id,
         title: film.title,
-        streaming_urls: buildStreamingUrls(film, symlinks.uuid),
+        // La prévisualisation sert à diagnostiquer : une version marquée illisible (scripts/media-check.ts --mark)
+        // y reste lisible, contrairement à la location.
+        streaming_urls: buildStreamingUrls({ ...film, vf_unplayable: 0, vo_unplayable: 0 }, symlinks.uuid),
     });
     response.headers.set('Cache-Control', 'no-store');
     return response;

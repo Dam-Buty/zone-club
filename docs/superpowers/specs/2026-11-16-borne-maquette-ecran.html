@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Borne — écran et cadrage</title>
+<style>
+  :root { --mur:#0d0c16; --metal:#1b1a28; --metal2:#262437; --neon:#c084ff; --neon2:#f0b6ff; }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:28px 32px 60px; background:#111016; color:#e9e6f2;
+         font-family:-apple-system,"Helvetica Neue",Arial,sans-serif; }
+  h2 { margin:0 0 4px; font-size:22px; }
+  .sub { margin:0 0 22px; color:#a9a4bd; font-size:14px; max-width:980px; line-height:1.45; }
+  .stage { display:flex; gap:36px; align-items:flex-start; flex-wrap:wrap; }
+  figure { margin:0; }
+  figcaption { margin-top:10px; font-size:13px; color:#a9a4bd; max-width:860px; line-height:1.45; }
+  figcaption b { color:#e9e6f2; }
+  .tag { display:inline-block; font-size:11px; letter-spacing:.08em; text-transform:uppercase;
+         color:#111016; background:#c084ff; border-radius:3px; padding:2px 6px; margin-right:6px; }
+
+  /* ---------- cadres appareil ---------- */
+  .phone { width:390px; height:800px; border:10px solid #2b2a33; border-radius:40px; overflow:hidden;
+           position:relative; background:var(--metal); }
+  .desktop { width:880px; height:495px; border:10px solid #2b2a33; border-radius:12px; overflow:hidden;
+             position:relative; background:var(--mur); }
+
+  /* ---------- corps de la borne ---------- */
+  .metal { background:linear-gradient(180deg,#23213a 0%,#191827 40%,#14131f 100%); }
+  .neon-txt { font-family:"Snell Roundhand","Brush Script MT",cursive; color:#fff;
+              text-shadow:0 0 4px #fff,0 0 10px var(--neon2),0 0 22px var(--neon),0 0 44px #8b3dff; }
+  .neon-box { border:2px solid #f3d9ff; border-radius:8px;
+              box-shadow:0 0 6px var(--neon2),0 0 18px var(--neon),inset 0 0 6px var(--neon2),inset 0 0 16px var(--neon); }
+  .bezel { background:#050508; border-radius:10px; padding:9px;
+           box-shadow:0 0 0 2px #34324a, 0 0 26px rgba(40,120,255,.35), inset 0 0 0 1px #000; }
+  .spines { background:#07070b; border:3px solid #34324a; border-radius:4px; overflow:hidden;
+            box-shadow:inset 0 0 18px #000, 0 0 12px rgba(192,132,255,.25); display:flex; flex-direction:column; gap:1px; padding:3px; }
+  .spines i { display:block; flex:1 1 0; min-height:5px; border-radius:1px; position:relative; }
+  .spines i::after { content:""; position:absolute; left:8%; top:28%; height:44%; width:38%; background:rgba(255,255,255,.55); border-radius:1px; }
+  .slot { background:#060609; border:2px solid #34324a; border-radius:5px; color:#8f8aa8; font-size:10px; letter-spacing:.14em;
+          text-transform:uppercase; display:flex; align-items:center; justify-content:center; gap:8px; }
+  .slot::before { content:""; width:46%; height:7px; background:#000; border-radius:2px; box-shadow:inset 0 1px 2px #333; }
+
+  /* ---------- écran de la borne (unités relatives à sa largeur) ---------- */
+  .ks { container-type:inline-size; width:100%; aspect-ratio:2/3; position:relative; overflow:hidden; border-radius:4px;
+        font-family:"Avenir Next Condensed","Arial Narrow","Helvetica Neue",Arial,sans-serif; color:#fff;
+        background:
+          linear-gradient(90deg,transparent 0 30%,rgba(120,200,255,.16) 50%,transparent 70%) 0 12cqw/100% .5cqw no-repeat,
+          radial-gradient(120% 70% at 62% 34%, #2a86e6 0%, #0e49ad 38%, #06206a 68%, #020b33 100%); }
+  .ks::after { content:""; position:absolute; inset:0; pointer-events:none;
+        background:linear-gradient(115deg,rgba(255,255,255,.10) 0%,transparent 22%), repeating-linear-gradient(0deg,rgba(0,0,0,.07) 0 1px,transparent 1px 3px); }
+  .k-top { position:absolute; left:3cqw; right:3cqw; top:2.2cqw; height:7cqw; display:flex; align-items:center; justify-content:space-between; }
+  .k-logo { font-weight:700; font-size:4.6cqw; letter-spacing:.06em; color:#fff; text-shadow:0 0 1.6cqw #c084ff, 0 0 3cqw #8b3dff; }
+  .k-logo small { font-weight:500; font-size:2.9cqw; color:#bfe3ff; letter-spacing:.02em; text-shadow:none; margin-left:1.2cqw; }
+  .k-nav { font-size:4.3cqw; color:#d6ecff; }
+  .k-nav span { padding:0 1.4cqw; border-left:.3cqw solid rgba(255,255,255,.5); }
+  .k-nav span:first-child { border-left:0; }
+  .k-nav .tri { color:#59d36a; border-left:0; padding-left:0; }
+
+  .k-side { position:absolute; left:2.4cqw; top:12cqw; width:26cqw; display:flex; flex-direction:column; gap:.5cqw;
+            padding:.8cqw; border-radius:1.6cqw; border:.4cqw solid #4fc3e8; background:rgba(4,30,90,.5); }
+  .k-tab { height:8.6cqw; display:flex; align-items:center; justify-content:center; font-size:4.6cqw; font-weight:600;
+           border-radius:1cqw; color:#e9f8ff; cursor:pointer;
+           background:linear-gradient(180deg,#3fb2d6 0%,#1a7fae 48%,#0f6895 52%,#17749f 100%);
+           box-shadow:inset 0 .3cqw 0 rgba(255,255,255,.35), inset 0 -.3cqw 0 rgba(0,0,0,.25); }
+  .k-tab.on { background:linear-gradient(180deg,#fff 0%,#e8eef3 100%); color:#f0641e; }
+
+  .k-card { position:absolute; left:31cqw; right:3cqw; top:12cqw; height:62cqw; background:#f6f8fa; border-radius:2cqw; color:#333;
+            box-shadow:0 1.2cqw 3cqw rgba(0,0,20,.55); overflow:hidden; }
+  .k-clap { height:6.5cqw; background:repeating-linear-gradient(-60deg,#2b2b2b 0 4.6cqw,#f6f8fa 4.6cqw 9.2cqw); border-bottom:.5cqw solid #2b2b2b; }
+  .k-meta { position:absolute; left:2.6cqw; top:9cqw; width:23cqw; }
+  .k-meta dt { font-size:2.5cqw; letter-spacing:.08em; color:#7a8088; border-bottom:.25cqw solid #c9ced4; padding-bottom:.4cqw; margin-top:1.6cqw; }
+  .k-meta dd { margin:.6cqw 0 0; font-family:"Marker Felt","Comic Sans MS",cursive; color:#f0641e; font-size:7.4cqw; line-height:1; transform:rotate(-3deg); transform-origin:left; }
+  .k-meta dd.sm { font-size:4.6cqw; }
+  .k-poster { position:absolute; right:2.6cqw; top:9cqw; width:35cqw; aspect-ratio:2/3; object-fit:cover; box-shadow:0 0 0 .3cqw #fff, 0 .6cqw 1.6cqw rgba(0,0,0,.45); background:#223; }
+  .k-title { position:absolute; left:2.6cqw; right:2.6cqw; bottom:0; height:0; }
+  .k-under { position:absolute; left:31cqw; right:3cqw; top:75.5cqw; }
+  .k-name { font-size:6.4cqw; font-weight:700; color:#ffb347; line-height:1.05; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .k-syn { margin-top:1cqw; font-size:3.5cqw; line-height:1.28; color:#e3f1ff; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+  .k-syn b { color:#ffcf5a; font-weight:700; }
+
+  .k-btn { position:absolute; display:flex; align-items:center; justify-content:center; font-weight:700; border-radius:1.4cqw; cursor:pointer;
+           box-shadow:inset 0 .4cqw 0 rgba(255,255,255,.4), inset 0 -.5cqw 0 rgba(0,0,0,.25), 0 .8cqw 2cqw rgba(0,0,20,.5); }
+  .k-louer { left:31cqw; width:38cqw; top:99cqw; height:11.5cqw; font-size:7cqw; border:.4cqw solid #ffd9a0;
+             background:linear-gradient(180deg,#ffa53d 0%,#f37a12 50%,#d95e00 52%,#ee7a14 100%); }
+  .k-extrait { left:71cqw; right:3cqw; top:99cqw; height:11.5cqw; font-size:5cqw; border:.4cqw solid #9ee6ff;
+               background:linear-gradient(180deg,#48c0e6 0%,#1f8fc0 50%,#127aa9 52%,#1c88b6 100%); }
+  .k-search { left:2.4cqw; width:26cqw; top:99cqw; height:11.5cqw; font-size:5.2cqw; border:.4cqw solid #9ee6ff;
+              background:linear-gradient(180deg,#48c0e6 0%,#1f8fc0 50%,#127aa9 52%,#1c88b6 100%); }
+  .k-strip-h { position:absolute; left:3cqw; right:3cqw; top:113.5cqw; height:6cqw; display:flex; align-items:flex-end; justify-content:space-between; }
+  .k-strip-h b { font-size:5cqw; font-weight:600; }
+  .k-chips { display:flex; gap:.6cqw; }
+  .k-chips span { font-size:3.3cqw; padding:.7cqw 2cqw; border-radius:1.2cqw 1.2cqw 0 0; background:#1c7fb0; color:#dff5ff; }
+  .k-chips span.on { background:#59c8ee; color:#06306b; }
+  .k-strip { position:absolute; left:2.4cqw; right:2.4cqw; top:119.5cqw; bottom:2.4cqw; border:.4cqw solid #4fc3e8; border-radius:1.6cqw;
+             background:rgba(2,14,56,.75); display:flex; align-items:center; gap:1.2cqw; padding:0 1.2cqw; }
+  .k-arrow { flex:0 0 6cqw; height:16cqw; background:linear-gradient(180deg,#59c8ee,#127aa9); cursor:pointer; }
+  .k-arrow.l { clip-path:polygon(100% 0,100% 100%,0 50%); }
+  .k-arrow.r { clip-path:polygon(0 0,0 100%,100% 50%); }
+  .k-rail { flex:1; height:100%; overflow:hidden; }
+  .k-rail div { display:flex; gap:1.2cqw; height:100%; align-items:center; transition:transform .35s ease; }
+  .k-rail img { height:86%; aspect-ratio:2/3; object-fit:cover; flex:0 0 auto; cursor:pointer; border:.3cqw solid transparent; }
+  .k-rail img.on { border-color:#ffb347; box-shadow:0 0 2cqw #ffb347; }
+</style>
+</head>
+<body>
+<h2>La borne : son écran, et le cadrage après le clic</h2>
+<p class="sub">L'écran reprend la charte de ta photo de référence (bleu profond, boutons bombés turquoise, accent orange, fiche « clap »), remise au format portrait de la borne et branchée sur nos rayons. Le corps de la borne reprend les codes de la devanture : métal sombre et néon violet. Les jaquettes sont celles du catalogue ; durées et versions sont des exemples. Tu peux cliquer sur une jaquette de la bande du bas.</p>
+
+<div class="stage">
+  <figure>
+    <div class="phone metal">
+      <div style="position:absolute;left:0;right:0;top:34px;text-align:center">
+        <span class="neon-txt" style="font-size:34px">Location 24/7</span>
+      </div>
+      <div class="bezel" style="position:absolute;left:5%;width:90%;top:104px"><div class="ks" id="ks1"></div></div>
+      <div class="slot" style="position:absolute;left:5%;width:90%;top:662px;height:34px">retour des cassettes</div>
+      <div class="spines" data-n="9" style="position:absolute;left:5%;width:90%;top:712px;height:100px"></div>
+    </div>
+    <figcaption><span class="tag">mobile</span><b>L'écran occupe 90 % de la largeur.</b> Au-dessus, l'enseigne néon de la borne ; en dessous, la fente de retour et le haut d'une vitrine de K7.</figcaption>
+  </figure>
+
+  <figure>
+    <div class="desktop">
+      <!-- mur + lueur de la porte à droite -->
+      <div style="position:absolute;inset:0;background:radial-gradient(60% 90% at 108% 55%,rgba(255,214,150,.30),transparent 60%),radial-gradient(70% 50% at 50% -10%,rgba(160,90,255,.35),transparent 70%),#0d0c16"></div>
+      <!-- corps de la borne, plus large que le cadre en hauteur -->
+      <div class="metal" style="position:absolute;left:70px;width:600px;top:-40px;bottom:-40px;border-left:3px solid #34324a;border-right:3px solid #34324a;box-shadow:0 0 60px rgba(0,0,0,.8)"></div>
+      <div class="spines" data-n="46" style="position:absolute;left:96px;width:200px;top:18px;bottom:-30px"></div>
+      <div class="bezel" style="position:absolute;left:316px;width:312px;top:12px"><div class="ks" id="ks2"></div></div>
+      <div class="neon-box" style="position:absolute;left:700px;top:150px;width:150px;height:64px;display:flex;align-items:center;justify-content:center">
+        <span class="neon-txt" style="font-size:26px">Open 24/7</span>
+      </div>
+      <div style="position:absolute;left:690px;top:240px;right:-20px;bottom:-20px;border:3px solid #2c2a3c;background:linear-gradient(180deg,rgba(255,225,170,.55),rgba(190,120,70,.35));opacity:.55"></div>
+    </div>
+    <figcaption><span class="tag">PC</span><b>L'écran prend la hauteur, la borne déborde de chaque côté.</b> À gauche sa vitrine de tranches de K7, à droite son montant puis la porte du vidéoclub (ébauchée ici, pas la vraie photo).</figcaption>
+  </figure>
+</div>
+
+<script>
+const FILMS = [
+  {id:5,  t:"Interstellar", y:2014, d:"2 h 49", r:"Aventure", v:"VF · VO", s:"Dans un futur proche, face à une Terre exsangue, un groupe d’explorateurs utilise un vaisseau interstellaire pour franchir un trou de ver permettant de parcourir des distances jusque‐là infranchissables."},
+  {id:3,  t:"Django Unchained", y:2012, d:"2 h 45", r:"Drame", v:"VF · VO", s:"Dans le sud des États‐Unis, deux ans avant la guerre de Sécession, le Dr King Schultz, un chasseur de primes allemand, fait l’acquisition de Django, un esclave qui peut l’aider à traquer les frères Brittle."},
+  {id:8,  t:"Joker", y:2019, d:"2 h 02", r:"Policier", v:"VO", s:"Dans les années 1980, à Gotham City, Arthur Fleck, un humoriste de stand‐up raté, bascule dans la folie et devient le Joker."},
+  {id:10, t:"Parasite", y:2019, d:"2 h 12", r:"Comédie", v:"VF · VO", s:"Toute la famille de Ki-taek est au chômage. Elle s’intéresse particulièrement au train de vie de la richissime famille Park."},
+  {id:11, t:"Dernier train pour Busan", y:2016, d:"1 h 58", r:"Horreur", v:"VF", s:"Tandis qu'un virus qui transforme tous les êtres vivants en zombies ravage la Corée du Sud, un père et sa fille tentent de survivre dans le dernier train pour Busan."},
+  {id:4,  t:"Deadpool", y:2016, d:"1 h 48", r:"Action", v:"VF · VO", s:"Deadpool est l'anti-héros le plus atypique de l'univers Marvel. À l'origine, il s'appelle Wade Wilson : un ancien militaire des Forces Spéciales devenu mercenaire."},
+  {id:6,  t:"Gone Girl", y:2014, d:"2 h 29", r:"Policier", v:"VF · VO", s:"Amy et Nick forment en apparence un couple modèle. Mais le jour de leur 5ème anniversaire de mariage, Amy disparaît."},
+  {id:13, t:"Whiplash", y:2014, d:"1 h 47", r:"Drame", v:"VO", s:"Andrew, 19 ans, rêve de devenir l’un des meilleurs batteurs de jazz de sa génération. Mais la concurrence est rude au conservatoire de Manhattan."},
+  {id:12, t:"Grindhouse", y:2007, d:"3 h 11", r:"Thriller", v:"VO", s:"Un diptyque déjanté, hommage aux films d'exploitation et aux doubles-programmes des années 70."},
+  {id:14, t:"Les Huit Salopards", y:2015, d:"2 h 48", r:"Drame", v:"VF · VO", s:"Après la Guerre de Sécession, huit voyageurs se retrouvent coincés dans un refuge au milieu des montagnes."},
+  {id:9,  t:"Le Mans 66", y:2019, d:"2 h 33", r:"Drame", v:"VF · VO", s:"L’histoire vraie qui a conduit l’ingénieur Caroll Shelby à faire équipe avec le pilote britannique surdoué Ken Miles."},
+  {id:16, t:"Melancholia", y:2011, d:"2 h 10", r:"Drame", v:"VO", s:"À l'occasion de leur mariage, Justine et Michael donnent une somptueuse réception. Pendant ce temps, la planète Melancholia se dirige vers la Terre…"}
+];
+const RAYONS = ["Nouveautés","Action","Comédie","Horreur","SF","Drame","Policier","Tous ▸"];
+
+function borne(root) {
+  root.innerHTML = `
+    <div class="k-top">
+      <div class="k-logo">VIDÉOCLUB<small>borne 24/7</small></div>
+      <div class="k-nav"><span>compte</span><span>retour</span><span>quitter</span><span class="tri">◀</span></div>
+    </div>
+    <div class="k-side">${RAYONS.map((r,i)=>`<div class="k-tab${i===0?' on':''}">${r}</div>`).join('')}</div>
+    <div class="k-card">
+      <div class="k-clap"></div>
+      <dl class="k-meta">
+        <dt>ANNÉE</dt><dd data-f="y"></dd>
+        <dt>DURÉE</dt><dd class="sm" data-f="d"></dd>
+        <dt>RAYON</dt><dd class="sm" data-f="r"></dd>
+        <dt>VERSION</dt><dd class="sm" data-f="v"></dd>
+      </dl>
+      <img class="k-poster" alt="">
+    </div>
+    <div class="k-under"><div class="k-name"></div><div class="k-syn"></div></div>
+    <div class="k-btn k-search">recherche</div>
+    <div class="k-btn k-louer">louer</div>
+    <div class="k-btn k-extrait">extrait ▶</div>
+    <div class="k-strip-h"><b>Nouveautés</b><div class="k-chips"><span class="on">top</span><span>tout voir</span><span>par date</span></div></div>
+    <div class="k-strip"><div class="k-arrow l"></div><div class="k-rail"><div>${FILMS.map((f,i)=>`<img data-i="${i}" src="/files/p${f.id}.jpg" alt="${f.t}">`).join('')}</div></div><div class="k-arrow r"></div></div>`;
+  let pos = 0;
+  const rail = root.querySelector('.k-rail div');
+  const show = (i) => {
+    const f = FILMS[i];
+    root.querySelectorAll('[data-f]').forEach(e => e.textContent = f[e.dataset.f]);
+    root.querySelector('.k-poster').src = `/files/p${f.id}.jpg`;
+    root.querySelector('.k-name').textContent = f.t;
+    root.querySelector('.k-syn').innerHTML = `<b>En bref :</b> ${f.s}`;
+    rail.querySelectorAll('img').forEach(im => im.classList.toggle('on', +im.dataset.i === i));
+  };
+  const slide = (d) => {
+    const step = rail.querySelector('img').getBoundingClientRect().width * 1.08;
+    pos = Math.max(0, Math.min(FILMS.length - 4, pos + d));
+    rail.style.transform = `translateX(${-pos * step}px)`;
+  };
+  rail.addEventListener('click', e => { if (e.target.dataset.i) show(+e.target.dataset.i); });
+  root.querySelector('.k-arrow.l').addEventListener('click', () => slide(-2));
+  root.querySelector('.k-arrow.r').addEventListener('click', () => slide(2));
+  root.querySelectorAll('.k-tab').forEach(t => t.addEventListener('click', () => {
+    root.querySelectorAll('.k-tab').forEach(x => x.classList.remove('on')); t.classList.add('on');
+    root.querySelector('.k-strip-h b').textContent = t.textContent;
+  }));
+  show(0);
+}
+borne(document.getElementById('ks1'));
+borne(document.getElementById('ks2'));
+
+// Tranches de K7 dans les vitrines
+const TEINTES = ['#1e1e24','#b3261e','#1f4fa8','#e0b12a','#2f7d4f','#6b2fa8','#d8d4c8','#c9571b','#14141a','#0f8a8a','#2a2a33','#8c1d4b'];
+document.querySelectorAll('.spines').forEach((el, k) => {
+  const n = +el.dataset.n; let h = '';
+  for (let i = 0; i < n; i++) h += `<i style="background:${TEINTES[Math.floor(Math.abs(Math.sin((i + 1) * 12.9898 + k * 78.233) * 43758.5453) % 1 * TEINTES.length)]}"></i>`;
+  el.innerHTML = h;
+});
+</script>
+</body>
+</html>

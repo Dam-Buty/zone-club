@@ -1,0 +1,329 @@
+{
+ "aisle": "nouveautes",
+ "films": [
+  {
+   "id": 990001,
+   "tmdb_id": 1368337,
+   "title": "L'Odyssée",
+   "synopsis": "",
+   "release_year": 2026,
+   "poster_url": "https://image.tmdb.org/t/p/w500/jKf0p3fhO893ROvRuvuSDsZSvK6.jpg",
+   "backdrop_url": null,
+   "genres": [
+    {
+     "id": 18,
+     "name": "Drame"
+    },
+    {
+     "id": 36,
+     "name": "Histoire"
+    },
+    {
+     "id": 10752,
+     "name": "Guerre"
+    }
+   ],
+   "runtime": 181,
+   "aisle": "drame",
+   "is_nouveaute": true,
+   "is_available": true,
+   "stock": 2,
+   "active_rentals": 0
+  },
+  {
+   "id": 388,
+   "tmdb_id": 872585,
+   "title": "Oppenheimer",
+   "synopsis": "",
+   "release_year": 2023,
+   "poster_url": "https://image.tmdb.org/t/p/w500/boAUuJBeID7VNp4L7LNMQs8mfQS.jpg",
+   "backdrop_url": "https://image.tmdb.org/t/p/w1280/neeNHeXjMF5fXoCJRsOmkNGC7q.jpg",
+   "genres": [
+    {
+     "id": 18,
+     "name": "Drame"
+    },
+    {
+     "id": 36,
+     "name": "Histoire"
+    },
+    {
+     "id": 10752,
+     "name": "Guerre"
+    }
+   ],
+   "runtime": 181,
+   "aisle": "drame",
+   "is_nouveaute": true,
+   "is_available": true,
+   "stock": 2,
+   "active_rentals": 0
+  },
+  {
+   "id": 382,
+   "tmdb_id": 741521,
+   "title": "Sarajevo: State in Time",
+   "synopsis": "",
+   "release_year": 2019,
+   "poster_url": "https://image.tmdb.org/t/p/w500/qD0fuPcRQR5Pg44LGHBIVlGdH2v.jpg",
+   "backdrop_url": null,
+   "genres": [
+    {
+     "id": 99,
+     "name": "Documentaire"
+    }
+   ],
+   "runtime": 48,
+   "aisle": "bizarre",
+   "is_nouveaute": true,
+   "is_available": true,
+   "stock": 2,
+   "active_rentals": 0
+  },
+  {
+   "id": 378,
+   "tmdb_id": 945961,
+   "title": "Alien : Romulus",
+   "synopsis": "",
+   "release_year": 2024,
+   "poster_url": "https://image.tmdb.org/t/p/w500/xmDypImhT0OOloQIj3JLslUrBw8.jpg",
+   "backdrop_url": "https://image.tmdb.org/t/p/w1280/iYqSQaWDttQIQzsxg9xHyg0bttG.jpg",
+   "genres": [
+    {
+     "id": 27,
+     "name": "Horreur"
+    },
+    {
+     "id": 878,
+     "name": "Science-Fiction"
+    }
+   ],
+   "runtime": 119,
+   "aisle": "horreur",
+   "is_nouveaute": true,
+   "is_available": true,
+   "stock": 3,
+   "active_rentals": 0
+  },
+  {
+   "id": 371,
+   "tmdb_id": 313369,
+   "title": "La La Land",
+   "synopsis": "",
+   "release_year": 2016,
+   "poster_url": "https://image.tmdb.org/t/p/w500/5KIj6aioW1UtUT1IV0qqW5iZbNH.jpg",
+   "backdrop_url": "https://image.tmdb.org/t/p/w1280/nlPCdZlHtRNcF6C9hzUH4ebmV1w.jpg",
+   "genres": [
+    {
+     "id": 35,
+     "name": "Comédie"
+    },
+    {
+     "id": 18,
+     "name": "Drame"
+    },
+    {
+     "id": 10749,
+     "name": "Romance"
+    }
+   ],
+   "runtime": 128,
+   "aisle": "comedie",
+   "is_nouveaute": true,
+   "is_available": true,
+   "stock": 3,
+   "active_rentals": 0
+  },
+  {
+   "id": 347,
+   "tmdb_id": 87101,
+   "title": "Terminator Genisys",
+   "synopsis": "",
+   "release_year": 2015,
+   "poster_url": "https://image.tmdb.org/t/p/w500/wt2CmiaMFQ4o8FfzERzecJN286U.jpg",
+   "backdrop_url": "https://image.tmdb.org/t/p/w1280/g4a5YLWwi6OCp8TcvxsUNrXMbN5.jpg",
+   "genres": [
+    {
+     "id": 878,
+     "name": "Science-Fiction"
+    },
+    {
+     "id": 28,
+     "name": "Action"
+    },
+    {
+     "id": 53,
+     "name": "Thriller"
+    }
+   ],
+   "runtime": 126,
+   "aisle": "sf",
+   "is_nouveaute": true,
+   "is_available": true,
+   "stock": 3,
+   "active_rentals": 0
+  },
+  {
+   "id": 346,
+   "tmdb_id": 601666,
+   "title": "I Care a Lot.",
+   "synopsis": "",
+   "release_year": 2021,
+   "poster_url": "https://image.tmdb.org/t/p/w500/gKnhEsjNefpKnUdAkn7INzIFLSu.jpg",
+   "backdrop_url": "https://image.tmdb.org/t/p/w1280/pA4J371Gk2F47vyGQOWapcsnOzz.jpg",
+   "genres": [
+    {
+     "id": 80,
+     "name": "Crime"
+    },
+    {
+     "id": 53,
+     "name": "Thriller"
+    },
+    {
+     "id": 18,
+     "name": "Drame"
+    },
+    {
+     "id": 35,
+     "name": "Comédie"
+    }
+   ],
+   "runtime": 118,
+   "aisle": "policier",
+   "is_nouveaute": true,
+   "is_available": true,
+   "stock": 3,
+   "active_rentals": 0
+  },
+  {
+   "id": 292,
+   "tmdb_id": 264660,
+   "title": "Ex Machina",
+   "synopsis": "",
+   "release_year": 2015,
+   "poster_url": "https://image.tmdb.org/t/p/w500/gXUnFIZdLsGnZp2AxKjQIVm5jEM.jpg",
+   "backdrop_url": "https://image.tmdb.org/t/p/w1280/uqOuJ50EtTj7kkDIXP8LCg7G45D.jpg",
+   "genres": [
+    {
+     "id": 18,
+     "name": "Drame"
+    },
+    {
+     "id": 878,
+     "name": "Science-Fiction"
+    }
+   ],
+   "runtime": 108,
+   "aisle": "sf",
+   "is_nouveaute": true,
+   "is_available": true,
+   "stock": 3,
+   "active_rentals": 0
+  },
+  {
+   "id": 263,
+   "tmdb_id": 49018,
+   "title": "Insidious",
+   "synopsis": "",
+   "release_year": 2011,
+   "poster_url": "https://image.tmdb.org/t/p/w500/mmyqYYJTMtCBlUNr0JAp5R59X8H.jpg",
+   "backdrop_url": "https://image.tmdb.org/t/p/w1280/yZP6GyrgzdpjH1AxPHlb8ACLkiA.jpg",
+   "genres": [
+    {
+     "id": 27,
+     "name": "Horreur"
+    },
+    {
+     "id": 53,
+     "name": "Thriller"
+    }
+   ],
+   "runtime": 102,
+   "aisle": "horreur",
+   "is_nouveaute": true,
+   "is_available": true,
+   "stock": 3,
+   "active_rentals": 0
+  },
+  {
+   "id": 257,
+   "tmdb_id": 381288,
+   "title": "Split",
+   "synopsis": "",
+   "release_year": 2017,
+   "poster_url": "https://image.tmdb.org/t/p/w500/jkT4ML7hV0ghOumyPmxJ3b3GCuw.jpg",
+   "backdrop_url": "https://image.tmdb.org/t/p/w1280/9pkZesKMnblFfKxEhQx45YQ2kIe.jpg",
+   "genres": [
+    {
+     "id": 27,
+     "name": "Horreur"
+    },
+    {
+     "id": 53,
+     "name": "Thriller"
+    }
+   ],
+   "runtime": 117,
+   "aisle": "horreur",
+   "is_nouveaute": true,
+   "is_available": true,
+   "stock": 3,
+   "active_rentals": 0
+  },
+  {
+   "id": 252,
+   "tmdb_id": 556984,
+   "title": "Les Sept de Chicago",
+   "synopsis": "",
+   "release_year": 2020,
+   "poster_url": "https://image.tmdb.org/t/p/w500/axOuJ7PJMWk9wCLlIsNu4FMjj9b.jpg",
+   "backdrop_url": "https://image.tmdb.org/t/p/w1280/v8Nf6Y1qL1Q3PWTBezXNPPaXqza.jpg",
+   "genres": [
+    {
+     "id": 18,
+     "name": "Drame"
+    },
+    {
+     "id": 36,
+     "name": "Histoire"
+    }
+   ],
+   "runtime": 129,
+   "aisle": "drame",
+   "is_nouveaute": true,
+   "is_available": true,
+   "stock": 3,
+   "active_rentals": 0
+  },
+  {
+   "id": 251,
+   "tmdb_id": 1100988,
+   "title": "28 Ans plus tard",
+   "synopsis": "",
+   "release_year": 2025,
+   "poster_url": "https://image.tmdb.org/t/p/w500/3ACUg2j2ZsgrwT1RnaBmni8mOuI.jpg",
+   "backdrop_url": "https://image.tmdb.org/t/p/w1280/6WqqEjiycNvDLjbEClM1zCwIbDD.jpg",
+   "genres": [
+    {
+     "id": 27,
+     "name": "Horreur"
+    },
+    {
+     "id": 53,
+     "name": "Thriller"
+    },
+    {
+     "id": 878,
+     "name": "Science-Fiction"
+    }
+   ],
+   "runtime": 115,
+   "aisle": "horreur",
+   "is_nouveaute": true,
+   "is_available": true,
+   "stock": 3,
+   "active_rentals": 0
+  }
+ ]
+}

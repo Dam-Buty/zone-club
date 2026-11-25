@@ -1,9 +1,14 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Film, Rental, AisleType, SceneType, MemberLevel, AuthUser, LocalUser } from '../types';
-import api, { apiFilmToFilm, type ApiRentalWithFilm, type ApiFilm, type ReviewWithUser, type ApiReturnRequest, type WeeklyBonusStatus, type ApiBoardNote, type BoardCapacity } from '../api';
+import api, { ApiError, apiFilmToFilm, type ApiRentalWithFilm, type ApiRentalHistoryEntry, type ApiFilm, type MeResponse, type ReviewWithUser, type ApiReturnRequest, type WeeklyBonusStatus, type ApiBoardNote, type BoardCapacity } from '../api';
 import { preloadPosterImage } from '../utils/CassetteTextureArray';
 import { fetchVHSCoverData } from '../utils/VHSCoverGenerator';
+import { parseServerDate } from '../utils/server-date';
+import { rentalsRefreshOutcome } from '../utils/rentals-refresh';
+import { keepsVersionPref, parseVersionChoice } from '../utils/version-choice';
+import { createCastSlice, type CastSlice } from './slices/cast';
+import { createVersionSlice, filmVersionsAfterRead, type VersionSlice } from './slices/version';
 import { createManagerSlice } from './slices/manager';
 import { createTutorialSlice, TUTORIAL_WAYPOINTS } from './slices/tutorial';
 
@@ -23,17 +28,39 @@ function calculateLevel(totalRentals: number): MemberLevel {
 function apiRentalToRental(apiRental: ApiRentalWithFilm): Rental {
   return {
     filmId: apiRental.film_id,
-    rentedAt: new Date(apiRental.rented_at).getTime(),
-    expiresAt: new Date(apiRental.expires_at).getTime(),
+    // Dates du serveur : UTC sans fuseau — parseServerDate, jamais new Date() (heure locale).
+    rentedAt: parseServerDate(apiRental.rented_at),
+    expiresAt: parseServerDate(apiRental.expires_at),
     videoUrl: apiRental.streaming_urls.vf || apiRental.streaming_urls.vo || '',
     streamingUrls: apiRental.streaming_urls,
     watchProgress: apiRental.watch_progress ?? 0,
     watchPosition: apiRental.watch_position ?? 0,
-    watchCompletedAt: apiRental.watch_completed_at ? new Date(apiRental.watch_completed_at).getTime() : null,
+    watchCompletedAt: apiRental.watch_completed_at ? parseServerDate(apiRental.watch_completed_at) : null,
     extensionUsed: !!apiRental.extension_used,
     rewindClaimed: !!apiRental.rewind_claimed,
     viewingMode: (apiRental.viewing_mode as 'sur_place') ?? null,
   };
+}
+
+/** L'historique de /api/me au format du magasin : une seule lecture, pour `fetchMe` et `refreshRentals`. */
+function historyFromApi(entries: ApiRentalHistoryEntry[] | undefined): RentalHistoryEntry[] {
+  // SQLite stores naive-UTC datetimes ("YYYY-MM-DD HH:MM:SS"); normalise to ISO-UTC before parsing.
+  const toMs = parseServerDate;
+  return (entries || []).map((h) => ({
+    filmId: h.film_id,
+    title: h.film_title,
+    posterUrl: h.film_poster_url,
+    rentedAt: toMs(h.rented_at) || Date.now(),
+    returnedAt: toMs(h.expires_at) || 0,
+    // SQLite renvoie 0/1 malgré le typage `boolean` de l'API.
+    isActive: !!h.is_active,
+    expiresAt: toMs(h.expires_at) || 0,
+    watchProgress: h.watch_progress ?? 0,
+    rewindClaimed: !!h.rewind_claimed,
+    returnedEarly: !!h.returned_early,
+    returnDate: h.returned_at ? toMs(h.returned_at) || null : null,
+    expiredDate: h.expired_at ? toMs(h.expired_at) || null : null,
+  }));
 }
 
 
@@ -59,9 +86,21 @@ export interface RentalHistoryEntry {
   /** expires_at, pas une date de retour. */
   returnedAt: number;
   isActive: boolean;
+  /** Ajouts pour « Mon compte » (spec 2026-11-17-borne-mon-compte). */
+  expiresAt: number;
+  watchProgress: number;
+  rewindClaimed: boolean;
+  returnedEarly: boolean;
+  /** returned_at : rendu par le visiteur ; null avant la colonne ou si non rendu. */
+  returnDate: number | null;
+  /** expired_at : arrivé à échéance ; null avant la colonne ou si non expiré. */
+  expiredDate: number | null;
 }
 
-export interface VideoClubState {
+/** Ce qu'un film loué et pas encore critiqué permet, par identifiant de film. */
+export type ReviewEligibilityMap = Record<number, { allowed: boolean; reason: string | null; availableAtMs: number | null }>;
+
+export interface VideoClubState extends CastSlice, VersionSlice {
   // Auth
   isAuthenticated: boolean;
   authUser: AuthUser | null;
@@ -70,10 +109,16 @@ export interface VideoClubState {
   recoveryPhrase: string | null;
   login: (username: string, password: string) => Promise<boolean>;
   register: (username: string, password: string) => Promise<boolean>;
-  logout: () => Promise<void>;
+  logout: () => Promise<boolean>;
   clearAuthError: () => void;
   clearRecoveryPhrase: () => void;
   fetchMe: () => Promise<void>;
+  /**
+   * Relit les locations (et l'historique qui vient avec) sur le serveur, pour le Cast. Contrairement à `fetchMe`, une
+   * panne ne déconnecte pas le visiteur : rien n'est écrit et la promesse rejette ; seul un 401 laisse `fetchMe`
+   * constater la déconnexion. Une réponse arrivée après un changement de compte n'écrit rien.
+   */
+  refreshRentals: () => Promise<void>;
 
   // User local (fallback)
   localUser: LocalUser;
@@ -107,6 +152,8 @@ export interface VideoClubState {
 
   // Films cache
   films: Record<AisleType, Film[]>;
+  /** Les rayons dont le dernier chargement a échoué : la borne ne les dit pas « vides ». */
+  failedAisles: AisleType[];
   filmRentalCounts: Record<number, { stock: number; activeRentals: number }>;
   setFilmRentalCounts: (filmId: number, stock: number, activeRentals: number) => void;
   setFilmsForAisle: (aisle: AisleType, films: Film[]) => void;
@@ -138,16 +185,15 @@ export interface VideoClubState {
   previewRental: Rental | null;
   previewFilm: Film | null;
   openPreviewPlayer: (film: Film, rental: Rental) => void;
-  openPlayer: (filmId: number) => void;
+  /**
+   * `from` : d'où le visiteur vient (libellé du retour du lecteur) ; `ask` : montrer l'invite « Regarder sur TV ? »
+   * sur mobile. Un appel à un seul argument garde les défauts : le vidéoclub, avec l'invite.
+   */
+  openPlayer: (filmId: number, opts?: { from?: 'kiosk' | 'store'; ask?: boolean }) => void;
+  /** D'où le lecteur a été ouvert ; `closePlayer` n'y touche pas (le lecteur se ferme, son libellé reste lisible). */
+  playerFrom: 'kiosk' | 'store';
+  playerAsk: boolean;
   closePlayer: () => void;
-
-  // Cast tracking — kept across player open/close so the next openPlayer
-  // can detect an active receiver session and enter remote-control mode.
-  activeCastFilmId: number | null;
-  setActiveCastFilmId: (filmId: number | null) => void;
-  // End the cast tracking. Call when the cast actually ends (Stop button,
-  // receiver disconnect, film completion) — NOT on player close.
-  endCast: () => void;
 
   // Targeting (pour le hover via raycasting central)
   targetedFilmId: number | null;
@@ -177,6 +223,7 @@ export interface VideoClubState {
 
   // User reviews
   userReviews: ReviewWithUser[];
+  reviewEligibility: ReviewEligibilityMap;
   setUserReviews: (reviews: ReviewWithUser[]) => void;
 
   // Terminal
@@ -309,6 +356,8 @@ export interface VideoClubState {
   weeklyBonusStatus: WeeklyBonusStatus | null;
   setWeeklyBonusStatus: (s: WeeklyBonusStatus | null) => void;
   claimWeeklyBonus: () => Promise<boolean>;
+  /** Relit l'état du bonus : il dépend du solde, qui bouge à chaque location, retour ou critique. */
+  refreshWeeklyBonus: () => Promise<void>;
 
   // Tutorial
   tutorialStep: number | null;
@@ -341,6 +390,9 @@ export interface VideoClubState {
   fetchBoardNotes: () => Promise<void>;
 }
 
+/** Connexion acceptée par le serveur mais session absente à la relecture : le cookie n'a pas été gardé. */
+export const SESSION_NOT_KEPT = 'Connexion acceptée, mais la session n\u2019a pas tenu : ce navigateur refuse peut-être les cookies de ce site. Autorisez-les, ou ouvrez le site dans un autre navigateur.';
+
 export const useStore = create<VideoClubState>()(
   persist(
     (set, get, store) => ({
@@ -362,6 +414,12 @@ export const useStore = create<VideoClubState>()(
           });
           // Charger les locations actives
           await get().fetchMe();
+          if (!get().isAuthenticated) {
+            // Le serveur a accepté la connexion, mais la relecture du compte dit « non connecté » : le navigateur n'a pas
+            // gardé le cookie de session. Le dire — sans cela le panneau se rouvrait sans un mot (Rusmir, 25/11/2026).
+            set({ isLoading: false, authError: SESSION_NOT_KEPT });
+            return false;
+          }
           return true;
         } catch (error) {
           set({
@@ -381,7 +439,16 @@ export const useStore = create<VideoClubState>()(
             authUser: user,
             recoveryPhrase,
             isLoading: false,
+            // Compte neuf, sans fetchMe : ni préférence ni choix par film, et la table de l'appareil devient la sienne.
+            versionPref: null, filmVersions: {}, filmVersionsUser: user.id,
           });
+          // Le compte existe ; la session tient-elle ? Si le navigateur a refusé le cookie, la borne doit le savoir —
+          // la phrase reste affichée (elle seule permet de retrouver le compte), et la connexion est redemandée après.
+          try {
+            await api.me.get();
+          } catch (error) {
+            if (error instanceof ApiError && error.status === 401) set({ isAuthenticated: false, authUser: null });
+          }
           return true;
         } catch (error) {
           set({
@@ -393,52 +460,100 @@ export const useStore = create<VideoClubState>()(
       },
 
       logout: async () => {
+        // La location du film qui est sur la TV disparaît avec le compte : la TV s'arrête, et sa séance serveur est
+        // close tant que le cookie existe encore. AVANT la requête de déconnexion : après elle, le DELETE de la séance
+        // reçoit 401 (la route de déconnexion clôt de toute façon les séances du visiteur côté serveur).
+        get().castLoggedOut();
         try {
           await api.auth.logout();
-        } catch {
-          // Ignorer les erreurs de déconnexion
+        } catch (error) {
+          // Un 401 : le serveur ne nous connaît déjà plus, on finit le ménage. Toute autre erreur (réseau coupé, panne) :
+          // le cookie de session est toujours dans le navigateur — annoncer « déconnecté » serait faux, et le visiteur
+          // suivant sur le même appareil se retrouverait connecté à ce compte au rechargement.
+          if (!(error instanceof ApiError && error.status === 401)) return false;
         }
         set({
           isAuthenticated: false,
           authUser: null,
+          // Une phrase de récupération pas encore confirmée ne doit pas survivre à la session :
+          // la personne suivante sur le même appareil la verrait à l'ouverture de la borne.
+          recoveryPhrase: null,
           rentals: [],
           rentalHistory: [],
           userReviews: [],
+          reviewEligibility: {},
           filmRentalCounts: {},
           managerVisible: false,
           chatBackdropUrl: null,
+          // Le film dont le Cast courait peut-être est celui de ce compte : le visiteur suivant sur le même appareil
+          // recevrait « Location terminée » pour un film qu'il n'a pas loué.
+          lastCastFilmId: null,
+          // Ni la préférence ni les choix par film de ce compte ne passent au visiteur suivant.
+          versionPref: null,
+          filmVersions: {}, filmVersionsUser: null,
         });
+        return true;
       },
 
       clearAuthError: () => set({ authError: null }),
       clearRecoveryPhrase: () => set({ recoveryPhrase: null }),
 
+      refreshRentals: async () => {
+        // Le compte connecté au départ : une réponse revenue après une déconnexion (logout part pendant qu'une séance de
+        // Cast se clôt) ne doit pas remplir les locations du visiteur suivant.
+        const accountBefore = get().authUser?.id ?? null;
+        let data: MeResponse;
+        try {
+          data = await api.me.get();
+        } catch (error) {
+          // Panne réseau ou erreur du serveur : rien n'est touché, le visiteur reste connecté, l'appelant le sait. Un 401
+          // seulement est une vraie déconnexion : fetchMe la constate, comme partout ailleurs.
+          const outcome = rentalsRefreshOutcome({
+            failedStatus: error instanceof ApiError ? error.status : null, accountBefore, accountNow: null, responseAccount: null,
+          });
+          if (outcome === 'logged-out') await get().fetchMe();
+          throw error;
+        }
+        const outcome = rentalsRefreshOutcome({ accountBefore, accountNow: get().authUser?.id ?? null, responseAccount: data.user.id });
+        if (outcome !== 'write') throw new Error('Compte changé pendant la relecture des locations');
+        set({
+          rentals: data.activeRentals.map(apiRentalToRental),
+          rentalHistory: historyFromApi(data.rentalHistory),
+          ...filmVersionsAfterRead(get(), data.user.id, data.activeRentals.map((r) => r.film_id)),
+        });
+      },
+
       fetchMe: async () => {
         try {
           const data = await api.me.get();
-          // SQLite stores naive-UTC datetimes ("YYYY-MM-DD HH:MM:SS"); normalise to ISO-UTC before parsing.
-          const toMs = (s: string | null | undefined) => (s ? Date.parse(s.replace(' ', 'T') + 'Z') : NaN);
           set({
             isAuthenticated: true,
             authUser: data.user,
             rentals: data.activeRentals.map(apiRentalToRental),
             // Source of truth for the rental history (was previously never populated → terminal showed
             // "empty" even with rentals on record). Server returns ALL of the user's rentals.
-            rentalHistory: (data.rentalHistory || []).map((h) => ({
-              filmId: h.film_id,
-              title: h.film_title,
-              posterUrl: h.film_poster_url,
-              rentedAt: toMs(h.rented_at) || Date.now(),
-              returnedAt: toMs(h.expires_at) || 0,
-              // SQLite renvoie 0/1 malgré le typage `boolean` de l'API.
-              isActive: !!h.is_active,
-            })),
+            rentalHistory: historyFromApi(data.rentalHistory),
             userReviews: data.reviews || [],
+            reviewEligibility: Object.fromEntries(
+              (data.reviewEligibility || []).map((e) => [e.film_id, { allowed: e.allowed, reason: e.reason, availableAtMs: e.available_at_ms }]),
+            ),
             weeklyBonusStatus: data.weeklyBonus ?? null,
+            versionPref: parseVersionChoice(data.user.version_pref?.audio, data.user.version_pref?.subtitle),
+            // Les choix par film de ce seul compte, pour ses films encore loués ; jamais ceux d'un visiteur précédent.
+            ...filmVersionsAfterRead(get(), data.user.id, data.activeRentals.map((r) => r.film_id)),
           });
-        } catch {
-          // Non connecté, pas d'erreur
-          set({ isAuthenticated: false, authUser: null, rentalHistory: [], userReviews: [], weeklyBonusStatus: null });
+        } catch (error) {
+          // Non connecté, pas d'erreur. Les choix par film et leur propriétaire restent sur l'appareil. La version préférée
+          // ne part que sur un vrai 401 (keepsVersionPref) : une panne ne fait pas changer la version en plein film.
+          const status = error instanceof ApiError ? error.status : null;
+          // Seul un 401 dit « non connecté ». Une panne (réseau coupé, erreur 5xx) ne déconnecte personne : le compte
+          // reste à l'écran tel qu'il était, la lecture suivante le rafraîchira. Sans cela « Mon compte » s'ouvrait sur
+          // un pseudo vide et des crédits inventés (batterie de tests du 25/11/2026).
+          if (status !== 401) return;
+          set({
+            isAuthenticated: false, authUser: null, rentals: [], rentalHistory: [], userReviews: [], reviewEligibility: {}, weeklyBonusStatus: null,
+            ...(keepsVersionPref(status) ? {} : { versionPref: null }),
+          });
         }
       },
 
@@ -652,6 +767,7 @@ export const useStore = create<VideoClubState>()(
       },
 
       // Films cache
+      failedAisles: [],
       films: {
         nouveautes: [],
         action: [],
@@ -691,15 +807,17 @@ export const useStore = create<VideoClubState>()(
       loadFilmsFromApi: async () => {
         const aisles: AisleType[] = ['nouveautes', 'action', 'aventure', 'horreur', 'comedie', 'drame', 'thriller', 'policier', 'sf', 'animation', 'classiques', 'bizarre', 'romance'];
         try {
+          // Un rayon en échec n'est pas un rayon vide : il est retenu, et garde les films qu'on lui connaissait.
+          const failed: AisleType[] = [];
           const results = await Promise.all(
-            aisles.map(aisle => api.films.getByAisle(aisle).catch(() => ({ aisle, films: [] })))
+            aisles.map(aisle => api.films.getByAisle(aisle).catch(() => { failed.push(aisle); return { aisle, films: [] }; }))
           );
           const filmsMap: Record<AisleType, Film[]> = {
             nouveautes: [], action: [], aventure: [], horreur: [], comedie: [], drame: [], thriller: [], policier: [], sf: [], animation: [], classiques: [], bizarre: [], romance: [],
           };
           const rentalCounts: Record<number, { stock: number; activeRentals: number }> = {};
           for (const { aisle, films: aisleFilms } of results) {
-            const converted = (aisleFilms as ApiFilm[]).map(apiFilmToFilm);
+            const converted = failed.includes(aisle as AisleType) ? get().films[aisle as AisleType] : (aisleFilms as ApiFilm[]).map(apiFilmToFilm);
             filmsMap[aisle as AisleType] = converted;
             for (const film of converted) {
               rentalCounts[film.id] = {
@@ -708,7 +826,7 @@ export const useStore = create<VideoClubState>()(
               };
             }
           }
-          set({ films: filmsMap, filmRentalCounts: rentalCounts });
+          set({ films: filmsMap, filmRentalCounts: rentalCounts, failedAisles: failed });
         } catch (error) {
           console.error('Erreur chargement films:', error);
         }
@@ -730,41 +848,37 @@ export const useStore = create<VideoClubState>()(
       // Manager IA — see src/store/slices/manager.ts
       ...createManagerSlice(set, get, store),
 
+      // Cast — voir src/store/slices/cast.ts
+      ...createCastSlice(set, get, store),
+
+      // Versions (préférence du compte, choix par film) — voir src/store/slices/version.ts
+      ...createVersionSlice(set, get, store),
+
       // Player
       isPlayerOpen: false,
       currentPlayingFilm: null,
+      playerFrom: 'store',
+      playerAsk: true,
       previewRental: null,
       previewFilm: null,
-      openPreviewPlayer: (film, rental) => set((state) => ({
+      openPreviewPlayer: (film, rental) => set({
         isPlayerOpen: true,
         currentPlayingFilm: film.id,
         previewFilm: film,
         previewRental: rental,
-        // Un cast de preview sur un AUTRE film ne doit pas être repris : le
-        // player auto-détecte `activeCastFilmId` et repasserait en télécommande
-        // sur l'ancien film. Même film = on garde la session en cours.
-        activeCastFilmId: state.activeCastFilmId === film.id ? state.activeCastFilmId : null,
         managerVisible: false,
         chatBackdropUrl: null,
-      })),
-      activeCastFilmId: null,
-      setActiveCastFilmId: (filmId) => set({ activeCastFilmId: filmId }),
-      // End cast — clears activeCastFilmId. Call this when the cast genuinely
-      // ends (user taps Stop/Eject on phone, receiver disconnects, film ends).
-      // Do NOT call this when the player just closes — the cast on the TV
-      // is independent of the player overlay and should keep going.
-      endCast: () => set({ activeCastFilmId: null }),
-      openPlayer: (filmId) => {
-        // Always allow opening — even if another film is already casting.
-        // The player overlay will read activeCastFilmId on mount and:
-        //   - if it matches `filmId` → auto-resume in remote-control mode
-        //   - if it differs → user is opening a different film; we still
-        //     show the player (the K7 overlay already shows the cast-busy
-        //     state separately). The previous silent return left users
-        //     wondering why the "Watch" button did nothing.
+      }),
+      openPlayer: (filmId, opts) => {
+        // Always allow opening — even if another film is already casting. The
+        // player reads the Cast machine (`castView`): this film on the TV → the
+        // remote control; another film → local player with its banner. The
+        // previous silent return left users wondering why "Watch" did nothing.
         set({
           isPlayerOpen: true,
           currentPlayingFilm: filmId,
+          playerFrom: opts?.from ?? 'store',
+          playerAsk: opts?.ask ?? true,
           // Une location réelle remplace toute prévisualisation admin restée
           // ouverte dans le même onglet.
           previewRental: null,
@@ -773,16 +887,21 @@ export const useStore = create<VideoClubState>()(
           chatBackdropUrl: null,
         });
       },
-      // closePlayer no longer wipes activeCastFilmId. The cast continues on
-      // the receiver independent of whether the player overlay is open, and
-      // we want the next openPlayer to find the active cast and auto-enter
-      // remote-control mode without forcing the user to manually re-cast.
-      closePlayer: () => set({
-        isPlayerOpen: false,
-        currentPlayingFilm: null,
-        previewRental: null,
-        previewFilm: null,
-      }),
+      // closePlayer leaves the TV alone: the film continues on the TV
+      // without the player, and the next openPlayer finds it through the
+      // Cast machine (remote control) without re-casting. Seuls partent avec
+      // le lecteur le message du Cast qu'il montrait et la reprise qu'il n'a
+      // pas prise (castPlayerClosed ; « Location terminée » reste).
+      closePlayer: () => {
+        const filmId = get().currentPlayingFilm;
+        set({
+          isPlayerOpen: false,
+          currentPlayingFilm: null,
+          previewRental: null,
+          previewFilm: null,
+        });
+        if (filmId !== null) get().castPlayerClosed(filmId);
+      },
 
       // Targeting
       targetedFilmId: null,
@@ -823,6 +942,7 @@ export const useStore = create<VideoClubState>()(
 
       // User reviews
       userReviews: [],
+      reviewEligibility: {},
       setUserReviews: (reviews) => set({ userReviews: reviews }),
 
       // Terminal
@@ -1009,10 +1129,18 @@ export const useStore = create<VideoClubState>()(
           if (authUser) {
             set({ authUser: { ...authUser, credits: result.new_balance } });
           }
-          set({ weeklyBonusStatus: { canClaim: false, amount: 0 } });
+          set({ weeklyBonusStatus: { canClaim: false, amount: 0, code: 'claimed' } });
           return true;
         } catch {
           return false;
+        }
+      },
+      refreshWeeklyBonus: async () => {
+        if (!get().isAuthenticated) return;
+        try {
+          set({ weeklyBonusStatus: await api.me.getWeeklyBonus() });
+        } catch {
+          // En panne : l'état connu reste, le serveur tranchera à l'appui.
         }
       },
 
@@ -1048,10 +1176,18 @@ export const useStore = create<VideoClubState>()(
       name: 'videoclub-storage',
       partialize: (state) => ({
         localUser: state.localUser,
+        // La phrase de récupération tant qu'elle n'est pas notée : un rechargement (onglet déchargé pendant qu'on va
+        // la coller ailleurs) la faisait disparaître pour toujours. « J'ai noté ma phrase » et la déconnexion l'effacent.
+        recoveryPhrase: state.recoveryPhrase,
         rentalHistory: state.rentalHistory,
         hasSeenOnboarding: state.hasSeenOnboarding,
         hasSeenVHSSwipeHint: state.hasSeenVHSSwipeHint,
         hasCompletedTutorial: state.hasCompletedTutorial,
+        // Le film dont le Cast court peut-être encore (page rechargée). Jamais l'état du Cast : adresse du film, drapeaux passagers.
+        lastCastFilmId: state.lastCastFilmId,
+        // Le choix fait pour chaque film loué, avec le compte à qui il appartient : retenu sur l'appareil. Jamais la
+        // version préférée : le serveur la tient.
+        filmVersions: state.filmVersions, filmVersionsUser: state.filmVersionsUser,
         // Navigation state — persisted so mobile tab-switch doesn't reset to exterior
         currentScene: state.currentScene,
         currentAisle: state.currentAisle,

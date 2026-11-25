@@ -1,0 +1,62 @@
+/* Lignes du Cast sous l'en-tête du lecteur (CastNotices.tsx). Posées dans la grille de l'en-tête (trois colonnes), elles
+   prennent une rangée entière sous elle. */
+.line {
+  grid-column: 1 / -1;
+  justify-self: center;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px 12px;
+  max-width: min(640px, 100%);
+  padding: 4px 6px 4px 14px;
+  background: rgba(5, 10, 20, 0.92);
+  border: 1px solid rgba(0, 255, 247, 0.35);
+  border-radius: 6px;
+  box-shadow: 0 0 12px rgba(0, 255, 247, 0.15);
+}
+
+.text {
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.9);
+  text-align: center;
+}
+
+/* Zones de toucher de 44 px au moins, comme les boutons des panneaux du Cast. */
+.action,
+.close {
+  min-height: 44px;
+  font-family: var(--font-display);
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.action {
+  padding: 6px 14px;
+  color: var(--color-neon-cyan);
+  background: rgba(0, 255, 247, 0.08);
+  border: 1px solid var(--color-neon-cyan);
+}
+
+.action:hover,
+.action:active {
+  background: rgba(0, 255, 247, 0.18);
+}
+
+.close {
+  min-width: 44px;
+  color: rgba(255, 255, 255, 0.65);
+  background: transparent;
+  border: 1px solid transparent;
+}
+
+.close:hover,
+.close:active {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.3);
+}

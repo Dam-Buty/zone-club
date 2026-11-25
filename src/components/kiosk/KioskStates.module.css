@@ -1,0 +1,98 @@
+/* Borne de location — ce qui s'affiche À LA PLACE de la borne.
+   (KioskView.module.css porte la borne et son écran ; il approche du plafond de 1000 lignes.)
+
+   Sur un téléphone, le paysage est réservé au film : la borne — un écran vertical — ne s'y
+   affiche pas et demande de redresser l'appareil. Mêmes contraintes que le reste de la borne :
+   du DOM et du CSS seulement, ni flou d'arrière-plan, ni filtre, ni animation. */
+
+/* `!important` : `.root { display: flex }` de KioskView.module.css gagnait selon l'ordre des feuilles, et la borne
+   « cachée » restait affichée sous le panneau (sa bande-annonce continuait de jouer). */
+.rootHidden {
+  display: none !important;
+}
+
+.rotate {
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 16px max(24px, env(safe-area-inset-right)) 16px max(24px, env(safe-area-inset-left));
+  text-align: center;
+  background: linear-gradient(180deg, #23213a 0%, #191827 40%, #14131f 100%);
+  color: #d6ecff;
+  font-family: "Sofia Sans Condensed", "Roboto Condensed", "Arial Narrow", sans-serif-condensed, "Helvetica Neue", Arial, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Un téléphone debout, dessiné en CSS : ce que le visiteur doit retrouver. */
+.rotatePhone {
+  position: relative;
+  flex: none;
+  width: 34px;
+  height: 58px;
+  border: 3px solid #4fc3e8;
+  border-radius: 7px;
+  box-shadow: 0 0 14px rgba(79, 195, 232, 0.45), inset 0 0 10px rgba(42, 134, 230, 0.5);
+}
+
+.rotatePhone::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 4px;
+  width: 10px;
+  height: 3px;
+  margin-left: -5px;
+  border-radius: 2px;
+  background: #4fc3e8;
+}
+
+.rotateTitle {
+  margin: 0;
+  font-family: "Big Shoulders Display", "DIN Condensed", "Arial Narrow", sans-serif-condensed, "Helvetica Neue", Arial, sans-serif;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: #fff;
+  text-shadow: 0 0 8px #c084ff, 0 0 16px #8b3dff;
+}
+
+.rotateText {
+  margin: 0;
+  max-width: 30em;
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.rotateQuit {
+  margin-top: 6px;
+  padding: 9px 18px;
+  border: 2px solid #4fc3e8;
+  border-radius: 4px;
+  background: linear-gradient(180deg, #3db2d8 0%, #2590bd 55%, #1a79a5 100%);
+  color: #fff;
+  font: inherit;
+  font-family: "Big Shoulders Display", "DIN Condensed", "Arial Narrow", sans-serif-condensed, "Helvetica Neue", Arial, sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.rotateQuit:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
+/* Annonce réservée aux lecteurs d'écran (rappel du bouton « quitter »). */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

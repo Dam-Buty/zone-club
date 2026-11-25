@@ -11,7 +11,7 @@
 // consumed, and our Suspense tree takes longer to mount. fetch() puts the bytes
 // in disk cache where they survive indefinitely.
 
-import { afterStorefront } from './interior-preload-gate'
+import { whileStorefront } from './interior-preload-gate'
 
 const ASSETS_TO_PREFETCH = [
   '/textures/env/indoor_night.hdr',
@@ -43,9 +43,11 @@ const ASSETS_TO_PREFETCH = [
 ]
 
 if (typeof window !== 'undefined') {
-  afterStorefront(() => {
+  // Interruptible : à l'ouverture de la borne le signal coupe les téléchargements en cours, et
+  // la tâche repart au retour devant la devanture (ce qui était arrivé sort du cache HTTP).
+  whileStorefront((signal) => {
     for (const url of ASSETS_TO_PREFETCH) {
-      fetch(url, { cache: 'force-cache', priority: 'low' } as RequestInit).catch(() => {
+      fetch(url, { cache: 'force-cache', priority: 'low', signal } as RequestInit).catch(() => {
         // Silent fail — Suspense will retry on its own when components mount
       })
     }

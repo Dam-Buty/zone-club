@@ -2,32 +2,39 @@ import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { recoverAccount } from '@/lib/auth';
 import { createSessionToken } from '@/lib/session';
-import { checkRateLimit, getRateLimitKey } from '@/lib/rate-limit';
+import { checkRateLimit, getRateLimitKey, tooManyAttempts } from '@/lib/rate-limit';
+import { passwordRuleError } from '@/src/utils/account-rules';
 
 export async function POST(request: NextRequest) {
     const rateLimitKey = getRateLimitKey(request, 'recover');
     const retryAfter = checkRateLimit(rateLimitKey, 3, 60 * 60 * 1000); // 3 attempts per hour
     if (retryAfter !== null) {
         return NextResponse.json(
-            { error: `Trop de tentatives. Reessayez dans ${Math.ceil(retryAfter / 60)} minutes.` },
+            { error: tooManyAttempts(retryAfter) },
             { status: 429 },
         );
     }
 
-    const { username, recoveryPhrase, newPassword } = await request.json();
+    const body = await request.json().catch(() => null);
+    const username = typeof body?.username === 'string' ? body.username.trim() : body?.username;
+    const recoveryPhrase = body?.recoveryPhrase;
+    const newPassword = body?.newPassword;
 
-    if (!username || !recoveryPhrase || !newPassword) {
+    if (!username || !recoveryPhrase || !newPassword || typeof username !== 'string' || typeof recoveryPhrase !== 'string' || typeof newPassword !== 'string') {
         return NextResponse.json({ error: 'Tous les champs sont requis' }, { status: 400 });
     }
 
-    if (newPassword.length < 8) {
-        return NextResponse.json({ error: 'Le mot de passe doit faire au moins 8 caractères' }, { status: 400 });
+    // Même règle qu'à l'inscription (src/utils/account-rules.ts) : la récupération n'exigeait que
+    // 8 caractères et laissait poser un mot de passe que l'inscription aurait refusé.
+    const ruleError = passwordRuleError(String(newPassword));
+    if (ruleError) {
+        return NextResponse.json({ error: ruleError }, { status: 400 });
     }
 
     const result = await recoverAccount(username, recoveryPhrase, newPassword);
 
     if (!result) {
-        return NextResponse.json({ error: 'Pseudo ou passphrase incorrect' }, { status: 401 });
+        return NextResponse.json({ error: 'Pseudo ou phrase de récupération incorrects' }, { status: 401 });
     }
 
     const token = createSessionToken(result.user.id);

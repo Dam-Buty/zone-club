@@ -4,6 +4,7 @@ import { useStore, useCredits } from '../../store';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { useBackGuard } from '../../hooks/useBackGuard';
 import { formatTimeRemaining } from '../../utils/formatTime';
+import { REVIEW_RATING_LABELS } from '../../utils/review-rules';
 import { AuthModal } from '../auth/AuthModal';
 import { SearchModal } from '../search/SearchModal';
 import { ReviewModal } from '../review/ReviewModal';
@@ -715,9 +716,9 @@ export function TVTerminal({ isOpen, onClose }: TVTerminalProps) {
                       </div>
                     </div>
                     <div className={styles.reviewRatings}>
-                      <span>Réal: {review.rating_direction}/5</span>
-                      <span>Scén: {review.rating_screenplay}/5</span>
-                      <span>Jeu: {review.rating_acting}/5</span>
+                      <span>{REVIEW_RATING_LABELS.direction} : {review.rating_direction}/5</span>
+                      <span>{REVIEW_RATING_LABELS.screenplay} : {review.rating_screenplay}/5</span>
+                      <span>{REVIEW_RATING_LABELS.acting} : {review.rating_acting}/5</span>
                     </div>
                     <div className={styles.reviewContent}>
                       {review.content.substring(0, 150)}...

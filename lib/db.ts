@@ -132,9 +132,40 @@ try {
 const multiCopyMigrations = [
   "ALTER TABLE films ADD COLUMN stock INTEGER DEFAULT 2",
   "ALTER TABLE rentals ADD COLUMN returned_early INTEGER DEFAULT 0",
+  // « Mon compte » (spec 2026-11-17-borne-mon-compte) : premier lancement (garde de temps des critiques),
+  // date de retour, date d'expiration. Nulles pour les locations antérieures.
+  "ALTER TABLE rentals ADD COLUMN watch_started_at DATETIME",
+  "ALTER TABLE rentals ADD COLUMN returned_at DATETIME",
+  "ALTER TABLE rentals ADD COLUMN expired_at DATETIME",
 ];
 
 for (const sql of multiCopyMigrations) {
+  try {
+    db.exec(sql);
+  } catch { /* idempotent: column/index already exists */ }
+}
+
+// Migrate: version préférée du compte (spec 2026-11-19-versions-et-erreurs-de-lecture, § 4.2, lib/version-pref.ts).
+// Nulles pour les comptes existants = « Automatique ».
+const versionPrefMigrations = [
+  "ALTER TABLE users ADD COLUMN pref_audio TEXT DEFAULT NULL",
+  "ALTER TABLE users ADD COLUMN pref_subtitle TEXT DEFAULT NULL",
+];
+
+for (const sql of versionPrefMigrations) {
+  try {
+    db.exec(sql);
+  } catch { /* idempotent: column/index already exists */ }
+}
+
+// Migrate: versions marquées illisibles par le contrôle des fichiers (spec 2026-11-19-versions-et-erreurs-de-lecture,
+// § 6, scripts/media-check.ts --mark). 0 pour les films existants = jouable si le fichier transcodé existe.
+const unplayableMigrations = [
+  "ALTER TABLE films ADD COLUMN vf_unplayable INTEGER DEFAULT 0",
+  "ALTER TABLE films ADD COLUMN vo_unplayable INTEGER DEFAULT 0",
+];
+
+for (const sql of unplayableMigrations) {
   try {
     db.exec(sql);
   } catch { /* idempotent: column/index already exists */ }

@@ -54,8 +54,20 @@ export async function registerUser(username: string, password: string): Promise<
     return { user, recoveryPhrase };
 }
 
+/**
+ * Le compte d'un pseudo. Le pseudo exact d'abord ; sinon, sans tenir compte des majuscules — « Test1A » retrouve
+ * « test1a » (batterie de tests du 25/11/2026 : la connexion le refusait par « Pseudo ou mot de passe incorrect »).
+ * Si deux comptes anciens ne diffèrent que par la casse, seul le pseudo exact les distingue : on ne devine pas.
+ */
+function findUserRow(username: string): UserRow | undefined {
+    const exact = db.prepare('SELECT * FROM users WHERE username = ?').get(username) as UserRow | undefined;
+    if (exact) return exact;
+    const loose = db.prepare('SELECT * FROM users WHERE username = ? COLLATE NOCASE').all(username) as UserRow[];
+    return loose.length === 1 ? loose[0] : undefined;
+}
+
 export async function loginUser(username: string, password: string): Promise<User | null> {
-    const row = db.prepare('SELECT * FROM users WHERE username = ?').get(username) as UserRow | undefined;
+    const row = findUserRow(username);
 
     if (!row) return null;
 
@@ -72,7 +84,7 @@ export async function loginUser(username: string, password: string): Promise<Use
 }
 
 export async function recoverAccount(username: string, recoveryPhrase: string, newPassword: string): Promise<{ user: User; newRecoveryPhrase: string } | null> {
-    const row = db.prepare('SELECT * FROM users WHERE username = ?').get(username) as UserRow | undefined;
+    const row = findUserRow(username);
 
     if (!row) return null;
 
@@ -108,6 +120,7 @@ export function getUserById(id: number): User | null {
 }
 
 export function usernameExists(username: string): boolean {
-    const row = db.prepare('SELECT 1 FROM users WHERE username = ?').get(username);
+    // Sans tenir compte des majuscules : « Test1A » est pris quand « test1a » existe.
+    const row = db.prepare('SELECT 1 FROM users WHERE username = ? COLLATE NOCASE').get(username);
     return !!row;
 }

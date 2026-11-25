@@ -16,7 +16,7 @@ setInterval(() => {
     for (const [key, entry] of store) {
         if (now > entry.resetAt) store.delete(key);
     }
-}, 10 * 60 * 1000);
+}, 10 * 60 * 1000).unref?.();     // ne retient pas le processus (tests, arrêt du serveur)
 
 /**
  * Check rate limit for a given key.
@@ -41,6 +41,22 @@ export function checkRateLimit(
 
     entry.count++;
     return null;
+}
+
+/**
+ * La tentative que `checkRateLimit` vient de compter a réussi : elle ne compte plus. Les limites défendent contre les
+ * essais RATÉS (mot de passe deviné, comptes créés en série) ; un visiteur qui se connecte six fois dans le quart
+ * d'heure avec le bon mot de passe n'a pas à être bloqué (batterie de tests du 25/11/2026).
+ */
+export function forgiveAttempt(key: string): void {
+    const entry = store.get(key);
+    if (entry && entry.count > 0) entry.count--;
+}
+
+/** Le message d'un blocage : « Trop de tentatives. Réessayez dans 14 minutes. » */
+export function tooManyAttempts(retryAfterSeconds: number, what: string = 'Trop de tentatives'): string {
+    const minutes = Math.max(1, Math.ceil(retryAfterSeconds / 60));
+    return `${what}. Réessayez dans ${minutes} minute${minutes > 1 ? 's' : ''}.`;
 }
 
 /**

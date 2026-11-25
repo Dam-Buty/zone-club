@@ -1,0 +1,81 @@
+/* « Cette version ne se lance pas » : par-dessus la vidéo et les commandes, sous l'invite « Regarder sur TV ? » (24)
+   et le panneau « recopie d'écran » (25) du lecteur. Même langage que ces deux panneaux. */
+.overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 22;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.panel {
+  width: min(420px, 100%);
+  border: 1px solid rgba(0, 255, 247, 0.35);
+  border-radius: 8px;
+  background: rgba(5, 10, 20, 0.96);
+  box-shadow: 0 0 24px rgba(0, 255, 247, 0.2);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  text-align: center;
+}
+
+.heading {
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  color: var(--color-neon-cyan);
+  letter-spacing: 0.1em;
+  text-shadow: var(--glow-cyan);
+}
+
+.line {
+  font-family: 'Courier New', monospace;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.85);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+/* Zones d'appui d'au moins 44 px : le lecteur s'ouvre aussi depuis la borne, au doigt. */
+.primary,
+.secondary {
+  min-height: 44px;
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  border-radius: 5px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.primary {
+  color: #00140f;
+  background: #00ff88;
+  border: 1px solid #00ff88;
+}
+
+.primary:hover {
+  background: #6dffbf;
+}
+
+.secondary {
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.secondary:hover {
+  border-color: var(--color-neon-cyan);
+  color: var(--color-neon-cyan);
+}

@@ -1,33 +1,42 @@
 'use client';
 
 import { useStore } from '../../store';
+import { castOwnsFilm } from '../../cast/cast-machine';
+import { castChipLabel, castChipLook } from '../../cast/cast-labels';
 
-// Floating "Now Playing on TV" chip — appears in the lower-third of the
-// viewport whenever a cast is active on the receiver but the player overlay
-// is closed (e.g. the user dismissed the player to walk around the videoclub
-// while the film keeps playing on the TV). Tap → reopens the player for the
-// casting film, which then auto-detects the live session and enters the
-// Now Playing remote-control panel directly.
+// Point de la puce : vert (télécommande vivante) ou orange (la TV ne répond plus). Le choix par phase est dans cast-labels.
+const DOT_COLOR = { live: '#00ff88', warn: '#ffb020' } as const;
+
+// Puce flottante « Cast en cours » — apparaît en bas de l'écran quand la TV a un film à signaler (elle le joue, ne
+// répond plus, ou vient de le finir) et que le lecteur est fermé : le visiteur a quitté le lecteur pour se promener
+// dans le vidéoclub pendant que le film continue sur la TV. L'appui rouvre le lecteur sur ce
+// film, directement sur le panneau du Cast (aucune invite « Regarder sur TV ? », la TV a déjà son film).
 //
-// Pattern lifted from Spotify / Netflix mini-bars — gives the user a
-// persistent awareness that a cast is alive AND a one-tap path back to
-// remote controls.
+// Le film à signaler vient de la MACHINE (`castOwnsFilm`) : il reste désigné une fois le film terminé, et la puce
+// « Film terminé » doit rester jusqu'au rembobinage.
+//
+// Motif des mini-barres de Spotify / Netflix : la conscience permanente qu'un Cast est vivant, et un chemin en un
+// appui vers les commandes.
+//
+// Vidéoclub 3D seulement : la borne a sa propre barre, dessinée dans son écran (src/components/kiosk/KioskCastBar.tsx).
 export function ActiveCastIndicator() {
-  const activeCastFilmId = useStore(s => s.activeCastFilmId);
-  const isPlayerOpen = useStore(s => s.isPlayerOpen);
-  const openPlayer = useStore(s => s.openPlayer);
-  const films = useStore(s => s.films);
+  const cast = useStore((s) => s.cast);
+  const isPlayerOpen = useStore((s) => s.isPlayerOpen);
+  const openPlayer = useStore((s) => s.openPlayer);
+  const films = useStore((s) => s.films);
 
-  if (!activeCastFilmId || isPlayerOpen) return null;
+  const filmId = castOwnsFilm(cast);
+  const label = castChipLabel(cast.phase);
+  if (filmId === null || label === null || isPlayerOpen) return null;
 
-  const film = Object.values(films).flat().find(f => f.id === activeCastFilmId);
+  const look = castChipLook(cast.phase);
+  const film = Object.values(films).flat().find((f) => f.id === filmId);
   const title = film?.title || 'Film en cours';
 
   return (
     <button
       type="button"
-      onClick={() => openPlayer(activeCastFilmId)}
-      aria-label={`Reprendre la télécommande pour ${title}`}
+      onClick={() => openPlayer(filmId, { from: 'store', ask: false })}
       style={{
         position: 'fixed',
         bottom: 'calc(env(safe-area-inset-bottom, 0px) + 12px)',
@@ -47,25 +56,27 @@ export function ActiveCastIndicator() {
         fontSize: '0.95rem',
         letterSpacing: '0.08em',
         cursor: 'pointer',
-        // Slight breathing animation so the chip reads as "live" not "stale"
-        animation: 'activeCastChipPulse 2.4s ease-in-out infinite',
+        // Légère respiration : la puce se lit « vivante », pas figée. Seulement quand la télécommande l'est.
+        animation: look.pulse ? 'activeCastChipPulse 2.4s ease-in-out infinite' : undefined,
         WebkitTapHighlightColor: 'transparent',
         maxWidth: 'calc(100vw - 40px)',
         overflow: 'hidden',
       }}
     >
-      <span
-        aria-hidden="true"
-        style={{
-          width: 8,
-          height: 8,
-          borderRadius: '50%',
-          background: '#00ff88',
-          boxShadow: '0 0 8px #00ff88',
-          animation: 'activeCastDotBlink 1.4s ease-in-out infinite',
-          flexShrink: 0,
-        }}
-      />
+      {look.dot !== null && (
+        <span
+          aria-hidden="true"
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: '50%',
+            background: DOT_COLOR[look.dot],
+            boxShadow: `0 0 8px ${DOT_COLOR[look.dot]}`,
+            animation: look.dot === 'live' ? 'activeCastDotBlink 1.4s ease-in-out infinite' : undefined,
+            flexShrink: 0,
+          }}
+        />
+      )}
       <span style={{ fontSize: '1.1em', flexShrink: 0 }} aria-hidden="true">📺</span>
       <span
         style={{
@@ -83,12 +94,13 @@ export function ActiveCastIndicator() {
           fontSize: '0.85em',
           letterSpacing: '0.12em',
           flexShrink: 0,
+          whiteSpace: 'nowrap',
           marginLeft: 6,
           paddingLeft: 10,
           borderLeft: '1px solid rgba(255,255,255,0.15)',
         }}
       >
-        TÉLÉCOMMANDE
+        {label}
       </span>
       <style>{`
         @keyframes activeCastChipPulse {

@@ -1,0 +1,935 @@
+/* Borne de location — le corps de la borne, son écran et sa vitre.
+
+   Référence visuelle fournie par Rusmir : l'interface d'une borne de location de 2007
+   (photographie « 01_iMOZI_interface_2007 »). On en reprend l'esprit et la facture — fond bleu
+   profond derrière une vitre, onglets collés dans un cadre, boutons plats à trame et fine bordure
+   claire, typographie DIN condensée — pas les éléments de marque.
+
+   Trois feuilles : celle-ci (corps, écran, vitre, barre du haut), KioskBrowse.module.css (rayons,
+   fiche, boutons, bande de jaquettes) et KioskPanels.module.css (connexion, recherche, messages).
+   Elles partagent les variables posées ici sur l'écran.
+
+   L'objectif est photoréaliste : on ne doit pas avoir l'impression d'une page web, mais d'une
+   dalle LCD de 2007 derrière sa vitre, sur un trottoir, la nuit. Deux couches recouvrent donc le
+   contenu : la DALLE — une TN de 2007, éclairée par des tubes : trame des sous-pixels, contraste
+   et couleurs limités, 6 bits par couleur et leur fourmillement — puis la VITRE (le reflet de la
+   rue, tiré d'une photo, qui ne fait qu'ajouter de la lumière).
+
+   Contraintes tenues partout : du DOM et du CSS seulement — aucun flou d'arrière-plan, aucun
+   filtre, aucune surface de dessin (le diagnostic du 14/11/2026 a montré que ces effets font
+   compiler des shaders au navigateur et gèlent l'affichage à leur première apparition). Les
+   effets sont faits d'images préparées d'avance (public/kiosk/) et de dégradés. Une seule
+   couche utilise un mode de fusion : le reflet de la vitre, en « écran », parce qu'un reflet
+   AJOUTE de la lumière — c'est ce qui le fait disparaître sur les zones claires au lieu de les
+   ternir, et ce qui distingue une vitre d'un film plastique.
+
+   Tout ce qui est DANS l'écran se mesure en cqw (centièmes de la largeur de l'écran de la
+   borne) : l'interface garde ses proportions quelle que soit la taille de l'écran. */
+
+/* ===== Page : téléphone d'abord — toute la page est le corps de la borne ===== */
+
+.root {
+  /* Sur un téléphone, l'écran de la borne prend toute la place qu'il peut : ses boutons en
+     dépendent (retour de Rusmir du 17/11/2026 sur son Pixel 9a : « les boutons de sélection sont
+     trop petits […] les bords de la borne en largeur ne servent à rien, il faut un zoom un peu
+     plus fort »). Il n'est limité que par la largeur de la fenêtre, moins un cadre de 6 px, et par
+     la hauteur qui reste sous l'enseigne (--kiosk-reserve : enseigne 50, écart 10, marges 2 × 6,
+     cadre 2 × 6). La fente et la vitrine du dessous ne sont plus réservées : elles prennent la
+     hauteur qui reste (.below), et s'effacent quand il n'en reste pas. Sur le Pixel 9a (fenêtre
+     411 × 809), l'écran passait de 366 px de large à 399. */
+  --kiosk-reserve: 84px;
+  /* Écran haut (5:9). */
+  --ks-ratio: 5 / 9;
+  --ks-w: min(100vw - 12px, calc((100dvh - var(--kiosk-reserve)) * 5 / 9));
+
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: max(6px, env(safe-area-inset-top)) 0 max(6px, env(safe-area-inset-bottom));
+  background: linear-gradient(180deg, #23213a 0%, #191827 40%, #14131f 100%);
+  color: #fff;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+  /* Gestes parasites (audit du 17/11/2026). « manipulation » garde le défilement et le pincement
+     mais retire le double-tap qui zoome (MDN) : deux appuis rapides sur une flèche ne doivent pas
+     agrandir la page sur un iPhone. Et un appui long sur une jaquette n'ouvre pas le menu de
+     l'image sur iOS (sur Android, voir onContextMenu dans KioskView). */
+  touch-action: manipulation;
+  -webkit-touch-callout: none;
+}
+
+.sign {
+  position: relative;
+  flex: none;
+  height: 50px;
+  width: 100%;
+}
+
+/* L'enseigne « LOCATION 24/7 » : un néon RENDU (public/kiosk/neon-location-247.webp), sur le
+   modèle de l'enseigne VIDEOCLUB de la devanture — lettres en contour, tube fin au cœur rose
+   presque blanc, halo violet. Un texte avec des ombres portées ne passe pas pour un néon : le
+   tube, son halo et la saturation du cœur sont calculés en lumière, hors ligne. L'image porte
+   son halo en marge : elle déborde donc de sa case, centrée, sans peser sur la mise en page.
+   --neon-letters est la largeur des lettres seules. */
+.neonImg {
+  --neon-letters: min(86vw, 344px);
+
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: calc(var(--neon-letters) * 1.1850);
+  max-width: none;
+  height: auto;
+  aspect-ratio: 1345 / 302;
+  translate: -50% -50%;
+  pointer-events: none;
+  user-select: none;
+}
+
+.body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.column {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+/* Le décor du bas : toute la hauteur qui reste sous l'écran, rien de plus. */
+.below {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 10px;
+}
+
+/* Cadre de l'écran : le plastique noir satiné d'un moniteur de borne, LISSE (un grain le faisait
+   passer pour du caoutchouc). La lumière vient d'en haut — l'enseigne violette — et n'accroche
+   que l'arête supérieure ; les flancs s'assombrissent. */
+.bezel {
+  flex: none;
+  /* Fin sur téléphone : chaque pixel de largeur va à l'écran (13 px sur PC). */
+  padding: 6px;
+  background:
+    linear-gradient(180deg, rgba(190, 150, 255, 0.2) 0, rgba(190, 150, 255, 0) 8px),
+    linear-gradient(180deg, #2a2a31 0%, #141418 5%, #0a0a0d 38%, #050507 100%);
+  border-radius: 9px;
+  box-shadow:
+    0 0 0 1px #000,
+    0 0 0 3px #2b2a3d,
+    0 14px 34px rgba(0, 0, 0, 0.7),
+    0 0 30px rgba(60, 110, 255, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    inset 0 -3px 4px rgba(0, 0, 0, 0.9),
+    inset 1px 0 0 rgba(255, 255, 255, 0.07),
+    inset -1px 0 0 rgba(0, 0, 0, 0.7);
+}
+
+.slot {
+  flex: none;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: #060609;
+  border: 2px solid #34324a;
+  border-radius: 5px;
+  color: #8f8aa8;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.slot::before {
+  content: "";
+  width: 46%;
+  height: 7px;
+  background: #000;
+  border-radius: 2px;
+  box-shadow: inset 0 1px 2px #333;
+}
+
+/* Vitrine de tranches de K7. */
+.spines {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 3px;
+  overflow: hidden;
+  background: #07070b;
+  border: 3px solid #34324a;
+  border-radius: 4px;
+  box-shadow: inset 0 0 18px #000, 0 0 12px rgba(192, 132, 255, 0.25);
+}
+
+.spines i {
+  display: block;
+  flex: 1 1 0;
+  min-height: 5px;
+  position: relative;
+  border-radius: 1px;
+}
+
+.spines i::after {
+  content: "";
+  position: absolute;
+  left: 8%;
+  top: 28%;
+  width: 38%;
+  height: 44%;
+  background: rgba(255, 255, 255, 0.55);
+  border-radius: 1px;
+}
+
+/* Téléphone : le haut d'une vitrine sous la fente, coupé par le bas de l'écran. Elle cède sa place
+   la première quand la hauteur manque (elle peut se réduire à rien, marge comprise). */
+.vitrine {
+  flex: 0 1 100px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.vitrine .spines {
+  height: 100px;
+}
+
+.sideVitrine {
+  display: none;
+}
+
+/* Fenêtre basse (téléphone court, ou barres du navigateur déployées) : l'écran de la borne prend
+   toute la hauteur, l'enseigne et la fente s'effacent. */
+@media (max-height: 760px) {
+  .root {
+    --kiosk-reserve: 26px;
+  }
+
+  .sign,
+  .below {
+    display: none;
+  }
+}
+
+/* ===== PC : l'écran prend la hauteur, la borne déborde de chaque côté ===== */
+
+@media (min-width: 769px) and (pointer: fine) {
+  .root {
+    /* Sur PC c'est la hauteur qui est comptée : l'écran reste en 2:3 pour garder sa largeur. */
+    --ks-ratio: 2 / 3;
+    --ks-w: calc(min(94dvh, 1100px) * 2 / 3);
+
+    flex-direction: row;
+    gap: 0;
+    padding: 0;
+    background:
+      radial-gradient(60% 90% at 108% 55%, rgba(255, 214, 150, 0.3), transparent 60%),
+      radial-gradient(70% 50% at 50% -10%, rgba(160, 90, 255, 0.35), transparent 70%),
+      #0d0c16;
+  }
+
+  .sign,
+  .below {
+    display: none;
+  }
+
+  .column {
+    flex: 0 1 auto;
+  }
+
+  .bezel {
+    padding: 13px;
+    border-radius: 12px;
+  }
+
+  .body {
+    flex: none;
+    max-width: 100vw;
+    height: 100%;
+    flex-direction: row;
+    align-items: center;
+    gap: 20px;
+    padding: 0 26px;
+    /* Fenêtre plus large que le décor (au-delà d'environ 1,84 fois sa hauteur : un Chrome agrandi sur un écran Full HD) :
+       le corps se décale pour que le décor soit centré, au lieu de laisser toute la bande noire à droite. Même formule
+       dans storefront-layout.ts (kioskScreenBoxDesktop), où le film d'approche amène son écran. */
+    margin-left: max(0px, calc(50vw - var(--ks-w) * 1.3301 - 62px));
+    background: linear-gradient(180deg, #23213a 0%, #191827 40%, #14131f 100%);
+    border-left: 3px solid #34324a;
+    border-right: 3px solid #34324a;
+    box-shadow: 0 0 60px rgba(0, 0, 0, 0.8);
+  }
+
+  /* `width` et non `flex-basis` : la largeur intrinsèque du corps (flex) ignore le flex-basis de
+     ses enfants, et la vitrine, sans contenu propre, s'écrasait à quelques pixels. Elle reste
+     compressible quand la fenêtre est étroite. */
+  .sideVitrine {
+    display: flex;
+    flex: 0 1 auto;
+    width: calc(var(--ks-w) * 0.62);
+    min-width: 0;
+    align-self: stretch;
+    margin: 18px 0 -30px;
+  }
+}
+
+/* ===== PC, avec le décor : la borne modélisée derrière l'écran =====
+   Le décor est la première image du film de distribution du PC (la borne dans la rue, comme à la fin du film
+   d'approche). Il remplace la borne dessinée — bandes de couleur, cadre, corps — SANS changer aucune cote : l'écran
+   doit rester exactement où le film d'approche l'attend. On efface donc les fonds, les bordures et les ombres, rien
+   d'autre. */
+
+/* La place de l'écran : une boîte à ses mesures, pour y accrocher le décor en pourcentages (decorStyle). */
+.ksPlace {
+  position: relative;
+}
+
+.decor {
+  position: absolute;
+  max-width: none;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* Les bords du décor se fondent dans le noir de la page : là où il ne couvre pas la fenêtre (fenêtre très large ou
+   très haute), pas de coupure nette. Sans effet quand ses bords sont hors de la fenêtre. */
+.decorFade {
+  position: absolute;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, #05050a 0%, rgba(5, 5, 10, 0) 5%, rgba(5, 5, 10, 0) 95%, #05050a 100%),
+    linear-gradient(180deg, #05050a 0%, rgba(5, 5, 10, 0) 4%, rgba(5, 5, 10, 0) 96%, #05050a 100%);
+}
+
+.root[data-decor] {
+  background: #05050a;
+}
+
+.root[data-decor] .body {
+  background: none;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.root[data-decor] .bezel {
+  background: none;
+  box-shadow: none;
+}
+
+.root[data-decor] .sideVitrine {
+  visibility: hidden;
+}
+
+/* La vitre de la borne modélisée est en retrait dans son cadre : l'écran y est posé sans liseré. */
+.root[data-decor] .ks {
+  box-shadow: none;
+  border-radius: 0;
+}
+
+/* ===== Écran de la borne ===== */
+
+.ks {
+  container-type: inline-size;
+  position: relative;
+  width: var(--ks-w);
+  aspect-ratio: var(--ks-ratio);
+  overflow: hidden;
+  border-radius: 2px;
+  /* La vitre est en retrait dans le cadre : la lèvre du haut est dans l'ombre, celle du bas
+     prend la lumière. */
+  box-shadow: 0 0 0 1px #000, 0 -1px 0 2px rgba(0, 0, 0, 0.9), 0 1px 0 2px rgba(255, 255, 255, 0.16);
+}
+
+/* ----- la vitre : le reflet -----
+   Une photo (public/kiosk/glass-reflection.webp), pas un dessin : la rue du site, de nuit, vue
+   en miroir, réduite à ses sources vives, avec le flou d'objectif d'un décor lointain quand on
+   fait le point sur l'écran, et le réverbère en source ponctuelle. Elle est sur fond noir et
+   composée en « écran » : elle n'ajoute que de la lumière. Portée par le conteneur (pas d'unités
+   cqw ici : elles se résoudraient sur un ancêtre). */
+.ks::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  /* Calée en haut : sur l'écran 2:3 du PC c'est le bas de l'image (noir) qui est rogné, pas
+     l'éclat du réverbère. */
+  background: #000 url(/kiosk/glass-reflection.webp) center top / cover no-repeat;
+  mix-blend-mode: screen;
+  /* Discret : le reflet doit se deviner sur les zones sombres, pas concurrencer l'affichage. */
+  opacity: 0.22;
+  /* Un reflet est celui d'un décor lointain : il glisse sur la vitre quand on incline le téléphone
+     (variables posées par useViewingAngle). Un bord qui se découvre n'y perd rien : il n'aurait
+     ajouté que du noir. */
+  transform: translate(calc(var(--k-reflect-x, 0) * -10%), calc(var(--k-reflect-y, 0) * -8%));
+}
+
+/* ----- l'angle de vue d'une dalle TN -----
+   Vue d'en dessus, l'image se délave — davantage en bas, vu plus en biais ; vue d'en dessous, elle
+   s'assombrit — davantage en haut ; de côté, sa teinte glisse vers le chaud ou le froid. Sous la
+   vitre (le reflet n'en dépend pas), au-dessus de toute la dalle. Piloté par l'inclinaison du
+   téléphone (useViewingAngle) ; à zéro, il ne dessine rien. La bande noire du bord de la dalle
+   (0,7cqw, voir .screen::after) n'est pas éclairée : le voile s'arrête avant elle (en pourcentages,
+   les cqw se résolvant ici sur un ancêtre). */
+.ks::before {
+  content: "";
+  position: absolute;
+  inset: 0.4% 0.7%;
+  z-index: 1;
+  pointer-events: none;
+  background:
+    /* Intensités baissées de 15 % le 17/11/2026 (« niveau dalle claire / sombre, réduire légèrement l'effet »). */
+    linear-gradient(180deg, rgb(206 214 230 / calc(var(--k-view-wash, 0) * 0.136)), rgb(206 214 230 / calc(var(--k-view-wash, 0) * 0.29))),
+    linear-gradient(180deg, rgb(6 5 2 / calc(var(--k-view-dark, 0) * 0.527)), rgb(6 5 2 / calc(var(--k-view-dark, 0) * 0.255))),
+    linear-gradient(90deg, rgb(255 196 120 / 0), rgb(255 196 120 / calc(var(--k-view-warm, 0) * 0.09))),
+    linear-gradient(90deg, rgb(120 160 255 / calc(var(--k-view-cool, 0) * 0.09)), rgb(120 160 255 / 0));
+}
+
+/* Les unités cqw d'un conteneur se résolvent sur son ANCÊTRE : le fond et tout le contenu sont
+   donc portés par cet enfant, pas par .ks lui-même.
+
+   Les variables --k-* sont partagées avec les deux autres feuilles. Celles de la mise en page
+   valent pour l'écran haut (5:9, 180cqw de haut) ; l'écran 2:3 du PC (150cqw) les redéfinit plus
+   bas. */
+.screen {
+  /* Typographie, mesurée sur la photo de référence. Les libellés (onglets, boutons, titres) y
+     sont dans une DIN très étroite, le texte courant dans une condensée ordinaire, les petites
+     étiquettes de la fiche dans une grotesque de largeur normale.
+     - --k-font : Big Shoulders Display, pour les libellés — choisie par Rusmir le 17/11/2026 sur
+       une comparaison côte à côte avec Sofia Sans Extra Condensed. À hauteur d'x égale, « search »
+       y a la largeur de la photo (3,29 fois la hauteur d'x contre 3,30). Barlow Condensed,
+       utilisée au début, était 40 % trop large : ses libellés débordaient de leurs cases.
+       ATTENTION : cette police est haute (hauteur d'x 0,60 em, capitale 0,80 em) et ses traits
+       sont fins — les corps sont donc plus petits et les graisses d'un cran plus fortes qu'avec
+       une police ordinaire.
+     - --k-font-text : Sofia Sans Condensed, pour ce qui se lit.
+     - --k-font-label : Inter (déjà chargée par le site), pour les étiquettes de la fiche.
+     - --k-font-marker : les valeurs « au feutre » — Marker Felt sur les appareils Apple, Caveat
+       Brush ailleurs (sans elle un téléphone Android tombait sur une cursive quelconque).
+     Les trois premières sont chargées par l'import de polices de src/index.css. */
+  --k-font: "Big Shoulders Display", "DIN Condensed", "Arial Narrow", sans-serif-condensed, "Helvetica Neue", Arial, sans-serif;
+  --k-font-text: "Sofia Sans Condensed", "Roboto Condensed", "Arial Narrow", sans-serif-condensed, "Helvetica Neue", Arial, sans-serif;
+  --k-font-label: "Inter", "Helvetica Neue", Arial, sans-serif;
+  --k-font-marker: "Marker Felt", "Caveat Brush", "Comic Sans MS", cursive;
+  /* Corps des libellés de la rangée de boutons : calculés sur la largeur réelle des mots, pour
+     qu'il reste au moins 2cqw de marge de chaque côté (« Recherche » fait 3,86 em). */
+  --k-btn-size: 6.4cqw;
+  --k-price-size: 4.1cqw;
+  --k-search-size: 5.2cqw;
+
+  /* Boutons : plats, bordure claire, angles à peine arrondis, et la trame verticale de la
+     référence — un trait d'un pixel physique tous les quatre, à peine marqué (--k-trame) : sur un
+     écran non dense un trait plus appuyé quadrille le bouton. */
+  --k-trame: 0.04;
+  --k-radius: 0.9cqw;
+  --k-skin-orange:
+    repeating-linear-gradient(90deg, rgb(255 255 255 / var(--k-trame)) 0 var(--k-dpx, 1px), rgb(255 255 255 / 0) var(--k-dpx, 1px) calc(var(--k-dpx, 1px) * 4)),
+    linear-gradient(180deg, #ffbb5c 0%, #f39226 22%, #e0700d 56%, #d46306 80%, #e67c18 100%);
+  --k-edge-orange: #ffd493;
+  --k-skin-teal:
+    repeating-linear-gradient(90deg, rgb(255 255 255 / var(--k-trame)) 0 var(--k-dpx, 1px), rgb(255 255 255 / 0) var(--k-dpx, 1px) calc(var(--k-dpx, 1px) * 4)),
+    linear-gradient(180deg, #6cc8e4 0%, #3da8ce 22%, #2590bd 56%, #1d81ad 80%, #2c96c0 100%);
+  --k-edge-teal: #a5eaff;
+  /* Satiné des onglets : le reflet d'un aplat peint sur métal, sans brillance franche. */
+  --k-skin-tab: linear-gradient(180deg, #5aa3c1 0%, #3a8aaf 24%, #2d799e 60%, #287196 82%, #3080a5 100%);
+  /* Relief des aplats : un filet clair discret en haut, un filet sombre en bas — pas de brillance. */
+  --k-bevel: inset 0 0.25cqw 0 rgba(255, 255, 255, 0.15), inset 0 -0.25cqw 0 rgba(0, 18, 48, 0.42);
+  /* Ombre des libellés clairs : courte et nette, vers le bas, comme sur la référence. Pas de
+     halo : sur un écran non dense il empâte les lettres. */
+  --k-text-shadow: 0 0.2cqw 0.1cqw rgba(0, 18, 44, 0.6);
+  /* Encres : un blanc à peine cassé sur les aplats de couleur, jamais un blanc pur. */
+  --k-ink: #eef3f1;
+  --k-ink-soft: #cfe3f2;
+  /* Grille de la dalle : la matrice noire entre les pixels, dans les deux sens — un trait d'UN
+     pixel physique (--k-dpx), répété tous les --k-lcd-n pixels physiques ; les deux valeurs sont
+     posées par KioskView d'après la densité de l'écran. Elle est aussi serrée que l'écran le
+     permet (un pixel sur deux sur un écran non dense) et à peine marquée : un grain de dalle,
+     pas un relief. Ni lignes de balayage — c'est le défaut d'un tube cathodique, pas d'un LCD —
+     ni bandes de couleur. À JUGER SUR UN ÉCRAN NON DENSE : c'est là qu'elle se voit le plus. */
+  --k-lcd-line-h: 0.03;
+  --k-lcd-line-v: 0.022;
+  --k-lcd-pitch: calc(var(--k-dpx, 1px) * var(--k-lcd-n, 2));
+  --k-lcd-cols: repeating-linear-gradient(90deg, rgb(0 0 12 / var(--k-lcd-line-v)) 0 var(--k-dpx, 1px), rgb(0 0 12 / 0) var(--k-dpx, 1px) var(--k-lcd-pitch));
+  --k-lcd-rows: repeating-linear-gradient(0deg, rgb(0 0 12 / var(--k-lcd-line-h)) 0 var(--k-dpx, 1px), rgb(0 0 12 / 0) var(--k-dpx, 1px) var(--k-lcd-pitch));
+  /* Hachure de la fiche blanche (voir .kSlate) et opacité du fourmillement (voir .kFrc). */
+  --k-hatch: 0.028;
+  --k-frc-opacity: 1;
+  /* Cadres : cyan métallisé, éclairé par le haut. */
+  --k-frame: #63cdf0;
+  --k-frame-hi: #bdeeff;
+  --k-frame-lo: #3b8fb9;
+  /* Fond de l'écran, comme sur la référence : un bleu vif derrière la fiche, qui tombe au NOIR
+     vers les bords et le bas (de #2a84ea au centre à #01040d). Il est quantifié sur 6 bits par
+     couleur (64 niveaux) comme le sortait une dalle TN — d'où ses bandes. Liste produite par un
+     script ; partagée avec les panneaux de KioskPanels.module.css. */
+  --k-bg-stops:
+    #2886eb 0% 0.25%, #2882eb 0.25% 1%, #2882e7 1% 3%, #287de7 3% 4%,
+    #287de3 4% 5%, #247de3 5% 5.75%, #2479e3 5.75% 6.75%, #2479df 6.75% 8.5%,
+    #2475df 8.5% 9.75%, #2475db 9.75% 10.5%, #2075db 10.5% 11%, #2071db 11% 12.75%,
+    #2071d7 12.75% 13.75%, #206dd7 13.75% 15.75%, #206dd2 15.75% 16%, #1c6dd2 16% 16.5%,
+    #1c69d2 16.5% 18.75%, #1c69ce 18.75% 19.25%, #1c65ce 19.25% 21.5%, #1865ce 21.5% 21.75%,
+    #1865ca 21.75% 22%, #1861ca 22% 23.5%, #1861c6 23.5% 24.5%, #185dc6 24.5% 25.25%,
+    #185dc2 25.25% 27%, #1859be 27% 28.25%, #1459be 28.25% 28.75%, #1459ba 28.75% 29.75%,
+    #1455ba 29.75% 30.5%, #1455b6 30.5% 32.25%, #1451b2 32.25% 34%, #1451ae 34% 34.75%,
+    #104dae 34.75% 35.5%, #104daa 35.5% 37.25%, #104da6 37.25% 37.5%, #1049a6 37.5% 39%,
+    #1049a2 39% 40%, #1045a2 40% 40.75%, #10459e 40.75% 41.5%, #0c459e 41.5% 42.5%,
+    #0c419a 42.5% 44.25%, #0c4196 44.25% 45.25%, #0c3d96 45.25% 45.75%, #0c3d92 45.75% 47%,
+    #0c3d8e 47% 47.75%, #0c398e 47.75% 48.25%, #0c398a 48.25% 49.75%, #0c3986 49.75% 50.5%,
+    #0c3586 50.5% 50.75%, #083586 50.75% 51%, #083582 51% 52.25%, #08357d 52.25% 53.25%,
+    #08317d 53.25% 53.5%, #083179 53.5% 55%, #083175 55% 55.75%, #082d75 55.75% 56.25%,
+    #082d71 56.25% 57.5%, #082d6d 57.5% 58.5%, #08286d 58.5% 58.75%, #082869 58.75% 60%,
+    #082865 60% 61%, #082465 61% 61.5%, #082461 61.5% 62.75%, #04245d 62.75% 63.75%,
+    #04205d 63.75% 64%, #042059 64% 65.25%, #042055 65.25% 66.5%, #041c55 66.5% 66.75%,
+    #041c51 66.75% 68.25%, #041c4d 68.25% 69.5%, #041c49 69.5% 70.25%, #041849 70.25% 71%,
+    #041845 71% 72.5%, #041841 72.5% 73.75%, #04143d 73.75% 75.25%, #041439 75.25% 76.75%,
+    #041435 76.75% 77.5%, #041035 77.5% 78.25%, #041031 78.25% 79.5%, #04102d 79.5% 81%,
+    #041028 81% 81.25%, #040c28 81.25% 82.5%, #040c24 82.5% 83.75%, #000c20 83.75% 86%,
+    #000820 86% 86.75%, #00081c 86.75% 89.75%, #000818 89.75% 93%, #000814 93% 95.25%,
+    #000414 95.25% 96%, #000410 96% 99%, #00040c 99% 100%;
+
+  /* Mise en page verticale (écran haut). Sur téléphone, KioskView les recalcule d'après la taille
+     réelle de l'écran (phoneLayout : commandes à hauteur minimale en pixels) ; ces valeurs-ci ne
+     servent qu'avant la première mesure. */
+  --k-nav-h: 10cqw;
+  --k-card-top: 14.4cqw;
+  --k-tab-h: 11cqw;
+  --k-tab-size: 5.2cqw;
+  --k-card-h: 78.8cqw;
+  --k-poster-w: 38.2cqw;
+  --k-meta-year: 7.6cqw;
+  --k-meta-sm: 4.8cqw;
+  --k-meta-gap: 1.7cqw;
+  --k-title-h: 14.4cqw;
+  --k-title-size: 6cqw;
+  --k-title-size-md: 5cqw;
+  --k-title-size-sm: 4.2cqw;
+  --k-under-top: 94.8cqw;
+  --k-under-h: 32.3cqw;
+  /* Texte du cadre « En bref » : 2 px de plus que la proportion sur téléphone, pour la lecture (phoneLayout). */
+  --k-syn-size: calc(3.75cqw + 2px);
+  --k-syn-lines: 4;
+  --k-btn-top: 129.1cqw;
+  --k-btn-h: 12cqw;
+  --k-strip-top: 142.9cqw;
+  /* Hauteur d'une jaquette de la bande (trois tiennent entre les flèches jusqu'à 34,7cqw). */
+  --k-rail-poster-h: 30.5cqw;
+
+  position: absolute;
+  inset: 0;
+  /* Contexte d'empilement propre : tout ce que l'écran affiche — panneaux, messages, trame, bord
+     de la dalle — reste SOUS le reflet de la vitre, porté par le conteneur. Sans cela les calques
+     numérotés de l'écran passaient par-dessus le reflet. */
+  z-index: 0;
+  overflow: hidden;
+  font-family: var(--k-font);
+  color: var(--k-ink);
+  background:
+    linear-gradient(90deg, transparent 0 22%, rgba(150, 212, 255, 0.16) 50%, transparent 78%) 0 11.4cqw / 100% 0.4cqw no-repeat,
+    radial-gradient(86% 47% at 58% 30%, var(--k-bg-stops));
+}
+
+@media (min-width: 769px) and (pointer: fine) {
+  .screen {
+    /* Le PC garde sa mise en page fixe (les valeurs du téléphone viennent de phoneLayout). */
+    --k-nav-h: 7.6cqw;
+    --k-card-top: 12cqw;
+    --k-tab-h: 8.886cqw;
+    --k-tab-size: 4.4cqw;
+    --k-card-h: 64cqw;
+    --k-poster-w: 29.7cqw;
+    --k-meta-year: 5.8cqw;
+    --k-meta-sm: 3.9cqw;
+    --k-meta-gap: 0.5cqw;
+    --k-title-h: 12.2cqw;
+    --k-title-size: 5.2cqw;
+    --k-title-size-md: 4.3cqw;
+    --k-title-size-sm: 3.3cqw;
+    --k-under-top: 77.4cqw;
+    --k-under-h: 19.6cqw;
+    --k-syn-size: 3.5cqw;
+    --k-syn-lines: 2;
+    /* Écran 2:3 : le générique tient sur une ligne, ses deux parties séparées par un filet. */
+    --k-credit-display: inline;
+    --k-credit-sep: "\2002|\2002";
+    --k-btn-top: 98.6cqw;
+    --k-btn-h: 11.5cqw;
+    --k-strip-top: 111.9cqw;
+    --k-rail-poster-h: 31.4cqw;
+  }
+
+  /* La barre du Cast (KioskCastBar) prend la place du haut de la bande, haute comme un onglet ; la bande descend
+     d'autant et ses jaquettes rapetissent pour y tenir ((150 − 2,4 − 122,586 − 0,8) × 0,9). Sur téléphone, c'est
+     phoneLayout qui fait ce calcul. */
+  .screen[data-cast-bar] {
+    --k-cast-top: 111.9cqw;
+    --k-cast-h: 8.886cqw;
+    --k-strip-top: 122.586cqw;
+    --k-rail-poster-h: 21.79cqw;
+  }
+}
+
+/* Écran dense : les traits de la grille y sont deux à trois fois plus fins, donc un peu plus
+   marqués pour rester perceptibles. Placé après la règle de base de .screen, qui sinon
+   l'emporterait. */
+@media (min-resolution: 1.5dppx) {
+  .screen {
+    --k-lcd-line-h: 0.06;
+    --k-lcd-line-v: 0.045;
+    --k-trame: 0.07;
+    --k-hatch: 0.045;
+  }
+}
+
+/* ----- la dalle LCD -----
+   Par-dessus le contenu, sous la vitre, sans capter les appuis. Une dalle TN de 2007, éclairée
+   par des tubes fluorescents, ne savait pas afficher ce qu'affiche un écran d'aujourd'hui ; tout
+   ce que l'écran montre — interface et jaquettes — passe donc par ses limites :
+
+   - contraste et couleurs limités : tout est ramené vers un gris bleuté. Les noirs ne descendent
+     plus jusqu'au noir (relevés, bleutés), les blancs sont froids, les couleurs moins pures. La
+     bande noire du bord, elle, n'est pas éclairée : elle reste plus noire que le « noir » de
+     l'image, comme sur une vraie dalle ;
+   - le gamma d'une TN dérive avec l'angle vertical : vue de face, le haut de l'image est plus
+     dense et plus sombre, le bas plus pâle ;
+   - le tube du bas fuit le long du bord ;
+   - la grille des pixels, très fine.
+
+   Le tout par simple transparence — un filtre ferait la même chose en plus exact, mais il est
+   exclu sous kiosk/ (voir l'en-tête). */
+.screen::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  pointer-events: none;
+  background:
+    var(--k-lcd-cols),
+    var(--k-lcd-rows),
+    /* Fuites de lumière là où le cadre appuie sur la dalle, surtout aux coins, inégales d'un coin à
+       l'autre, et une traînée au bas du bord ; puis deux nuages du rétroéclairage. Elles
+       n'ajoutent que de la lumière : on ne les voit que sur le sombre, comme sur une vraie dalle. */
+    radial-gradient(34% 10% at 0% 100%, rgba(200, 218, 255, 0.26), rgba(200, 218, 255, 0) 72%),
+    radial-gradient(26% 8% at 100% 100%, rgba(200, 218, 255, 0.18), rgba(200, 218, 255, 0) 72%),
+    radial-gradient(20% 6% at 0% 0%, rgba(200, 218, 255, 0.12), rgba(200, 218, 255, 0) 72%),
+    radial-gradient(28% 6% at 100% 0%, rgba(200, 218, 255, 0.17), rgba(200, 218, 255, 0) 72%),
+    radial-gradient(16% 3.5% at 62% 100%, rgba(200, 218, 255, 0.14), rgba(200, 218, 255, 0) 75%),
+    radial-gradient(45% 22% at 30% 55%, rgba(170, 190, 235, 0.04), rgba(170, 190, 235, 0) 70%),
+    radial-gradient(40% 18% at 72% 78%, rgba(170, 190, 235, 0.035), rgba(170, 190, 235, 0) 70%),
+    linear-gradient(0deg, rgba(190, 212, 255, 0.1) 0%, rgba(190, 212, 255, 0.03) 5%, rgba(190, 212, 255, 0) 12%),
+    linear-gradient(
+      180deg,
+      rgba(0, 5, 30, 0.18) 0%,
+      rgba(0, 5, 30, 0.06) 22%,
+      rgba(0, 5, 30, 0) 45%,
+      rgba(168, 186, 228, 0) 60%,
+      rgba(168, 186, 228, 0.035) 82%,
+      rgba(168, 186, 228, 0.06) 100%
+    ),
+    linear-gradient(rgba(92, 108, 150, 0.1), rgba(92, 108, 150, 0.1));
+}
+
+/* ----- le bord de la dalle -----
+   Le verre est plan, clair, et son arête est cachée sous le cadre : ni liseré, ni voile, ni
+   assombrissement en dôme. Ce qu'on voit au bord, c'est la dalle elle-même : sa bande noire
+   (l'image ne va jamais jusqu'au cadre) et l'ombre courte que le cadre, en avant, porte sur elle
+   — plus longue en haut, d'où vient la lumière. */
+.screen::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 9;
+  pointer-events: none;
+  border-radius: inherit;
+  box-shadow:
+    inset 0 0 0 0.7cqw #030305,
+    inset 0 2.6cqw 1.8cqw -0.4cqw rgba(0, 0, 8, 0.7),
+    inset 1.6cqw 0 1.5cqw -0.4cqw rgba(0, 0, 8, 0.4),
+    inset -1.6cqw 0 1.5cqw -0.4cqw rgba(0, 0, 8, 0.4),
+    inset 0 -1.5cqw 1.5cqw -0.4cqw rgba(0, 0, 8, 0.35);
+}
+
+/* ----- l'allumage du rétroéclairage -----
+   Les tubes fluorescents (CCFL) d'une dalle de 2007 ne s'allumaient pas d'un coup : un instant de
+   noir, l'amorçage, puis une lumière d'abord terne et un peu chaude qui se stabilise. Une seule
+   fois, à l'ouverture de la borne ; l'image reste dessous, seule sa lumière change. Sous la grille
+   et les fuites de la dalle (.screen::before), qui se devinent pendant ce temps. */
+.kWarm {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+  background: rgb(18 9 4);
+  opacity: 0;
+  animation: kWarmUp 2.8s cubic-bezier(0.3, 0.6, 0.4, 1) both;
+}
+
+@keyframes kWarmUp {
+  0%,
+  6% {
+    opacity: 0.94;
+  }
+  11% {
+    opacity: 0.56;
+  }
+  35% {
+    opacity: 0.3;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* ----- le fourmillement (FRC) -----
+   Une dalle 6 bits simulait les niveaux qui lui manquaient en faisant clignoter chaque pixel de la
+   dalle entre deux niveaux voisins ; on le voyait surtout sur les aplats sombres. Un semis couvre
+   l'écran et saute de place trente fois par seconde, sur seize positions. Seule une translation
+   est animée — le compositeur s'en charge, rien n'est redessiné.
+
+   Une cellule du semis = un pixel de la DALLE SIMULÉE, c'est-à-dire un pas de la grille
+   (--k-lcd-n pixels physiques : 2 sur un écran non dense, 4 sur le Pixel 9a). Le 17/11/2026, avec
+   une cellule par pixel physique et un demi-cran de 6 bits, le fourmillement était devenu
+   invisible sur le Pixel (écart mesuré entre deux instants : 4 niveaux au plus, 1,36 en moyenne,
+   sur la bande sombre) ; Rusmir : « tu as enlevé tout l'effet de fourmillement […] on essaie de
+   reproduire un écran LCD de l'époque ». Amplitude : un cran entier (--k-frc-opacity 1), entre
+   l'invisible et ce qu'il jugeait « trop important » le 16/11 (12 niveaux).
+
+   .kFrc est le « porteur » : un carré de 96 cellules, dont les déplacements (en pourcentages de son
+   propre côté, multiples de 6,25 %) tombent donc toujours sur un nombre entier de cellules. Le
+   semis, lui, déborde du porteur pour couvrir tout l'écran quelle que soit sa position. Sous la
+   grille et sous la bande noire du bord. */
+.kFrc {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 7;
+  width: calc(var(--k-dpx, 1px) * var(--k-lcd-n, 2) * 96);
+  height: calc(var(--k-dpx, 1px) * var(--k-lcd-n, 2) * 96);
+  pointer-events: none;
+  will-change: transform;
+  animation: kFrcWalk 0.5333s step-end infinite;
+}
+
+.kFrc::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: calc(100cqw + var(--k-dpx, 1px) * var(--k-lcd-n, 2) * 96);
+  height: calc(200cqw + var(--k-dpx, 1px) * var(--k-lcd-n, 2) * 96);
+  background: url(/kiosk/lcd-frc.png) 0 0 / calc(var(--k-dpx, 1px) * var(--k-lcd-n, 2) * 128) calc(var(--k-dpx, 1px) * var(--k-lcd-n, 2) * 128);
+  image-rendering: pixelated;
+  opacity: var(--k-frc-opacity);
+}
+
+/* Seize positions, sans ordre apparent ; chaque pas est un multiple de 6,25 % du porteur, soit
+   six cellules. */
+@keyframes kFrcWalk {
+  0% { transform: translate(0, 0); }
+  6.25% { transform: translate(-56.25%, -31.25%); }
+  12.5% { transform: translate(-18.75%, -81.25%); }
+  18.75% { transform: translate(-87.5%, -12.5%); }
+  25% { transform: translate(-31.25%, -62.5%); }
+  31.25% { transform: translate(-75%, -93.75%); }
+  37.5% { transform: translate(-6.25%, -43.75%); }
+  43.75% { transform: translate(-62.5%, -6.25%); }
+  50% { transform: translate(-43.75%, -75%); }
+  56.25% { transform: translate(-93.75%, -37.5%); }
+  62.5% { transform: translate(-12.5%, -18.75%); }
+  68.75% { transform: translate(-68.75%, -56.25%); }
+  75% { transform: translate(-25%, -100%); }
+  81.25% { transform: translate(-81.25%, -68.75%); }
+  87.5% { transform: translate(-37.5%, -25%); }
+  93.75% { transform: translate(-100%, -50%); }
+}
+
+/* Remise à zéro des boutons, sans poids : chaque bouton s'habille d'une seule classe, dans
+   n'importe laquelle des trois feuilles. */
+:where(.screen) :where(button) {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.screen button:focus-visible {
+  outline: 0.5cqw solid #fff;
+  outline-offset: 0.4cqw;
+}
+
+.screen button:active {
+  opacity: 0.82;
+}
+
+/* ----- barre du haut ----- */
+
+.kTop {
+  position: absolute;
+  left: 3cqw;
+  right: 3cqw;
+  top: 1.9cqw;
+  height: var(--k-nav-h);
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.kLogo {
+  font-weight: 800;
+  font-size: 4.4cqw;
+  line-height: 1;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  color: #f1e9ff;
+  /* Le violet de l'enseigne, en liseré net plutôt qu'en halo. */
+  text-shadow: 0 0 0.5cqw #a66bff, 0 0.2cqw 0.1cqw rgba(30, 0, 70, 0.6);
+}
+
+.kLogo small {
+  margin-left: 1.4cqw;
+  font-weight: 600;
+  font-size: 3.2cqw;
+  letter-spacing: 0.02em;
+  color: var(--k-ink-soft);
+  text-shadow: none;
+}
+
+/* « Compte » et « Quitter » sont des BOUTONS et doivent en avoir l'air : même aplat et même filet
+   clair que « Recherche », en plus petit. En simple texte, comme la barre du haut de la
+   référence, on ne voyait pas qu'ils s'actionnent (retour de Rusmir du 17/11/2026).
+   Écartés de 4cqw : « Quitter » fait sortir de la borne, il ne doit pas se prendre pour
+   « Compte ». Leurs zones d'appui étaient à 2 px l'une de l'autre (audit du 17/11/2026). */
+.kNav {
+  display: flex;
+  align-items: center;
+  gap: 4cqw;
+}
+
+.kNavBtn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: var(--k-nav-h);
+  padding: 0 2.2cqw;
+  white-space: nowrap;
+  font-size: 4.1cqw;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--k-ink);
+  text-shadow: var(--k-text-shadow);
+  border: 0.3cqw solid var(--k-edge-teal);
+  border-radius: var(--k-radius);
+  background: var(--k-skin-teal);
+  box-shadow: inset 0 0.25cqw 0 rgba(255, 255, 255, 0.16), 0 0 0 0.25cqw rgba(0, 10, 30, 0.6), 0 0.5cqw 1.2cqw rgba(0, 0, 20, 0.45);
+}
+
+/* Zone d'appui plus haute que le bouton : la barre est basse, le doigt ne l'est pas (46 px sur un
+   Pixel 9a). */
+.kNavBtn::after {
+  content: "";
+  position: absolute;
+  inset: -2.4cqw -0.6cqw;
+}
+
+/* Solde du compte, derrière un filet comme le prix du bouton d'action. */
+.kNavCredits {
+  margin-left: 1.5cqw;
+  padding: 0.4cqw 0 0.4cqw 1.5cqw;
+  border-left: 0.25cqw solid rgba(255, 255, 255, 0.5);
+  font-size: 3.4cqw;
+  font-weight: 600;
+  color: #ffe08a;
+}
+
+/* Le bonus de la semaine qui attend : « +3 » à la suite du solde. */
+.kNavBonus {
+  margin-left: 1.2cqw;
+  font-size: 3.4cqw;
+  font-weight: 800;
+  color: #8dffa8;
+}
+
+/* Triangle évidé, comme sur la référence. */
+.kNavTri {
+  width: 2.6cqw;
+  height: 3.5cqw;
+  margin-left: 1.5cqw;
+  overflow: visible;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linejoin: round;
+}
+
+/* Le geste retour ne quitte pas la borne : « Quitter » s'éclaire deux secondes pour le rappeler. */
+.kNavHint {
+  color: #fff3dc;
+  border-color: #ffb347;
+  box-shadow: inset 0 0.25cqw 0 rgba(255, 255, 255, 0.16), 0 0 0 0.25cqw rgba(0, 10, 30, 0.6), 0 0 2cqw #ff8a1f;
+}
+
+/* ----- volet de contenu (rayons, recherche, connexion) ----- */
+
+.kPane {
+  position: absolute;
+  inset: 0;
+}
+
+.kMessage {
+  position: absolute;
+  left: 6cqw;
+  right: 6cqw;
+  top: 62cqw;
+  text-align: center;
+  font-size: 4.6cqw;
+  font-weight: 700;
+  color: #d6ecff;
+}
+
+/* Calque du volet : il ne sert qu'à rendre le volet inerte sous un message ou la connexion,
+   sans masquer la barre du haut. */
+/* Pendant la vidéo de distribution, l'écran de la borne passe au-dessus d'elle : c'est LUI, l'écran filmé (KioskView le
+   déplace et le met à l'échelle à chaque image). Le reste de la borne reste dessous, couvert par la vidéo. */
+.ksLifted {
+  z-index: 6;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+.kLayer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.kLayer > * {
+  pointer-events: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .root *,
+  .root *::before,
+  .root *::after {
+    transition: none !important;
+    animation: none !important;
+    scroll-behavior: auto !important;
+  }
+}
