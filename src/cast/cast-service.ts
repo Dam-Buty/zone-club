@@ -87,6 +87,8 @@ let watchedSessions = new WeakSet<CafCastSession>();
 let watchedMedia = new WeakSet<CafMedia>();
 /** Séances média finies : la séance peut les garder, avec leur dernier état — jamais reprises (lookForMedia). */
 let deadMedia = new WeakSet<CafMedia>();
+/** Séances dont la liaison est morte et que la reprise n'a pas ranimées (F7) : le sélecteur les remplace. */
+let deadSessions = new WeakSet<CafCastSession>();
 
 const phaseTimers: Partial<Record<PhaseTimer, ReturnType<typeof setTimeout>>> = {};
 /** Échéance de la demande de statut en attente ; null : aucune demande sans réponse. */
@@ -164,6 +166,7 @@ export function __resetCastForTests(): void {
   watchedSessions = new WeakSet<CafCastSession>();
   watchedMedia = new WeakSet<CafMedia>();
   deadMedia = new WeakSet<CafMedia>();
+  deadSessions = new WeakSet<CafCastSession>();
   statusRequestId = 0;
   serverQueue = Promise.resolve();
   __resetCastSdkForTests();
@@ -234,6 +237,7 @@ function trace(what: string, detail?: () => unknown): void {
 }
 
 function apply(event: CastEvent): void {
+  if (event.type === 'REQUEST_CAST') dropDeadLink();
   const step = castReduce(state, event);
   const from = state.phase;
   trace(event.type, () => ({ from, to: step.state.phase, filmId: step.state.filmId, notice: step.state.notice?.code ?? null, effects: step.effects.map((e) => e.type) }));
@@ -582,9 +586,10 @@ function openPicker(): void {
 }
 
 function pickDevice(ready: Sdk): void {
-  // Jamais le sélecteur sur une séance existante : Chrome ouvrirait sa fenêtre « Arrêter la diffusion » (D7).
+  // Jamais le sélecteur sur une séance existante : Chrome ouvrirait sa fenêtre « Arrêter la diffusion » (D7). Sauf
+  // une séance à la liaison morte (F7) : là Chrome ouvre bien le sélecteur (mesuré), et c'est lui qui la ranime.
   const session = currentSession();
-  if (session) {
+  if (session && !deadSessions.has(session)) {
     joinSession(ready, session);
     return;
   }
@@ -624,8 +629,33 @@ function confirmSession(): void {
     sendCast({ type: 'PICKER_FAILED' });
     return;
   }
+  deadSessions.delete(session);                      // le sélecteur l'a ranimée (même objet, mesuré sans événement)
   watchSession(session);
   sendCast({ type: 'SESSION_STARTED', deviceName: deviceNameOf(session), resumed: false });
+}
+
+/**
+ * F7 (Pixel 9a, 25/11/2026) : film fini, page gelée cinq minutes. La liaison est morte, la reprise par identifiant ne
+ * la ranime pas (dix secondes d'envois refusés, aucun événement), et le SDK se dit toujours connecté : le film suivant
+ * partait dessus et échouait en 3 ms, « Réessayer » aussi. Au moment de la demande — dans l'appui du visiteur — un
+ * envoi qui lève dit la liaison morte : la séance est oubliée par la machine, et le sélecteur s'ouvre (pickDevice).
+ * Choisir la télé ranime la liaison. Seulement au repos ou film fini : en télécommande, la demande de statut s'en
+ * charge déjà (statusSendFailed).
+ */
+function dropDeadLink(): void {
+  if (!state.connected || (state.phase !== 'idle' && state.phase !== 'ended')) return;
+  const session = currentSession();
+  if (!session) return;
+  try {
+    session.sendMessage(MEDIA_NAMESPACE, { type: 'GET_STATUS', requestId: ++statusRequestId }).then(undefined, () => undefined);
+    return;                                          // l'envoi part : liaison saine
+  } catch {
+    // liaison morte
+  }
+  deadSessions.add(session);
+  media = null;
+  trace('liaison morte : sélecteur');
+  apply({ type: 'SESSION_ENDED' });                  // au repos ou film fini : connected passe à faux, rien d'autre
 }
 
 /** LOAD_MEDIA : le film part sur la séance ouverte ; le premier statut de lecture conclut. */
