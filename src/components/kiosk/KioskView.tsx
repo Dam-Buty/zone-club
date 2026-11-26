@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent, type RefObject } from 'react';
 import { useStore, useCredits } from '../../store';
 import { useBackGuard } from '../../hooks/useBackGuard';
+import { parseServerDate } from '../../utils/server-date';
 import api from '../../api';
 import type { Film } from '../../types';
 import { castOwnsFilm, castView } from '../../cast/cast-machine';
@@ -641,7 +642,7 @@ export function KioskView() {
             vo: !!film.has_vo,
             copiesLeft: film.rental_status.available_copies,
             stock: film.rental_status.stock,
-            earliestReturn: film.rental_status.earliest_return ?? null,
+            returns: (film.rental_status.active_returns ?? []).map((r) => ({ atMs: parseServerDate(r.expires_at), mine: r.mine })),
             directors: (film.directors ?? []).map((d) => d.name),
             cast: (film.actors ?? []).map((a) => a.name),
             roles: (film.actors ?? []).map((a) => ({ name: a.name, character: a.character ?? '' })),

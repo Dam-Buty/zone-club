@@ -914,20 +914,6 @@ export function frenchDate(iso: string | null | undefined): string | null {
   return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
 }
 
-/**
- * Disponibilité affichée sur la fiche : « 2 copies sur 3 en rayon », ou le prochain retour quand
- * tout est loué. `earliestReturnMs` est déjà lu par parseServerDate (UTC sans fuseau) ; NaN quand
- * on ne le connaît pas. `null` tant que le stock est inconnu. `timeZone` ne sert qu'aux tests.
- */
-export function availabilityText(
-  i: { stock: number; copiesLeft: number; earliestReturnMs: number; timeZone?: string } | null,
-): string | null {
-  if (!i) return null;
-  if (i.copiesLeft > 0) return `${i.copiesLeft} copie${i.copiesLeft > 1 ? 's' : ''} sur ${i.stock} en rayon`;
-  if (!Number.isFinite(i.earliestReturnMs)) return 'Toutes les copies sont louées';
-  return `Toutes louées, prochain retour le ${formatUntil(i.earliestReturnMs, i.timeZone)}`;
-}
-
 // ===== Effets de dalle de 2007 =====
 //
 // Rusmir, 17/11/2026, sur quatre propositions pour « donner un effet plus réaliste à un écran LCD » :

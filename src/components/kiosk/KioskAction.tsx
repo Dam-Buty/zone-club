@@ -19,7 +19,8 @@ export type KioskFilmDetail = {
   copiesLeft: number;
   /** Nombre de copies du club. */
   stock: number;
-  earliestReturn: string | null;
+  /** Une entrée par location en cours, la plus proche d'abord ; `mine` : c'est celle du visiteur. */
+  returns: { atMs: number; mine: boolean }[];
   directors: string[];
   cast: string[];
   /** Interprètes et leurs rôles, dans l'ordre du générique (fiche détaillée). */

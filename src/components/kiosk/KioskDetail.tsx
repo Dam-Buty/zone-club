@@ -3,20 +3,19 @@ import { useStore } from '../../store';
 import api, { type FilmExtrasResponse, type RelatedFilmsResponse, type ReviewsResponse } from '../../api';
 import { trailerNotice, trailerReady, trailerUrl, useTrailerPlayback, useTrailerStatus, type TrailerState } from '../../hooks/useTrailer';
 import type { Film } from '../../types';
-import { parseServerDate } from '../../utils/server-date';
 import type { KioskFilmDetail } from './KioskAction';
 import { KioskPoster, KioskSlate } from './KioskBrowse';
 import {
   DETAIL_TABS,
   allFilms,
   audienceLabel,
-  availabilityText,
   frenchDate,
   starsFor,
   synopsisText,
   tabLabel,
   type DetailTab,
 } from './kiosk-logic';
+import { copyLines } from './kiosk-copies';
 import styles from './KioskBrowse.module.css';
 
 // Fiche détaillée d'un film, ouverte d'un appui sur sa jaquette (Rusmir, 17/11/2026 : « une
@@ -270,9 +269,7 @@ export function KioskDetail({ film, detail, detailFailed, covered, tab, onTab, o
   useTrailerPlayback(trailerVideo, trailerShown && !covered);
 
   const audience = typeof extras === 'object' ? audienceLabel(extras.certification) : null;
-  const availability = availabilityText(
-    detail ? { stock: detail.stock, copiesLeft: detail.copiesLeft, earliestReturnMs: parseServerDate(detail.earliestReturn) } : null,
-  );
+  const copies = copyLines(detail);
   const tabName = DETAIL_TABS.find((t) => t.id === tab)?.label ?? '';
 
   // Une rubrique plus longue que le cadre se signale par un triangle au coin bas du cadre, tant
@@ -325,7 +322,19 @@ export function KioskDetail({ film, detail, detailFailed, covered, tab, onTab, o
 
       {/* La rubrique choisie, dans tout le cadre du dessous ; la disponibilité y reste affichée. */}
       <div ref={bodyRef} className={styles.kDetailBody} role="tabpanel" aria-label={tabName}>
-        {availability && <p className={styles.kDetailAvail}>{availability}</p>}
+        {copies && (
+          <div className={styles.kDetailAvail} role="group" aria-label="Exemplaires">
+            <p className={styles.kCopiesTitle}>Exemplaires</p>
+            <ul className={styles.kCopies}>
+              {copies.map((c) => (
+                <li key={c.n} className={c.available ? styles.kCopyFree : styles.kCopyOut}>
+                  <span aria-hidden="true">▮</span> n° {c.n}
+                  <span className={styles.kCopyState}>{c.text}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         {tmdbId !== null && trailerReady(trailer) && !trailerBrokenNow && (
           <div className={styles.kTrailer} hidden={!trailerShown}>
             <video
