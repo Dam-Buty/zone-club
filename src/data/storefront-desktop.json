@@ -41,6 +41,11 @@
       "y0": 0.03,
       "x1": 0.596466,
       "y1": 0.97
+    },
+    "av1": {
+      "src": "/storefront-borne-approche.av1.mp4",
+      "codecs": "av01.0.08M.08",
+      "octets": 949298
     }
   }
 }
