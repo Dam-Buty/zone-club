@@ -1,7 +1,7 @@
 # Borne 24/7 — rendre sa K7 à la borne — document de conception
 
 - **Date** : 26/11/2026
-- **Statut** : relu par un constructeur neuf le 26/11 (volet, voyant, règle de la critique intégrés) ; questions de Rusmir tranchées le 26/11 (rembobinage manuel, CC BY-SA) ; à faire valider par Rusmir
+- **Statut** : relu par un constructeur neuf le 26/11 (volet, voyant, règle de la critique intégrés) ; questions de Rusmir tranchées le 26/11 (rembobinage manuel, CC BY-SA) ; **validé par Rusmir le 26/11** (« je valide »), avec deux ajouts du même jour intégrés : le rembobinage sonore (§ 6.2) et les exemplaires (§ 7 bis)
 - **Base** : branche `feat/borne-rendre-k7` (worktree `../video-club-webgpu-borne`), partie de `origin/main` = `2a9a1da`.
   Elle porte déjà, non commité, le bouton « Rendre » de « Mon compte » (voir § 6).
 - **Documents voisins** : `2026-11-17-borne-distribution-k7-design.md` (le film de location, §§ 12 et 13 : la vidéo,
@@ -33,6 +33,9 @@ et il nourrit les critiques, qui font vivre le catalogue.
 3. Le **bonus de retour anticipé passe de 24 h à 8 h, pour tout le monde** : borne, vidéoclub 3D, serveur. **[R]**
    Le bonus reste le **+1 crédit actuel** (pas un remboursement du prix de la location). **[R]**
 4. À la fin du film, le crédit s'affiche, puis la borne **enchaîne sur la critique**. **[R]**
+5. Un **rembobinage à la borne**, lancé à la main, qui s'**entend** (§ 6.2). **[R, 26/11]**
+6. Des **exemplaires** limités et **visibles** : 2 pour une nouveauté, 1 pour tout autre film, et l'état de chaque
+   exemplaire sur la fiche du film (§ 7 bis). **[R, 26/11]**
 
 **Non-objectifs**
 
@@ -219,11 +222,25 @@ retour à la borne se voie de la même façon d'où qu'il parte. **[C]**
 ### 6.2 « Rembobiner » **[R, 26/11]**
 
 Chaque location en cours vue à 80 % ou plus et pas encore rembobinée (`rewindClaimed` faux) reçoit un bouton
-« Rembobiner », à côté de « Regarder » et « Rendre ». Lancé à la main par le visiteur, il réclame le crédit
-(`api.rentals.claimRewind`, `POST /api/rentals/{id}/rewind`, la même règle serveur que le lecteur) et affiche
-« K7 rembobinée : +1 crédit », puis la ligne passe à « Rembobiné · +1 crédit » comme dans l'historique. Rien ne
-rembobine tout seul. Le rembobinage du lecteur (« BE KIND REWIND », animation de 2 à 3 min) est inchangé. Une courte
-animation de rembobinage à la borne (bobines, compteur) est laissée au constructeur ; un simple message suffit. **[C]**
+« Rembobiner », à côté de « Regarder » et « Rendre ». Rien ne rembobine tout seul. Le rembobinage du lecteur
+(« BE KIND REWIND ») est inchangé.
+
+**La séquence est uniquement sonore, et ne bloque pas le visiteur** **[R, 26/11]** — pas d'écran de bobines ni de
+compteur ; il continue à se servir de la borne pendant ce temps :
+
+1. **Le rembobinage, ~60 s**, avec un début, un milieu et une fin : la bande démarre, **accélère fortement** jusqu'à un
+   régime aigu au milieu, puis **ralentit sur les 10 dernières secondes**.
+2. **Un « clac »** à l'arrêt de la bande. **C'est là que tombe le +1** (`api.rentals.claimRewind`,
+   `POST /api/rentals/{id}/rewind`, même règle serveur que le lecteur), comme dans le lecteur. La ligne passe à
+   « Rembobiné · +1 crédit » et le solde de la borne est relu.
+3. **Le robot remet la K7 en place** : le son du mécanisme, celui de la vidéo de location (le bras qui prend et pose
+   la K7).
+
+Pendant les 60 s, le bouton devient « Rembobinage… » (pas de second lancement). **[C]** Si la borne est fermée avant
+le clac, le rembobinage s'arrête sans crédit, et le bouton revient. **[C]** Le son du rembobinage n'existe pas encore :
+il est fabriqué ou pris dans une banque de sons libre, et **Rusmir l'écoute avant qu'il soit branché** (même règle que
+les images clés). **[C]** Le son du robot est tiré de la piste de la vidéo de location ou de ses sources
+(`tools/devanture-borne/sons/mixe.sh`). **[C]**
 
 ## 7. Le délai de 8 h, partout **[R]**
 
@@ -241,6 +258,41 @@ Valeur unique : 8 h après `rented_at`. À changer ensemble :
 
 Les locations en cours au moment du déploiement passent à la nouvelle règle (le serveur calcule au retour). **[C]**
 
+## 7 bis. Les exemplaires **[R, 26/11]**
+
+### 7 bis.1 La règle
+
+- **2 exemplaires pour une nouveauté (`is_nouveaute = 1`), 1 pour tout autre film.** Aujourd'hui : 3, 2 et 1
+  (classiques et bizarre), posés par `lib/db.ts` (l. 174-186) et `scripts/seed-films.ts` (l. 398-401).
+- Appliquée **à la prod** : tous les films existants passent à 2 ou 1, par une migration qui ne s'exécute **qu'une
+  fois** (la migration actuelle se rejoue à chaque démarrage : la nouvelle ne doit pas écraser ensuite un réglage fait
+  à la main dans l'admin). Le seed suit la même règle. **[C]**
+- Quand l'admin marque ou démarque un film comme nouveauté, son nombre d'exemplaires passe à 2 ou 1 ; le réglage à la
+  main du stock dans l'admin reste possible. **[C]**
+- Un film qui a plus de locations en cours que son nouveau stock les garde jusqu'à leur fin ; il est simplement
+  « tout loué » d'ici là (le calcul `max(0, stock − locations)` existe déjà).
+- Effet accepté par Rusmir : les étagères du vidéoclub 3D, qui montrent une cassette par exemplaire (`Aisle.tsx`,
+  l. 265), seront plus vides — des films vont être ajoutés au catalogue.
+
+### 7 bis.2 Ce qu'on voit
+
+Sur la **fiche d'un film de la borne**, une ligne par exemplaire **[R]** :
+
+```
+EXEMPLAIRES
+  ▮ n° 1   disponible
+  ▮ n° 2   loué · retour prévu jeudi 21:00
+```
+
+- « Retour prévu » = la fin de la location en cours (`expires_at`) de cet exemplaire. Le serveur ne renvoie
+  aujourd'hui que le **premier** retour (`earliest_return`, et seulement quand tout est loué) : il doit renvoyer la
+  date de fin de **chaque** location en cours du film, sans rien dire de qui loue. **[C]**
+- L'exemplaire loué par le visiteur lui-même est dit « loué par vous · jusqu'au … ». **[C]**
+- Cette liste remplace la phrase actuelle « 2 copies sur 3 en rayon » (`availabilityText`, `kiosk-logic.ts`). **[C]**
+- **À la fin du retour** (§ 4.4), le message montre la même liste pour le film rendu : l'exemplaire rendu y est de
+  nouveau « disponible ». **[R]**
+- La fiche K7 du vidéoclub 3D n'est pas touchée dans ce chantier. **[C]**
+
 ## 8. Contraintes
 
 - `KioskView.tsx` dépasse déjà le budget de 1 000 lignes (1 068) : la proposition, le film de retour et leur état
@@ -256,9 +308,10 @@ Les locations en cours au moment du déploiement passent à la nouvelle règle (
 ## 9. Laissé au constructeur
 
 - Le découpage en livraisons. Suggestion **[C]** : ① délai de 8 h + proposition + parcours complet avec le résultat
-  et la critique, **sans film** (le parcours passe directement au résultat, comme quand le film ne peut pas partir) —
-  livrable et testable sur le Pixel tout de suite ; ② le film, une fois ses images validées, branché sans changer le
-  parcours.
+  et la critique, **sans film** (le parcours passe directement au résultat, comme quand le film ne peut pas partir),
+  plus les exemplaires (§ 7 bis) et le bouton « Rembobiner » — livrable et testable sur le Pixel tout de suite ;
+  ② les sons du rembobinage, après écoute par Rusmir ; ③ le film, une fois ses images validées, branché sans changer
+  le parcours.
 - Le nom et la forme exacte des fichiers, des clés de stockage local, des tests.
 - Le choix entre les mains candidates, après l'image fixe montrée à Rusmir.
 - Le réglage fin du minutage du § 5.1 dans les bornes de 4 à 5 s.
