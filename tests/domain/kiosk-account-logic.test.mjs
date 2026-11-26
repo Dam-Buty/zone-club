@@ -61,3 +61,13 @@ test('RENDRE: le message qui suit dit ce que le serveur a décidé', () => {
   assert.deepEqual(K.returnDoneText({ earlyReturnCredit: false }, true), { title: 'K7 rendue', body: 'Le film sur la télé est arrêté.' });
   assert.deepEqual(K.returnDoneText(null, true), { title: "Le retour n'a pas abouti", body: 'Réessayez dans un instant.' });
 });
+
+// ----- Fin du retour : la proposition de critique -----
+test('RETOUR: ce que la fin du retour propose pour la critique', () => {
+  assert.deepEqual(K.returnReviewOffer({ kind: 'possible' }), { kind: 'write' });
+  assert.deepEqual(K.returnReviewOffer({ kind: 'pas-encore', reason: 'Critique possible à partir du 27 novembre à 21:10' }),
+    { kind: 'later', reason: 'Critique possible à partir du 27 novembre à 21:10' });
+  assert.equal(K.returnReviewOffer({ kind: 'publiée' }), null);
+  // Échec (location échue entre-temps) : le message d'échec, jamais « K7 rendue ».
+  assert.equal(K.returnDoneText(null, false).title, "Le retour n'a pas abouti");
+});

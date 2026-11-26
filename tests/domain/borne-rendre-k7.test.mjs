@@ -1,5 +1,5 @@
-// Rendre une K7 depuis « Mon compte » de la borne (Rusmir, 25/11/2026 : « on doit pouvoir rendre un film sur la borne »).
-// Avant, seule la fiche K7 du vidéoclub 3D savait rendre un film (VHSCaseOverlay, « RETOURNER LA K7 »).
+// Rendre une K7 depuis la borne (Rusmir, 25/11/2026 : « on doit pouvoir rendre un film sur la borne »).
+// Le parcours vit dans useKioskReturn, partagé par « Mon compte » et la proposition à l'arrivée.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
@@ -7,16 +7,27 @@ import { readText } from '../helpers/repo.mjs';
 
 const src = (p) => readText(path.join(process.cwd(), p));
 
-test('RENDRE: chaque location en cours de « Mon compte » a « Rendre », qui demande avant de rendre', () => {
+test('RENDRE: le crochet porte la question, le retour et le message de fin', () => {
+  const hook = src('src/components/kiosk/useKioskReturn.ts');
+  assert.match(hook, /export function useKioskReturn\(/);
+  assert.match(hook, /await returnFilm\(filmId\)/, 'le même retour que la fiche K7 (store.returnFilm → POST /return)');
+  assert.match(hook, /returnConfirmText\(/, 'la question avant de rendre');
+  assert.match(hook, /label: 'Rendre'/);
+  assert.match(hook, /label: 'Annuler'/);
+  assert.match(hook, /returnDoneText\(/, 'un message dans tous les cas, échec compris');
+  assert.match(hook, /returnReviewOffer\(/);
+  assert.match(hook, /label: 'Écrire ma critique'/);
+  assert.match(hook, /fetchMe\(\)/, "l'historique relu après le retour");
+  assert.match(hook, /finally/, 'returningId toujours remis à zéro');
+  assert.match(hook, /beforeReturn\?\.\(filmId\)/);
+});
+
+test('RENDRE: « Mon compte » délègue au crochet, la borne le branche', () => {
   const account = src('src/components/kiosk/KioskAccount.tsx');
-  assert.match(account, /onClick=\{\(\) => askReturn\(row\)\}/, 'le bouton de la ligne pose la question');
+  assert.match(account, /onAskReturn\(row\.filmId\)/, 'le bouton de la ligne pose la question');
   assert.match(account, /\{returningId === row\.filmId \? 'Retour…' : 'Rendre'\}/);
-  assert.match(account, /primary: \{ label: 'Rendre', onPress: \(\) => void doReturn\(row\.filmId, onTv\) \}/, 'rendre seulement après « Rendre »');
-  assert.match(account, /secondary: \{ label: 'Annuler', onPress: \(\) => onNotice\(null\) \}/);
-  assert.match(account, /const result = await returnFilm\(filmId\);/, 'le même retour que la fiche K7 (store.returnFilm → POST /return)');
-  assert.match(account, /void fetchMe\(\);/, 'l\'historique relu après le retour');
-  assert.match(account, /\.\.\.returnDoneText\(result, onTv\)/, 'un message dans tous les cas, échec compris');
-  assert.match(src('src/components/kiosk/KioskView.tsx'), /onNotice=\{setNotice\}\s*onLogout=/, 'les messages de la borne');
+  assert.doesNotMatch(account, /returnFilm/, 'plus de retour dans le composant');
+  assert.match(src('src/components/kiosk/KioskView.tsx'), /useKioskReturn\(/);
 });
 
 test('RENDRE: le délai du crédit affiché est celui du serveur (une seule règle)', () => {

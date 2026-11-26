@@ -18,6 +18,7 @@ import { decorStyle, screenClip, screenTransform, stageFor, transformCss, yearOf
 import { useDistributionFilm } from './useDistributionFilm';
 import distributionData from '../../data/kiosk-distribution.json';
 import { KioskAccount } from './KioskAccount';
+import { useKioskReturn } from './useKioskReturn';
 import { KioskReview } from './KioskReview';
 import { KioskNotice, type KioskNoticeSpec } from './KioskNotice';
 import { KioskSearch } from './KioskSearch';
@@ -661,6 +662,7 @@ export function KioskView() {
   const currentDetail = detail !== null && detail.filmId === displayedId ? detail.data : null;
 
   const closeNotice = useCallback(() => setNotice(null), []);
+  const { returningId, askReturn } = useKioskReturn({ films: catalogue, onNotice: setNotice, onReview: setReviewFilmId });
 
   // ----- Connexion de la borne -----
   // `then` est ce que le visiteur voulait faire quand la connexion s'est imposée (louer) : on le
@@ -965,7 +967,8 @@ export function KioskView() {
                       onPrefOpen={setPrefOpen}
                       onWatch={watch}
                       onReview={(filmId) => setReviewFilmId(filmId)}
-                      onNotice={setNotice}
+                      returningId={returningId}
+                      onAskReturn={askReturn}
                       onLogout={() => {
                         setAccountOpen(false);
                         void logout().then((ok) => {

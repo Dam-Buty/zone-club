@@ -1,5 +1,6 @@
 // Logique pure du compte dans la borne : le bonus de la semaine et la fin d'une location. Sans import de React ni du
 // magasin ; seul import de valeur : une règle partagée, avec son extension `.ts` (Node la charge telle quelle dans les tests).
+import type { KioskReviewState } from './kiosk-logic.ts';
 import { isEarlyReturn } from '../../utils/rental-rules.ts';
 
 /** « 1 crédit », « 3 crédits » — même écriture que `creditsLabel` de kiosk-logic. */
@@ -65,6 +66,16 @@ export function returnDoneText(result: { earlyReturnCredit: boolean } | null, on
   if (!result) return { title: "Le retour n'a pas abouti", body: 'Réessayez dans un instant.' };
   const parts = [result.earlyReturnCredit ? 'Rendue en avance : +1 crédit.' : null, onTv ? 'Le film sur la télé est arrêté.' : null].filter(Boolean);
   return { title: 'K7 rendue', body: parts.length ? parts.join(' ') : undefined };
+}
+
+/**
+ * Ce que le message de fin du retour propose pour la critique : l'écrire tout de suite, la dire pour plus tard (avec la
+ * raison du serveur), ou rien quand elle est déjà publiée.
+ */
+export function returnReviewOffer(state: KioskReviewState): { kind: 'write' } | { kind: 'later'; reason: string } | null {
+  if (state.kind === 'possible') return { kind: 'write' };
+  if (state.kind === 'pas-encore') return { kind: 'later', reason: state.reason };
+  return null;
 }
 
 // ===== Fin d'une location =====
