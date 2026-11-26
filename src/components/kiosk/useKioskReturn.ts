@@ -1,13 +1,13 @@
 // Le parcours du retour d'une K7 à la borne, partagé par « Mon compte » et la proposition faite à l'arrivée
 // (spec 2026-11-26-borne-retour-k7-design, §§ 4.3 et 4.4) : la question, le retour, puis le message de fin
 // (crédit, exemplaires, critique).
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import api from '../../api';
 import { castOwnsFilm } from '../../cast/cast-machine';
 import { useStore } from '../../store';
 import type { Film } from '../../types';
 import { parseServerDate } from '../../utils/server-date';
-import { returnConfirmText, returnDoneText, returnReviewOffer } from './kiosk-account-logic';
+import { readAsked, rememberAsked, returnConfirmText, returnDoneText, returnPromptCandidate, returnPromptKey, returnPromptText, returnReviewOffer } from './kiosk-account-logic';
 import { copyLines } from './kiosk-copies';
 import { reviewStateFor } from './kiosk-logic';
 import type { KioskNoticeSpec } from './KioskNotice';
@@ -19,6 +19,11 @@ interface KioskReturnOptions {
   onReview: (filmId: number) => void;
   /** Appelé avant le retour (la tâche 7 y arrête un rembobinage en cours). */
   beforeReturn?: (filmId: number) => void;
+}
+
+/** Le titre à afficher : le catalogue, puis l'historique, puis le texte que `rentalRows` emploie déjà. */
+function titleOf(films: Film[], filmId: number): string {
+  return films.find((f) => f.id === filmId)?.title ?? useStore.getState().rentalHistory.find((h) => h.filmId === filmId)?.title ?? 'Titre indisponible';
 }
 
 /** Les exemplaires du film après le retour, une ligne chacun ; `undefined` si le détail est inconnu (jamais bloquant). */
@@ -91,7 +96,7 @@ export function useKioskReturn({ films, onNotice, onReview, beforeReturn }: Kios
       const state = useStore.getState();
       const onTv = castOwnsFilm(state.cast) === filmId;
       const rentedAt = state.rentals.find((r) => r.filmId === filmId)?.rentedAt ?? null;
-      const title = films.find((f) => f.id === filmId)?.title ?? '';
+      const title = titleOf(films, filmId);
       onNotice({
         ...returnConfirmText({ title, rentedAt, nowMs: Date.now(), onTv }),
         primary: { label: 'Rendre', onPress: () => void startReturn(filmId) },
@@ -102,4 +107,57 @@ export function useKioskReturn({ films, onNotice, onReview, beforeReturn }: Kios
   );
 
   return { returningId, askReturn, startReturn };
+}
+
+interface ReturnPromptOptions {
+  /** La borne est au repos : accueil passé, connecté, rien d'ouvert (calculé par `KioskView`). */
+  active: boolean;
+  startReturn: (filmId: number) => void | Promise<void>;
+  onNotice: (notice: KioskNoticeSpec | null) => void;
+  films: Film[];
+}
+
+/**
+ * La proposition faite à l'arrivée : à la première fois que la borne est au repos, on relit le compte puis on pose la
+ * question une seule fois pour cette ouverture, sur la location vue à 80 % et jamais proposée.
+ */
+export function useReturnPrompt({ active, startReturn, onNotice, films }: ReturnPromptOptions): void {
+  const fetchMe = useStore((state) => state.fetchMe);
+  const evaluated = useRef(false);
+  const activeRef = useRef(active);
+  activeRef.current = active;
+  const latest = useRef({ startReturn, onNotice, films });
+  latest.current = { startReturn, onNotice, films };
+
+  useEffect(() => {
+    if (!active || evaluated.current) return;
+    evaluated.current = true;
+    void (async () => {
+      await fetchMe();
+      // Le visiteur a ouvert autre chose pendant la relecture : on réévaluera à son prochain repos.
+      if (!activeRef.current) {
+        evaluated.current = false;
+        return;
+      }
+      const state = useStore.getState();
+      const userId = state.authUser?.id;
+      if (userId === undefined) return;
+      let storage: Storage | null = null;
+      try {
+        storage = typeof window === 'undefined' ? null : window.localStorage;
+      } catch {
+        storage = null;
+      }
+      const candidate = returnPromptCandidate(state.rentals, readAsked(storage), userId);
+      if (!candidate) return;
+      rememberAsked(storage, returnPromptKey(userId, candidate.filmId, candidate.rentedAt));
+      const { startReturn: start, onNotice: notify, films: catalogue } = latest.current;
+      const review = reviewStateFor(candidate.filmId, new Set(state.userReviews.map((r) => r.film_id)), state.reviewEligibility);
+      notify({
+        ...returnPromptText({ title: titleOf(catalogue, candidate.filmId), rentedAt: candidate.rentedAt, nowMs: Date.now(), rewound: candidate.rewindClaimed, review }),
+        primary: { label: 'Rendre la K7', onPress: () => void start(candidate.filmId) },
+        secondary: { label: 'Plus tard', onPress: () => notify(null) },
+      });
+    })();
+  }, [active, fetchMe]);
 }

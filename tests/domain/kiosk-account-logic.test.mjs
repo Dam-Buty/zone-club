@@ -71,3 +71,36 @@ test('RETOUR: ce que la fin du retour propose pour la critique', () => {
   // Échec (location échue entre-temps) : le message d'échec, jamais « K7 rendue ».
   assert.equal(K.returnDoneText(null, false).title, "Le retour n'a pas abouti");
 });
+
+// ----- La proposition à l'arrivée -----
+const pr = (filmId, p, done, extra = {}) => ({ filmId, rentedAt: 1000 + filmId, watchProgress: p, watchCompletedAt: done, rewindClaimed: false, ...extra });
+
+test('ARRIVÉE: qui proposer — vu à 80 %, une fois par location, le plus récemment fini', () => {
+  assert.equal(K.returnPromptCandidate([pr(1, 79, null)], new Set(), 7), null);
+  assert.equal(K.returnPromptCandidate([pr(1, 80, 50), pr(2, 95, 90)], new Set(), 7).filmId, 2, 'le plus récemment fini');
+  assert.equal(K.returnPromptCandidate([pr(1, 80, null), pr(2, 90, 5)], new Set(), 7).filmId, 2, 'null = le plus ancien');
+  assert.equal(K.returnPromptCandidate([pr(2, 95, 90)], new Set([K.returnPromptKey(7, 2, 1002)]), 7), null, 'une fois par location');
+  assert.equal(K.returnPromptKey(7, 2, 1002), '7:2:1002');
+});
+
+test('ARRIVÉE: le stockage qui lève ne casse rien', () => {
+  const boom = { getItem() { throw new Error('x'); }, setItem() { throw new Error('x'); } };
+  assert.deepEqual([...K.readAsked(boom)], []);
+  K.rememberAsked(boom, 'k');
+  assert.deepEqual([...K.readAsked(null)], []);
+  assert.deepEqual([...K.readAsked({ getItem: () => 'pas du json' })], []);
+  const mem = new Map();
+  const s = { getItem: (k) => mem.get(k) ?? null, setItem: (k, v) => mem.set(k, v) };
+  K.rememberAsked(s, 'a'); K.rememberAsked(s, 'b');
+  assert.deepEqual([...K.readAsked(s)].sort(), ['a', 'b']);
+  assert.ok(mem.has('zone-borne-retour-demande'));
+});
+
+test('ARRIVÉE: le texte ne promet que des crédits vrais', () => {
+  const t = K.returnPromptText({ title: 'Alien', rentedAt: 0, nowMs: 9 * 3_600_000, rewound: false, review: { kind: 'possible' } });
+  assert.equal(t.title, 'Vous avez fini « Alien » ?');
+  assert.equal(t.body, 'Rendez la K7 à la borne :');
+  assert.deepEqual(t.lines, ["rembobinez-la d'abord dans « Mon compte » : +1 crédit", 'votre critique ensuite : +1 crédit']);
+  const e = K.returnPromptText({ title: 'A', rentedAt: 0, nowMs: 3_600_000, rewound: true, review: { kind: 'publiée' } });
+  assert.deepEqual(e.lines, ['rendue avant 8 h : +1 crédit']);
+});

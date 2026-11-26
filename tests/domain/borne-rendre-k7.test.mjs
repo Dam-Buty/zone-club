@@ -33,3 +33,10 @@ test('RENDRE: « Mon compte » délègue au crochet, la borne le branche', () =>
 test('RENDRE: le délai du crédit affiché est celui du serveur (une seule règle)', () => {
   assert.match(src('src/components/kiosk/kiosk-account-logic.ts'), /import \{ isEarlyReturn \} from '\.\.\/\.\.\/utils\/rental-rules\.ts';/);
 });
+
+test('RENDRE: la proposition à l\'arrivée est câblée dans la borne', () => {
+  const view = src('src/components/kiosk/KioskView.tsx');
+  assert.match(view, /useReturnPrompt\(/);
+  assert.match(view, /active:[^\n]*!welcome/);
+  assert.match(src('src/components/kiosk/useKioskReturn.ts'), /export function useReturnPrompt\(/);
+});

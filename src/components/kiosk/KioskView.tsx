@@ -18,7 +18,7 @@ import { decorStyle, screenClip, screenTransform, stageFor, transformCss, yearOf
 import { useDistributionFilm } from './useDistributionFilm';
 import distributionData from '../../data/kiosk-distribution.json';
 import { KioskAccount } from './KioskAccount';
-import { useKioskReturn } from './useKioskReturn';
+import { useKioskReturn, useReturnPrompt } from './useKioskReturn';
 import { KioskReview } from './KioskReview';
 import { KioskNotice, type KioskNoticeSpec } from './KioskNotice';
 import { KioskSearch } from './KioskSearch';
@@ -662,7 +662,7 @@ export function KioskView() {
   const currentDetail = detail !== null && detail.filmId === displayedId ? detail.data : null;
 
   const closeNotice = useCallback(() => setNotice(null), []);
-  const { returningId, askReturn } = useKioskReturn({ films: catalogue, onNotice: setNotice, onReview: setReviewFilmId });
+  const { returningId, askReturn, startReturn } = useKioskReturn({ films: catalogue, onNotice: setNotice, onReview: setReviewFilmId });
 
   // ----- Connexion de la borne -----
   // `then` est ce que le visiteur voulait faire quand la connexion s'est imposée (louer) : on le
@@ -734,6 +734,14 @@ export function KioskView() {
           secondary: { label: 'Quitter', onPress: quit },
         }
       : notice ?? rentalOverNotice;
+
+  // La proposition de rendre un film vu, une fois par ouverture de la borne, quand rien d'autre n'est ouvert.
+  useReturnPrompt({
+    active: !welcome && isAuthenticated && overlay === null && distribution === null && reviewFilmId === null && !authVisible,
+    startReturn,
+    onNotice: setNotice,
+    films: catalogue,
+  });
 
   // ----- Geste retour : il agit DANS la borne, il ne la quitte jamais -----
   // Une seule garde pour toute la borne, reposée dès qu'elle a servi : le geste (ou le bouton

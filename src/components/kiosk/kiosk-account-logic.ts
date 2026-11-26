@@ -92,3 +92,55 @@ export function nextRentalEnd(rentals: readonly { filmId: number; expiresAt: num
   }
   return next;
 }
+
+// ===== La proposition à l'arrivée (spec 2026-11-26-borne-retour-k7-design, §§ 4.1 et 4.2) =====
+
+/** Ce que la proposition lit d'une location. */
+export type PromptRental = { filmId: number; rentedAt: number; watchProgress: number; watchCompletedAt: number | null; rewindClaimed: boolean };
+
+/** Une location = un utilisateur, un film, une date de location : la question n'est posée qu'une fois par clé. */
+export function returnPromptKey(userId: number, filmId: number, rentedAt: number): string {
+  return `${userId}:${filmId}:${rentedAt}`;
+}
+
+/** La location à proposer : vue à 80 % au moins, jamais proposée, la plus récemment finie d'abord (`null` = la plus ancienne). */
+export function returnPromptCandidate(rentals: ReadonlyArray<PromptRental>, asked: ReadonlySet<string>, userId: number): PromptRental | null {
+  let best: PromptRental | null = null;
+  for (const r of rentals) {
+    if (r.watchProgress < 80 || asked.has(returnPromptKey(userId, r.filmId, r.rentedAt))) continue;
+    if (best === null || (r.watchCompletedAt ?? -Infinity) > (best.watchCompletedAt ?? -Infinity)) best = r;
+  }
+  return best;
+}
+
+/** La question, avec seulement les lignes qui sont vraies : le crédit d'avance, le rembobinage, la critique. */
+export function returnPromptText(i: { title: string; rentedAt: number; nowMs: number; rewound: boolean; review: KioskReviewState }): { title: string; body: string; lines: string[] } {
+  const lines: string[] = [];
+  if (isEarlyReturn(i.rentedAt, i.nowMs)) lines.push('rendue avant 8 h : +1 crédit');
+  if (!i.rewound) lines.push("rembobinez-la d'abord dans « Mon compte » : +1 crédit");
+  if (i.review.kind === 'possible') lines.push('votre critique ensuite : +1 crédit');
+  return { title: `Vous avez fini « ${i.title} » ?`, body: 'Rendez la K7 à la borne :', lines };
+}
+
+const ASKED_KEY = 'zone-borne-retour-demande';
+
+/** Les locations déjà proposées. Stockage absent, qui lève ou illisible : ensemble vide (on reposera la question, au pire). */
+export function readAsked(storage: Pick<Storage, 'getItem'> | null): Set<string> {
+  try {
+    const parsed: unknown = JSON.parse(storage?.getItem(ASKED_KEY) ?? '[]');
+    return new Set(Array.isArray(parsed) ? parsed.filter((k): k is string => typeof k === 'string') : []);
+  } catch {
+    return new Set();
+  }
+}
+
+export function rememberAsked(storage: Pick<Storage, 'getItem' | 'setItem'> | null, key: string): void {
+  if (!storage) return;
+  try {
+    const asked = readAsked(storage);
+    asked.add(key);
+    storage.setItem(ASKED_KEY, JSON.stringify([...asked]));
+  } catch {
+    // Navigation privée, quota : la question pourra être reposée, rien de grave.
+  }
+}
