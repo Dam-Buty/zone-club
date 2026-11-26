@@ -4,8 +4,10 @@ import type { Film } from '../../types';
 import { FULL_OFFER, versionName, versionRows, type VersionChoice } from '../../utils/version-choice';
 import { VersionList } from '../version/VersionList';
 import { KioskPoster } from './KioskBrowse';
-import { bonusButtonLabel, bonusLine, bonusLineText } from './kiosk-account-logic';
-import { accountHistoryRows, creditsLabel, dayLabel, rentalRows, reviewStateFor, type KioskReviewState } from './kiosk-logic';
+import { castOwnsFilm } from '../../cast/cast-machine';
+import { bonusButtonLabel, bonusLine, bonusLineText, returnConfirmText, returnDoneText } from './kiosk-account-logic';
+import { accountHistoryRows, creditsLabel, dayLabel, rentalRows, reviewStateFor, type KioskRentalRow, type KioskReviewState } from './kiosk-logic';
+import type { KioskNoticeSpec } from './KioskNotice';
 import styles from './KioskPanels.module.css';
 
 // « Mon compte » : ouvert par « Compte » à tout moment, sans avoir à louer d'abord
@@ -23,6 +25,8 @@ interface KioskAccountProps {
   onPrefOpen: (open: boolean) => void;
   onWatch: (filmId: number) => void;
   onReview: (filmId: number) => void;
+  /** Les messages de la borne : la question avant de rendre une K7, puis sa réponse. */
+  onNotice: (notice: KioskNoticeSpec | null) => void;
   onLogout: () => void;
   onBack: () => void;
 }
@@ -63,7 +67,7 @@ function ReviewLine({ state, onWrite }: { state: KioskReviewState; onWrite: () =
   return <span className={styles.kAccountReason}>{state.reason}</span>;
 }
 
-export function KioskAccount({ films, prefOpen, onPrefOpen, onWatch, onReview, onLogout, onBack }: KioskAccountProps) {
+export function KioskAccount({ films, prefOpen, onPrefOpen, onWatch, onReview, onNotice, onLogout, onBack }: KioskAccountProps) {
   const authUser = useStore((state) => state.authUser);
   const rentals = useStore((state) => state.rentals);
   const history = useStore((state) => state.rentalHistory);
@@ -132,6 +136,42 @@ export function KioskAccount({ films, prefOpen, onPrefOpen, onWatch, onReview, o
     const id = window.setInterval(() => setNow(Date.now()), 60_000);
     return () => window.clearInterval(id);
   }, []);
+
+  // ----- « Rendre » : une location en cours se rend ici, comme au vidéoclub (fiche K7, « RETOURNER LA K7 ») -----
+  const returnFilm = useStore((state) => state.returnFilm);
+  const castDismiss = useStore((state) => state.castDismiss);
+  const tvFilmId = useStore((state) => castOwnsFilm(state.cast));
+  const [returningId, setReturningId] = useState<number | null>(null);
+  const doReturn = async (filmId: number, onTv: boolean) => {
+    onNotice(null);
+    setReturningId(filmId);
+    const result = await returnFilm(filmId);
+    setReturningId(null);
+    // L'historique aussi : la K7 rendue y passe, avec « Rendu en avance ». Une location échue entre-temps disparaît.
+    void fetchMe();
+    onNotice({
+      ...returnDoneText(result, onTv),
+      primary: {
+        label: 'Fermer',
+        onPress: () => {
+          onNotice(null);
+          // La TV arrêtée laisse « Location terminée » : notre message vient de le dire, inutile de le répéter.
+          const said = useStore.getState().cast.notice;
+          if (result && said?.code === 'rental_over' && said.filmId === filmId) castDismiss();
+        },
+      },
+    });
+  };
+  const askReturn = (row: KioskRentalRow) => {
+    if (returningId !== null) return;
+    const onTv = tvFilmId === row.filmId;
+    const rentedAt = rentals.find((r) => r.filmId === row.filmId)?.rentedAt ?? null;
+    onNotice({
+      ...returnConfirmText({ title: row.title, rentedAt, nowMs: Date.now(), onTv }),
+      primary: { label: 'Rendre', onPress: () => void doReturn(row.filmId, onTv) },
+      secondary: { label: 'Annuler', onPress: () => onNotice(null) },
+    });
+  };
 
   const reviewed = useMemo(() => new Set(userReviews.map((r) => r.film_id)), [userReviews]);
   const current = useMemo(() => rentalRows(rentals, films, now), [rentals, films, now]);
@@ -217,9 +257,19 @@ export function KioskAccount({ films, prefOpen, onPrefOpen, onWatch, onReview, o
                   <span className={styles.kSearchMeta}>{row.timeLeft}</span>
                   <ReviewLine state={reviewStateFor(row.filmId, reviewed, eligibility)} onWrite={() => onReview(row.filmId)} />
                 </span>
-                <button type="button" className={`${styles.kNoticeBtn} ${styles.kNoticeBtnPrimary} ${styles.kRentalWatch}`} onClick={() => onWatch(row.filmId)}>
-                  Regarder
-                </button>
+                <span className={styles.kRentalActions}>
+                  <button type="button" className={`${styles.kNoticeBtn} ${styles.kNoticeBtnPrimary} ${styles.kRentalWatch}`} onClick={() => onWatch(row.filmId)}>
+                    Regarder
+                  </button>
+                  <button
+                    type="button"
+                    className={`${styles.kNoticeBtn} ${styles.kRentalWatch}`}
+                    aria-busy={returningId === row.filmId}
+                    onClick={() => askReturn(row)}
+                  >
+                    {returningId === row.filmId ? 'Retour…' : 'Rendre'}
+                  </button>
+                </span>
               </div>
             );
           })}

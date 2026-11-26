@@ -964,6 +964,7 @@ export function KioskView() {
                       onPrefOpen={setPrefOpen}
                       onWatch={watch}
                       onReview={(filmId) => setReviewFilmId(filmId)}
+                      onNotice={setNotice}
                       onLogout={() => {
                         setAccountOpen(false);
                         void logout().then((ok) => {

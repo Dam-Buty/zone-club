@@ -41,3 +41,23 @@ test('BONUS: « Crédits insuffisants » propose le bonus quand il attend, et se
   // Un bonus qui ne suffirait pas à payer le film ne promet rien.
   assert.equal(K.insufficientText({ cost: 5, credits: 0, bonus: { state: 'available', amount: 3 } }).offer, null);
 });
+
+// ----- Rendre une K7 depuis la borne (Rusmir, 25/11/2026 : « on doit pouvoir rendre un film sur la borne ») -----
+test('RENDRE: la question annonce le crédit seulement dans les 8 h, et l\'arrêt de la TV', () => {
+  const H = 3_600_000;
+  const now = 100 * H;
+  const tot = K.returnConfirmText({ title: 'Alien', rentedAt: now - (8 * H - 60_000), nowMs: now, onTv: false });
+  assert.equal(tot.title, 'Rendre « Alien » ?');
+  assert.equal(tot.body, 'Rendue dans les 8 h qui suivent la location, elle vous rapporte 1 crédit. Vous ne pourrez plus la regarder sans la louer à nouveau.');
+  const tard = K.returnConfirmText({ title: 'Alien', rentedAt: now - (8 * H + 60_000), nowMs: now, onTv: true });
+  assert.equal(tard.body, 'Vous ne pourrez plus la regarder sans la louer à nouveau. Le film sur la télé sera arrêté.');
+  // Date de location inconnue : on ne promet rien.
+  assert.ok(!K.returnConfirmText({ title: 'Alien', rentedAt: null, nowMs: now, onTv: false }).body.includes('crédit'));
+});
+
+test('RENDRE: le message qui suit dit ce que le serveur a décidé', () => {
+  assert.deepEqual(K.returnDoneText({ earlyReturnCredit: true }, false), { title: 'K7 rendue', body: 'Rendue en avance : +1 crédit.' });
+  assert.deepEqual(K.returnDoneText({ earlyReturnCredit: false }, false), { title: 'K7 rendue', body: undefined });
+  assert.deepEqual(K.returnDoneText({ earlyReturnCredit: false }, true), { title: 'K7 rendue', body: 'Le film sur la télé est arrêté.' });
+  assert.deepEqual(K.returnDoneText(null, true), { title: "Le retour n'a pas abouti", body: 'Réessayez dans un instant.' });
+});

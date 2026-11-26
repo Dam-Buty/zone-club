@@ -485,6 +485,15 @@ span.kSearchPoster {
   color: #ffb347;
 }
 
+/* « Regarder » et « Rendre » d'une location en cours : l'un sous l'autre, à droite, à la largeur du plus long. */
+.kRentalActions {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2cqw;
+}
+
 /* Le bouton d'une ligne : à droite, sans s'étirer comme ceux des messages. */
 .kNoticeBtn.kRentalWatch {
   flex: none;

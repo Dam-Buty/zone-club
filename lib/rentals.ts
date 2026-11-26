@@ -4,6 +4,7 @@ import { createRentalSymlinks, deleteRentalSymlinks, getStreamingUrl, isDirectMe
 import { getFilmById, getFilmTier, parseFilm, type Film } from './films';
 import { playableVersions } from './media/file-check';
 import { RENTAL_COSTS, RENTAL_DURATIONS } from '../src/types';
+import { isEarlyReturn } from '../src/utils/rental-rules';
 import { access } from 'fs/promises';
 import { join } from 'path';
 import { randomUUID } from 'crypto';
@@ -476,7 +477,6 @@ export async function getRentalDownloadSource(userId: number, filmId: number): P
     throw new Error('Aucun fichier vidéo disponible pour cette location');
 }
 
-const EARLY_RETURN_HOURS = 24;
 const EARLY_RETURN_CREDIT = 1;
 
 export async function returnFilm(userId: number, filmId: number): Promise<{ earlyReturnCredit: boolean }> {
@@ -488,17 +488,15 @@ export async function returnFilm(userId: number, filmId: number): Promise<{ earl
     if (!rental) throw new Error('Location active non trouvée');
 
     const rentedAt = new Date(rental.rented_at + 'Z');
-    const now = new Date();
-    const hoursElapsed = (now.getTime() - rentedAt.getTime()) / (1000 * 60 * 60);
-    const isEarlyReturn = hoursElapsed <= EARLY_RETURN_HOURS;
+    const early = isEarlyReturn(rentedAt.getTime(), Date.now());
 
     await deleteRentalSymlinks(rental.symlink_uuid);
 
     db.transaction(() => {
         db.prepare("UPDATE rentals SET is_active = 0, returned_early = ?, returned_at = datetime('now') WHERE id = ?")
-            .run(isEarlyReturn ? 1 : 0, rental.id);
+            .run(early ? 1 : 0, rental.id);
 
-        if (isEarlyReturn) {
+        if (early) {
             db.prepare('UPDATE users SET credits = credits + ? WHERE id = ?')
                 .run(EARLY_RETURN_CREDIT, userId);
         }
@@ -508,7 +506,7 @@ export async function returnFilm(userId: number, filmId: number): Promise<{ earl
             .run('dismissed', rental.id);
     })();
 
-    return { earlyReturnCredit: isEarlyReturn };
+    return { earlyReturnCredit: early };
 }
 
 export function createReturnRequest(filmId: number, requesterId: number): void {

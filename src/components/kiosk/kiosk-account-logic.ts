@@ -1,5 +1,6 @@
 // Logique pure du compte dans la borne : le bonus de la semaine et la fin d'une location. Sans import de React ni du
-// magasin, et sans import de valeur : Node la charge telle quelle dans les tests.
+// magasin ; seul import de valeur : une règle partagée, avec son extension `.ts` (Node la charge telle quelle dans les tests).
+import { isEarlyReturn } from '../../utils/rental-rules.ts';
 
 /** « 1 crédit », « 3 crédits » — même écriture que `creditsLabel` de kiosk-logic. */
 const creditsLabel = (n: number): string => `${n} crédit${n > 1 ? 's' : ''}`;
@@ -41,6 +42,29 @@ export function insufficientText(i: { cost: number; credits: number; bonus: Bonu
     body: offer === null ? base : `${base} Votre bonus de la semaine vous en offre ${offer}.`,
     offer,
   };
+}
+
+// ===== Rendre une K7 (demande de Rusmir du 25/11/2026 : « on doit pouvoir rendre un film sur la borne ») =====
+
+/**
+ * La question avant de rendre. Le crédit n'est annoncé que dans le délai ; c'est le serveur qui tranche, et le
+ * message qui suit le retour dit ce qu'il a décidé. `onTv` : ce film passe sur la TV, que le retour arrête.
+ */
+export function returnConfirmText(i: { title: string; rentedAt: number | null; nowMs: number; onTv: boolean }): { title: string; body: string } {
+  const early = i.rentedAt !== null && isEarlyReturn(i.rentedAt, i.nowMs);
+  const parts = [
+    early ? 'Rendue dans les 8 h qui suivent la location, elle vous rapporte 1 crédit.' : null,
+    'Vous ne pourrez plus la regarder sans la louer à nouveau.',
+    i.onTv ? 'Le film sur la télé sera arrêté.' : null,
+  ];
+  return { title: `Rendre « ${i.title} » ?`, body: parts.filter(Boolean).join(' ') };
+}
+
+/** Le message après le retour : la réponse du serveur, ou null quand il a refusé ou n'a pas répondu. */
+export function returnDoneText(result: { earlyReturnCredit: boolean } | null, onTv: boolean): { title: string; body: string | undefined } {
+  if (!result) return { title: "Le retour n'a pas abouti", body: 'Réessayez dans un instant.' };
+  const parts = [result.earlyReturnCredit ? 'Rendue en avance : +1 crédit.' : null, onTv ? 'Le film sur la télé est arrêté.' : null].filter(Boolean);
+  return { title: 'K7 rendue', body: parts.length ? parts.join(' ') : undefined };
 }
 
 // ===== Fin d'une location =====
