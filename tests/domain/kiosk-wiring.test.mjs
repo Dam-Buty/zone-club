@@ -1012,7 +1012,7 @@ test('BORNE: changer de rayon affiche le premier film de ce rayon', () => {
 test('DISTRIBUTION PC: la borne du PC a son film, ses relevés et son décor modélisé derrière l\'écran', () => {
   const view = readText(path.join(ROOT, 'src/components/kiosk/KioskView.tsx'));
   assert.ok(view.includes('useIsPc()') && /const variant = isPc && PC_DISTRIBUTION \? PC_DISTRIBUTION : MOBILE_DISTRIBUTION/.test(view), 'le PC prend son film quand il existe, le téléphone garde le sien');
-  assert.ok(view.includes('url: variant.film.src') && view.includes('film={variant.film}'), 'le crochet et le calque reçoivent le film de la variante');
+  assert.ok(view.includes('src: variant.film.src') && view.includes('av1: variant.film.av1') && view.includes('film: filmFiles') && view.includes('film={variant.film}'), 'le crochet (H.264 et AV1) et le calque reçoivent le film de la variante');
   assert.ok(view.includes('className={styles.decor}') && view.includes('decorStyle('), 'le décor est posé d\'après la boîte de l\'écran filmé');
   assert.ok(view.indexOf('className={styles.decor}') < view.indexOf('ref={screenRef}'), 'le décor est sous l\'écran');
   const css = readText(path.join(ROOT, 'src/components/kiosk/KioskView.module.css'));

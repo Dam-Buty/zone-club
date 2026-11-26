@@ -8,6 +8,7 @@
 //
 // Le film est un fichier du site, lu par une balise <video> muette : jamais de lecteur tiers.
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
+import { fetchFilm, type FilmFiles } from '../../utils/video-source';
 
 /** idle : rien ne joue. starting : lecture demandée, première image pas encore à l'écran. playing : le film est à l'écran. */
 export type ApproachPhase = 'idle' | 'starting' | 'playing';
@@ -35,8 +36,9 @@ export interface ApproachFilm {
 }
 
 interface ApproachFilmOptions {
-  /** Adresse du film ; undefined = cette devanture n'en a pas. */
-  url: string | undefined;
+  /** Le film, en H.264 et en AV1 : un seul des deux fichiers est téléchargé, selon le navigateur
+      (src/utils/video-source.ts) ; undefined = cette devanture n'en a pas. */
+  film: FilmFiles | undefined;
   durationMs: number;
   /** Vrai quand la devanture est affichée : le film se télécharge alors, sans rien retarder. */
   load: boolean;
@@ -44,7 +46,7 @@ interface ApproachFilmOptions {
   onArrive: () => void;
 }
 
-export function useApproachFilm({ url, durationMs, load, onArrive }: ApproachFilmOptions): ApproachFilm {
+export function useApproachFilm({ film, durationMs, load, onArrive }: ApproachFilmOptions): ApproachFilm {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [src, setSrc] = useState<string | null>(null);
   const [phase, setPhase] = useState<ApproachPhase>('idle');
@@ -60,14 +62,10 @@ export function useApproachFilm({ url, durationMs, load, onArrive }: ApproachFil
   // Téléchargement complet, en tâche de fond : le film joue ensuite depuis la mémoire, sans jamais
   // attendre le réseau. Un échec est silencieux : sans film, la borne s'ouvre directement.
   useEffect(() => {
-    if (!load || !url) return;
+    if (!load || !film) return;
     let cancelled = false;
     let objectUrl: string | null = null;
-    fetch(url)
-      .then((response) => {
-        if (!response.ok) throw new Error(`film d'approche : ${response.status}`);
-        return response.blob();
-      })
+    fetchFilm(film)
       .then((blob) => {
         if (cancelled) return;
         objectUrl = URL.createObjectURL(blob);
@@ -82,7 +80,7 @@ export function useApproachFilm({ url, durationMs, load, onArrive }: ApproachFil
         setSrc(null);
       }
     };
-  }, [load, url]);
+  }, [load, film]);
 
   const clearTimers = useCallback(() => {
     timersRef.current.forEach((timer) => window.clearTimeout(timer));

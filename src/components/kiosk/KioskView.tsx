@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { useStore, useCredits } from '../../store';
 import { useBackGuard } from '../../hooks/useBackGuard';
 import { parseServerDate } from '../../utils/server-date';
+import type { FilmFiles } from '../../utils/video-source';
 import api from '../../api';
 import type { Film } from '../../types';
 import { castOwnsFilm, castView } from '../../cast/cast-machine';
@@ -63,6 +64,8 @@ const MOBILE_DISTRIBUTION: DistributionVariant = {
 // Le PC a son film (Rusmir, 23/11/2026) : la borne modélisée dans la rue, vue comme à la fin du film d'approche, écran
 // en 2:3 — et son décor, la première image de ce film, gardé derrière l'écran. Absent des données : le PC prend le film
 // du téléphone, sans décor.
+/** Images par seconde des deux vidéos de distribution (distribution_sorties.py, distribution_pc_sorties.py). */
+const DISTRIBUTION_FPS = 24;
 const PC_DISTRIBUTION: DistributionVariant | null = (distributionData as unknown as { pc?: DistributionVariant }).pc ?? null;     // (le JSON type l'écran en number[], pas en boîte de quatre)
 
 // Borne de location : seconde façon de louer, sans aucun rendu 3D. Cette coque porte le corps
@@ -398,8 +401,13 @@ export function KioskView() {
     releaseScreen();
     setDistribution((d) => (d?.phase === 'film' ? { phase: 'ready', filmId: d.filmId, fresh: true } : d));
   }, [releaseScreen]);
+  // La vidéo de la variante, en H.264 et en AV1 : le crochet ne télécharge que celle que le navigateur lit le mieux.
+  const filmFiles = useMemo((): FilmFiles => ({
+    src: variant.film.src, width: variant.film.largeur, height: variant.film.hauteur, av1: variant.film.av1,
+    framerate: DISTRIBUTION_FPS, durationMs: variant.film.dureeMs,
+  }), [variant]);
   const distributionFilm = useDistributionFilm({
-    url: variant.film.src,
+    film: filmFiles,
     assets: variantAssets,
     durationMs: variant.film.dureeMs,
     load: filmWanted,

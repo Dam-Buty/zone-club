@@ -6,6 +6,8 @@
 // `src/data/storefront-mobile.json` et `src/data/storefront-desktop.json` : tout y est en fractions
 // de l'image (0 à 1, origine en haut à gauche), projeté par la caméra de la scène Blender.
 
+import type { Av1Version } from '../../utils/video-source';
+
 export interface Rect { x0: number; y0: number; x1: number; y1: number }
 
 export interface StorefrontLayout {
@@ -24,8 +26,10 @@ export interface StorefrontLayout {
       borne dans sa DERNIÈRE image (fractions du cadre du film, qui a le format de l'image). */
   approche: {
     src: string; w: number; h: number; duree: number; images: number; octets: number; ecran: Rect;
+    /** Le même film en AV1, plus léger, pour les navigateurs qui le lisent (src/utils/video-source.ts). */
+    av1?: Av1Version;
     /** Mobile : le même film en haute définition (même trajet, même cadrage), pour les écrans qui en tirent parti. */
-    hd?: { src: string; w: number; h: number; octets: number };
+    hd?: { src: string; w: number; h: number; octets: number; av1?: Av1Version };
   };
 }
 
@@ -151,7 +155,7 @@ export function pickApproachFilm(
   stageWidth: number,
   pixelRatio: number,
   saveData = false,
-): { src: string; w: number; h: number } {
+): { src: string; w: number; h: number; av1?: Av1Version } {
   const { hd } = approche;
   if (hd && !saveData && stageWidth * pixelRatio > approche.w * HD_FILM_MARGIN) return hd;
   return approche;

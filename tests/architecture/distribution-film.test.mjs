@@ -25,7 +25,8 @@ function tailleWebp(buf) {
 test('DISTRIBUTION FILMÉE: l\'arrêt sur la fente laisse au moins une seconde pour lire le titre', () => {
   const { arret } = lis();
   assert.ok(arret.finS - arret.debutS >= 1.0, `arrêt de ${arret.finS - arret.debutS} s`);
-  assert.ok(arret.debutS >= 5.85 && arret.finS <= 7.0, 'les calques tiennent entre l\'arrêt de la K7 et le départ de l\'appareil');
+  // 26/11/2026 : l'étape du tiroir (1,25 s) décale l'arrêt — la K7 s'arrête à 7,10 s, l'appareil repart à 8,25 s.
+  assert.ok(arret.debutS >= 7.10 && arret.finS <= 8.25, 'les calques tiennent entre l\'arrêt de la K7 et le départ de l\'appareil');
   for (const nom of ['tranche', 'afficheur']) {
     const b = arret[nom];
     assert.ok(b.x0 >= 0 && b.y0 >= 0 && b.x1 <= 1 && b.y1 <= 1 && b.x0 < b.x1 && b.y0 < b.y1, `boîte « ${nom} » dans l'image`);
@@ -35,23 +36,40 @@ test('DISTRIBUTION FILMÉE: l\'arrêt sur la fente laisse au moins une seconde p
   assert.ok(arret.afficheur.y1 <= t.y0, 'l\'afficheur est au-dessus de la fente');
 });
 
-test('DISTRIBUTION FILMÉE: une vidéo de 8 s en 720 × 1290, avec son, d\'au plus 2 600 000 octets', () => {
+test('DISTRIBUTION FILMÉE: une vidéo de 9,25 s en 720 × 1290, avec son, d\'au plus 2 800 000 octets', () => {
   const { film } = lis();
   assert.equal(film.src, '/kiosk-distribution.mp4');
-  assert.deepEqual([film.largeur, film.hauteur, film.dureeMs], [720, 1290, 8000]);
+  assert.deepEqual([film.largeur, film.hauteur, film.dureeMs], [720, 1290, 9250]);
   const buf = readFileSync(path.join(ROOT, 'public', film.src));
   assert.deepEqual(lisMp4(buf), { w: 720, h: 1290 });
   assert.equal(buf.length, film.octets);
-  assert.ok(buf.length <= 2_600_000, `${buf.length} octets pour un plafond de 2 600 000`);
+  // 2 600 000 sur 8 s (Rusmir, 22/11/2026) ; le H.264 ne va plus qu'aux appareils sans AV1 et garde son débit (26/11/2026).
+  assert.ok(buf.length <= 2_800_000, `${buf.length} octets pour un plafond de 2 800 000`);
   assert.equal(buf.toString('latin1', 4, 8), 'ftyp');
   assert.ok(buf.indexOf('moov') > 0 && buf.indexOf('moov') < buf.indexOf('mdat'), 'lisible dès le début du téléchargement');
   assert.ok(buf.includes('soun'), 'la vidéo a sa piste son');
+  assert.ok(!buf.includes('av01'), 'le fichier commun est en H.264');
 });
 
-test('DISTRIBUTION FILMÉE: la fabrique refuse une vidéo trop lourde et vérifie ses étiquettes de couleur', () => {
+// Rusmir, 26/11/2026 : « ceux qui sont compatibles AV1 reçoivent la vidéo AV1, les autres la vidéo H264 ».
+test('DISTRIBUTION FILMÉE: la même vidéo en AV1, plus légère, avec son, décrite pour le navigateur', () => {
+  const { film } = lis(), a = film.av1;
+  assert.equal(a.src, '/kiosk-distribution.av1.mp4');
+  assert.match(a.codecs, /^av01\.0\.\d\dM\.08$/, 'profil principal, 8 bits : la chaîne que le site passe au navigateur');
+  const buf = readFileSync(path.join(ROOT, 'public', a.src));
+  assert.equal(buf.length, a.octets);
+  assert.deepEqual(lisMp4(buf), { w: 720, h: 1290 });
+  assert.ok(buf.includes('av01') && buf.includes('soun'), 'piste AV1 et piste son');
+  assert.ok(buf.indexOf('moov') > 0 && buf.indexOf('moov') < buf.indexOf('mdat'), 'lisible dès le début du téléchargement');
+  assert.ok(a.octets <= 1_800_000 && a.octets < 0.8 * film.octets, `${a.octets} octets (H.264 : ${film.octets})`);
+});
+
+test('DISTRIBUTION FILMÉE: la fabrique refuse une vidéo trop lourde, vérifie ses étiquettes de couleur et la qualité de l\'AV1', () => {
   const src = readFileSync(path.join(ROOT, 'tools/devanture-borne/distribution_sorties.py'), 'utf8');
-  assert.ok(src.includes('2_600_000') && src.includes('SystemExit'), 'plafond de poids');
-  assert.ok(src.includes('setparams=') && src.includes('color_trc=iec61966-2-1') && src.includes('tv,bt709,iec61966-2-1,bt709'), 'étiquetée sRGB, étiquettes relues');
+  assert.ok(src.includes('2_800_000') && src.includes('PLAFOND_AV1') && src.includes('SystemExit') && src.includes('deux_films('), 'plafonds de poids, deux encodages');
+  const enc = readFileSync(path.join(ROOT, 'tools/devanture-borne/encodage.py'), 'utf8');
+  assert.ok(enc.includes('setparams=') && enc.includes('color_trc=iec61966-2-1') && enc.includes("'tv,bt709,iec61966-2-1,bt709'"), 'étiquetée sRGB, étiquettes relues');
+  assert.ok(enc.includes('libsvtav1') && enc.includes('ssim') && enc.includes('cible - TOLERANCE_SSIM'), 'l\'AV1 égale la qualité mesurée du H.264');
 });
 
 test('DISTRIBUTION FILMÉE: les tranches des films sont préparées debout, non éclairées, avec leur repli par niveau d\'usure', () => {
@@ -72,19 +90,19 @@ test('DISTRIBUTION FILMÉE: les tranches des films sont préparées debout, non 
 
 // ===== La tranche suit la K7 (spec § 13, plan 2026-11-23) : suivi par image, planches de caches et d'ombres =====
 
-test('DISTRIBUTION FILMÉE: le suivi dit où sont la tranche et l\'écran à chacune des 193 images', () => {
+test('DISTRIBUTION FILMÉE: le suivi dit où sont la tranche et l\'écran à chacune des 223 images', () => {
   const s = JSON.parse(readFileSync(path.join(ROOT, 'public/kiosk-distribution-suivi.json'), 'utf8'));
-  assert.deepEqual([s.images, s.ips, s.pas.length], [193, 24, 193]);
+  assert.deepEqual([s.images, s.ips, s.pas.length], [223, 24, 223]);
   // La tranche n'est suivie que dans l'image ou à son bord ; l'écran, lui, sort largement du cadre pendant le rapproché sur la fente.
   const boite = (b, marge) => b.every((v) => v > -marge && v < 1 + marge) && b[0] < b[2] && b[1] < b[3];
   for (const p of s.pas) { assert.ok(p.t === null || boite(p.t, 0.5)); assert.ok(boite(p.e, 3)); assert.ok(p.c === 0 || p.c === 1); }
   const bascules = s.pas.filter((p, i) => i > 0 && p.c !== s.pas[i - 1].c).length;
   assert.equal(bascules, 1, 'la K7 se couche une seule fois (au passage vers la fente)');
-  assert.ok(s.pas[0].c === 0 && s.pas[192].c === 1);
+  assert.ok(s.pas[0].c === 0 && s.pas[222].c === 1);
   for (const r of ['debout', 'couchee']) assert.ok(s.lumiere[r].lmax > 0 && s.lumiere[r].teinte.length === 3, `lumière du régime « ${r} »`);
   // L'appareil part de l'écran et y revient : même boîte à la première et à la dernière image, centrée, entière dans le cadre.
   // (Sa largeur exacte importe peu : la page cale le cadre de la vidéo sur le vrai écran de la borne.)
-  const [e0, e1] = [s.pas[0].e, s.pas[192].e];
+  const [e0, e1] = [s.pas[0].e, s.pas[222].e];
   assert.ok(e0.every((v, k) => Math.abs(v - e1[k]) < 0.002) && e0.every((v) => v > 0 && v < 1) && Math.abs(e0[0] + e0[2] - 1) < 0.01);
   for (const bloc of [s.debout, s.couchee]) assert.ok(bloc.cellule.length === 2 && bloc.colonnes > 0 && bloc.de <= bloc.a);
   assert.equal(s.debout.a + 1, s.couchee.de, 'les deux blocs se suivent sans trou');
