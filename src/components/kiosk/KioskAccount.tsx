@@ -4,7 +4,7 @@ import type { Film } from '../../types';
 import { FULL_OFFER, versionName, versionRows, type VersionChoice } from '../../utils/version-choice';
 import { VersionList } from '../version/VersionList';
 import { KioskPoster } from './KioskBrowse';
-import { bonusButtonLabel, bonusLine, bonusLineText } from './kiosk-account-logic';
+import { bonusButtonLabel, bonusLine, bonusLineText, canRewind } from './kiosk-account-logic';
 import { accountHistoryRows, creditsLabel, dayLabel, rentalRows, reviewStateFor, type KioskReviewState } from './kiosk-logic';
 import styles from './KioskPanels.module.css';
 
@@ -26,6 +26,9 @@ interface KioskAccountProps {
   /** Le retour en cours (bouton « Retour… ») et la demande de rendre : le parcours est celui de `useKioskReturn`. */
   returningId: number | null;
   onAskReturn: (filmId: number) => void;
+  /** Le rembobinage en cours (bouton « Rembobinage… ») et son lancement : `useKioskRewind`. */
+  rewindingId: number | null;
+  onRewind: (filmId: number) => void;
   onLogout: () => void;
   onBack: () => void;
 }
@@ -66,7 +69,7 @@ function ReviewLine({ state, onWrite }: { state: KioskReviewState; onWrite: () =
   return <span className={styles.kAccountReason}>{state.reason}</span>;
 }
 
-export function KioskAccount({ films, prefOpen, onPrefOpen, onWatch, onReview, returningId, onAskReturn, onLogout, onBack }: KioskAccountProps) {
+export function KioskAccount({ films, prefOpen, onPrefOpen, onWatch, onReview, returningId, onAskReturn, rewindingId, onRewind, onLogout, onBack }: KioskAccountProps) {
   const authUser = useStore((state) => state.authUser);
   const rentals = useStore((state) => state.rentals);
   const history = useStore((state) => state.rentalHistory);
@@ -224,6 +227,18 @@ export function KioskAccount({ films, prefOpen, onPrefOpen, onWatch, onReview, r
                   <button type="button" className={`${styles.kNoticeBtn} ${styles.kNoticeBtnPrimary} ${styles.kRentalWatch}`} onClick={() => onWatch(row.filmId)}>
                     Regarder
                   </button>
+                  {canRewind(rentals.find((r) => r.filmId === row.filmId)) && (
+                    <button
+                      type="button"
+                      className={`${styles.kNoticeBtn} ${styles.kRentalWatch}`}
+                      aria-busy={rewindingId === row.filmId}
+                      onClick={() => {
+                        if (rewindingId === null) onRewind(row.filmId);
+                      }}
+                    >
+                      {rewindingId === row.filmId ? 'Rembobinage…' : 'Rembobiner'}
+                    </button>
+                  )}
                   <button
                     type="button"
                     className={`${styles.kNoticeBtn} ${styles.kRentalWatch}`}

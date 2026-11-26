@@ -104,3 +104,12 @@ test('ARRIVÉE: le texte ne promet que des crédits vrais', () => {
   const e = K.returnPromptText({ title: 'A', rentedAt: 0, nowMs: 3_600_000, rewound: true, review: { kind: 'publiée' } });
   assert.deepEqual(e.lines, ['rendue avant 8 h : +1 crédit']);
 });
+
+test('REMBOBINER: soixante secondes, et seulement un film vu à 80 % pas encore rembobiné', () => {
+  assert.equal(K.REWIND_MS, 60_000);
+  assert.deepEqual(K.REWIND_SOUNDS, { rewind: null, robot: null });
+  assert.equal(K.canRewind({ watchProgress: 80, rewindClaimed: false }), true);
+  assert.equal(K.canRewind({ watchProgress: 79, rewindClaimed: false }), false);
+  assert.equal(K.canRewind({ watchProgress: 100, rewindClaimed: true }), false);
+  assert.equal(K.canRewind(undefined), false);
+});

@@ -144,3 +144,16 @@ export function rememberAsked(storage: Pick<Storage, 'getItem' | 'setItem'> | nu
     // Navigation privée, quota : la question pourra être reposée, rien de grave.
   }
 }
+
+// ===== Rembobiner à la borne (spec 2026-11-26-borne-retour-k7-design, § 6.2) =====
+
+/** Le rembobinage dure une minute, sans bloquer l'écran ; le crédit tombe à l'échéance. */
+export const REWIND_MS = 60_000;
+
+/** Les sons arrivent en livraison 2, après écoute par Rusmir : `null` = silence, aucune requête. */
+export const REWIND_SOUNDS: { rewind: string | null; robot: string | null } = { rewind: null, robot: null };
+
+/** Un film vu à 80 % et pas encore rembobiné peut l'être. */
+export function canRewind(r: { watchProgress: number; rewindClaimed: boolean } | undefined): boolean {
+  return !!r && r.watchProgress >= 80 && !r.rewindClaimed;
+}

@@ -40,3 +40,17 @@ test('RENDRE: la proposition à l\'arrivée est câblée dans la borne', () => {
   assert.match(view, /active:[^\n]*!welcome/);
   assert.match(src('src/components/kiosk/useKioskReturn.ts'), /export function useReturnPrompt\(/);
 });
+
+test('REMBOBINER: minuterie de 60 s puis crédit, nettoyée au démontage, et le retour ne rembobine jamais', () => {
+  const hook = src('src/components/kiosk/useKioskRewind.ts');
+  assert.match(hook, /setTimeout\([\s\S]*REWIND_MS/, 'la minuterie dure REWIND_MS');
+  assert.match(hook, /claimRewind\(/);
+  assert.ok(hook.indexOf('REWIND_MS') < hook.lastIndexOf('claimRewind('), 'le crédit vient après la minuterie');
+  assert.match(hook, /clearTimeout/, 'cancel et démontage coupent la minuterie');
+  assert.match(hook, /Le rembobinage n'a pas abouti/);
+  assert.match(src('src/components/kiosk/KioskView.tsx'), /beforeReturn: rewind\.cancel/);
+  assert.doesNotMatch(src('src/components/kiosk/useKioskReturn.ts'), /claimRewind/);
+  const account = src('src/components/kiosk/KioskAccount.tsx');
+  assert.match(account, /onRewind\(row\.filmId\)/);
+  assert.match(account, /'Rembobinage…' : 'Rembobiner'/);
+});

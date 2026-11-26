@@ -19,6 +19,7 @@ import { useDistributionFilm } from './useDistributionFilm';
 import distributionData from '../../data/kiosk-distribution.json';
 import { KioskAccount } from './KioskAccount';
 import { useKioskReturn, useReturnPrompt } from './useKioskReturn';
+import { useKioskRewind } from './useKioskRewind';
 import { KioskReview } from './KioskReview';
 import { KioskNotice, type KioskNoticeSpec } from './KioskNotice';
 import { KioskSearch } from './KioskSearch';
@@ -662,7 +663,8 @@ export function KioskView() {
   const currentDetail = detail !== null && detail.filmId === displayedId ? detail.data : null;
 
   const closeNotice = useCallback(() => setNotice(null), []);
-  const { returningId, askReturn, startReturn } = useKioskReturn({ films: catalogue, onNotice: setNotice, onReview: setReviewFilmId });
+  const rewind = useKioskRewind({ onNotice: setNotice });
+  const { returningId, askReturn, startReturn } = useKioskReturn({ films: catalogue, onNotice: setNotice, onReview: setReviewFilmId, beforeReturn: rewind.cancel });
 
   // ----- Connexion de la borne -----
   // `then` est ce que le visiteur voulait faire quand la connexion s'est imposée (louer) : on le
@@ -977,6 +979,8 @@ export function KioskView() {
                       onReview={(filmId) => setReviewFilmId(filmId)}
                       returningId={returningId}
                       onAskReturn={askReturn}
+                      rewindingId={rewind.rewindingId}
+                      onRewind={rewind.start}
                       onLogout={() => {
                         setAccountOpen(false);
                         void logout().then((ok) => {
