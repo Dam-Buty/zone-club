@@ -54,3 +54,14 @@ test('REMBOBINER: minuterie de 60 s puis crédit, nettoyée au démontage, et le
   assert.match(account, /onRewind\(row\.filmId\)/);
   assert.match(account, /'Rembobinage…' : 'Rembobiner'/);
 });
+
+test('REMBOBINER (correctifs): déconnexion, démontage pendant fetchMe, bouton occupé, ligne « Rembobiné »', () => {
+  const hook = src('src/components/kiosk/useKioskRewind.ts');
+  assert.match(hook, /state\.authUser\?\.id/, "l'identité du visiteur");
+  assert.match(hook, /\[userId, clear\]/, 'changement ou fin de session = rembobinage coupé');
+  assert.match(hook, /await fetchMe\(\);\s*if \(run\.current !== token\) return;/, 'jeton vérifié après fetchMe, avant de libérer et de jouer');
+  assert.ok(hook.indexOf('await fetchMe()') < hook.indexOf('activeId.current = null;\n          setRewindingId(null);'), 'occupé jusqu\'à la fin de fetchMe');
+  assert.match(hook, /stop\(robot\.current\);\s*robot\.current = play/, 'le robot précédent est arrêté avant réassignation');
+  assert.match(src('src/components/kiosk/KioskAccount.tsx'), /Rembobiné · \+1 crédit[\s\S]*kRentalActions/, 'la ligne en cours dit « Rembobiné »');
+  assert.match(src('src/components/kiosk/KioskAccount.tsx'), /\?\.rewindClaimed && \(/);
+});

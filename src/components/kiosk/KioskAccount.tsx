@@ -221,6 +221,11 @@ export function KioskAccount({ films, prefOpen, onPrefOpen, onWatch, onReview, r
                 <span className={styles.kSearchText}>
                   <span className={styles.kSearchTitle}>{row.title}</span>
                   <span className={styles.kSearchMeta}>{row.timeLeft}</span>
+                  {rentals.find((r) => r.filmId === row.filmId)?.rewindClaimed && (
+                    <span className={styles.kAccountFact}>
+                      <Mark ok /> Rembobiné · +1 crédit
+                    </span>
+                  )}
                   <ReviewLine state={reviewStateFor(row.filmId, reviewed, eligibility)} onWrite={() => onReview(row.filmId)} />
                 </span>
                 <span className={styles.kRentalActions}>

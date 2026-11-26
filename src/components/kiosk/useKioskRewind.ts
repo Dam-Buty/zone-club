@@ -22,15 +22,20 @@ function stop(audio: HTMLAudioElement | null): void {
 
 export function useKioskRewind({ onNotice }: { onNotice: (notice: KioskNoticeSpec | null) => void }) {
   const fetchMe = useStore((state) => state.fetchMe);
+  const userId = useStore((state) => state.authUser?.id);
   const [rewindingId, setRewindingId] = useState<number | null>(null);
   const timer = useRef<number | null>(null);
   const audio = useRef<HTMLAudioElement | null>(null);
   const robot = useRef<HTMLAudioElement | null>(null);
   const activeId = useRef<number | null>(null);
+  // Jeton d'annulation : chaque arrêt (retour du film, déconnexion, fermeture) le change, et toute suite d'un
+  // rembobinage plus ancien (claimRewind, fetchMe) s'abstient.
+  const run = useRef(0);
   const notify = useRef(onNotice);
   notify.current = onNotice;
 
   const clear = useCallback(() => {
+    run.current += 1;
     if (timer.current !== null) window.clearTimeout(timer.current);
     timer.current = null;
     stop(audio.current);
@@ -52,6 +57,7 @@ export function useKioskRewind({ onNotice }: { onNotice: (notice: KioskNoticeSpe
       if (activeId.current !== null) return;
       activeId.current = filmId;
       setRewindingId(filmId);
+      const token = ++run.current;
       audio.current = play(REWIND_SOUNDS.rewind);
       timer.current = window.setTimeout(() => {
         timer.current = null;
@@ -62,9 +68,14 @@ export function useKioskRewind({ onNotice }: { onNotice: (notice: KioskNoticeSpe
           } catch {
             ok = false;
           }
-          if (activeId.current !== filmId) return;
+          if (run.current !== token) return;
           stop(audio.current);
           audio.current = null;
+          if (ok) {
+            // Le bouton reste occupé jusqu'à ce que le magasin sache que le film est rembobiné.
+            await fetchMe();
+            if (run.current !== token) return;
+          }
           activeId.current = null;
           setRewindingId(null);
           if (!ok) {
@@ -75,13 +86,22 @@ export function useKioskRewind({ onNotice }: { onNotice: (notice: KioskNoticeSpe
             });
             return;
           }
-          await fetchMe();
+          stop(robot.current);
           robot.current = play(REWIND_SOUNDS.robot);
         })();
       }, REWIND_MS);
     },
     [fetchMe],
   );
+
+  // Le visiteur change ou se déconnecte : son rembobinage ne se réclame pas au nom du suivant.
+  useEffect(() => {
+    return () => {
+      if (activeId.current === null) return;
+      clear();
+      setRewindingId(null);
+    };
+  }, [userId, clear]);
 
   // Fermer la borne : son et minuterie coupés, aucun crédit.
   useEffect(
