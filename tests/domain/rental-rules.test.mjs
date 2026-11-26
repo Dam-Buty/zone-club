@@ -26,3 +26,13 @@ test('RÈGLES: le serveur, le vidéoclub 3D, le tutoriel et la borne lisent la m
   assert.doesNotMatch(src('src/components/videoclub/VHSCaseOverlay.tsx'), /24h|24 \* 60 \* 60/);
   assert.match(src('src/components/tutorial/TutorialOverlay.tsx'), /Retourner le film sous 8h/);
 });
+
+test('EXEMPLAIRES: une migration unique, guidée par PRAGMA user_version, et plus l\'ancienne règle 3/2/1', () => {
+  const db = src('lib/db.ts');
+  assert.match(db, /PRAGMA user_version/);
+  assert.match(db, /copiesForFilm/);
+  assert.doesNotMatch(db, /SET stock = 3 WHERE is_nouveaute = 1/);
+  assert.match(src('lib/films.ts'), /setFilmNouveaute[\s\S]{0,300}copiesForFilm\(isNouveaute\)/);
+  assert.match(src('scripts/seed-films.ts'), /copiesForFilm\(/);
+  assert.match(src('lib/rentals.ts'), /active_returns: activeRentals\.map\(/);
+});

@@ -49,6 +49,7 @@ import Database from 'better-sqlite3';
 import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { copiesForFilm } from '../src/utils/rental-rules';
 
 // Guard: only run with explicit SEED_MOCK=1
 if (process.env.SEED_MOCK !== '1') {
@@ -395,10 +396,8 @@ async function main() {
                 insertGenre.run(genre.name, slugify(genre.name), genre.id);
             }
 
-            // Compute stock based on aisle/nouveaute
-            let stock = 2; // default
-            if (mapping.is_nouveaute) stock = 3;
-            else if (mapping.aisle === 'classiques' || mapping.aisle === 'bizarre') stock = 1;
+            // 2 exemplaires pour une nouveauté, 1 sinon (même règle que le serveur)
+            const stock = copiesForFilm(mapping.is_nouveaute);
 
             const media = planMediaState(tmdbId, data.original_language);
 

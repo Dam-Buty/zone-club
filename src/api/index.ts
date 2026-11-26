@@ -340,6 +340,7 @@ export interface FilmWithRentalStatus extends ApiFilm {
     active_rentals: number;
     available_copies: number;
     earliest_return?: string;
+    active_returns: { expires_at: string; mine: boolean }[];
   };
 }
 

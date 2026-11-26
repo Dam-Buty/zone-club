@@ -3,6 +3,7 @@ import { fetchFullMovieData } from './tmdb';
 import { addMovie as addToRadarr } from './radarr';
 import { type RentalTier } from '../src/types';
 import { getRentalTier } from '../src/utils/rental-tier';
+import { copiesForFilm } from '../src/utils/rental-rules';
 
 export interface Film {
     id: number;
@@ -334,7 +335,8 @@ export function setFilmAisle(filmId: number, aisle: string | null): void {
 }
 
 export function setFilmNouveaute(filmId: number, isNouveaute: boolean): void {
-    db.prepare('UPDATE films SET is_nouveaute = ? WHERE id = ?').run(isNouveaute ? 1 : 0, filmId);
+    // Le nombre d'exemplaires suit le statut : 2 pour une nouveauté, 1 sinon (setFilmStock règle à la main ensuite).
+    db.prepare('UPDATE films SET is_nouveaute = ?, stock = ? WHERE id = ?').run(isNouveaute ? 1 : 0, copiesForFilm(isNouveaute), filmId);
 }
 
 export function setFilmStock(filmId: number, stock: number): void {

@@ -45,6 +45,8 @@ export interface RentalStatus {
     active_rentals: number;
     available_copies: number;
     earliest_return?: string;
+    /** Une entrée par location en cours, triées par fin croissante ; jamais d'identifiant d'utilisateur. */
+    active_returns: { expires_at: string; mine: boolean }[];
 }
 
 export interface ReturnRequest {
@@ -229,6 +231,7 @@ export function getFilmRentalStatus(filmId: number, userId: number | null): Rent
         active_rentals: activeCount,
         available_copies: availableCopies,
         earliest_return: earliestReturn,
+        active_returns: activeRentals.map((r) => ({ expires_at: r.expires_at, mine: r.user_id === userId })),
     };
 }
 
