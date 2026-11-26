@@ -36,3 +36,10 @@ test('EXEMPLAIRES: une migration unique, guidée par PRAGMA user_version, et plu
   assert.match(src('scripts/seed-films.ts'), /copiesForFilm\(/);
   assert.match(src('lib/rentals.ts'), /active_returns: activeRentals\.map\(/);
 });
+
+test('EXEMPLAIRES: un film inséré après la migration naît avec le bon nombre d\'exemplaires', () => {
+  const films = src('lib/films.ts');
+  assert.match(films, /INSERT INTO films \([\s\S]{0,400}aisle, is_nouveaute, stock\s*\)\s*VALUES \((\?, ){14}\?\)/);
+  assert.match(films, /isNouveaute \? 1 : 0,\s*copiesForFilm\(isNouveaute\)\s*\)/);
+  assert.match(src('lib/schema.sql'), /stock INTEGER DEFAULT 1,/);
+});

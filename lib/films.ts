@@ -192,8 +192,8 @@ export async function addFilmFromTmdb(tmdbId: number): Promise<Film> {
         INSERT INTO films (
             tmdb_id, title, title_original, original_language, synopsis, release_year,
             poster_url, backdrop_url, genres, directors, actors, runtime,
-            aisle, is_nouveaute
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            aisle, is_nouveaute, stock
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const result = stmt.run(
@@ -210,7 +210,8 @@ export async function addFilmFromTmdb(tmdbId: number): Promise<Film> {
         JSON.stringify(tmdbData.actors),
         tmdbData.runtime,
         aisle,
-        isNouveaute ? 1 : 0
+        isNouveaute ? 1 : 0,
+        copiesForFilm(isNouveaute)
     );
 
     const filmId = result.lastInsertRowid as number;
