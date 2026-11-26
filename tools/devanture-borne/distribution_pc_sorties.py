@@ -18,9 +18,9 @@ from PIL import Image
 from variante import D, G, ICI
 
 FILM = G['approche']['film']
-LARGEUR, HAUTEUR, IPS, DUREE_MS = FILM['w'], FILM['h'], 24, 8000
+LARGEUR, HAUTEUR, IPS, DUREE_MS = FILM['w'], FILM['h'], 24, 9250    # comme le film du téléphone (distribution_sorties.py)
 PLAFOND = 5_000_000                 # octets : un film de PC, 2,1 fois plus de points que celui du téléphone (plafonné à 2,6 Mo)
-DEBIT_VIDEO, DEBIT_SON = '4500k', '128k'
+DEBIT_VIDEO, DEBIT_SON = '4000k', '128k'   # 4500k sur 8 s ; 9,25 s au même débit dépasseraient le plafond (26/11/2026)
 RACINE = ICI.parents[1]
 PC = D / 'distribution' / 'pc'
 IMAGES = PC / 'film_%04d.png'

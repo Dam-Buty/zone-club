@@ -27,9 +27,12 @@ OUT = D / 'distribution' / 'site'
 OUT.mkdir(exist_ok=True)
 IPS = 24
 CELLULE = {0: (48, 336), 1: (448, 64)}            # debout, couchée : largeur × hauteur d'une cellule
-COLONNES = {0: 16, 1: 4}
+# 26/11/2026 : six colonnes pour la K7 couchée (quatre jusque-là) — l'étape du tiroir ajoute 30 images à ce bloc, et sur
+# quatre colonnes la planche dépassait 4096 points de haut.
+COLONNES = {0: 16, 1: 6}
 ALBEDO = 0.8                                       # la K7 blanche des passes « blanc »
-ARRET = (141, 168)                                 # images de l'arrêt sur la fente (K7 immobile, appareil fixe : 5,85 à 7,00 s)
+ARRET = (171, 198)                                 # images de l'arrêt sur la fente (K7 immobile, appareil fixe : 7,10 à 8,25 s —
+                                                   # 141 à 168 avant l'étape du tiroir de 1,25 s, distribution_film.PAUSE)
 S = json.loads((D / 'distribution' / 'suivi.json').read_text())
 B = json.loads((P / 'boites.json').read_text())
 N = len(S)

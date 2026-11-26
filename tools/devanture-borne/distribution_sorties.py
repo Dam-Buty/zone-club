@@ -10,9 +10,9 @@ import subprocess
 
 from variante import D, ICI
 
-LARGEUR, HAUTEUR, IPS, DUREE_MS = 720, 1290, 24, 8000
+LARGEUR, HAUTEUR, IPS, DUREE_MS = 720, 1290, 24, 9250      # 8 s + l'étape du tiroir (distribution_film.PAUSE, 26/11/2026)
 PLAFOND = 2_600_000                 # octets — Rusmir, 22/11/2026 : « ok jusqu'à 2,6 méga »
-DEBIT_VIDEO, DEBIT_SON = '2300k', '128k'
+DEBIT_VIDEO, DEBIT_SON = '2100k', '128k'   # 2300k sur 8 s ; 9,25 s au même débit dépasseraient le plafond (26/11/2026)
 RACINE = ICI.parents[1]
 IMAGES = D / 'distribution' / 'film' / 'img_%04d.png'      # rendues par : DOSSIER=film QUALITE=photo LUMIERE=douce ECHELLE=2 … distribution_film.py -- 128 mixte
 SON = D / 'sons' / 'bande-son-film.wav'

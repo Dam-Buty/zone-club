@@ -453,10 +453,11 @@ G_ = np.clip(G_ + 0.18 * rub * fbm(FH, FW, 40, 310) + 0.2 * np.exp(-(Z / 0.12) *
 B_ = np.clip(rub * (0.4 + 0.8 * fbm(FH, FW, 60, 320)), 0, 1)
 B_[inside(F['ecran'])] = 0
 Image.fromarray((np.dstack([R_, G_, B_]) * 255).astype(np.uint8), 'RGB').save(T / 'usure-facade.png')
-# ----- afficheur fluorescent 2 × 20 caractères, au repos (matrices 5 × 7) -----
+# ----- afficheur fluorescent 2 × 20 caractères (matrices 5 × 7) : au repos, et les messages du film de location -----
 GLYPHS = {
     'R': ['11110', '10001', '10001', '11110', '10100', '10010', '10001'],
     'E': ['11111', '10000', '10000', '11110', '10000', '10000', '11111'],
+    'É': ['00010', '11111', '10000', '11110', '10000', '10000', '11111'],
     'T': ['11111', '00100', '00100', '00100', '00100', '00100', '00100'],
     'A': ['01110', '10001', '10001', '11111', '10001', '10001', '10001'],
     'I': ['01110', '00100', '00100', '00100', '00100', '00100', '01110'],
@@ -465,30 +466,46 @@ GLYPHS = {
     'D': ['11110', '10001', '10001', '10001', '10001', '10001', '11110'],
     'S': ['01111', '10000', '10000', '01110', '00001', '00001', '11110'],
     'K': ['10001', '10010', '10100', '11000', '10100', '10010', '10001'],
+    'P': ['11110', '10001', '10001', '11110', '10000', '10000', '10000'],
+    'N': ['10001', '11001', '10101', '10011', '10001', '10001', '10001'],
+    'Z': ['11111', '00001', '00010', '00100', '01000', '10000', '11111'],
+    'V': ['10001', '10001', '10001', '10001', '10001', '01010', '00100'],
     '7': ['11111', '00001', '00010', '00100', '01000', '01000', '01000'],
     '/': ['00001', '00001', '00010', '00100', '01000', '10000', '10000'],
+    '.': ['00000', '00000', '00000', '00000', '00000', '01100', '01100'],
 }
 DOT, VCOLS, VROWS = 8, 128, 25
-lit = np.zeros((VROWS, VCOLS), bool)
-cells = np.zeros((VROWS, VCOLS), bool)
-for li, text in enumerate(['RETRAIT / RETOUR', 'DES K7']):
-    for ci, ch in enumerate(text.center(20)):
-        gx, gy = 4 + ci * 6, 4 + li * 10
-        cells[gy:gy + 7, gx:gx + 5] = True
-        for r_, bits in enumerate(GLYPHS.get(ch, [])):
-            for c_, b_ in enumerate(bits):
-                lit[gy + r_, gx + c_] = b_ == '1'
 up = lambda m: np.kron(m, np.ones((DOT, DOT), bool))  # noqa: E731
 yy, xx = np.mgrid[0:VROWS * DOT, 0:VCOLS * DOT]
 disk = ((xx % DOT - (DOT - 1) / 2) ** 2 + (yy % DOT - (DOT - 1) / 2) ** 2) <= (DOT * 0.41) ** 2
-vfd = np.zeros((VROWS * DOT, VCOLS * DOT, 3))
-vfd[:] = (5, 12, 11)                                            # verre fumé
-vfd[up(cells) & disk] = (9, 26, 23)                             # points éteints, à peine visibles
-aging = 0.62 + 0.38 * fbm(VROWS * DOT, VCOLS * DOT, 90, 820)    # vieux tube : des zones plus faibles
-on = (up(lit) & disk)[..., None] * np.array([105.0, 255.0, 214.0]) * aging[..., None]
-glow = np.asarray(Image.fromarray(np.clip(on, 0, 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(5))).astype(float)
-vfd = np.clip(vfd + on + glow * 0.55, 0, 255)
-Image.fromarray(vfd.astype(np.uint8)).save(T / 'afficheur.png')
+aging = 0.62 + 0.38 * fbm(VROWS * DOT, VCOLS * DOT, 90, 820)    # vieux tube : des zones plus faibles (le même partout)
+
+
+def afficheur(lignes, nom):
+    """Le tube avec ses deux lignes de texte, centrées ; toutes les cellules restent dessinées, éteintes."""
+    lit = np.zeros((VROWS, VCOLS), bool)
+    cells = np.zeros((VROWS, VCOLS), bool)
+    for li, text in enumerate(lignes):
+        for ci, ch in enumerate(text.center(20)):
+            gx, gy = 4 + ci * 6, 4 + li * 10
+            cells[gy:gy + 7, gx:gx + 5] = True
+            for r_, bits in enumerate(GLYPHS.get(ch, [])):
+                for c_, b_ in enumerate(bits):
+                    lit[gy + r_, gx + c_] = b_ == '1'
+    vfd = np.zeros((VROWS * DOT, VCOLS * DOT, 3))
+    vfd[:] = (5, 12, 11)                                            # verre fumé
+    vfd[up(cells) & disk] = (9, 26, 23)                             # points éteints, à peine visibles
+    on = (up(lit) & disk)[..., None] * np.array([105.0, 255.0, 214.0]) * aging[..., None]
+    glow = np.asarray(Image.fromarray(np.clip(on, 0, 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(5))).astype(float)
+    vfd = np.clip(vfd + on + glow * 0.55, 0, 255)
+    Image.fromarray(vfd.astype(np.uint8)).save(T / nom)
+
+
+afficheur(['RETRAIT / RETOUR', 'DES K7'], 'afficheur.png')
+# Film de location (Rusmir, 26/11/2026) : pendant que la machine amène la K7 au tiroir, puis quand le clapet s'ouvre.
+for _k in range(1, 4):
+    afficheur(['PRÉPARATION', '.' * _k], f'afficheur-preparation-{_k}.png')
+afficheur(['RETIREZ', 'VOTRE K7'], 'afficheur-retirez.png')
 
 # ----- repères de case du casier (A1 … H13) : petites étiquettes jaunies -----
 RC, RR, CW_, CH_ = 13, 8, 96, 32

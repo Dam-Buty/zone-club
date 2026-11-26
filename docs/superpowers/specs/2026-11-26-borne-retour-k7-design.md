@@ -211,6 +211,31 @@ panneau de la question. **[C]**
   sur l'écran — montrées à Rusmir avant le rendu complet.
 - Le son est fabriqué comme celui de la location (dossier `tools/devanture-borne/sons`).
 
+### 5.6 Après l'image fixe de la main — décisions du 26/11 **[R]**
+
+- **La pose.** La main retenue est la « Rigged hand ». Le visiteur est **collé à la borne**, un peu à droite de la fente : coude à
+  ~26 cm de la fente, à hauteur de taille ; l'avant-bras **descend** du coude vers la main, la main pousse la K7 du
+  bout des doigts. On ne voit que **la main et le départ de la manche**, qui sort du cadre par la droite (Rusmir : « on
+  veut pas voir le bras entier »). La manche cache le poignet (le modèle s'arrête là).
+- **Le visiteur invisible.** Torse, tête, bras et jambes simplifiés, absents de l'image mais qui **arrêtent la
+  lumière** : son ombre tombe sur la borne et sur le bras.
+- **Le lampadaire.** La lumière de rue existante (grand panneau à ~29° de hauteur) mettait toute la fente dans l'ombre
+  du corps, sans limite visible. On ajoute un **lampadaire derrière le visiteur, presque au-dessus** (~70°), blanc
+  chaud, qui passe au-dessus de ses épaules : main éclairée, ombre du corps sur la borne. **120 W sur la borne**, plus
+  un complément qui ne porte que sur la main, la manche et la K7 (350 W en tout pour elles). La teinte violette de la
+  peau venait des enseignes : elle disparaît.
+- **Uniformisé** (Rusmir : « pourquoi pas tout uniformiser dans les 120 W ») : le lampadaire et le visiteur invisible
+  sont dans **la scène commune aux films de la borne** — location et retour, téléphone et PC, et le décor du PC (la
+  première image du film PC). Ni la devanture de la rue ni le film d'approche ne changent (autre scène). Le film de
+  location est donc **refait**.
+- **Le film de location gagne une étape** (Rusmir : entre la remise de la K7 au tiroir et sa sortie, « il manque une
+  bonne seconde ») : **1,25 s** entre le moment où la K7 disparaît derrière la tôle et l'ouverture du clapet. La K7
+  reste cachée, le robot commence son retour ; on entend le transport interne puis un « clac » quand elle se cale ;
+  l'afficheur de la fente écrit **« PRÉPARATION… »**, puis **« RETIREZ VOTRE K7 »** quand le clapet s'ouvre. Le film
+  passe de 8 s à 9,25 s ; l'arrêt d'au moins une seconde sur la K7 sortie est gardé ; la bande-son
+  (`sons/mixe.sh`) est recalée.
+- Images clés de la location refaite montrées à Rusmir avant le rendu complet.
+
 ## 6. « Mon compte » de la borne
 
 ### 6.1 « Rendre »
