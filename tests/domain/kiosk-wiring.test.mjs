@@ -1192,3 +1192,12 @@ test('LECTEUR: sur téléphone l\'écran bleu de STOP reste dans la zone de la v
   const player = readText(path.join(ROOT, 'src/components/player/VHSPlayer.module.css'));
   assert.match(player.slice(player.indexOf('@media (orientation: portrait) and (max-width: 900px)')), /\.blueScreen \{[^}]*align-items: flex-start;/, '« NO SIGNAL » est écrit dans la zone de la vidéo, pas derrière les commandes');
 });
+
+// ===== Retour de la K7, tâche 4 : les messages de la borne montrent une liste =====
+test('BORNE: un message peut porter une liste, et le focus initial la suit', () => {
+  const src = readText(path.join(ROOT, 'src/components/kiosk/KioskNotice.tsx'));
+  assert.ok(src.includes('lines?: string[]'), 'KioskNoticeSpec.lines');
+  assert.ok(src.includes('lines.map('), 'une ligne par élément');
+  assert.ok(src.includes('styles.kNoticeList'), 'la liste a son style');
+  assert.match(src, /\[title, body, linesKey\]/, 'le focus dépend aussi de la liste');
+});

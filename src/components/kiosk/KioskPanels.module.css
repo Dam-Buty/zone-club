@@ -357,6 +357,23 @@ span.kSearchPoster {
   color: #e3f1ff;
 }
 
+/* Une liste sous le texte (crédits, exemplaires) : un tiret par ligne, sans puces du navigateur. */
+.kNoticeList {
+  margin-top: 2.2cqw;
+  padding-left: 3.4cqw;
+  list-style: none;
+  font-size: 4.4cqw;
+  font-weight: 500;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+  color: #e3f1ff;
+}
+
+.kNoticeList li::before {
+  content: '– ';
+  color: #ffb347;
+}
+
 .kNoticeActions {
   margin-top: 4.6cqw;
   display: flex;

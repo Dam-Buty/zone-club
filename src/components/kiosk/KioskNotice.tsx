@@ -5,24 +5,32 @@ import styles from './KioskPanels.module.css';
 export type KioskNoticeSpec = {
   title: string;
   body?: string;
+  /** Une ligne par élément, sous le texte. */
+  lines?: string[];
   primary: { label: string; onPress: () => void };
   secondary?: { label: string; onPress: () => void };
 };
 
-export function KioskNotice({ title, body, primary, secondary }: KioskNoticeSpec) {
+export function KioskNotice({ title, body, lines, primary, secondary }: KioskNoticeSpec) {
   const titleId = useId();
   const primaryRef = useRef<HTMLButtonElement>(null);
 
   // Le bouton principal reçoit le focus à l'ouverture, et à chaque nouveau message.
+  const linesKey = lines?.join('\n');
   useEffect(() => {
     primaryRef.current?.focus();
-  }, [title, body]);
+  }, [title, body, linesKey]);
 
   return (
     <div className={styles.kNoticeScrim}>
       <div className={styles.kNotice} role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <h2 id={titleId} className={styles.kNoticeTitle}>{title}</h2>
         {body && <p className={styles.kNoticeBody}>{body}</p>}
+        {lines && lines.length > 0 && (
+          <ul className={styles.kNoticeList}>
+            {lines.map((line, i) => <li key={i}>{line}</li>)}
+          </ul>
+        )}
         <div className={styles.kNoticeActions}>
           {secondary && (
             <button type="button" className={styles.kNoticeBtn} onClick={secondary.onPress}>
