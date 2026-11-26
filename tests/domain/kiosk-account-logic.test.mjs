@@ -47,10 +47,14 @@ test('RENDRE: la question annonce le crédit seulement dans les 8 h, et l\'arrê
   const H = 3_600_000;
   const now = 100 * H;
   const tot = K.returnConfirmText({ title: 'Alien', rentedAt: now - (8 * H - 60_000), nowMs: now, onTv: false });
-  assert.equal(tot.title, 'Rendre « Alien » ?');
+  assert.equal(tot.title, 'Rendre « Alien »\u00a0?');
   assert.equal(tot.body, 'Rendue dans les 8 h qui suivent la location, elle vous rapporte 1 crédit. Vous ne pourrez plus la regarder sans la louer à nouveau.');
   const tard = K.returnConfirmText({ title: 'Alien', rentedAt: now - (8 * H + 60_000), nowMs: now, onTv: true });
   assert.equal(tard.body, 'Vous ne pourrez plus la regarder sans la louer à nouveau. Le film sur la télé sera arrêté.');
+  // Un rembobinage en cours est arrêté par le retour : on le dit.
+  const rw = K.returnConfirmText({ title: 'Alien', rentedAt: null, nowMs: now, onTv: false, rewinding: true });
+  assert.ok(rw.body.endsWith('Le rembobinage en cours sera arrêté, sans crédit.'));
+  assert.ok(!K.returnConfirmText({ title: 'Alien', rentedAt: null, nowMs: now, onTv: false, rewinding: false }).body.includes('rembobinage'));
   // Date de location inconnue : on ne promet rien.
   assert.ok(!K.returnConfirmText({ title: 'Alien', rentedAt: null, nowMs: now, onTv: false }).body.includes('crédit'));
 });
@@ -83,6 +87,16 @@ test('ARRIVÉE: qui proposer — vu à 80 %, une fois par location, le plus réc
   assert.equal(K.returnPromptKey(7, 2, 1002), '7:2:1002');
 });
 
+test('ARRIVÉE: un film que la TV joue encore n\'est jamais proposé', () => {
+  assert.equal(K.returnPromptCandidate([pr(2, 95, 90)], new Set(), 7, 2), null);
+  assert.equal(K.returnPromptCandidate([pr(1, 80, 50), pr(2, 95, 90)], new Set(), 7, 2).filmId, 1, 'on propose le suivant');
+  assert.equal(K.returnPromptCandidate([pr(2, 95, 90)], new Set(), 7, null).filmId, 2);
+});
+
+test('REMBOBINER: le texte quand un autre rembobinage tourne', () => {
+  assert.deepEqual(K.rewindBusyText('Alien'), { title: 'Un rembobinage est déjà en cours', body: "« Alien » se rembobine. Attendez qu'il se termine." });
+});
+
 test('ARRIVÉE: le stockage qui lève ne casse rien', () => {
   const boom = { getItem() { throw new Error('x'); }, setItem() { throw new Error('x'); } };
   assert.deepEqual([...K.readAsked(boom)], []);
@@ -98,7 +112,7 @@ test('ARRIVÉE: le stockage qui lève ne casse rien', () => {
 
 test('ARRIVÉE: le texte ne promet que des crédits vrais', () => {
   const t = K.returnPromptText({ title: 'Alien', rentedAt: 0, nowMs: 9 * 3_600_000, rewound: false, review: { kind: 'possible' } });
-  assert.equal(t.title, 'Vous avez fini « Alien » ?');
+  assert.equal(t.title, 'Vous avez fini « Alien »\u00a0?', 'espace insécable avant le point d\'interrogation');
   assert.equal(t.body, 'Rendez la K7 à la borne :');
   assert.deepEqual(t.lines, ["rembobinez-la d'abord dans « Mon compte » : +1 crédit", 'votre critique ensuite : +1 crédit']);
   const e = K.returnPromptText({ title: 'A', rentedAt: 0, nowMs: 3_600_000, rewound: true, review: { kind: 'publiée' } });

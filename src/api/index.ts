@@ -5,6 +5,7 @@
 import type { Film } from '../types';
 import type { PlaybackFailure } from '../../lib/playback-failure-parse';
 import type { VersionChoice } from '../utils/version-choice';
+import { COPIES_AUTRE } from '../utils/rental-rules.ts';
 
 const API_BASE = '';
 
@@ -398,7 +399,7 @@ export function apiFilmToFilm(apiFilm: ApiFilm): Film {
     is_available: apiFilm.is_available,
     aisle: apiFilm.aisle as Film['aisle'],
     is_nouveaute: apiFilm.is_nouveaute,
-    stock: apiFilm.stock ?? 2,
+    stock: apiFilm.stock ?? COPIES_AUTRE,
     active_rentals: apiFilm.active_rentals ?? 0,
   };
 }

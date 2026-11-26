@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getFilmsByAisle, getNouveautes } from '@/lib/films';
 import { db } from '@/lib/db';
+import { COPIES_AUTRE } from '@/src/utils/rental-rules';
 
 const VALID_AISLES = ['action', 'aventure', 'horreur', 'sf', 'comedie', 'classiques', 'bizarre', 'drame', 'thriller', 'policier', 'animation', 'romance'];
 
@@ -18,7 +19,7 @@ function enrichFilmsWithStock(films: { id: number; stock?: number }[]) {
     const rentalCountMap = new Map(rentalCounts.map(r => [r.film_id, r.count]));
     return films.map(f => ({
         ...f,
-        stock: f.stock ?? 2,
+        stock: f.stock ?? COPIES_AUTRE,
         active_rentals: rentalCountMap.get(f.id) ?? 0,
     }));
 }

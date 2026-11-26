@@ -4,7 +4,7 @@ import { createRentalSymlinks, deleteRentalSymlinks, getStreamingUrl, isDirectMe
 import { getFilmById, getFilmTier, parseFilm, type Film } from './films';
 import { playableVersions } from './media/file-check';
 import { RENTAL_COSTS, RENTAL_DURATIONS } from '../src/types';
-import { isEarlyReturn } from '../src/utils/rental-rules';
+import { COPIES_AUTRE, isEarlyReturn } from '../src/utils/rental-rules';
 import { access } from 'fs/promises';
 import { join } from 'path';
 import { randomUUID } from 'crypto';
@@ -130,7 +130,7 @@ export function getActiveRentalCountForFilm(filmId: number): number {
 
 export function getFilmStock(filmId: number): number {
     const row = db.prepare('SELECT stock FROM films WHERE id = ?').get(filmId) as { stock: number } | undefined;
-    return row?.stock ?? 2;
+    return row?.stock ?? COPIES_AUTRE;
 }
 
 export function getUserActiveRentals(userId: number): RentalWithFilm[] {
@@ -496,8 +496,10 @@ export async function returnFilm(userId: number, filmId: number): Promise<{ earl
     await deleteRentalSymlinks(rental.symlink_uuid);
 
     db.transaction(() => {
-        db.prepare("UPDATE rentals SET is_active = 0, returned_early = ?, returned_at = datetime('now') WHERE id = ?")
+        // Garde is_active = 1 : deux retours simultanés (deux onglets) passent le SELECT, un seul gagne ici et crédite.
+        const updated = db.prepare("UPDATE rentals SET is_active = 0, returned_early = ?, returned_at = datetime('now') WHERE id = ? AND is_active = 1")
             .run(early ? 1 : 0, rental.id);
+        if (updated.changes !== 1) throw new Error('Location active non trouvée');
 
         if (early) {
             db.prepare('UPDATE users SET credits = credits + ? WHERE id = ?')

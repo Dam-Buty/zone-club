@@ -502,7 +502,7 @@ span.kSearchPoster {
   color: #ffb347;
 }
 
-/* « Regarder » et « Rendre » d'une location en cours : l'un sous l'autre, à droite, à la largeur du plus long. */
+/* « Regarder », « Rembobiner » et « Rendre » d'une location en cours : l'un sous l'autre, à droite, à la largeur du plus long. */
 .kRentalActions {
   display: flex;
   flex: none;

@@ -4,8 +4,9 @@ import type { Film } from '../../types';
 import { FULL_OFFER, versionName, versionRows, type VersionChoice } from '../../utils/version-choice';
 import { VersionList } from '../version/VersionList';
 import { KioskPoster } from './KioskBrowse';
-import { bonusButtonLabel, bonusLine, bonusLineText, canRewind } from './kiosk-account-logic';
+import { bonusButtonLabel, bonusLine, bonusLineText, canRewind, rewindBusyText } from './kiosk-account-logic';
 import { accountHistoryRows, creditsLabel, dayLabel, rentalRows, reviewStateFor, type KioskReviewState } from './kiosk-logic';
+import type { KioskNoticeSpec } from './KioskNotice';
 import styles from './KioskPanels.module.css';
 
 // « Mon compte » : ouvert par « Compte » à tout moment, sans avoir à louer d'abord
@@ -29,6 +30,8 @@ interface KioskAccountProps {
   /** Le rembobinage en cours (bouton « Rembobinage… ») et son lancement : `useKioskRewind`. */
   rewindingId: number | null;
   onRewind: (filmId: number) => void;
+  /** Pour expliquer un appui qui ne ferait rien (un autre rembobinage tourne). */
+  onNotice: (notice: KioskNoticeSpec | null) => void;
   onLogout: () => void;
   onBack: () => void;
 }
@@ -69,7 +72,7 @@ function ReviewLine({ state, onWrite }: { state: KioskReviewState; onWrite: () =
   return <span className={styles.kAccountReason}>{state.reason}</span>;
 }
 
-export function KioskAccount({ films, prefOpen, onPrefOpen, onWatch, onReview, returningId, onAskReturn, rewindingId, onRewind, onLogout, onBack }: KioskAccountProps) {
+export function KioskAccount({ films, prefOpen, onPrefOpen, onWatch, onReview, returningId, onAskReturn, rewindingId, onRewind, onNotice, onLogout, onBack }: KioskAccountProps) {
   const authUser = useStore((state) => state.authUser);
   const rentals = useStore((state) => state.rentals);
   const history = useStore((state) => state.rentalHistory);
@@ -238,7 +241,14 @@ export function KioskAccount({ films, prefOpen, onPrefOpen, onWatch, onReview, r
                       className={`${styles.kNoticeBtn} ${styles.kRentalWatch}`}
                       aria-busy={rewindingId === row.filmId}
                       onClick={() => {
-                        if (rewindingId === null) onRewind(row.filmId);
+                        if (rewindingId === null) {
+                          onRewind(row.filmId);
+                          return;
+                        }
+                        // Jamais un appui sans réponse : un autre film se rembobine, on le dit (sauf si c'est celui-ci).
+                        if (rewindingId === row.filmId) return;
+                        const running = current.find((c) => c.filmId === rewindingId)?.title ?? 'Ce film';
+                        onNotice({ ...rewindBusyText(running), primary: { label: 'Fermer', onPress: () => onNotice(null) } });
                       }}
                     >
                       {rewindingId === row.filmId ? 'Rembobinage…' : 'Rembobiner'}

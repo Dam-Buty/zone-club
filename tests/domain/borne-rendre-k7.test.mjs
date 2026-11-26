@@ -65,3 +65,20 @@ test('REMBOBINER (correctifs): déconnexion, démontage pendant fetchMe, bouton 
   assert.match(src('src/components/kiosk/KioskAccount.tsx'), /Rembobiné · \+1 crédit[\s\S]*kRentalActions/, 'la ligne en cours dit « Rembobiné »');
   assert.match(src('src/components/kiosk/KioskAccount.tsx'), /\?\.rewindClaimed && \(/);
 });
+
+test('RELECTURE FINALE: critique sans notice de TV, TV exclue de la proposition, rembobinage occupé, retour en connaissance de cause', () => {
+  const hook = src('src/components/kiosk/useKioskReturn.ts');
+  assert.match(hook, /label: 'Écrire ma critique', onPress: \(\) => \{ close\(\); onReview\(filmId\); \}/, 'close() avant la critique');
+  assert.match(hook, /castOwnsFilm\(state\.cast\)\)/, 'la TV exclue de la proposition');
+  assert.match(hook, /rewindingId\?: number \| null/);
+  assert.match(hook, /rewinding: rewindingId === filmId/);
+  const account = src('src/components/kiosk/KioskAccount.tsx');
+  assert.match(account, /rewindBusyText\(/);
+  const view = src('src/components/kiosk/KioskView.tsx');
+  assert.match(view, /active:[^\n]*!isPlayerOpen/);
+  assert.match(view, /rewindingId: rewind\.rewindingId/);
+  assert.doesNotMatch(src('src/api/index.ts'), /stock: apiFilm\.stock \?\? 2/);
+  assert.doesNotMatch(src('src/store/index.ts'), /film\.stock \?\? 2/);
+  assert.doesNotMatch(src('app/api/films/aisle/[aisle]/route.ts'), /stock \?\? 2/);
+  assert.doesNotMatch(src('lib/rentals.ts'), /stock \?\? 2/);
+});

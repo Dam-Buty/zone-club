@@ -19,6 +19,8 @@ interface KioskReturnOptions {
   onReview: (filmId: number) => void;
   /** Appelé avant le retour (la tâche 7 y arrête un rembobinage en cours). */
   beforeReturn?: (filmId: number) => void;
+  /** Le film en cours de rembobinage : le retour l'arrête, la question le dit. */
+  rewindingId?: number | null;
 }
 
 /** Le titre à afficher : le catalogue, puis l'historique, puis le texte que `rentalRows` emploie déjà. */
@@ -42,7 +44,7 @@ async function copiesAfterReturn(tmdbId: number | undefined): Promise<string[] |
   }
 }
 
-export function useKioskReturn({ films, onNotice, onReview, beforeReturn }: KioskReturnOptions) {
+export function useKioskReturn({ films, onNotice, onReview, beforeReturn, rewindingId }: KioskReturnOptions) {
   const returnFilm = useStore((state) => state.returnFilm);
   const fetchMe = useStore((state) => state.fetchMe);
   const castDismiss = useStore((state) => state.castDismiss);
@@ -82,7 +84,7 @@ export function useKioskReturn({ films, onNotice, onReview, beforeReturn }: Kios
         lines,
         primary:
           offer?.kind === 'write'
-            ? { label: 'Écrire ma critique', onPress: () => { onNotice(null); onReview(filmId); } }
+            ? { label: 'Écrire ma critique', onPress: () => { close(); onReview(filmId); } }
             : { label: 'Fermer', onPress: close },
         secondary: offer?.kind === 'write' ? { label: 'Fermer', onPress: close } : undefined,
       });
@@ -98,12 +100,12 @@ export function useKioskReturn({ films, onNotice, onReview, beforeReturn }: Kios
       const rentedAt = state.rentals.find((r) => r.filmId === filmId)?.rentedAt ?? null;
       const title = titleOf(films, filmId);
       onNotice({
-        ...returnConfirmText({ title, rentedAt, nowMs: Date.now(), onTv }),
+        ...returnConfirmText({ title, rentedAt, nowMs: Date.now(), onTv, rewinding: rewindingId === filmId }),
         primary: { label: 'Rendre', onPress: () => void startReturn(filmId) },
         secondary: { label: 'Annuler', onPress: () => onNotice(null) },
       });
     },
-    [returningId, films, onNotice, startReturn],
+    [returningId, films, onNotice, startReturn, rewindingId],
   );
 
   return { returningId, askReturn, startReturn };
@@ -148,7 +150,7 @@ export function useReturnPrompt({ active, startReturn, onNotice, films }: Return
       } catch {
         storage = null;
       }
-      const candidate = returnPromptCandidate(state.rentals, readAsked(storage), userId);
+      const candidate = returnPromptCandidate(state.rentals, readAsked(storage), userId, castOwnsFilm(state.cast));
       if (!candidate) return;
       rememberAsked(storage, returnPromptKey(userId, candidate.filmId, candidate.rentedAt));
       const { startReturn: start, onNotice: notify, films: catalogue } = latest.current;

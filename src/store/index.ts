@@ -6,6 +6,7 @@ import { preloadPosterImage } from '../utils/CassetteTextureArray';
 import { fetchVHSCoverData } from '../utils/VHSCoverGenerator';
 import { parseServerDate } from '../utils/server-date';
 import { rentalsRefreshOutcome } from '../utils/rentals-refresh';
+import { COPIES_AUTRE } from '../utils/rental-rules';
 import { keepsVersionPref, parseVersionChoice } from '../utils/version-choice';
 import { createCastSlice, type CastSlice } from './slices/cast';
 import { createVersionSlice, filmVersionsAfterRead, type VersionSlice } from './slices/version';
@@ -826,7 +827,7 @@ export const useStore = create<VideoClubState>()(
             filmsMap[aisle as AisleType] = converted;
             for (const film of converted) {
               rentalCounts[film.id] = {
-                stock: film.stock ?? 2,
+                stock: film.stock ?? COPIES_AUTRE,
                 activeRentals: film.active_rentals ?? 0,
               };
             }

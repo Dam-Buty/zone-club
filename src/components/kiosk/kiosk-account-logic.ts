@@ -51,14 +51,15 @@ export function insufficientText(i: { cost: number; credits: number; bonus: Bonu
  * La question avant de rendre. Le crédit n'est annoncé que dans le délai ; c'est le serveur qui tranche, et le
  * message qui suit le retour dit ce qu'il a décidé. `onTv` : ce film passe sur la TV, que le retour arrête.
  */
-export function returnConfirmText(i: { title: string; rentedAt: number | null; nowMs: number; onTv: boolean }): { title: string; body: string } {
+export function returnConfirmText(i: { title: string; rentedAt: number | null; nowMs: number; onTv: boolean; rewinding?: boolean }): { title: string; body: string } {
   const early = i.rentedAt !== null && isEarlyReturn(i.rentedAt, i.nowMs);
   const parts = [
     early ? 'Rendue dans les 8 h qui suivent la location, elle vous rapporte 1 crédit.' : null,
     'Vous ne pourrez plus la regarder sans la louer à nouveau.',
     i.onTv ? 'Le film sur la télé sera arrêté.' : null,
+    i.rewinding ? 'Le rembobinage en cours sera arrêté, sans crédit.' : null,
   ];
-  return { title: `Rendre « ${i.title} » ?`, body: parts.filter(Boolean).join(' ') };
+  return { title: `Rendre « ${i.title} »\u00a0?`, body: parts.filter(Boolean).join(' ') };
 }
 
 /** Le message après le retour : la réponse du serveur, ou null quand il a refusé ou n'a pas répondu. */
@@ -103,11 +104,14 @@ export function returnPromptKey(userId: number, filmId: number, rentedAt: number
   return `${userId}:${filmId}:${rentedAt}`;
 }
 
-/** La location à proposer : vue à 80 % au moins, jamais proposée, la plus récemment finie d'abord (`null` = la plus ancienne). */
-export function returnPromptCandidate(rentals: ReadonlyArray<PromptRental>, asked: ReadonlySet<string>, userId: number): PromptRental | null {
+/**
+ * La location à proposer : vue à 80 % au moins, jamais proposée, la plus récemment finie d'abord (`null` = la plus
+ * ancienne). `excludeFilmId` : le film que la TV joue encore, qu'on ne propose pas de rendre (il le sera à une autre arrivée).
+ */
+export function returnPromptCandidate(rentals: ReadonlyArray<PromptRental>, asked: ReadonlySet<string>, userId: number, excludeFilmId?: number | null): PromptRental | null {
   let best: PromptRental | null = null;
   for (const r of rentals) {
-    if (r.watchProgress < 80 || asked.has(returnPromptKey(userId, r.filmId, r.rentedAt))) continue;
+    if (r.filmId === excludeFilmId || r.watchProgress < 80 || asked.has(returnPromptKey(userId, r.filmId, r.rentedAt))) continue;
     if (best === null || (r.watchCompletedAt ?? -Infinity) > (best.watchCompletedAt ?? -Infinity)) best = r;
   }
   return best;
@@ -119,7 +123,7 @@ export function returnPromptText(i: { title: string; rentedAt: number; nowMs: nu
   if (isEarlyReturn(i.rentedAt, i.nowMs)) lines.push('rendue avant 8 h : +1 crédit');
   if (!i.rewound) lines.push("rembobinez-la d'abord dans « Mon compte » : +1 crédit");
   if (i.review.kind === 'possible') lines.push('votre critique ensuite : +1 crédit');
-  return { title: `Vous avez fini « ${i.title} » ?`, body: 'Rendez la K7 à la borne :', lines };
+  return { title: `Vous avez fini « ${i.title} »\u00a0?`, body: 'Rendez la K7 à la borne :', lines };
 }
 
 const ASKED_KEY = 'zone-borne-retour-demande';
@@ -156,4 +160,9 @@ export const REWIND_SOUNDS: { rewind: string | null; robot: string | null } = { 
 /** Un film vu à 80 % et pas encore rembobiné peut l'être. */
 export function canRewind(r: { watchProgress: number; rewindClaimed: boolean } | undefined): boolean {
   return !!r && r.watchProgress >= 80 && !r.rewindClaimed;
+}
+
+/** Le texte quand le visiteur appuie sur « Rembobiner » d'une autre ligne alors qu'un rembobinage tourne. */
+export function rewindBusyText(title: string): { title: string; body: string } {
+  return { title: 'Un rembobinage est déjà en cours', body: `« ${title} » se rembobine. Attendez qu'il se termine.` };
 }

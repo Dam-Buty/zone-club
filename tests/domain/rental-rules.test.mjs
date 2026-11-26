@@ -43,3 +43,9 @@ test('EXEMPLAIRES: un film inséré après la migration naît avec le bon nombre
   assert.match(films, /isNouveaute \? 1 : 0,\s*copiesForFilm\(isNouveaute\)\s*\)/);
   assert.match(src('lib/schema.sql'), /stock INTEGER DEFAULT 1,/);
 });
+
+test('RETOUR: deux retours simultanés ne créditent qu\'une fois (le UPDATE garde is_active = 1)', () => {
+  const r = src('lib/rentals.ts');
+  assert.match(r, /UPDATE rentals SET is_active = 0, returned_early = \?, returned_at = datetime\('now'\) WHERE id = \? AND is_active = 1/);
+  assert.match(r, /\.changes !== 1/);
+});

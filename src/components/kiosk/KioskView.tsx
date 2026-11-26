@@ -664,7 +664,7 @@ export function KioskView() {
 
   const closeNotice = useCallback(() => setNotice(null), []);
   const rewind = useKioskRewind({ onNotice: setNotice });
-  const { returningId, askReturn, startReturn } = useKioskReturn({ films: catalogue, onNotice: setNotice, onReview: setReviewFilmId, beforeReturn: rewind.cancel });
+  const { returningId, askReturn, startReturn } = useKioskReturn({ films: catalogue, onNotice: setNotice, onReview: setReviewFilmId, beforeReturn: rewind.cancel, rewindingId: rewind.rewindingId });
 
   // ----- Connexion de la borne -----
   // `then` est ce que le visiteur voulait faire quand la connexion s'est imposée (louer) : on le
@@ -739,7 +739,7 @@ export function KioskView() {
 
   // La proposition de rendre un film vu, une fois par ouverture de la borne, quand rien d'autre n'est ouvert.
   useReturnPrompt({
-    active: !welcome && isAuthenticated && overlay === null && distribution === null && reviewFilmId === null && !authVisible,
+    active: !welcome && isAuthenticated && !isPlayerOpen && overlay === null && distribution === null && reviewFilmId === null && !authVisible,
     startReturn,
     onNotice: setNotice,
     films: catalogue,
@@ -981,6 +981,7 @@ export function KioskView() {
                       onAskReturn={askReturn}
                       rewindingId={rewind.rewindingId}
                       onRewind={rewind.start}
+                      onNotice={setNotice}
                       onLogout={() => {
                         setAccountOpen(false);
                         void logout().then((ok) => {
