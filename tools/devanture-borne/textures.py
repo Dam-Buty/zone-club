@@ -473,6 +473,8 @@ GLYPHS = {
     '7': ['11111', '00001', '00010', '00100', '01000', '01000', '01000'],
     '/': ['00001', '00001', '00010', '00100', '01000', '10000', '10000'],
     '.': ['00000', '00000', '00000', '00000', '00000', '01100', '01100'],
+    'C': ['01110', '10001', '10000', '10000', '10000', '10001', '01110'],
+    'Ç': ['01110', '10001', '10000', '10000', '10001', '01110', '00100'],   # la cédille prend la dernière rangée
 }
 DOT, VCOLS, VROWS = 8, 128, 25
 up = lambda m: np.kron(m, np.ones((DOT, DOT), bool))  # noqa: E731
@@ -506,6 +508,8 @@ afficheur(['RETRAIT / RETOUR', 'DES K7'], 'afficheur.png')
 for _k in range(1, 4):
     afficheur(['PRÉPARATION', '.' * _k], f'afficheur-preparation-{_k}.png')
 afficheur(['RETIREZ', 'VOTRE K7'], 'afficheur-retirez.png')
+# Film de retour (spec 2026-11-26-borne-retour-k7, § 5.1) : la borne a détecté la K7 qu'on lui rend.
+afficheur(['K7 REÇUE', ''], 'afficheur-recue.png')
 
 # ----- repères de case du casier (A1 … H13) : petites étiquettes jaunies -----
 RC, RR, CW_, CH_ = 13, 8, 96, 32

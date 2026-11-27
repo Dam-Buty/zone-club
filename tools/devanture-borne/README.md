@@ -91,3 +91,29 @@ Changer l'arrivée, c'est aussi vérifier à l'écran que l'écran filmé tombe 
 - `autocollant-*.{jpg,webp}` — les quatre autocollants collés sur la borne.
 - `tranches.json` — les 96 films dont les K7 garnissent les vitrines, dans l'ordre des tranches, avec
   l'affiche et le logo retenus pour chacun (figés : le résultat ne dépend plus de ce que TMDB répond).
+
+## Le film de retour de la K7 (`main/`, `retour_film.py`, `retour_rendu.py`)
+
+Spec `docs/superpowers/specs/2026-11-26-borne-retour-k7-design.md`, § 5. Le visiteur rend sa K7 : la vue part de
+l'écran, recule et s'incline vers la fente ; sa main droite apporte la K7 **pincée par l'arrière** (pouce à plat sur
+le dessus, index recourbé dessous en face du pouce, les autres doigts à la même courbure — Rusmir, 26/11/2026),
+l'enfonce sans la lâcher ; l'afficheur écrit « K7 REÇUE », les rouleaux la tirent des doigts, la main repart, le
+clapet retombe, la vue revient sur l'écran (5,9 s).
+
+- `retour_film.py` monte la scène (celle du film de location, le visiteur et le lampadaire, la main de l'atelier) ;
+  `ENREGISTRE=<fichier.blend>` l'enregistre sans rien rendre, pour animer **dans le Blender ouvert** (MCP).
+- L'animation est faite à vue dans Blender et vit dans `main/retour-anim.blend` : la K7 a sa trajectoire, la main
+  suit des repères attachés à la K7 (contraintes Copy Transforms à influence animée : « tient », puis « part »), la
+  manche suit le poignet sans tourner avec la main. Doigts posés dans les amplitudes articulaires normales
+  (limites IK sur chaque articulation : MCP −20/90°, IPP 0/100°, IPD 0/70°, pouce MCP 0/55°, IP −15/80°).
+- `main/prise_auto.py` : les outils de pose employés (placer la main, plier chaque doigt jusqu'au contact de la K7,
+  au rayon d'un doigt). `main/prise.py` : banc de pose dans l'atelier.
+- `retour_rendu.py` rend l'animation image par image et change le message de l'afficheur
+  (`textures.py` → `afficheur-recue.png`).
+- Contrôle : à chaque image, aucune phalange (rayon du doigt) ni os de la paume (12 mm) n'entre dans la K7 ni ne
+  passe la façade : `main/controle_retour.py`, à relancer dans le Blender ouvert après toute retouche.
+
+**Crédit — la main** : « Rigged hand » par **Elena FF**, licence **CC BY-SA 4.0**,
+https://sketchfab.com/3d-models/eae97cc2a742413cb5338ab942b12c1e — `main/atelier-main.blend` et
+`main/textures/` (textures d'origine : couleur, rugosité, normales). La pose et la manche sont ajoutées ici ; ces
+fichiers dérivés restent sous CC BY-SA 4.0.
