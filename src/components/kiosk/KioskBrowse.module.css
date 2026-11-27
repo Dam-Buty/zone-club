@@ -692,9 +692,28 @@
   flex: none;
   margin: 0 0 1.2cqw;
   padding-bottom: 1cqw;
+  border-bottom: 0.25cqw solid rgba(190, 238, 255, 0.3);
+}
+.kCopiesTitle {
+  margin: 0 0 0.4cqw;
   font-weight: 700;
   color: #ffcf5a;
-  border-bottom: 0.25cqw solid rgba(190, 238, 255, 0.3);
+}
+.kCopies {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.kCopyState {
+  margin-left: 1.6cqw;
+}
+.kCopyFree {
+  font-weight: 700;
+  color: #ffcf5a;
+}
+/* Un exemplaire loué s'efface : il n'est pas à prendre. */
+.kCopyOut {
+  opacity: 0.55;
 }
 
 /* Une rubrique plus longue que le cadre défile vers le bas, dans le cadre seulement. */

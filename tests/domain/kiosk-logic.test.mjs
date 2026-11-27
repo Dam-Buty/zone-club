@@ -390,15 +390,6 @@ test('FICHE: le geste retour ferme la fiche, après ce qui est au-dessus d\'elle
   assert.equal(K.kioskBackAction({ ...base, detailOpen: true, trailerOpen: true }), 'close-trailer', 'la bande-annonce s\'arrête d\'abord, la fiche reste');
 });
 
-test('FICHE: disponibilité en toutes lettres, jamais devinée', () => {
-  // L'heure du serveur est lue par src/utils/server-date.ts (parseServerDate) avant d'arriver ici.
-  assert.equal(K.availabilityText({ stock: 3, copiesLeft: 2, earliestReturnMs: NaN }), '2 copies sur 3 en rayon');
-  assert.equal(K.availabilityText({ stock: 3, copiesLeft: 1, earliestReturnMs: NaN }), '1 copie sur 3 en rayon');
-  assert.equal(K.availabilityText({ stock: 2, copiesLeft: 0, earliestReturnMs: Date.UTC(2026, 10, 19, 17, 42), timeZone: 'Europe/Paris' }), 'Toutes louées, prochain retour le 19 novembre à 18:42', 'heure de Paris');
-  assert.equal(K.availabilityText({ stock: 2, copiesLeft: 0, earliestReturnMs: NaN }), 'Toutes les copies sont louées', 'date de retour illisible : on ne l\'invente pas');
-  assert.equal(K.availabilityText(null), null, 'stock inconnu : rien plutôt qu\'un chiffre faux');
-});
-
 // ===== Jaquette 10 % plus grande, bouton « (i) Fiche film » à côté du titre (Rusmir, 17/11/2026) =====
 test('BORNE: à côté du bouton « Fiche film », le corps du titre suit la place qui reste', () => {
   const titles = ['Get Out', 'Heat', 'Dernier train pour Busan', 'Killers of the Flower Moon', 'Il était une fois en Amérique', "Confessions d'un homme dangereux"];

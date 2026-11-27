@@ -49,6 +49,15 @@ if _ETUIS:
     sys.argv = sys.argv[:sys.argv.index('--') + 1] + [str(_AP['echantillons'][0]), 'mixte']
     exec(compile((_ICI / 'distribution_film.py').read_text(), str(_ICI / 'distribution_film.py'), 'exec'), globals())
     _CHOIX = _choix_approche
+    # LAMPADAIRE=1 : la même passe, avec le visiteur et son lampadaire de 120 W (visiteur.py) — la lumière de la borne
+    # telle que la page la montre ensuite (son décor). Le film d'approche y arrive peu à peu sur ses dernières images
+    # (approche_compo.py, LAMPADAIRE=<de>-<à>) : sans cela la borne s'éclairait d'un coup à l'apparition de l'écran
+    # (Rusmir, 27/11/2026). Sorties : borne_lamp_NNNN.png, à côté des borne_NNNN.png.
+    if os.environ.get('LAMPADAIRE'):
+        import visiteur  # noqa: E402
+        applique_etat(ARRET_K7 + 0.3)
+        visiteur.installe(scene, K7)
+        applique_etat(0.0)
 else:
     exec(compile(_tete, str(_ICI / 'borne.py'), 'exec'), globals())      # la scène, la caméra d'origine, la passe choisie
 
@@ -84,7 +93,7 @@ for _i in _CHOIX:
             np.save(str(_sortie), np.zeros((_HV, _WV, 3), np.float16))
             continue
     else:
-        _sortie = _ANIM / f'borne_{_i:04d}.png'
+        _sortie = _ANIM / (f'borne_lamp_{_i:04d}.png' if os.environ.get('LAMPADAIRE') else f'borne_{_i:04d}.png')
         assert not _vide, f'image {_i} : la borne est hors du cadre'
     scene.render.border_min_x, scene.render.border_max_x = _x0, _x1
     scene.render.border_min_y, scene.render.border_max_y = _y0, _y1
@@ -96,7 +105,7 @@ for _i in _CHOIX:
         _exr.pixels.foreach_get(_buf)
         np.save(str(_sortie), _buf.reshape(_exr.size[1], _exr.size[0], 4)[::-1, :, :3].astype(np.float16))
         bpy.data.images.remove(_exr)
-    elif _i == len(_CAM) - 1:
+    elif _i == len(_CAM) - 1 and not os.environ.get('LAMPADAIRE'):
         # Où est l'écran de la borne dans la dernière image : le site y pose l'écran de son interface.
         _e = cadre([(L(x_), FRONT + 0.019, z_) for x_ in (F['ecran'][0], F['ecran'][1]) for z_ in (F['ecran'][2], F['ecran'][3])])
         (_ANIM / 'ecran-arrivee.json').write_text(json.dumps({k_: round(v_, 6) for k_, v_ in _e.items()}))

@@ -2,7 +2,9 @@
 
 mobile : la devanture (WebP et JPEG) et la mise en page.
 bureau : la devanture (JPEG, texture de la scène animée), son masque de reflets (PNG) et la mise en page.
-Pour toute variante qui a un bloc « approche » : le film d'approche de la borne (MP4), décrit dans la mise en page.
+Pour toute variante qui a un bloc « approche » : le film d'approche de la borne (MP4, H.264 encodé par fabrique.sh, et
+sa version AV1 pour les appareils qui la lisent, cherchée ici au niveau de qualité du H.264 : encodage.py), décrit dans
+la mise en page.
 La mise en page dit où sont la borne, son écran et la porte dans l'image, en fractions.
 
 Usage : [DEVANTURE=bureau] python3 sorties.py   (à la fin de fabrique.sh)
@@ -13,6 +15,7 @@ from PIL import Image
 
 import shutil
 
+from encodage import av1_au_niveau
 from variante import D, G, ICI, VARIANTE
 
 RACINE = ICI.parent.parent
@@ -23,7 +26,19 @@ BUREAU_PX = (2102, 1117)
 mise = json.loads((D / 'mise-en-page.json').read_text())
 compo = Image.open(D / 'compo.png').convert('RGB')
 assert compo.size == (mise['image']['w'], mise['image']['h']), compo.size
-ecrits = []
+ecrits, journal = [], []
+
+
+def version_av1(film_h264, reglage):
+    """L'AV1 du film d'approche `film_h264` (à la taille `reglage`), copié dans public/ : ce que la mise en page en dit."""
+    sortie = film_h264.with_suffix('.av1.mp4')
+    r = av1_au_niveau(D / 'approche' / 'film_%04d.png', film_h264, sortie, reglage['w'], reglage['h'], G['approche']['ips'])
+    fichier = reglage['fichier'].removesuffix('.mp4') + '.av1.mp4'
+    shutil.copyfile(sortie, PUBLIC / fichier)
+    ecrits.append(fichier)
+    journal.append(f"{reglage['fichier']} : {r['journal']}")
+    return {'src': '/' + fichier, **r['av1']}
+
 
 if VARIANTE == 'mobile':
     compo.save(PUBLIC / 'storefront-mobile.webp', 'WEBP', quality=84, method=6)
@@ -52,7 +67,8 @@ if 'approche' in G:
     shutil.copyfile(film, PUBLIC / AP['film']['fichier'])
     mise['approche'] = {'src': '/' + AP['film']['fichier'], 'w': AP['film']['w'], 'h': AP['film']['h'], 'duree': AP['duree_s'],
                         'images': round(AP['ips'] * AP['duree_s']) + 1, 'octets': octets,
-                        'ecran': json.loads((D / 'approche' / 'ecran-arrivee.json').read_text())}
+                        'ecran': json.loads((D / 'approche' / 'ecran-arrivee.json').read_text()),
+                        'av1': version_av1(film, AP['film'])}
     ecrits += [AP['film']['fichier']]
     if 'film_hd' in AP:             # second film, en haute définition : même trajet, même cadrage, le site choisit selon l'écran
         HD = AP['film_hd']
@@ -61,10 +77,12 @@ if 'approche' in G:
         if octets_hd > HD['budget_octets']:
             raise SystemExit(f"sorties.py : le film d'approche en haute définition pèse {octets_hd} octets, pour un budget de {HD['budget_octets']} — monter approche.film_hd.crf")
         shutil.copyfile(film_hd, PUBLIC / HD['fichier'])
-        mise['approche']['hd'] = {'src': '/' + HD['fichier'], 'w': HD['w'], 'h': HD['h'], 'octets': octets_hd}
+        mise['approche']['hd'] = {'src': '/' + HD['fichier'], 'w': HD['w'], 'h': HD['h'], 'octets': octets_hd,
+                                  'av1': version_av1(film_hd, HD)}
         ecrits += [HD['fichier']]
 
 (DONNEES / donnees).write_text(json.dumps(mise, indent=2) + '\n')
 for nom in ecrits:
     print(f'{nom:28} {(PUBLIC / nom).stat().st_size / 1024:7.0f} Ko')
 print('src/data/' + donnees)
+print('\n'.join(journal))

@@ -1,4 +1,4 @@
-// La distribution filmée de la K7 : une vidéo de 8 s, rendue d'avance par la fabrique des images
+// La distribution filmée de la K7 : une vidéo de 9,25 s, rendue d'avance par la fabrique des images
 // (tools/devanture-borne/), où le robot de la borne va chercher la cassette et la sort par la fente.
 //
 // Ce crochet la télécharge quand le visiteur confirme sa location, la lance à la réponse du serveur et prévient à la
@@ -9,6 +9,7 @@
 // À la différence du film d'approche, celle-ci a du son. Elle part après l'appel au serveur, donc après l'appui : un
 // navigateur peut refuser la lecture sonore. Elle repart alors muette, et `muted` le dit pour que la borne le signale.
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
+import { fetchFilm, type FilmFiles } from '../../utils/video-source';
 import { frameAt, isUsableSuivi, type Suivi } from './kiosk-distribution-logic';
 
 /** idle : rien ne joue. starting : lecture demandée, première image pas encore à l'écran. playing : à l'écran. */
@@ -34,7 +35,8 @@ export interface DistributionFilmPlayer {
 }
 
 interface DistributionFilmOptions {
-  url: string;
+  /** La vidéo, en H.264 et en AV1 : un seul des deux fichiers est téléchargé, selon le navigateur (src/utils/video-source.ts). */
+  film: FilmFiles;
   /** Ce qui accompagne la vidéo : le suivi de la K7 image par image et les deux planches (caches, ombres). */
   assets: { suivi: string; caches: string; ombres: string };
   durationMs: number;
@@ -49,7 +51,7 @@ interface DistributionFilmOptions {
   onDone: () => void;
 }
 
-export function useDistributionFilm({ url, assets, durationMs, load, onFrame, onDone }: DistributionFilmOptions): DistributionFilmPlayer {
+export function useDistributionFilm({ film, assets, durationMs, load, onFrame, onDone }: DistributionFilmOptions): DistributionFilmPlayer {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [src, setSrc] = useState<string | null>(null);
   const [phase, setPhase] = useState<DistributionPhase>('idle');
@@ -74,11 +76,7 @@ export function useDistributionFilm({ url, assets, durationMs, load, onFrame, on
     if (!load) return;
     let cancelled = false;
     let objectUrl: string | null = null;
-    fetch(url)
-      .then((response) => {
-        if (!response.ok) throw new Error(`vidéo de distribution : ${response.status}`);
-        return response.blob();
-      })
+    fetchFilm(film)
       .then((blob) => {
         if (cancelled) return;
         objectUrl = URL.createObjectURL(blob);
@@ -91,7 +89,7 @@ export function useDistributionFilm({ url, assets, durationMs, load, onFrame, on
         if (!response.ok) throw new Error(`suivi de la distribution : ${response.status}`);
         return response.json() as Promise<Suivi>;
       })
-      // Un suivi vide ou incomplet n'est pas un suivi : la vidéo ne partira pas (sinon : 8 s d'écran noir).
+      // Un suivi vide ou incomplet n'est pas un suivi : la vidéo ne partira pas (sinon : 9 s d'écran noir).
       .then((suivi) => { if (!cancelled && isUsableSuivi(suivi)) suiviRef.current = suivi; })
       .catch(() => {});
     sheetsRef.current = 0;
@@ -110,7 +108,7 @@ export function useDistributionFilm({ url, assets, durationMs, load, onFrame, on
         setSrc(null);
       }
     };
-  }, [load, url, assets.suivi, assets.caches, assets.ombres]);
+  }, [load, film, assets.suivi, assets.caches, assets.ombres]);
 
   const clearTimers = useCallback(() => {
     timersRef.current.forEach((timer) => window.clearTimeout(timer));

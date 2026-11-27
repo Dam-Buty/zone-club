@@ -42,7 +42,7 @@ const STEP3_INTRO = "La location coute 1 a 2 credits — vous demarrez avec 5. V
 const STEP3_REWARDS = [
   { label: "Rembobiner la cassette", credit: "+1 cr" },
   { label: "Laisser une critique", credit: "+1 cr" },
-  { label: "Retourner le film sous 24h", credit: "+1 cr" },
+  { label: "Retourner le film sous 8h", credit: "+1 cr" },
   { label: "Bonus hebdomadaire (fidelite)", credit: "+1 cr" },
 ];
 

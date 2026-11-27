@@ -33,6 +33,23 @@
   height: 100%;
 }
 
+/* PC, avec le décor : la vidéo prend la place du décor de la page (KioskView.module.css, .decor), au point près. Le
+   décor a ses bords fondus dans le noir de la page (.decorFade) ; sans le MÊME fondu ici, les bords de l'image
+   s'éclairaient au départ de chaque film et s'éteignaient à sa fin (mesuré le 27/11/2026 dans une fenêtre de
+   1440 × 900 : + 17 niveaux sur la bande du haut, + 22 sur le bord gauche). Mêmes dégradés, même noir que la page. */
+.film[data-decor] {
+  background: #05050a;
+}
+
+.stageFade {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, #05050a 0%, rgba(5, 5, 10, 0) 5%, rgba(5, 5, 10, 0) 95%, #05050a 100%),
+    linear-gradient(180deg, #05050a 0%, rgba(5, 5, 10, 0) 4%, rgba(5, 5, 10, 0) 96%, #05050a 100%);
+}
+
 /* PC : l'écran de la borne (2:3) n'a pas les proportions de l'écran filmé (5:9). Il y est posé sans déformation ; ce
    fond couvre l'écran filmé autour de lui, de la couleur des bords de la dalle. */
 .screenBack {

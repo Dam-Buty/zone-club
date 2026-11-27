@@ -41,3 +41,89 @@ test('BONUS: « Crédits insuffisants » propose le bonus quand il attend, et se
   // Un bonus qui ne suffirait pas à payer le film ne promet rien.
   assert.equal(K.insufficientText({ cost: 5, credits: 0, bonus: { state: 'available', amount: 3 } }).offer, null);
 });
+
+// ----- Rendre une K7 depuis la borne (Rusmir, 25/11/2026 : « on doit pouvoir rendre un film sur la borne ») -----
+test('RENDRE: la question annonce le crédit seulement dans les 8 h, et l\'arrêt de la TV', () => {
+  const H = 3_600_000;
+  const now = 100 * H;
+  const tot = K.returnConfirmText({ title: 'Alien', rentedAt: now - (8 * H - 60_000), nowMs: now, onTv: false });
+  assert.equal(tot.title, 'Rendre « Alien »\u00a0?');
+  assert.equal(tot.body, 'Rendue dans les 8 h qui suivent la location, elle vous rapporte 1 crédit. Vous ne pourrez plus la regarder sans la louer à nouveau.');
+  const tard = K.returnConfirmText({ title: 'Alien', rentedAt: now - (8 * H + 60_000), nowMs: now, onTv: true });
+  assert.equal(tard.body, 'Vous ne pourrez plus la regarder sans la louer à nouveau. Le film sur la télé sera arrêté.');
+  // Un rembobinage en cours est arrêté par le retour : on le dit.
+  const rw = K.returnConfirmText({ title: 'Alien', rentedAt: null, nowMs: now, onTv: false, rewinding: true });
+  assert.ok(rw.body.endsWith('Le rembobinage en cours sera arrêté, sans crédit.'));
+  assert.ok(!K.returnConfirmText({ title: 'Alien', rentedAt: null, nowMs: now, onTv: false, rewinding: false }).body.includes('rembobinage'));
+  // Date de location inconnue : on ne promet rien.
+  assert.ok(!K.returnConfirmText({ title: 'Alien', rentedAt: null, nowMs: now, onTv: false }).body.includes('crédit'));
+});
+
+test('RENDRE: le message qui suit dit ce que le serveur a décidé', () => {
+  assert.deepEqual(K.returnDoneText({ earlyReturnCredit: true }, false), { title: 'K7 rendue', body: 'Rendue en avance : +1 crédit.' });
+  assert.deepEqual(K.returnDoneText({ earlyReturnCredit: false }, false), { title: 'K7 rendue', body: undefined });
+  assert.deepEqual(K.returnDoneText({ earlyReturnCredit: false }, true), { title: 'K7 rendue', body: 'Le film sur la télé est arrêté.' });
+  assert.deepEqual(K.returnDoneText(null, true), { title: "Le retour n'a pas abouti", body: 'Réessayez dans un instant.' });
+});
+
+// ----- Fin du retour : la proposition de critique -----
+test('RETOUR: ce que la fin du retour propose pour la critique', () => {
+  assert.deepEqual(K.returnReviewOffer({ kind: 'possible' }), { kind: 'write' });
+  assert.deepEqual(K.returnReviewOffer({ kind: 'pas-encore', reason: 'Critique possible à partir du 27 novembre à 21:10' }),
+    { kind: 'later', reason: 'Critique possible à partir du 27 novembre à 21:10' });
+  assert.equal(K.returnReviewOffer({ kind: 'publiée' }), null);
+  // Échec (location échue entre-temps) : le message d'échec, jamais « K7 rendue ».
+  assert.equal(K.returnDoneText(null, false).title, "Le retour n'a pas abouti");
+});
+
+// ----- La proposition à l'arrivée -----
+const pr = (filmId, p, done, extra = {}) => ({ filmId, rentedAt: 1000 + filmId, watchProgress: p, watchCompletedAt: done, rewindClaimed: false, ...extra });
+
+test('ARRIVÉE: qui proposer — vu à 80 %, une fois par location, le plus récemment fini', () => {
+  assert.equal(K.returnPromptCandidate([pr(1, 79, null)], new Set(), 7), null);
+  assert.equal(K.returnPromptCandidate([pr(1, 80, 50), pr(2, 95, 90)], new Set(), 7).filmId, 2, 'le plus récemment fini');
+  assert.equal(K.returnPromptCandidate([pr(1, 80, null), pr(2, 90, 5)], new Set(), 7).filmId, 2, 'null = le plus ancien');
+  assert.equal(K.returnPromptCandidate([pr(2, 95, 90)], new Set([K.returnPromptKey(7, 2, 1002)]), 7), null, 'une fois par location');
+  assert.equal(K.returnPromptKey(7, 2, 1002), '7:2:1002');
+});
+
+test('ARRIVÉE: un film que la TV joue encore n\'est jamais proposé', () => {
+  assert.equal(K.returnPromptCandidate([pr(2, 95, 90)], new Set(), 7, 2), null);
+  assert.equal(K.returnPromptCandidate([pr(1, 80, 50), pr(2, 95, 90)], new Set(), 7, 2).filmId, 1, 'on propose le suivant');
+  assert.equal(K.returnPromptCandidate([pr(2, 95, 90)], new Set(), 7, null).filmId, 2);
+});
+
+test('REMBOBINER: le texte quand un autre rembobinage tourne', () => {
+  assert.deepEqual(K.rewindBusyText('Alien'), { title: 'Un rembobinage est déjà en cours', body: "« Alien » se rembobine. Attendez qu'il se termine." });
+});
+
+test('ARRIVÉE: le stockage qui lève ne casse rien', () => {
+  const boom = { getItem() { throw new Error('x'); }, setItem() { throw new Error('x'); } };
+  assert.deepEqual([...K.readAsked(boom)], []);
+  K.rememberAsked(boom, 'k');
+  assert.deepEqual([...K.readAsked(null)], []);
+  assert.deepEqual([...K.readAsked({ getItem: () => 'pas du json' })], []);
+  const mem = new Map();
+  const s = { getItem: (k) => mem.get(k) ?? null, setItem: (k, v) => mem.set(k, v) };
+  K.rememberAsked(s, 'a'); K.rememberAsked(s, 'b');
+  assert.deepEqual([...K.readAsked(s)].sort(), ['a', 'b']);
+  assert.ok(mem.has('zone-borne-retour-demande'));
+});
+
+test('ARRIVÉE: le texte ne promet que des crédits vrais', () => {
+  const t = K.returnPromptText({ title: 'Alien', rentedAt: 0, nowMs: 9 * 3_600_000, rewound: false, review: { kind: 'possible' } });
+  assert.equal(t.title, 'Vous avez fini « Alien »\u00a0?', 'espace insécable avant le point d\'interrogation');
+  assert.equal(t.body, 'Rendez la K7 à la borne :');
+  assert.deepEqual(t.lines, ["rembobinez-la d'abord dans « Mon compte » : +1 crédit", 'votre critique ensuite : +1 crédit']);
+  const e = K.returnPromptText({ title: 'A', rentedAt: 0, nowMs: 3_600_000, rewound: true, review: { kind: 'publiée' } });
+  assert.deepEqual(e.lines, ['rendue avant 8 h : +1 crédit']);
+});
+
+test('REMBOBINER: soixante secondes, et seulement un film vu à 80 % pas encore rembobiné', () => {
+  assert.equal(K.REWIND_MS, 60_000);
+  assert.deepEqual(K.REWIND_SOUNDS, { rewind: null, robot: null });
+  assert.equal(K.canRewind({ watchProgress: 80, rewindClaimed: false }), true);
+  assert.equal(K.canRewind({ watchProgress: 79, rewindClaimed: false }), false);
+  assert.equal(K.canRewind({ watchProgress: 100, rewindClaimed: true }), false);
+  assert.equal(K.canRewind(undefined), false);
+});

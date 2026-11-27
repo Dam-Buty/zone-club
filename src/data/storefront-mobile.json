@@ -42,11 +42,21 @@
       "x1": 0.890202,
       "y1": 0.861814
     },
+    "av1": {
+      "src": "/storefront-mobile-borne-approche.av1.mp4",
+      "codecs": "av01.0.05M.08",
+      "octets": 497374
+    },
     "hd": {
       "src": "/storefront-mobile-borne-approche-hd.mp4",
       "w": 1080,
       "h": 1936,
-      "octets": 2307590
+      "octets": 2307590,
+      "av1": {
+        "src": "/storefront-mobile-borne-approche-hd.av1.mp4",
+        "codecs": "av01.0.08M.08",
+        "octets": 1599419
+      }
     }
   }
 }

@@ -1,6 +1,7 @@
 import Database from "better-sqlite3";
 import { readFileSync } from "fs";
 import { join } from "path";
+import { copiesForFilm } from "../src/utils/rental-rules";
 
 const dbPath = process.env.DATABASE_PATH || "./zone.db";
 
@@ -171,20 +172,21 @@ for (const sql of unplayableMigrations) {
   } catch { /* idempotent: column/index already exists */ }
 }
 
-// Set stock based on aisle (only on first migration)
+// Exemplaires par film : 2 pour une nouveauté, 1 pour tout autre film (décision de Rusmir du 26/11/2026,
+// src/utils/rental-rules.ts). Migration UNIQUE, guidée par PRAGMA user_version : un bloc rejoué à chaque démarrage
+// écraserait un stock réglé ensuite à la main dans l'admin.
 try {
-  const columns = db.prepare("PRAGMA table_info(films)").all() as {
-    name: string;
-  }[];
-  if (columns.some((c) => c.name === "stock")) {
-    // Ensure default stock values by aisle
-    db.exec("UPDATE films SET stock = 3 WHERE is_nouveaute = 1 AND stock = 2");
-    db.exec(
-      "UPDATE films SET stock = 1 WHERE aisle = 'classiques' AND stock = 2",
-    );
-    db.exec("UPDATE films SET stock = 1 WHERE aisle = 'bizarre' AND stock = 2");
+  const version = db.pragma("user_version", { simple: true }) as number;
+  if (version < 1) {
+    db.transaction(() => {
+      db.prepare("UPDATE films SET stock = ? WHERE is_nouveaute = 1").run(copiesForFilm(true));
+      db.prepare("UPDATE films SET stock = ? WHERE is_nouveaute = 0 OR is_nouveaute IS NULL").run(copiesForFilm(false));
+      db.pragma("user_version = 1");
+    })();
   }
-} catch { /* idempotent: column/index already exists */ }
+} catch (e) {
+  console.error("[db] migration des exemplaires (user_version 1) en échec :", e);
+}
 
 // Return requests table
 try {

@@ -205,7 +205,7 @@
   "bord_exp": 2.2,
   "arrivee": {"hauteur_ecran": 0.94, "cx": 0.43, "cy": 0.5},
   "film": {"w": 1920, "h": 1020, "crf": 23, "fichier": "storefront-borne-approche.mp4", "budget_octets": 2621440},
-  "echantillons": [64, 64],
+  "echantillons": [64, 64], "lampadaire": {"_": "Rusmir, 27/11/2026 : la page montre ensuite la borne sous le lampadaire du visiteur (son décor) — sans cette montée de lumière la borne s'éclairait d'un coup à l'apparition de l'écran (montant gauche 27 → 46 niveaux). De l'image « de » à l'image « a », la borne passe à cette lumière ; rendue ainsi jusqu'à « fin ».", "de": 56, "a": 86, "fin": 90},
   "pluie": {"densite": 0.00022, "longueur": [26, 78], "pente": 0.05, "force": [0.05, 0.22], "flou": 0.7}
  },
  "_pluie": "La pluie figée que compo.py fait tomber devant la borne, à l'échelle de la photo : densité par pixel, longueur des traînées (px), pente, force, épaisseur (px), flou (px).",

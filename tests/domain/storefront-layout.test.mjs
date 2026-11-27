@@ -216,6 +216,11 @@ test('APPROCHE: le crochet du film ne fait jamais attendre', () => {
   const src = readFileSync(path.join(ROOT, 'src/components/exterior/useApproachFilm.ts'), 'utf8');
   for (const m of ['prefers-reduced-motion', 'APPROACH_START_TIMEOUT_MS', 'APPROACH_GUARD_MARGIN_MS', 'createObjectURL', 'revokeObjectURL', "'ended'", "'error'", 'requestVideoFrameCallback']) assert.ok(src.includes(m), m);
   assert.ok(!/youtube|dailymotion|vimeo/i.test(src));
+  // H.264 ou AV1 selon le navigateur (26/11/2026) : les deux crochets passent par le même choix, un seul téléchargement.
+  for (const f of ['src/components/exterior/useApproachFilm.ts', 'src/components/kiosk/useDistributionFilm.ts']) {
+    const hook = readFileSync(path.join(ROOT, f), 'utf8');
+    assert.ok(hook.includes('fetchFilm(film)') && !hook.includes('fetch(url)'), f);
+  }
 });
 
 // Un double clic (habitude du bureau) ou un double appui ne doit pas escamoter le film : le second clic tombait sur

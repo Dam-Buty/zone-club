@@ -6,6 +6,8 @@
 // découpée par le cache de l'image (ce qui passe devant la K7) et assombrie par son ombre (la lumière de la scène).
 // L'écran de la borne, lui, n'est pas filmé : c'est le vrai écran, mis à l'échelle dans la boîte de l'écran filmé.
 
+import type { Av1Version } from '../../utils/video-source';
+
 /** Boîte en fractions de l'image de la vidéo : [x0, y0, x1, y1], origine en haut à gauche. */
 export type Box = [number, number, number, number];
 
@@ -33,8 +35,8 @@ export type Suivi = {
   pas: SuiviPas[];
 };
 
-/** La forme de `film` dans `src/data/kiosk-distribution.json` (`distribution_sorties.py`). */
-export type DistributionFilm = { src: string; largeur: number; hauteur: number; dureeMs: number; octets: number };
+/** La forme de `film` dans `src/data/kiosk-distribution.json` (`distribution_sorties.py`) : le H.264, et sa version AV1. */
+export type DistributionFilm = { src: string; largeur: number; hauteur: number; dureeMs: number; octets: number; av1?: Av1Version };
 
 /**
  * Une distribution filmée et ce qui l'accompagne. Deux variantes (`distribution_sorties.py`) : celle du téléphone

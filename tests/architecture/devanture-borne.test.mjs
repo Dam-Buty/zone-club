@@ -158,7 +158,22 @@ function controleFilm(L, fichier, budget) {
   assert.ok(buf.indexOf('moov') > 0 && buf.indexOf('moov') < buf.indexOf('mdat'), 'lisible dès le début du téléchargement');
   assert.ok(!buf.includes('soun'), 'pas de piste son');
   assert.ok(Math.abs(a.w / a.h - L.image.w / L.image.h) < 0.002, 'le film a le format de l\'image');
+  assert.ok(!buf.includes('av01'), 'le fichier commun est en H.264');
+  controleAv1(a, fichier, a.images);
   return a;
+}
+
+// Rusmir, 26/11/2026 : « ceux qui sont compatibles AV1 reçoivent la vidéo AV1, les autres la vidéo H264 ». Chaque film
+// d'approche a sa version AV1 (sorties.py, au niveau de qualité mesuré du H.264), même taille, même nombre d'images.
+function controleAv1(film, fichier, images) {
+  const v = film.av1, buf = readFileSync(path.join(ROOT, 'public', fichier.replace(/\.mp4$/, '.av1.mp4')));
+  assert.equal(v.src, '/' + fichier.replace(/\.mp4$/, '.av1.mp4'));
+  assert.match(v.codecs, /^av01\.0\.\d\dM\.08$/);
+  assert.deepEqual(lisMp4(buf), { w: film.w, h: film.h, images }, 'taille et nombre d\'images de l\'AV1');
+  assert.equal(buf.length, v.octets);
+  assert.ok(buf.includes('av01') && !buf.includes('soun'), 'piste AV1, sans son');
+  assert.ok(buf.indexOf('moov') > 0 && buf.indexOf('moov') < buf.indexOf('mdat'), 'lisible dès le début du téléchargement');
+  assert.ok(v.octets < 0.8 * film.octets, `AV1 ${v.octets} octets, H.264 ${film.octets}`);
 }
 
 test('APPROCHE: le film du bureau', () => {
@@ -208,6 +223,7 @@ test('APPROCHE: le mobile a aussi un film en haute définition, même trajet', (
   assert.equal(buf.length, hd.octets);
   assert.ok(buf.length <= 3670016, `${buf.length} octets pour un budget de 3 670 016`);
   assert.ok(buf.indexOf('moov') > 0 && buf.indexOf('moov') < buf.indexOf('mdat') && !buf.includes('soun'));
+  controleAv1(hd, 'storefront-mobile-borne-approche-hd.mp4', L.approche.images);
   const D = JSON.parse(readFileSync(path.join(ROOT, 'src/data/storefront-desktop.json'), 'utf8'));
   assert.equal(D.approche.hd, undefined, 'le bureau n\'a qu\'un film');
 });

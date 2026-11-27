@@ -98,8 +98,21 @@ for V in $DEVANTURES; do
         rendu_approche borne
         echo "film d'approche : la lumière du mur, image par image"
         rendu_approche mur
+        if a approche.lampadaire; then
+            # La fin du film arrive à la lumière du décor de la borne (le lampadaire du visiteur) : voir approche_compo.py.
+            LAMP_DE=$(python3 "$ICI/variante.py" approche.lampadaire.de)
+            LAMP_A=$(python3 "$ICI/variante.py" approche.lampadaire.a)
+            LAMP_FIN=$(python3 "$ICI/variante.py" approche.lampadaire.fin)
+            echo "film d'approche : la borne sous le lampadaire du visiteur, images $LAMP_DE à $LAMP_FIN"
+            if [ -z "$SANS_RENDU" ]; then
+                SCENE=distribution LAMPADAIRE=1 "$BLENDER" -b --factory-startup --python-exit-code 1 -P "$ICI/approche_rendu.py" -- borne "$LAMP_DE-$LAMP_FIN" > "$T/approche-rendu-lampadaire.log" 2>&1 \
+                    || { echo "échec du rendu du film, fin de $T/approche-rendu-lampadaire.log :"; tail -12 "$T/approche-rendu-lampadaire.log"; exit 1; }
+            fi
+            export LAMPADAIRE="$LAMP_DE-$LAMP_A" BOUGE_TOUJOURS=1 BOUGE_DES="$LAMP_DE"
+        fi
         echo "film d'approche : assemblage (mur recalé, borne, halo, flou de bougé, pluie)"
         python3 "$ICI/approche_compo.py" > "$T/approche-compo.log"
+        unset LAMPADAIRE BOUGE_TOUJOURS BOUGE_DES
         tail -1 "$T/approche-compo.log"
         echo "film d'approche : encodage"
         encode film "$T/approche/film.mp4"

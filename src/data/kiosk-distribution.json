@@ -3,12 +3,17 @@
     "src": "/kiosk-distribution.mp4",
     "largeur": 720,
     "hauteur": 1290,
-    "dureeMs": 8000,
-    "octets": 2394364
+    "dureeMs": 9250,
+    "octets": 2743469,
+    "av1": {
+      "src": "/kiosk-distribution.av1.mp4",
+      "codecs": "av01.0.05M.08",
+      "octets": 1746953
+    }
   },
   "arret": {
-    "debutS": 5.9,
-    "finS": 6.95,
+    "debutS": 7.15,
+    "finS": 8.2,
     "tranche": {
       "x0": 0.19679,
       "y0": 0.61731,
@@ -27,8 +32,13 @@
       "src": "/kiosk-distribution-pc.mp4",
       "largeur": 1920,
       "hauteur": 1020,
-      "dureeMs": 8000,
-      "octets": 4648092
+      "dureeMs": 9250,
+      "octets": 5349094,
+      "av1": {
+        "src": "/kiosk-distribution-pc.av1.mp4",
+        "codecs": "av01.0.08M.08",
+        "octets": 3225587
+      }
     },
     "suivi": "/kiosk-distribution-pc-suivi.json",
     "caches": "/kiosk-distribution-pc-caches.webp",

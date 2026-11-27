@@ -23,7 +23,11 @@ _haut = _src.split('# ----- les vues')[0]
 assert _haut != _src, 'distribution_poses.py : le bloc des vues est introuvable'
 exec(compile(_haut, str(_ICI / 'distribution_poses.py'), 'exec'), globals())
 
-IPS, DUREE = 24, 8.0
+# Rusmir, 26/11/2026 : entre la remise de la K7 au tiroir et sa sortie, « il manque une bonne seconde » — la machine la
+# lançait dehors aussitôt. PAUSE s'insère après la disparition de la K7 derrière la tôle : on entend le transport et
+# le « clac » du tiroir, l'afficheur écrit « PRÉPARATION… », puis le clapet s'ouvre (« RETIREZ VOTRE K7 »).
+PAUSE = 1.25
+IPS, DUREE = 24, 8.0 + PAUSE
 LARGEUR, HAUTEUR = 720, 1290
 N = int(round(IPS * DUREE)) + 1
 if len(_b) > 2:
@@ -88,6 +92,12 @@ OUVRE_VOLET = [(4.95, 0.0), (5.2, 1.0)]   # le clapet se relève juste avant que
 _CHOCS = ((resserre(2.66), 1.0), (resserre(3.02), 0.6))       # le serrage, puis le départ du retrait : (instant, force)
 ALLER, ECART, TIROIR, LEVEE_T, POSE, DESCENTE, GLISSE, POUSSE, RETOUR, SORTIE, OUVRE_VOLET = (
     resserres(c) for c in (ALLER, ECART, TIROIR, LEVEE_T, POSE, DESCENTE, GLISSE, POUSSE, RETOUR, SORTIE, OUVRE_VOLET))
+# L'étape du tiroir : tout ce qui suit la disparition de la K7 attend PAUSE, sauf le robot, qui repart pendant ce temps.
+CACHEE = resserre(5.1)
+SORTIE = [(t + PAUSE, v) for t, v in SORTIE]
+OUVRE_VOLET = [(t + PAUSE, v) for t, v in OUVRE_VOLET]
+ARRET_K7 += PAUSE
+assert OUVRE_VOLET[0][0] > CACHEE + 1.0, 'le clapet doit attendre au moins une seconde après la disparition de la K7'
 
 
 def secousse(t, pulsation=34.0, amorti=9.0):
@@ -135,11 +145,34 @@ def applique_etat(t):
     K7.location = k7
     K7.rotation_euler = (math.radians(penche), math.radians(rot), 0)
     VOLET.rotation_euler = (math.radians(86.0) * piste(OUVRE_VOLET, t), 0, 0)   # 0 : fermé ; relevé vers l'intérieur
+    afficheur(t)
     # Les voisines frémissent : elles basculent d'une fraction de degré sur leur pied, chacune de son côté.
     for i, (o, base) in enumerate(zip(_VOISINES, _VOISINES_BASE)):
         ang = math.radians(0.45) * secousse(t, 30.0 + 5 * i, 8.0) * (1 if i else -1)
         o.rotation_euler = (0, ang, 0)
         o.location = (base.x + ang * K7_H / 2, base.y, base.z)
+
+
+# ----- l'afficheur de la fente : au repos, « PRÉPARATION » (points qui défilent) pendant l'étape du tiroir, puis
+# « RETIREZ VOTRE K7 » dès que le clapet s'ouvre (textures.py) -----
+_AFF = next(n for n in bpy.data.materials['afficheur'].node_tree.nodes if n.type == 'TEX_IMAGE')
+_AFF_DOSSIER = Path(bpy.path.abspath(_AFF.image.filepath)).parent
+_AFF_IMAGES = {k: (_AFF.image if k == 'repos' else bpy.data.images.load(str(_AFF_DOSSIER / f'afficheur-{k}.png'), check_existing=True))
+               for k in ('repos', 'preparation-1', 'preparation-2', 'preparation-3', 'retirez')}
+for _im in _AFF_IMAGES.values():
+    _im.colorspace_settings.name = _AFF.image.colorspace_settings.name
+
+
+def message_afficheur(t):
+    if t < CACHEE:
+        return 'repos'
+    if t < OUVRE_VOLET[0][0]:
+        return f'preparation-{int((t - CACHEE) / 0.33) % 3 + 1}'
+    return 'retirez'
+
+
+def afficheur(t):
+    _AFF.image = _AFF_IMAGES[message_afficheur(t)]
 
 
 # ----- l'appareil : centre du cadre sur le mur (x local, z) et hauteur du cadre, en mètres -----
@@ -148,25 +181,25 @@ _E = F['ecran']
 _EX, _EZ = (_E[0] + _E[1]) / 2, (_E[2] + _E[3]) / 2
 _HE = (_E[1] - _E[0]) / 0.78 * HAUTEUR / LARGEUR      # l'écran occupe 78 % de la largeur, comme à la fin de l'approche
 _HB = 2.24
-FIXE = (5.30, 7.00)                # l'appareil ne bouge pas sur la fente entre ces deux instants (cadrage mixte)
-CALQUES = (5.90, 6.95)             # ce que la page pose (tranche du film loué, afficheur) n'est visible qu'ici
+FIXE = (5.30, 7.00 + PAUSE)                # l'appareil ne bouge pas sur la fente entre ces deux instants (cadrage mixte)
+CALQUES = (5.90 + PAUSE, 6.95 + PAUSE)             # ce que la page pose (tranche du film loué, afficheur) n'est visible qu'ici
 if _CADRAGE == 'suit':
-    CX_T = [(0, _EX), (1.1, 0.0), (1.3, 0.0), (2.3, -0.33), (4.3, -0.33), (5.2, _FX), (6.7, _FX), (8.0, _EX)]
-    CZ_T = [(0, _EZ), (1.1, 1.06), (1.3, 1.06), (2.3, _ZR), (3.4, _ZR), (4.5, 0.93), (6.7, 0.95), (8.0, _EZ)]
-    HH_T = [(0, _HE), (1.1, _HB), (1.3, _HB), (2.3, 0.70), (3.4, 0.70), (4.5, 0.80), (5.2, 0.64), (6.7, 0.64), (8.0, _HE)]
+    CX_T = [(0, _EX), (1.1, 0.0), (1.3, 0.0), (2.3, -0.33), (4.3, -0.33), (5.2, _FX), (6.7, _FX), (DUREE, _EX)]
+    CZ_T = [(0, _EZ), (1.1, 1.06), (1.3, 1.06), (2.3, _ZR), (3.4, _ZR), (4.5, 0.93), (6.7, 0.95), (DUREE, _EZ)]
+    HH_T = [(0, _HE), (1.1, _HB), (1.3, _HB), (2.3, 0.70), (3.4, 0.70), (4.5, 0.80), (5.2, 0.64), (6.7, 0.64), (DUREE, _HE)]
 elif _CADRAGE == 'mixte':     # choix de Rusmir (21/11/2026) : fixe pendant la saisie, rapproché sur la fente seulement
     # (22/11 : l'appareil est fixe sur la fente de 5,30 à 7,00 s ; les calques de la page tiennent dans cet intervalle.)
-    CX_T = [(0, _EX), (1.2, 0.0), (4.45, 0.0), (FIXE[0], _FX), (FIXE[1], _FX), (8.0, _EX)]
-    CZ_T = [(0, _EZ), (1.2, 1.06), (4.45, 1.06), (FIXE[0], 0.95), (FIXE[1], 0.95), (8.0, _EZ)]
-    HH_T = [(0, _HE), (1.2, _HB), (4.45, _HB), (FIXE[0], 0.64), (FIXE[1], 0.64), (8.0, _HE)]
+    CX_T = [(0, _EX), (1.2, 0.0), (4.45, 0.0), (FIXE[0], _FX), (FIXE[1], _FX), (DUREE, _EX)]
+    CZ_T = [(0, _EZ), (1.2, 1.06), (4.45, 1.06), (FIXE[0], 0.95), (FIXE[1], 0.95), (DUREE, _EZ)]
+    HH_T = [(0, _HE), (1.2, _HB), (4.45, _HB), (FIXE[0], 0.64), (FIXE[1], 0.64), (DUREE, _HE)]
 elif _CADRAGE == 'vitrine':   # fixe sur la vitrine pendant la saisie (et non sur la borne entière), puis la fente
-    CX_T = [(0, _EX), (1.2, -0.33), (3.8, -0.33), (5.2, _FX), (6.9, _FX), (8.0, _EX)]
-    CZ_T = [(0, _EZ), (1.2, 1.30), (3.8, 1.30), (5.2, 0.95), (6.9, 0.95), (8.0, _EZ)]
-    HH_T = [(0, _HE), (1.2, 0.80), (3.8, 0.80), (5.2, 0.64), (6.9, 0.64), (8.0, _HE)]
+    CX_T = [(0, _EX), (1.2, -0.33), (3.8, -0.33), (5.2, _FX), (6.9, _FX), (DUREE, _EX)]
+    CZ_T = [(0, _EZ), (1.2, 1.30), (3.8, 1.30), (5.2, 0.95), (6.9, 0.95), (DUREE, _EZ)]
+    HH_T = [(0, _HE), (1.2, 0.80), (3.8, 0.80), (5.2, 0.64), (6.9, 0.64), (DUREE, _HE)]
 else:
-    CX_T = [(0, _EX), (1.2, 0.0), (6.7, 0.0), (8.0, _EX)]
-    CZ_T = [(0, _EZ), (1.2, 1.06), (6.7, 1.06), (8.0, _EZ)]
-    HH_T = [(0, _HE), (1.2, _HB), (6.7, _HB), (8.0, _HE)]
+    CX_T = [(0, _EX), (1.2, 0.0), (6.7, 0.0), (DUREE, _EX)]
+    CZ_T = [(0, _EZ), (1.2, 1.06), (6.7, 1.06), (DUREE, _EZ)]
+    HH_T = [(0, _HE), (1.2, _HB), (6.7, _HB), (DUREE, _HE)]
 # L'autocollant collé sur la vitre cache la descente de la K7 : retiré pour l'essai (à trancher avec Rusmir).
 bpy.data.objects['autocollant_rosie'].hide_render = _CADRAGE in ('suit', 'fixe')   # Rusmir, 21/11 : il reste sur la vitre
 _D_REF = 6.0                                          # distance au mur pour la borne entière
@@ -251,6 +284,12 @@ if _PHOTO:      # textures lues en bicubique : plus nettes que le bilinéaire qu
 if os.environ.get('DOSSIER'):          # autre dossier de sortie (images de contrôle, sans toucher au film en cours)
     _SORTIE = _OUT / os.environ['DOSSIER']
     _SORTIE.mkdir(exist_ok=True)
+# Le visiteur devant la fente et le lampadaire derrière lui (visiteur.py, Rusmir 26/11/2026) : pas dans la scène de la
+# rue (SCENE_SEULE). VISITEUR=0 : la borne telle qu'avant, pour comparer.
+if not _SEULE and os.environ.get('VISITEUR', '1') != '0':
+    import visiteur  # noqa: E402
+    applique_etat(ARRET_K7 + 0.3)
+    O_VISITEUR = visiteur.installe(scene, K7)
 print('VUE FINALE', scene.view_settings.view_transform, scene.view_settings.look, scene.view_settings.exposure)
 print('ESSAI', _CADRAGE, N, 'images | écran', round(_EX, 3), round(_EZ, 3), round(_HE, 3), '| rangée', round(_ZR, 3), flush=True)
 if os.environ.get('LISTE'):          # LISTE=1 : les objets de la scène et leurs matières, sans rien rendre
@@ -288,7 +327,7 @@ if os.environ.get('SUIVI'):
         ymin = min(v.y for v in vs)
         return [k for k, v in enumerate(vs) if v.y < ymin + 0.002]
 
-    _DEBOUT, _COUCHEE = _face_a(0.0), _face_a(6.4)
+    _DEBOUT, _COUCHEE = _face_a(0.0), _face_a(6.4 + PAUSE)
     for _i in range(N):
         _t = _i / IPS
         applique_etat(_t)
@@ -384,7 +423,7 @@ if _CADRAGE == 'mixte' and not _SEULE and not os.environ.get('PASSES') and not o
     import json  # noqa: E402
     from bpy_extras.object_utils import world_to_camera_view  # noqa: E402
     from mathutils import Vector  # noqa: E402
-    _t = 6.4
+    _t = 6.4 + PAUSE
     assert CALQUES[0] >= ARRET_K7 and CALQUES[1] <= FIXE[1] and CALQUES[0] >= FIXE[0] and CALQUES[1] - CALQUES[0] >= 1.0
     applique_etat(_t)
     _dist = appareil(_t)

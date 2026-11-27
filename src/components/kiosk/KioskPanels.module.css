@@ -357,6 +357,23 @@ span.kSearchPoster {
   color: #e3f1ff;
 }
 
+/* Une liste sous le texte (crédits, exemplaires) : un tiret par ligne, sans puces du navigateur. */
+.kNoticeList {
+  margin-top: 2.2cqw;
+  padding-left: 3.4cqw;
+  list-style: none;
+  font-size: 4.4cqw;
+  font-weight: 500;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+  color: #e3f1ff;
+}
+
+.kNoticeList li::before {
+  content: '– ';
+  color: #ffb347;
+}
+
 .kNoticeActions {
   margin-top: 4.6cqw;
   display: flex;
@@ -483,6 +500,15 @@ span.kSearchPoster {
   font-weight: 800;
   line-height: 1.1;
   color: #ffb347;
+}
+
+/* « Regarder », « Rembobiner » et « Rendre » d'une location en cours : l'un sous l'autre, à droite, à la largeur du plus long. */
+.kRentalActions {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2cqw;
 }
 
 /* Le bouton d'une ligne : à droite, sans s'étirer comme ceux des messages. */

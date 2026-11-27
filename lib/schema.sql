@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS films (
     -- Laissez-passer manuel : ignore le contrôle qualité pour ce film.
     qc_force INTEGER DEFAULT 0,
     sub_genre TEXT DEFAULT NULL,
-    stock INTEGER DEFAULT 2,
+    stock INTEGER DEFAULT 1,
     duration_sec REAL DEFAULT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     -- Version marquée illisible par `npm run media:check -- --mark` (scripts/media-check.ts) : 1 = elle compte comme

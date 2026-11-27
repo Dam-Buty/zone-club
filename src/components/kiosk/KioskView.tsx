@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent, type RefObject } from 'react';
 import { useStore, useCredits } from '../../store';
 import { useBackGuard } from '../../hooks/useBackGuard';
+import { parseServerDate } from '../../utils/server-date';
+import type { FilmFiles } from '../../utils/video-source';
 import api from '../../api';
 import type { Film } from '../../types';
 import { castOwnsFilm, castView } from '../../cast/cast-machine';
@@ -17,6 +19,9 @@ import { decorStyle, screenClip, screenTransform, stageFor, transformCss, yearOf
 import { useDistributionFilm } from './useDistributionFilm';
 import distributionData from '../../data/kiosk-distribution.json';
 import { KioskAccount } from './KioskAccount';
+import { useKioskReturn, useReturnPrompt } from './useKioskReturn';
+import { MOBILE_RETURN, PC_RETURN, useReturnFilm } from './useReturnFilm';
+import { useKioskRewind } from './useKioskRewind';
 import { KioskReview } from './KioskReview';
 import { KioskNotice, type KioskNoticeSpec } from './KioskNotice';
 import { KioskSearch } from './KioskSearch';
@@ -60,6 +65,8 @@ const MOBILE_DISTRIBUTION: DistributionVariant = {
 // Le PC a son film (Rusmir, 23/11/2026) : la borne modélisée dans la rue, vue comme à la fin du film d'approche, écran
 // en 2:3 — et son décor, la première image de ce film, gardé derrière l'écran. Absent des données : le PC prend le film
 // du téléphone, sans décor.
+/** Images par seconde des deux vidéos de distribution (distribution_sorties.py, distribution_pc_sorties.py). */
+const DISTRIBUTION_FPS = 24;
 const PC_DISTRIBUTION: DistributionVariant | null = (distributionData as unknown as { pc?: DistributionVariant }).pc ?? null;     // (le JSON type l'écran en number[], pas en boîte de quatre)
 
 // Borne de location : seconde façon de louer, sans aucun rendu 3D. Cette coque porte le corps
@@ -371,7 +378,8 @@ export function KioskView() {
     screen.style.transform = '';
     screen.style.clipPath = '';
   }, []);
-  const onFilmFrame = useCallback((index: number, suivi: Suivi) => {
+  // Commun aux deux films (distribution, retour) : chacun passe son calque.
+  const placeFrame = useCallback((layer: KioskDistributionFilmHandle | null, index: number, suivi: Suivi) => {
     const screen = screenRef.current;
     const pas = suivi.pas[index];
     if (!screen || !pas) return;
@@ -388,15 +396,24 @@ export function KioskView() {
     const t = screenTransform(pas.e, stage, rect, exact);
     screen.style.transform = transformCss(t);
     screen.style.clipPath = screenClip(t, stage, rect);
-    filmLayerRef.current?.place(index, suivi);
+    layer?.place(index, suivi);
   }, []);
+  const onFilmFrame = useCallback((index: number, suivi: Suivi) => placeFrame(filmLayerRef.current, index, suivi), [placeFrame]);
+  // Le film du retour de la K7 (spec 2026-11-26, § 5) : la variante de l'appareil, comme la distribution — mêmes
+  // proportions que son film de location (le cadre des deux se cale par filmRatioRef).
+  const returnFilm = useReturnFilm({ variant: isPc ? PC_RETURN : MOBILE_RETURN, placeFrame, releaseScreen });
   const onFilmDone = useCallback(() => {
     // L'écran retrouve exactement sa place dans le même passage que le changement de phase.
     releaseScreen();
     setDistribution((d) => (d?.phase === 'film' ? { phase: 'ready', filmId: d.filmId, fresh: true } : d));
   }, [releaseScreen]);
+  // La vidéo de la variante, en H.264 et en AV1 : le crochet ne télécharge que celle que le navigateur lit le mieux.
+  const filmFiles = useMemo((): FilmFiles => ({
+    src: variant.film.src, width: variant.film.largeur, height: variant.film.hauteur, av1: variant.film.av1,
+    framerate: DISTRIBUTION_FPS, durationMs: variant.film.dureeMs,
+  }), [variant]);
   const distributionFilm = useDistributionFilm({
-    url: variant.film.src,
+    film: filmFiles,
     assets: variantAssets,
     durationMs: variant.film.dureeMs,
     load: filmWanted,
@@ -413,25 +430,28 @@ export function KioskView() {
   );
   // Fenêtre redimensionnée ou téléphone tourné pendant la vidéo : le cadre ne vaut plus, on passe au panneau.
   const filmPlaying = distribution?.phase === 'film';
+  // Un des deux films est à l'écran (distribution ou retour) : ce qui suit vaut pour l'un comme pour l'autre.
+  const filmShowing = filmPlaying || returnFilm.playing;
+  const skipShowing = returnFilm.playing ? returnFilm.player.skip : distributionFilm.skip;
   // L'écran reste au-dessus de la vidéo pendant son fondu de fin ; un appui la passe, hors double appui de « Louer ».
-  const screenLifted = useLiftHold(filmPlaying);
+  const screenLifted = useLiftHold(filmShowing);
   const tapFilm = useFilmTap(filmPlaying, distributionFilm.skip);
+  const tapReturn = useFilmTap(returnFilm.playing, returnFilm.player.skip);
   useEffect(() => {
-    if (!filmPlaying) return;
-    const skipFilm = distributionFilm.skip;
-    window.addEventListener('resize', skipFilm);
-    return () => window.removeEventListener('resize', skipFilm);
-  }, [filmPlaying, distributionFilm.skip]);
+    if (!filmShowing) return;
+    window.addEventListener('resize', skipShowing);
+    return () => window.removeEventListener('resize', skipShowing);
+  }, [filmShowing, skipShowing]);
   // Téléphone ↔ PC en cours de vidéo (souris branchée sur une tablette) : le film n'est plus le bon, on passe au panneau.
-  const skipFilmRef = useRef(distributionFilm.skip);
-  useEffect(() => { skipFilmRef.current = distributionFilm.skip; }, [distributionFilm.skip]);
+  const skipFilmRef = useRef(skipShowing);
+  useEffect(() => { skipFilmRef.current = skipShowing; }, [skipShowing]);
   useEffect(() => {
     skipFilmRef.current();
   }, [variant]);
   // Filet : quelle que soit la façon dont la phase « film » se termine, l'écran ne garde aucune transformation.
   useEffect(() => {
-    if (!filmPlaying) releaseScreen();
-  }, [filmPlaying, releaseScreen]);
+    if (!filmShowing) releaseScreen();
+  }, [filmShowing, releaseScreen]);
   const closeReady = useCallback(() => setDistribution(null), []);
 
   // ----- La version du film du panneau (spec 2026-11-19-versions-et-erreurs-de-lecture, § 4.1, 4.3 a et 4.4) -----
@@ -641,7 +661,7 @@ export function KioskView() {
             vo: !!film.has_vo,
             copiesLeft: film.rental_status.available_copies,
             stock: film.rental_status.stock,
-            earliestReturn: film.rental_status.earliest_return ?? null,
+            returns: (film.rental_status.active_returns ?? []).map((r) => ({ atMs: parseServerDate(r.expires_at), mine: r.mine })),
             directors: (film.directors ?? []).map((d) => d.name),
             cast: (film.actors ?? []).map((a) => a.name),
             roles: (film.actors ?? []).map((a) => ({ name: a.name, character: a.character ?? '' })),
@@ -660,6 +680,13 @@ export function KioskView() {
   const currentDetail = detail !== null && detail.filmId === displayedId ? detail.data : null;
 
   const closeNotice = useCallback(() => setNotice(null), []);
+  const rewind = useKioskRewind({ onNotice: setNotice });
+  const { returningId, askReturn, startReturn } = useKioskReturn({
+    films: catalogue, onNotice: setNotice, onReview: setReviewFilmId, beforeReturn: rewind.cancel, rewindingId: rewind.rewindingId,
+    onAsk: returnFilm.want, playFilm: returnFilm.play,
+  });
+  // Un film à l'écran, ou la phase de distribution ouverte : l'écran de la borne ne répond plus (un appui passe le film).
+  const busy = distribution !== null || returnFilm.playing;
 
   // ----- Connexion de la borne -----
   // `then` est ce que le visiteur voulait faire quand la connexion s'est imposée (louer) : on le
@@ -732,6 +759,15 @@ export function KioskView() {
         }
       : notice ?? rentalOverNotice;
 
+  // La proposition de rendre un film vu, une fois par ouverture de la borne, quand rien d'autre n'est ouvert.
+  useReturnPrompt({
+    active: !welcome && isAuthenticated && !isPlayerOpen && overlay === null && !busy && reviewFilmId === null && !authVisible,
+    startReturn,
+    onAsk: returnFilm.want,
+    onNotice: setNotice,
+    films: catalogue,
+  });
+
   // ----- Geste retour : il agit DANS la borne, il ne la quitte jamais -----
   // Une seule garde pour toute la borne, reposée dès qu'elle a servi : le geste (ou le bouton
   // retour du navigateur) ferme ce qui est ouvert, du plus haut au plus bas (kioskBackAction) ;
@@ -755,7 +791,7 @@ export function KioskView() {
       playerOpen: isPlayerOpen,
       noticeOpen: overlay !== null,
       waiting: distribution?.phase === 'waiting',
-      filmPlaying: distribution?.phase === 'film',
+      filmPlaying: filmShowing,
       readyOpen,
       questionOpen: readyOpen && readySub.view === 'question',
       versionOpen: readyOpen && readySub.view === 'versions',
@@ -770,7 +806,7 @@ export function KioskView() {
       trailerOpen: detailOpen && detailTab === 'bande-annonce',
     });
     if (action === 'close-player') closePlayer();
-    else if (action === 'skip-film') distributionFilm.skip();
+    else if (action === 'skip-film') skipShowing();
     // Le message de la borne d'abord ; sinon c'est « Location terminée », qui vient du Cast.
     else if (action === 'close-notice') {
       if (notice) closeNotice();
@@ -786,7 +822,7 @@ export function KioskView() {
     else if (action === 'close-trailer') setDetailTab('resume');
     else if (action === 'close-detail') closeDetail();
     else if (action === 'close-search') closeSearch();
-    else if (overlay === null && !authVisible && distribution === null) setQuitHintTick((tick) => tick + 1);
+    else if (overlay === null && !authVisible && !busy) setQuitHintTick((tick) => tick + 1);
   };
   // Sur PC, Échap fait ce que fait le geste retour d'un téléphone (le lecteur a sa propre touche Échap).
   const onBackRef = useRef(back);
@@ -844,6 +880,11 @@ export function KioskView() {
     const f = catalogue.find((c) => c.id === filmPhaseId);
     return { title: f?.title ?? 'Titre indisponible', tmdbId: f?.tmdb_id ?? null, year: yearOf(f?.release_date) };
   }, [filmPhaseId, catalogue]);
+  const returnRented = useMemo(() => {
+    if (returnFilm.filmId === null) return null;
+    const f = catalogue.find((c) => c.id === returnFilm.filmId);
+    return { title: f?.title ?? 'Titre indisponible', tmdbId: f?.tmdb_id ?? null, year: yearOf(f?.release_date) };
+  }, [returnFilm.filmId, catalogue]);
 
   return (
     <>
@@ -859,7 +900,21 @@ export function KioskView() {
         active={filmPlaying}
         stage={filmStage}
         letterbox={filmLetterbox}
+        decor={decor !== null && decorLoaded}
         rented={distributionRented}
+      />
+      {/* Le film du retour de la K7 : même calque, sa propre vidéo. */}
+      <KioskDistributionFilm
+        ref={returnFilm.layerRef}
+        film={returnFilm.film}
+        sheets={returnFilm.sheets}
+        onTap={tapReturn}
+        player={returnFilm.player}
+        active={returnFilm.playing}
+        stage={filmStage}
+        letterbox={filmLetterbox}
+        decor={decor !== null && decorLoaded}
+        rented={returnRented}
       />
       <div className={styles.sign} aria-hidden="true">
         {/* Décor : l'enseigne est une image rendue (voir .neonImg). Son conteneur est masqué aux lecteurs d'écran. */}
@@ -875,9 +930,9 @@ export function KioskView() {
             {/* PC : la borne modélisée, derrière son écran — la première image du film de distribution. */}
             {decor && <img className={styles.decor} src={decor.src} alt="" width={decor.largeur} height={decor.hauteur} style={decorStyle(decor.ecran)} decoding="async" draggable={false} onLoad={() => setDecorLoaded(true)} onError={() => setDecorFailed(true)} />}
             {decor && decorLoaded && <div className={styles.decorFade} style={decorStyle(decor.ecran)} aria-hidden="true" />}
-            <div ref={screenRef} onClick={filmPlaying ? tapFilm : undefined} className={`${styles.ks} ${screenLifted ? styles.ksLifted : ''}`} style={{ '--k-dpx': lcdDevicePixel(density), '--k-lcd-n': lcdPitchInDevicePixels(density) } as CSSProperties}>
+            <div ref={screenRef} onClick={filmPlaying ? tapFilm : returnFilm.playing ? tapReturn : undefined} className={`${styles.ks} ${screenLifted ? styles.ksLifted : ''}`} style={{ '--k-dpx': lcdDevicePixel(density), '--k-lcd-n': lcdPitchInDevicePixels(density) } as CSSProperties}>
               <div className={styles.screen} data-mode={mode} data-cast-bar={castBarFilm !== null || undefined} style={layoutVars}>
-                <div className={styles.kTop} inert={welcome || overlay !== null || distribution !== null}>
+                <div className={styles.kTop} inert={welcome || overlay !== null || busy}>
                   <div className={styles.kLogo}>
                     VIDÉOCLUB<small>borne 24/7</small>
                   </div>
@@ -909,7 +964,7 @@ export function KioskView() {
                 {/* Sous la fiche détaillée, le parcours reste monté (rayon, page, position de la bande) mais caché. */}
                 <div
                   className={styles.kPane}
-                  inert={welcome || overlay !== null || distribution !== null || authVisible || mode === 'search' || detailOpen || accountOpen}
+                  inert={welcome || overlay !== null || busy || authVisible || mode === 'search' || detailOpen || accountOpen}
                   style={detailOpen ? { visibility: 'hidden' } : undefined}
                 >
                   {catalog === 'loading' && (
@@ -938,12 +993,12 @@ export function KioskView() {
                 </div>
 
                 {detailOpen && catalog === 'ready' && displayed && (
-                  <div className={styles.kLayer} inert={overlay !== null || distribution !== null || authVisible}>
+                  <div className={styles.kLayer} inert={overlay !== null || busy || authVisible}>
                     <KioskDetail
                       film={displayed}
                       detail={currentDetail}
                       detailFailed={currentDetail === null && detailFailed === displayedId}
-                      covered={overlay !== null || distribution !== null || authVisible || isPlayerOpen || hidden}
+                      covered={overlay !== null || busy || authVisible || isPlayerOpen || hidden}
                       tab={detailTab}
                       onTab={setDetailTab}
                       onBack={closeDetail}
@@ -957,13 +1012,18 @@ export function KioskView() {
                 )}
 
                 {accountOpen && (
-                  <div className={styles.kLayer} inert={overlay !== null || distribution !== null || authVisible || reviewFilmId !== null}>
+                  <div className={styles.kLayer} inert={overlay !== null || busy || authVisible || reviewFilmId !== null}>
                     <KioskAccount
                       films={catalogue}
                       prefOpen={prefOpen}
                       onPrefOpen={setPrefOpen}
                       onWatch={watch}
                       onReview={(filmId) => setReviewFilmId(filmId)}
+                      returningId={returningId}
+                      onAskReturn={askReturn}
+                      rewindingId={rewind.rewindingId}
+                      onRewind={rewind.start}
+                      onNotice={setNotice}
                       onLogout={() => {
                         setAccountOpen(false);
                         void logout().then((ok) => {
@@ -998,7 +1058,7 @@ export function KioskView() {
                 )}
 
                 {mode === 'search' && catalog === 'ready' && (
-                  <div className={styles.kLayer} inert={overlay !== null || distribution !== null || authVisible}>
+                  <div className={styles.kLayer} inert={overlay !== null || busy || authVisible}>
                     <KioskSearch films={catalogue} onPick={pickFromSearch} onBack={closeSearch} />
                   </div>
                 )}

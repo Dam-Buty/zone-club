@@ -36,6 +36,18 @@ WV, HV = RENDU['w'], RENDU['h']
 ECHELLE_COMPO = int(os.environ.get('ECHELLE_COMPO', 1))
 WV, HV = WV * ECHELLE_COMPO, HV * ECHELLE_COMPO
 SORTIE = 'decor_{:04d}.png' if ECHELLE_COMPO > 1 else 'film_{:04d}.png'
+# BOUGE_TOUJOURS=1 (le film de retour du PC) : chaque image passe par le flou de bougé, même quand l'appareil est
+# arrêté. Ce passage assombrit l'image de 0,8 niveau (mesuré le 27/11/2026 : l'image y est tronquée à l'entier deux fois,
+# autour d'un aller-retour en lumière linéaire) — et le DÉCOR de la page, première image du film de location, y est
+# passé, puisque l'appareil y démarre. Un film qui doit partir du décor et y revenir sans changement de lumière passe
+# donc toutes ses images par le même chemin. À corriger à la source (arrondir au lieu de tronquer) le jour où le décor
+# et les films du PC sont tous refaits ensemble.
+BOUGE_TOUJOURS = bool(os.environ.get('BOUGE_TOUJOURS'))
+BOUGE_DES = int(os.environ.get('BOUGE_DES', 0))        # … seulement à partir de cette image (le film d'approche : sa fin)
+# LAMPADAIRE=<de>-<à> (film d'approche du PC) : de l'image <de> à l'image <à>, la borne passe peu à peu de sa lumière de
+# la rue (borne_NNNN.png) à celle du lampadaire du visiteur (borne_lamp_NNNN.png, approche_rendu.py LAMPADAIRE=1), et y
+# reste jusqu'à la fin : la dernière image est alors le décor que la page montre ensuite, sans saut de lumière.
+LAMPADAIRE = tuple(int(v) for v in os.environ['LAMPADAIRE'].split('-')) if os.environ.get('LAMPADAIRE') else None
 ECART_MAX = 2.5                                        # départ du film contre l'image fixe, en niveaux sur 255 (essai : 0,88)
 if len(sys.argv) > 1:
     CHOIX = list(range(*[int(v) + k for k, v in enumerate(sys.argv[1].split('-'))])) if '-' in sys.argv[1] else [int(v) for v in sys.argv[1].split(',')]
@@ -116,6 +128,14 @@ def assemble(i):
     masque *= (xx >= ZX0) & (xx < ZX1) & (yy >= ZY0) & (yy < ZY1)
     base = np.clip((base / 255) ** 2.2 + lum * masque[..., None] * M.get('gain', 1.0), 0, 1) ** (1 / 2.2) * 255
     ra = np.asarray(Image.open(BORNE_DE / BORNE.format(i)).convert('RGBA').resize((WV, HV), Image.LANCZOS)).astype(np.float32)
+    if LAMPADAIRE and i > LAMPADAIRE[0]:
+        k = min(1.0, (i - LAMPADAIRE[0]) / (LAMPADAIRE[1] - LAMPADAIRE[0]))
+        k = k * k * (3 - 2 * k)
+        rl = np.asarray(Image.open(BORNE_DE / f'borne_lamp_{i:04d}.png').convert('RGBA').resize((WV, HV), Image.LANCZOS)).astype(np.float32)
+        # mélange en valeurs prémultipliées (l'ombre du visiteur sur le mur est dans la transparence)
+        pa, pl = ra[..., :3] * ra[..., 3:4], rl[..., :3] * rl[..., 3:4]
+        alpha = ra[..., 3:4] * (1 - k) + rl[..., 3:4] * k
+        ra = np.concatenate([(pa * (1 - k) + pl * k) / np.maximum(alpha, 1e-3), alpha], axis=-1)
     al = ra[..., 3:4] / 255
     img = base * (1 - al) + ra[..., :3] * al
     # L'écran : la capture de la page, dans le rectangle où l'appareil de cette image le voit (ecran_pose.py).
@@ -160,7 +180,7 @@ def bouge(i, img):
     le plan du mur : chaque instant est la même image, à une autre échelle)."""
     f = CAM[i]
     c0, r0, bw, bh = f['boite']
-    if all(max(abs(a - b) for a, b in zip(s, f['boite'])) < 0.05 for s in f['bouge']):
+    if not (BOUGE_TOUJOURS and i >= BOUGE_DES) and all(max(abs(a - b) for a, b in zip(s, f['boite'])) < 0.05 for s in f['bouge']):
         return img
     PAD = 64
     large = Image.fromarray(np.pad(img, ((PAD, PAD), (PAD, PAD), (0, 0)), mode='edge').astype(np.uint8))

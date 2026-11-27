@@ -17,6 +17,7 @@ import { useIsMobile } from "../../hooks/useIsMobile";
 import { useBackGuard } from "../../hooks/useBackGuard";
 import { K7Trailer } from "./K7Trailer";
 import { getRentalTier } from "../../utils/rental-tier";
+import { isEarlyReturn } from "../../utils/rental-rules";
 
 interface VHSCaseOverlayProps {
   film: Film | null;
@@ -866,9 +867,9 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
   const duration = RENTAL_DURATIONS[tier];
   const canAfford = credits >= cost;
 
-  // Early return eligibility: within 24h of rental start
+  // Early return eligibility: within 8h of rental start
   const isWithinEarlyReturn = rental
-    ? (Date.now() - rental.rentedAt) <= 24 * 60 * 60 * 1000
+    ? isEarlyReturn(rental.rentedAt, Date.now())
     : false;
 
   // Rent button colors
@@ -1134,7 +1135,7 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
       // Early return hint
       const earlyHint = isWithinEarlyReturn ? (
         <div style={{ fontSize: "1.02rem", color: "#00ff88", fontFamily: "Orbitron, sans-serif", textAlign: "center", letterSpacing: "0.5px" }}>
-          Retour sous 24h = +1 crédit bonus
+          Retour sous 8h = +1 crédit bonus
         </div>
       ) : null;
 
@@ -1444,7 +1445,7 @@ export function VHSCaseOverlay({ film, isOpen, onClose }: VHSCaseOverlayProps) {
                 textAlign: "center",
                 lineHeight: 1.4,
               }}>
-                Retour sous 24h : +1 crédit bonus
+                Retour sous 8h : +1 crédit bonus
               </div>
             )}
             <div style={{ display: "flex", gap: isMobile ? "10px" : "14px", width: "100%" }}>
