@@ -11,7 +11,11 @@ const CAP = path.join(__dirname, 'captures');
 fs.mkdirSync(CAP, { recursive: true });
 const SUIVI = JSON.parse(fs.readFileSync(path.join(RACINE, 'public/kiosk-distribution-suivi.json'), 'utf8'));
 const FILM = JSON.parse(fs.readFileSync(path.join(RACINE, 'src/data/kiosk-distribution.json'), 'utf8')).film;
-const REFERENCE = { tmdb: 419430, titre: 'Get Out', images: [30, 56, 72, 90, 118, 124, 154] };   // le film des images de référence, choisi par son titre
+const REFERENCE = { tmdb: 419430, titre: 'Get Out', images: [30, 60, 90, 148, 156, 185, 205] };   // le film des images de référence, choisi par son titre
+// Les références (tests/e2e/reference/ref-NNNN.jpg) se refont avec le film : depuis tools/devanture-borne/,
+//   python3 distribution_reference.py 419430 ../../tests/e2e/reference 30,60,90,148,156,185,205
+// (film de 9,25 s du 26/11/2026 : K7 debout dans la vitrine jusqu'à l'image 113, tranche non posée pendant la bascule,
+// couchée à partir de l'image 143).
 // Écart toléré avec la référence, en niveaux sur 255, en moyenne dans la boîte de la K7 (grille grossière, voir
 // ecart.py). La référence est un collage en lumière linéaire sur les images d'origine ; la page n'a qu'une image, un
 // masque et un voile noir, par-dessus une vidéo compressée : mesuré de 3 à 9 le 23/11/2026, biais de luminosité de
@@ -111,7 +115,7 @@ async function illusion(page, nom) {
   dit(pirePlace <= 1.5, `${nom} 2  la tranche est à sa place à chaque image (au pire ${arr(pirePlace)} pt)`);
   dit(pireEcran <= 1, `${nom} 3  le vrai écran est dans la boîte de l'écran filmé (au pire ${arr(pireEcran)} pt)`);
   // On laisse finir : panneau, écran revenu à sa place, plus aucune transformation.
-  await page.evaluate(() => { const v = document.querySelector('video[class*="KioskDistributionFilm"]'); v.currentTime = 7.2; return v.play(); });
+  await page.evaluate((s) => { const v = document.querySelector('video[class*="KioskDistributionFilm"]'); v.currentTime = s; return v.play(); }, FILM.dureeMs / 1000 - 0.8);
   const vu = await suis(page);
   dit(vu.pret > 0, `${nom} 1  la vidéo va au bout et le panneau « Votre K7 est prête » s'ouvre`);
   const fin = await etat(page);
@@ -178,7 +182,8 @@ async function illusion(page, nom) {
 
   // 8. Ce qui accompagne la vidéo manque (elle-même, le suivi, une planche) : pas de vidéo, panneau.
   const films8 = ['Insidious', 'Alien : Romulus', 'Une Affaire de famille'];
-  for (const [k, motif] of ['**/kiosk-distribution.mp4', '**/kiosk-distribution-suivi.json', '**/kiosk-distribution-caches.webp'].entries()) {
+  // (la vidéo existe en H.264 et en AV1 : le navigateur ne demande que celle qu'il lit le mieux, on bloque les deux)
+  for (const [k, motif] of ['**/kiosk-distribution*.mp4', '**/kiosk-distribution-suivi.json', '**/kiosk-distribution-caches.webp'].entries()) {
     await page.route(motif, (r) => r.abort());
     await entre(page);
     await choisis(page, films8[k]);
