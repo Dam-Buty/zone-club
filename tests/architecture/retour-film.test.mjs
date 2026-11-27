@@ -71,7 +71,25 @@ test('RETOUR FILMÉ: la borne le joue après la réponse du serveur, puis ouvre 
   assert.ok(retour.indexOf('playFilm(filmId)') < retour.indexOf('returnDoneText('), 'le message vient après le film');
   assert.ok(retour.includes('onAsk?.(filmId)') && retour.includes('ask?.(candidate.filmId)'), 'téléchargé dès la question, des deux côtés');
   const vue = source('src/components/kiosk/KioskView.tsx');
-  assert.ok(vue.includes('useReturnFilm({ enabled: !isPc'), 'téléphone seulement, tant que la variante PC n\'existe pas');
+  assert.ok(vue.includes('useReturnFilm({ variant: isPc ? PC_RETURN : MOBILE_RETURN'), 'la variante de l\'appareil, comme la distribution');
+  assert.ok(vue.includes('film={returnFilm.film}') && vue.includes('sheets={returnFilm.sheets}'), 'le calque reçoit la vidéo et les planches de la variante');
   assert.ok(vue.includes('ref={returnFilm.layerRef}') && vue.includes('rented={returnRented}'), 'son calque, avec la tranche du film rendu');
   assert.ok(vue.includes("action === 'skip-film') skipShowing()"), 'le geste retour passe aussi ce film');
+});
+
+test('FILMS DU PC: la vidéo prend les bords fondus du décor qu\'elle remplace (raccord de lumière)', () => {
+  // Le décor de la page se fond dans le noir sur ses bords (.decorFade) ; la vidéo, posée au même endroit, doit en
+  // faire autant, sinon les bords s'éclairent à son départ (27/11/2026 : + 17 niveaux en haut, + 22 à gauche).
+  const fondu = (css, regle) => {
+    const debut = css.indexOf(`${regle} {`);
+    assert.ok(debut >= 0, `${regle} introuvable`);
+    return css.slice(debut, css.indexOf('}', debut)).split('\n').filter((l) => l.includes('linear-gradient')).map((l) => l.trim());
+  };
+  const decor = fondu(source('src/components/kiosk/KioskView.module.css'), '.decorFade');
+  const video = fondu(source('src/components/kiosk/KioskDistributionFilm.module.css'), '.stageFade');
+  assert.equal(decor.length, 2);
+  assert.deepEqual(video, decor);
+  const vue = source('src/components/kiosk/KioskView.tsx');
+  assert.equal(vue.split('decor={decor !== null && decorLoaded}').length - 1, 2, 'les deux films (location, retour) le reçoivent');
+  assert.ok(source('src/components/kiosk/KioskDistributionFilm.tsx').includes('{decor && <div className={styles.stageFade}'));
 });

@@ -20,7 +20,7 @@ import { useDistributionFilm } from './useDistributionFilm';
 import distributionData from '../../data/kiosk-distribution.json';
 import { KioskAccount } from './KioskAccount';
 import { useKioskReturn, useReturnPrompt } from './useKioskReturn';
-import { RETURN_FILM, RETURN_SHEETS, useReturnFilm } from './useReturnFilm';
+import { MOBILE_RETURN, PC_RETURN, useReturnFilm } from './useReturnFilm';
 import { useKioskRewind } from './useKioskRewind';
 import { KioskReview } from './KioskReview';
 import { KioskNotice, type KioskNoticeSpec } from './KioskNotice';
@@ -399,8 +399,9 @@ export function KioskView() {
     layer?.place(index, suivi);
   }, []);
   const onFilmFrame = useCallback((index: number, suivi: Suivi) => placeFrame(filmLayerRef.current, index, suivi), [placeFrame]);
-  // Le film du retour de la K7 (spec 2026-11-26, § 5) : téléphone seulement, la variante PC n'est pas encore faite.
-  const returnFilm = useReturnFilm({ enabled: !isPc, placeFrame, releaseScreen });
+  // Le film du retour de la K7 (spec 2026-11-26, § 5) : la variante de l'appareil, comme la distribution — mêmes
+  // proportions que son film de location (le cadre des deux se cale par filmRatioRef).
+  const returnFilm = useReturnFilm({ variant: isPc ? PC_RETURN : MOBILE_RETURN, placeFrame, releaseScreen });
   const onFilmDone = useCallback(() => {
     // L'écran retrouve exactement sa place dans le même passage que le changement de phase.
     releaseScreen();
@@ -899,18 +900,20 @@ export function KioskView() {
         active={filmPlaying}
         stage={filmStage}
         letterbox={filmLetterbox}
+        decor={decor !== null && decorLoaded}
         rented={distributionRented}
       />
       {/* Le film du retour de la K7 : même calque, sa propre vidéo. */}
       <KioskDistributionFilm
         ref={returnFilm.layerRef}
-        film={RETURN_FILM}
-        sheets={RETURN_SHEETS}
+        film={returnFilm.film}
+        sheets={returnFilm.sheets}
         onTap={tapReturn}
         player={returnFilm.player}
         active={returnFilm.playing}
         stage={filmStage}
         letterbox={filmLetterbox}
+        decor={decor !== null && decorLoaded}
         rented={returnRented}
       />
       <div className={styles.sign} aria-hidden="true">

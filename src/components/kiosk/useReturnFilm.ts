@@ -4,29 +4,26 @@
 // K7, image par image, exactement comme pour la distribution — même lecteur (useDistributionFilm), même calque
 // (KioskDistributionFilm), mêmes gardes : la borne ne se fait jamais attendre, et un appui passe la vidéo.
 //
-// Le film n'existe qu'en variante téléphone : sur PC (écran 2:3, la borne dans la rue), le retour se fait sans film
-// jusqu'à ce que la fabrique livre la sienne.
-import { useCallback, useRef, useState } from 'react';
+// Deux variantes, comme la distribution : celle du téléphone (borne seule, 720 × 1290) et celle du PC (la borne dans
+// la rue, 1920 × 1020 — retour_pc_sorties.py), qui part du décor de la page et y revient. Une variante absente des
+// données : le retour se fait sans film sur cet appareil.
+import { useCallback, useMemo, useRef, useState } from 'react';
 import type { FilmFiles } from '../../utils/video-source';
 import type { KioskDistributionFilmHandle } from './KioskDistributionFilm';
-import type { DistributionFilm, Suivi } from './kiosk-distribution-logic';
+import type { DistributionFilm, DistributionVariant, Suivi } from './kiosk-distribution-logic';
 import { useDistributionFilm, type DistributionFilmPlayer } from './useDistributionFilm';
 import retourData from '../../data/kiosk-retour.json';
 
-export const RETURN_FILM: DistributionFilm = retourData.film;
-export const RETURN_SHEETS = { suivi: retourData.suivi, caches: retourData.caches, ombres: retourData.ombres };
-const RETURN_FILES: FilmFiles = {
-  src: RETURN_FILM.src,
-  width: RETURN_FILM.largeur,
-  height: RETURN_FILM.hauteur,
-  av1: RETURN_FILM.av1,
-  framerate: 24,
-  durationMs: RETURN_FILM.dureeMs,
-};
+/** Le film du retour et ses planches, pour un appareil (même forme que la distribution, sans décor : c'est le sien). */
+export type ReturnVariant = Omit<DistributionVariant, 'decor'>;
+export const MOBILE_RETURN: ReturnVariant = { film: retourData.film, suivi: retourData.suivi, caches: retourData.caches, ombres: retourData.ombres };
+export const PC_RETURN: ReturnVariant | null = (retourData as unknown as { pc?: ReturnVariant }).pc ?? null;
+/** Images par seconde des vidéos de retour (retour_sorties.py, retour_pc_sorties.py). */
+const RETURN_FPS = 24;
 
 interface ReturnFilmOptions {
-  /** Faux sur PC : pas de film, `play` rend la main aussitôt. */
-  enabled: boolean;
+  /** La variante de cet appareil ; `null` : pas de film, `play` rend la main aussitôt. */
+  variant: ReturnVariant | null;
   /** Place l'écran de la borne et la tranche (le calque donné) pour l'image `index` : la même règle que la distribution. */
   placeFrame: (layer: KioskDistributionFilmHandle | null, index: number, suivi: Suivi) => void;
   /** Rend à l'écran de la borne sa place exacte. */
@@ -34,6 +31,9 @@ interface ReturnFilmOptions {
 }
 
 export interface ReturnFilm {
+  /** La vidéo et les planches à donner au calque (celles du téléphone quand l'appareil n'a pas de variante : jamais jouées). */
+  film: DistributionFilm;
+  sheets: { suivi: string; caches: string; ombres: string };
   player: DistributionFilmPlayer;
   /** À poser sur le calque KioskDistributionFilm du retour. */
   layerRef: React.RefObject<KioskDistributionFilmHandle | null>;
@@ -46,7 +46,11 @@ export interface ReturnFilm {
   play: (filmId: number) => Promise<void>;
 }
 
-export function useReturnFilm({ enabled, placeFrame, releaseScreen }: ReturnFilmOptions): ReturnFilm {
+export function useReturnFilm({ variant, placeFrame, releaseScreen }: ReturnFilmOptions): ReturnFilm {
+  const enabled = variant !== null;
+  const { film, suivi, caches, ombres } = variant ?? MOBILE_RETURN;
+  const sheets = useMemo(() => ({ suivi, caches, ombres }), [suivi, caches, ombres]);
+  const files = useMemo((): FilmFiles => ({ src: film.src, width: film.largeur, height: film.hauteur, av1: film.av1, framerate: RETURN_FPS, durationMs: film.dureeMs }), [film]);
   const layerRef = useRef<KioskDistributionFilmHandle | null>(null);
   const [wanted, setWanted] = useState(false);
   const [filmId, setFilmId] = useState<number | null>(null);
@@ -61,7 +65,7 @@ export function useReturnFilm({ enabled, placeFrame, releaseScreen }: ReturnFilm
     finishRef.current = null;
     finish?.();
   }, [releaseScreen]);
-  const player = useDistributionFilm({ film: RETURN_FILES, assets: RETURN_SHEETS, durationMs: RETURN_FILM.dureeMs, load: wanted && enabled, onFrame, onDone });
+  const player = useDistributionFilm({ film: files, assets: sheets, durationMs: film.dureeMs, load: wanted && enabled, onFrame, onDone });
 
   const want = useCallback((id: number) => {
     setFilmId(id);
@@ -86,5 +90,5 @@ export function useReturnFilm({ enabled, placeFrame, releaseScreen }: ReturnFilm
     [enabled, player, releaseScreen],
   );
 
-  return { player, layerRef, filmId, playing, want, play };
+  return { film, sheets, player, layerRef, filmId, playing, want, play };
 }

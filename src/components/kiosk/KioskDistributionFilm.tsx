@@ -39,6 +39,8 @@ interface KioskDistributionFilmProps {
   stage: Rect | null;
   /** L'écran de la borne n'a pas les proportions de l'écran filmé (PC) : un fond couvre l'écran filmé, sous le vrai. */
   letterbox: boolean;
+  /** PC : la vidéo remplace le décor de la page — elle prend ses bords fondus, pour que rien ne change à son départ. */
+  decor?: boolean;
   /** Le film dont la confirmation est ouverte ou qui vient d'être loué : sa tranche est demandée d'avance. */
   rented: { title: string; tmdbId: number | null; year: number | null } | null;
   /** Un appui sur la vidéo (la borne décide s'il la passe : pas pendant le double appui de « Louer »). */
@@ -46,7 +48,7 @@ interface KioskDistributionFilmProps {
 }
 
 export const KioskDistributionFilm = forwardRef<KioskDistributionFilmHandle, KioskDistributionFilmProps>(function KioskDistributionFilm(
-  { film, sheets, player, active, stage, letterbox, rented, onTap },
+  { film, sheets, player, active, stage, letterbox, decor, rented, onTap },
   ref,
 ) {
   const spineRef = useRef<HTMLDivElement | null>(null);
@@ -105,7 +107,7 @@ export const KioskDistributionFilm = forwardRef<KioskDistributionFilmHandle, Kio
     : { left: 0, top: 0, width: 0, height: 0 };
 
   return (
-    <div className={`${styles.film} ${shown ? styles.filmShown : ''}`} aria-hidden={!shown} onClick={shown ? (onTap ?? player.skip) : undefined}>
+    <div className={`${styles.film} ${shown ? styles.filmShown : ''}`} data-decor={decor ? '' : undefined} aria-hidden={!shown} onClick={shown ? (onTap ?? player.skip) : undefined}>
       <div className={styles.stage} style={stageStyle}>
         <video ref={player.videoRef} className={styles.video} src={player.src ?? undefined} playsInline preload="auto" width={film.largeur} height={film.hauteur} />
 
@@ -136,6 +138,8 @@ export const KioskDistributionFilm = forwardRef<KioskDistributionFilmHandle, Kio
           </div>
           <div ref={shadeRef} className={styles.spineShade} style={rented !== null ? { backgroundImage: `url(${sheets.ombres})` } : undefined} />
         </div>
+
+        {decor && <div className={styles.stageFade} data-testid="distribution-bords" />}
 
         {shown && player.muted && (
           <span className={styles.mutedSign} role="img" aria-label="Son coupé">
