@@ -13,5 +13,22 @@
   },
   "suivi": "/kiosk-retour-suivi.json",
   "caches": "/kiosk-retour-caches.webp",
-  "ombres": "/kiosk-retour-ombres.webp"
+  "ombres": "/kiosk-retour-ombres.webp",
+  "pc": {
+    "film": {
+      "src": "/kiosk-retour-pc.mp4",
+      "largeur": 1920,
+      "hauteur": 1020,
+      "dureeMs": 5958,
+      "octets": 3391836,
+      "av1": {
+        "src": "/kiosk-retour-pc.av1.mp4",
+        "codecs": "av01.0.08M.08",
+        "octets": 1904128
+      }
+    },
+    "suivi": "/kiosk-retour-pc-suivi.json",
+    "caches": "/kiosk-retour-pc-caches.webp",
+    "ombres": "/kiosk-retour-pc-ombres.webp"
+  }
 }

@@ -8,6 +8,10 @@ l'afficheur (« K7 REÇUE » quand la borne a pris la K7), que Blender n'anime p
 
 SUIVI=1 : aucun rendu, écrit <dossier>/suivi.json (la tranche et l'écran à chaque image).
 PASSES=1 : les passes cache_/blanc_ de chaque image dans <dossier>/passes/ (voir distribution_planches.py).
+
+PC — blender -b main/retour-anim-pc.blend … avec TRAJET=<retour/pc/trajet.json> (retour_pc_trajet.py) : le même geste
+sur la borne du PC ; l'appareil suit le trajet (il ne tourne jamais), l'image prend sa taille, et Blender ne rend que
+la borne et la main sur fond transparent — le mur de la photo et la pluie viennent d'approche_compo.py (ANIM=retour/pc).
 """
 import json
 import os
@@ -28,6 +32,14 @@ tex = [n for n in bpy.data.materials['afficheur'].node_tree.nodes if n.type == '
 repos = tex.image
 recue = bpy.data.images.load(str(Path(bpy.path.abspath(repos.filepath)).parent / 'afficheur-recue.png'), check_existing=True)
 recue.colorspace_settings.name = repos.colorspace_settings.name
+# Cycles sur la carte graphique, comme borne.py : un fichier ouvert en tâche de fond prend les préférences de
+# l'utilisateur, qui peuvent le laisser au processeur (le film du téléphone du 26/11 : 102 s par image au lieu de ~25).
+_prefs = bpy.context.preferences.addons['cycles'].preferences
+_prefs.compute_device_type = 'METAL'
+_prefs.get_devices()
+for _d in _prefs.devices:
+    _d.use = _d.type == 'METAL'
+s.cycles.device = 'GPU'
 s.cycles.samples = ECH
 s.cycles.use_denoising = True
 s.render.resolution_percentage = PCT
@@ -39,18 +51,40 @@ s.render.motion_blur_shutter = 0.5
 NETTES = range(29, 58)
 
 
-def flou(i):
-    s.render.use_motion_blur = i not in NETTES
 s.camera = bpy.data.objects['camera']
 DOSSIER.mkdir(parents=True, exist_ok=True)
 K7 = bpy.data.objects['k7_servie']
 cam = s.camera
+# TRAJET (PC) : l'appareil est placé d'après le trajet, la source commune à la passe « mur » et à l'assemblage. Il est
+# posé image par image, sans animation : Cycles ne floute donc que ce qui bouge dans la scène (la main, le bras, la
+# K7), et le flou de bougé de l'appareil lui-même est fait à l'assemblage (approche_compo.bouge) — jamais deux fois.
+_PC = json.loads(Path(os.environ['TRAJET']).read_text()) if os.environ.get('TRAJET') else None
+if _PC:
+    _im = _PC['images']
+    assert len(_im) == s.frame_end - s.frame_start + 1, 'le trajet doit avoir la durée de l\'animation'
+    s.render.resolution_x, s.render.resolution_y = _PC['w'], _PC['h']
+    cam.animation_data_clear()
+    cam.data.animation_data_clear()
+
+
+def appareil(i):
+    """PC : l'appareil de l'image i (à appeler après frame_set)."""
+    if _PC:
+        f = _PC['images'][i]
+        cam.location = (f['cam_x'], -f['d'], f['cam_z'])
+        cam.data.shift_x, cam.data.shift_y = f['shift_x'], f['shift_y']
+        cam.data.dof.focus_distance = f['d']
+
+
+def flou(i):
+    s.render.use_motion_blur = i not in NETTES
 
 
 def _face_tranche():
     """Les sommets de la tranche tournée vers nous : la face arrière de la K7 couchée, celle que pincent les doigts
     (relevée une fois, puis suivie par ses numéros)."""
     s.frame_set(IMAGES[0])
+    appareil(IMAGES[0])
     vs = [K7.matrix_world @ v.co for v in K7.data.vertices]
     ymin = min(v.y for v in vs)
     return [k for k, v in enumerate(vs) if v.y < ymin + 0.002]
@@ -68,6 +102,8 @@ if os.environ.get('SUIVI'):
     _face, _ecran, _suivi = _face_tranche(), bpy.data.objects['ecran'], []
     for i in IMAGES:
         s.frame_set(i)
+        appareil(i)
+        bpy.context.view_layer.update()
         vs = [K7.matrix_world @ v.co for v in K7.data.vertices]
         _suivi.append({'i': i, 't': round(i / s.render.fps, 4), 'couchee': True, 'tranche': _bb([vs[k] for k in _face]),
                        'ecran': _bb([_ecran.matrix_world @ v.co for v in _ecran.data.vertices]), 'k7': _bb(vs)})
@@ -98,6 +134,8 @@ if os.environ.get('PASSES'):
     s.render.use_border = s.render.use_crop_to_border = True
     for i in IMAGES:
         s.frame_set(i)
+        appareil(i)
+        bpy.context.view_layer.update()
         flou(i)
         pr = [_proj(s, cam, K7.matrix_world @ v.co) for v in K7.data.vertices]
         x0, x1 = max(0.0, min(q.x for q in pr) - 0.006), min(1.0, max(q.x for q in pr) + 0.006)
@@ -133,6 +171,7 @@ if os.environ.get('PASSES'):
 for i in IMAGES:
     t = i / s.render.fps
     s.frame_set(i)
+    appareil(i)
     flou(i)
     tex.image = recue if RECUE[0] <= t < RECUE[1] else repos
     s.render.filepath = str(DOSSIER / f'img_{i:04d}.png')

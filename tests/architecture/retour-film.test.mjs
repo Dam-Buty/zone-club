@@ -77,6 +77,51 @@ test('RETOUR FILMÉ: la borne le joue après la réponse du serveur, puis ouvre 
   assert.ok(vue.includes("action === 'skip-film') skipShowing()"), 'le geste retour passe aussi ce film');
 });
 
+test('RETOUR FILMÉ SUR PC: la borne dans la rue, 1920 × 1020, mêmes durée et son, en H.264 (≤ 3 500 000 octets) et en AV1', () => {
+  const { pc } = lis();
+  assert.ok(pc, 'la variante du PC est livrée (tools/devanture-borne/retour_pc.sh)');
+  assert.equal(pc.film.src, '/kiosk-retour-pc.mp4');
+  assert.deepEqual([pc.film.largeur, pc.film.hauteur, pc.film.dureeMs], [1920, 1020, 5958]);
+  const buf = readFileSync(path.join(ROOT, 'public', pc.film.src));
+  assert.deepEqual(lisMp4(buf), { w: 1920, h: 1020 });
+  assert.equal(buf.length, pc.film.octets);
+  assert.ok(buf.length <= 3_500_000, `${buf.length} octets`);
+  assert.ok(buf.indexOf('moov') > 0 && buf.indexOf('moov') < buf.indexOf('mdat'), 'lisible dès le début du téléchargement');
+  assert.ok(buf.includes('soun') && !buf.includes('av01'), 'H.264 avec sa piste son');
+  const a = pc.film.av1, av1 = readFileSync(path.join(ROOT, 'public', a.src));
+  assert.equal(a.src, '/kiosk-retour-pc.av1.mp4');
+  assert.match(a.codecs, /^av01\.0\.\d\dM\.08$/);
+  assert.equal(av1.length, a.octets);
+  assert.deepEqual(lisMp4(av1), { w: 1920, h: 1020 });
+  assert.ok(av1.includes('av01') && av1.includes('soun'), 'piste AV1 et piste son');
+  assert.ok(a.octets <= 2_200_000 && a.octets < 0.8 * pc.film.octets, `${a.octets} octets (H.264 : ${pc.film.octets})`);
+  // Même format que le film de location du PC : la borne cale les deux sur le même cadre (filmRatioRef).
+  const loc = JSON.parse(source('src/data/kiosk-distribution.json')).pc.film;
+  assert.deepEqual([pc.film.largeur, pc.film.hauteur], [loc.largeur, loc.hauteur]);
+});
+
+test('RETOUR FILMÉ SUR PC: le film part du décor de la page et y revient, la tranche suit la K7 de la main à la fente', () => {
+  const { pc } = lis();
+  const s = JSON.parse(readFileSync(path.join(ROOT, 'public', pc.suivi), 'utf8'));
+  assert.deepEqual([s.images, s.ips, s.pas.length], [143, 24, 143]);
+  // L'écran filmé de la première et de la dernière image est celui du décor : le vrai écran ne bouge ni au départ ni à la fin.
+  const decor = JSON.parse(source('src/data/kiosk-distribution.json')).pc.decor.ecran;
+  for (const i of [0, 142]) s.pas[i].e.forEach((v, k) => assert.ok(Math.abs(v - decor[k]) < 5e-4, `image ${i} : écran ${s.pas[i].e} / décor ${decor}`));
+  // Pendant le rapproché sur la fente, l'écran filmé est sorti du cadre par le haut : la main ne passe jamais dessous.
+  for (let i = 29; i <= 104; i++) assert.ok(s.pas[i].e[3] < 0, `image ${i} : bas de l'écran à ${s.pas[i].e[3]}`);
+  assert.ok(s.pas.every((p) => p.c === 1) && s.debout.a < s.debout.de, 'la K7 est couchée tout le film');
+  const loc = JSON.parse(readFileSync(path.join(ROOT, 'public/kiosk-distribution-suivi.json'), 'utf8'));
+  assert.deepEqual(s.lumiere.couchee, loc.lumiere.couchee);
+  // La main apporte la K7 (elle entre à l'image vers 0,9 s), l'engage, les rouleaux l'avalent (après 3,7 s).
+  for (let i = 0; i < 20; i++) assert.equal(s.pas[i].t, null, `K7 hors de vue à l'image ${i}`);
+  for (let i = 28; i <= 84; i++) assert.ok(s.pas[i].t !== null, `tranche posée à l'image ${i}`);
+  for (let i = 96; i < 143; i++) assert.equal(s.pas[i].t, null, `K7 avalée à l'image ${i}`);
+  for (const nom of ['caches', 'ombres']) {
+    const [w, h] = tailleWebp(readFileSync(path.join(ROOT, 'public', pc[nom])));
+    assert.deepEqual(nom === 'caches' ? [w, h] : [w * 2, h * 2], s.planche, nom);
+  }
+});
+
 test('FILMS DU PC: la vidéo prend les bords fondus du décor qu\'elle remplace (raccord de lumière)', () => {
   // Le décor de la page se fond dans le noir sur ses bords (.decorFade) ; la vidéo, posée au même endroit, doit en
   // faire autant, sinon les bords s'éclairent à son départ (27/11/2026 : + 17 niveaux en haut, + 22 à gauche).

@@ -41,5 +41,8 @@ donnees = {
              'av1': {'src': '/kiosk-retour.av1.mp4', **films['av1']}},
     'suivi': '/kiosk-retour-suivi.json', 'caches': '/kiosk-retour-caches.webp', 'ombres': '/kiosk-retour-ombres.webp',
 }
-(RACINE / 'src' / 'data' / 'kiosk-retour.json').write_text(json.dumps(donnees, indent=2) + '\n')
+_fichier = RACINE / 'src' / 'data' / 'kiosk-retour.json'
+if _fichier.exists() and 'pc' in json.loads(_fichier.read_text()):          # la variante du PC (retour_pc_sorties.py) est gardée
+    donnees['pc'] = json.loads(_fichier.read_text())['pc']
+_fichier.write_text(json.dumps(donnees, indent=2) + '\n')
 print(f'kiosk-retour.mp4 et .av1.mp4 : {films["journal"]} | src/data/kiosk-retour.json')
