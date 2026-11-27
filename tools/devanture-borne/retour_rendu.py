@@ -33,6 +33,14 @@ s.cycles.use_denoising = True
 s.render.resolution_percentage = PCT
 s.render.use_motion_blur = True
 s.render.motion_blur_shutter = 0.5
+# Images rendues SANS flou de bougé : l'approche rapide de la K7 (1,2 à 2,4 s). La page y pose la tranche du film rendu,
+# une image nette : sur une K7 floue elle se détachait, décalée (Rusmir, 27/11/2026 : re-rendre sans flou, comme le
+# film de location, qui n'en a pas). Vaut pour le film ET ses passes, pour que le cache épouse la K7 de l'image.
+NETTES = range(29, 58)
+
+
+def flou(i):
+    s.render.use_motion_blur = i not in NETTES
 s.camera = bpy.data.objects['camera']
 DOSSIER.mkdir(parents=True, exist_ok=True)
 K7 = bpy.data.objects['k7_servie']
@@ -90,6 +98,7 @@ if os.environ.get('PASSES'):
     s.render.use_border = s.render.use_crop_to_border = True
     for i in IMAGES:
         s.frame_set(i)
+        flou(i)
         pr = [_proj(s, cam, K7.matrix_world @ v.co) for v in K7.data.vertices]
         x0, x1 = max(0.0, min(q.x for q in pr) - 0.006), min(1.0, max(q.x for q in pr) + 0.006)
         y0, y1 = max(0.0, min(q.y for q in pr) - 0.004), min(1.0, max(q.y for q in pr) + 0.004)
@@ -124,6 +133,7 @@ if os.environ.get('PASSES'):
 for i in IMAGES:
     t = i / s.render.fps
     s.frame_set(i)
+    flou(i)
     tex.image = recue if RECUE[0] <= t < RECUE[1] else repos
     s.render.filepath = str(DOSSIER / f'img_{i:04d}.png')
     bpy.ops.render.render(write_still=True)

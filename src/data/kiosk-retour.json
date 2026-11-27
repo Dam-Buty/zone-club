@@ -4,11 +4,11 @@
     "largeur": 720,
     "hauteur": 1290,
     "dureeMs": 5958,
-    "octets": 1780296,
+    "octets": 1781961,
     "av1": {
       "src": "/kiosk-retour.av1.mp4",
       "codecs": "av01.0.05M.08",
-      "octets": 807287
+      "octets": 807262
     }
   },
   "suivi": "/kiosk-retour-suivi.json",
