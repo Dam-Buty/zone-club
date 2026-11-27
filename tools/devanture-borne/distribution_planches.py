@@ -22,8 +22,12 @@ from PIL import Image, ImageFilter
 
 from variante import D
 
-P = D / 'distribution' / 'passes'
-OUT = D / 'distribution' / 'site'
+# FILM=retour : le film de retour de la K7 (retour_rendu.py avec SUIVI=1 puis PASSES=1, dans travail/retour/) — même
+# fabrique, mais la K7 y est couchée de bout en bout : pas de bloc « debout », et la lumière reprise du film de location
+# (LUMIERE_DE), puisque ce sont les mêmes tranches du site. ARRET=<de>,<à> : ses images d'arrêt à la fente.
+BASE = D / os.environ.get('FILM', 'distribution')
+P = BASE / 'passes'
+OUT = BASE / 'site'
 OUT.mkdir(exist_ok=True)
 IPS = 24
 CELLULE = {0: (48, 336), 1: (448, 64)}            # debout, couchée : largeur × hauteur d'une cellule
@@ -33,7 +37,9 @@ COLONNES = {0: 16, 1: 6}
 ALBEDO = 0.8                                       # la K7 blanche des passes « blanc »
 ARRET = (171, 198)                                 # images de l'arrêt sur la fente (K7 immobile, appareil fixe : 7,10 à 8,25 s —
                                                    # 141 à 168 avant l'étape du tiroir de 1,25 s, distribution_film.PAUSE)
-S = json.loads((D / 'distribution' / 'suivi.json').read_text())
+if os.environ.get('ARRET'):
+    ARRET = tuple(int(v) for v in os.environ['ARRET'].split(','))
+S = json.loads((BASE / 'suivi.json').read_text())
 B = json.loads((P / 'boites.json').read_text())
 N = len(S)
 lin = lambda a: np.where(a <= 0.04045, a / 12.92, ((a + 0.055) / 1.055) ** 2.4)  # noqa: E731
@@ -87,6 +93,9 @@ tout = [cellules(i) for i in range(N)]
 # fabrique des tranches les cuit dans l'image du film (une image par régime), et l'ombre ne porte que la variation.
 LUMIERE = {}
 for c in (0, 1):
+    if not any(cc == c and (a > 0.5).any() for cc, a, lu in tout):
+        assert os.environ.get('LUMIERE_DE'), f'aucune image du régime {c} : il faut reprendre la lumière d\'un autre film (LUMIERE_DE)'
+        continue
     vis = np.concatenate([lu[a > 0.5] for cc, a, lu in tout if cc == c and (a > 0.5).any()])
     # La teinte se prend là où l'œil s'attarde : pour la K7 couchée, pendant l'arrêt sur la fente (elle sort de l'ombre
     # avant, et sa lumière y est moins bleue) ; debout, sur tout le trajet dans la vitrine.
@@ -99,7 +108,7 @@ for c in (0, 1):
 # pour que la même image de tranche soit juste dans les deux films.
 if os.environ.get('LUMIERE_DE'):
     _ref = json.loads(Path(os.environ['LUMIERE_DE']).read_text())['lumiere']
-    _propre = {nom: round(LUMIERE[c]['lmax'], 4) for c, nom in ((0, 'debout'), (1, 'couchee'))}
+    _propre = {nom: round(LUMIERE[c]['lmax'], 4) for c, nom in ((0, 'debout'), (1, 'couchee')) if c in LUMIERE}
     LUMIERE = {c: {'teinte': np.array(_ref[nom]['teinte'], np.float32), 'lmax': float(_ref[nom]['lmax'])} for c, nom in ((0, 'debout'), (1, 'couchee'))}
     print('LUMIÈRE reprise de', os.environ['LUMIERE_DE'], '| lmax propre à ce film :', _propre, '| repris :', {nom: _ref[nom]['lmax'] for nom in _ref})
 hauteurs = {c: -(-(blocs[c][1] - blocs[c][0] + 1) // COLONNES[c]) * CELLULE[c][1] for c in (0, 1)}
@@ -137,7 +146,9 @@ suivi = {
     'lumiere': {nom: {'lmax': round(LUMIERE[c]['lmax'], 4), 'teinte': [round(float(v), 4) for v in LUMIERE[c]['teinte']]} for c, nom in ((0, 'debout'), (1, 'couchee'))},
     'debout': {'cellule': list(CELLULE[0]), 'colonnes': COLONNES[0], 'de': blocs[0][0], 'a': blocs[0][1]},
     'couchee': {'cellule': list(CELLULE[1]), 'colonnes': COLONNES[1], 'de': blocs[1][0], 'a': blocs[1][1]},
-    'pas': [{'t': arr(e['tranche']) if str(e['i']) in B and dans(e['tranche']) else None, 'c': 1 if e['couchee'] else 0, 'e': arr(e['ecran'])} for e in S],
+    # Une tranche entièrement cachée (la K7 avalée par la fente, rangée derrière la tôle) n'est pas posée : t = null.
+    'pas': [{'t': arr(e['tranche']) if str(e['i']) in B and dans(e['tranche']) and tout[e['i']][1].max() > 0.02 else None,
+             'c': 1 if e['couchee'] else 0, 'e': arr(e['ecran'])} for e in S],
 }
 (OUT / 'suivi.json').write_text(json.dumps(suivi, separators=(',', ':')) + '\n')
 print(f'PLANCHES {W} × {H} | caches {o1} o, ombres {o2} o | lumière {suivi["lumiere"]} | bascule à l\'image {bascule} | suivi {(OUT / "suivi.json").stat().st_size} o')

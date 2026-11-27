@@ -21,6 +21,10 @@ interface KioskReturnOptions {
   beforeReturn?: (filmId: number) => void;
   /** Le film en cours de rembobinage : le retour l'arrête, la question le dit. */
   rewindingId?: number | null;
+  /** La question s'ouvre : le film du retour peut se télécharger (useReturnFilm.want). */
+  onAsk?: (filmId: number) => void;
+  /** Le serveur a pris la K7 : le film du retour, dont la fin ouvre le message (useReturnFilm.play). */
+  playFilm?: (filmId: number) => Promise<void>;
 }
 
 /** Le titre à afficher : le catalogue, puis l'historique, puis le texte que `rentalRows` emploie déjà. */
@@ -44,7 +48,7 @@ async function copiesAfterReturn(tmdbId: number | undefined): Promise<string[] |
   }
 }
 
-export function useKioskReturn({ films, onNotice, onReview, beforeReturn, rewindingId }: KioskReturnOptions) {
+export function useKioskReturn({ films, onNotice, onReview, beforeReturn, rewindingId, onAsk, playFilm }: KioskReturnOptions) {
   const returnFilm = useStore((state) => state.returnFilm);
   const fetchMe = useStore((state) => state.fetchMe);
   const castDismiss = useStore((state) => state.castDismiss);
@@ -61,8 +65,13 @@ export function useKioskReturn({ films, onNotice, onReview, beforeReturn, rewind
       try {
         result = await returnFilm(filmId);
         // L'historique et les exemplaires, ensemble : la K7 rendue passe dans l'historique, et une copie se libère.
+        // Pendant ce temps, le film du retour (§ 5) : le message vient à sa fin.
         const tmdbId = films.find((f) => f.id === filmId)?.tmdb_id;
-        [, lines] = await Promise.all([fetchMe(), result ? copiesAfterReturn(tmdbId) : Promise.resolve(undefined)]);
+        [, lines] = await Promise.all([
+          fetchMe(),
+          result ? copiesAfterReturn(tmdbId) : Promise.resolve(undefined),
+          result && playFilm ? playFilm(filmId) : Promise.resolve(),
+        ]);
       } finally {
         setReturningId(null);
       }
@@ -89,7 +98,7 @@ export function useKioskReturn({ films, onNotice, onReview, beforeReturn, rewind
         secondary: offer?.kind === 'write' ? { label: 'Fermer', onPress: close } : undefined,
       });
     },
-    [films, onNotice, onReview, beforeReturn, returnFilm, fetchMe, castDismiss],
+    [films, onNotice, onReview, beforeReturn, returnFilm, fetchMe, castDismiss, playFilm],
   );
 
   const askReturn = useCallback(
@@ -99,13 +108,14 @@ export function useKioskReturn({ films, onNotice, onReview, beforeReturn, rewind
       const onTv = castOwnsFilm(state.cast) === filmId;
       const rentedAt = state.rentals.find((r) => r.filmId === filmId)?.rentedAt ?? null;
       const title = titleOf(films, filmId);
+      onAsk?.(filmId);
       onNotice({
         ...returnConfirmText({ title, rentedAt, nowMs: Date.now(), onTv, rewinding: rewindingId === filmId }),
         primary: { label: 'Rendre', onPress: () => void startReturn(filmId) },
         secondary: { label: 'Annuler', onPress: () => onNotice(null) },
       });
     },
-    [returningId, films, onNotice, startReturn, rewindingId],
+    [returningId, films, onNotice, startReturn, rewindingId, onAsk],
   );
 
   return { returningId, askReturn, startReturn };
@@ -114,6 +124,8 @@ export function useKioskReturn({ films, onNotice, onReview, beforeReturn, rewind
 interface ReturnPromptOptions {
   /** La borne est au repos : accueil passé, connecté, rien d'ouvert (calculé par `KioskView`). */
   active: boolean;
+  /** La proposition s'ouvre : le film du retour peut se télécharger. */
+  onAsk?: (filmId: number) => void;
   startReturn: (filmId: number) => void | Promise<void>;
   onNotice: (notice: KioskNoticeSpec | null) => void;
   films: Film[];
@@ -123,13 +135,13 @@ interface ReturnPromptOptions {
  * La proposition faite à l'arrivée : à la première fois que la borne est au repos, on relit le compte puis on pose la
  * question une seule fois pour cette ouverture, sur la location vue à 80 % et jamais proposée.
  */
-export function useReturnPrompt({ active, startReturn, onNotice, films }: ReturnPromptOptions): void {
+export function useReturnPrompt({ active, startReturn, onNotice, films, onAsk }: ReturnPromptOptions): void {
   const fetchMe = useStore((state) => state.fetchMe);
   const evaluated = useRef(false);
   const activeRef = useRef(active);
   activeRef.current = active;
-  const latest = useRef({ startReturn, onNotice, films });
-  latest.current = { startReturn, onNotice, films };
+  const latest = useRef({ startReturn, onNotice, films, onAsk });
+  latest.current = { startReturn, onNotice, films, onAsk };
 
   useEffect(() => {
     if (!active || evaluated.current) return;
@@ -153,7 +165,8 @@ export function useReturnPrompt({ active, startReturn, onNotice, films }: Return
       const candidate = returnPromptCandidate(state.rentals, readAsked(storage), userId, castOwnsFilm(state.cast));
       if (!candidate) return;
       rememberAsked(storage, returnPromptKey(userId, candidate.filmId, candidate.rentedAt));
-      const { startReturn: start, onNotice: notify, films: catalogue } = latest.current;
+      const { startReturn: start, onNotice: notify, films: catalogue, onAsk: ask } = latest.current;
+      ask?.(candidate.filmId);
       const review = reviewStateFor(candidate.filmId, new Set(state.userReviews.map((r) => r.film_id)), state.reviewEligibility);
       notify({
         ...returnPromptText({ title: titleOf(catalogue, candidate.filmId), rentedAt: candidate.rentedAt, nowMs: Date.now(), rewound: candidate.rewindClaimed, review }),

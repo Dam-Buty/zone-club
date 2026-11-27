@@ -1,0 +1,17 @@
+{
+  "film": {
+    "src": "/kiosk-retour.mp4",
+    "largeur": 720,
+    "hauteur": 1290,
+    "dureeMs": 5958,
+    "octets": 1780296,
+    "av1": {
+      "src": "/kiosk-retour.av1.mp4",
+      "codecs": "av01.0.05M.08",
+      "octets": 807287
+    }
+  },
+  "suivi": "/kiosk-retour-suivi.json",
+  "caches": "/kiosk-retour-caches.webp",
+  "ombres": "/kiosk-retour-ombres.webp"
+}
